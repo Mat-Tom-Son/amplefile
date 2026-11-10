@@ -25,29 +25,11 @@ import {
 } from "../shared/automation-presentation.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createReadStream, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { automationTemplateAutomationId, isAutomationTemplateId } from "../shared/automation-templates.js";
 import { automationTemplateDeclaration } from "./automations/automation-templates.js";
-import {
-  assertStandardFolderPathUnowned,
-  createStandardFolderFolder,
-  isStandardFolderId,
-  listStandardFolders,
-  removeSidebarFolder,
-  renameStandardFolderEntry,
-  resolveStandardFolderPath,
-  scanStandardFolder,
-  standardFolderEntryInfo,
-  standardFolderRegistrationTarget,
-  standardFolderRoot,
-  type StandardFolderId,
-} from "./standard-folders.js";
-import { goToFolder } from "./go-to-folder.js";
-import { compressInto, copyHoldsAll, copyInto, isInside, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "./file-transfer.js";
-import { homedir as userHomedir } from "node:os";
 import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { pipeline } from "node:stream/promises";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
 import type { PiRuntimeProvider } from "./agent/pi-client.js";
@@ -110,7 +92,7 @@ import {
 import { ProviderSignIns } from "./agent/provider-sign-in.js";
 import { readOpenAiAccount } from "./agent/openai-account.js";
 import { ImageModelPreference, imageModelPreferencePath, normalizeImageModelChoice } from "./agent/image-model-preference.js";
-import { GeneratedImageStore, isGeneratedImageId } from "./agent/generated-image-store.js";
+import { GeneratedImageStore } from "./agent/generated-image-store.js";
 import { getFoundrySettings, saveFoundryConnection } from "./agent/foundry-connection.js";
 import { AZURE_OPENAI_PROVIDER, foundryProvider, normalizeFoundryConnection, type FoundryConnection } from "../shared/foundry.js";
 import {
@@ -134,7 +116,6 @@ import { parseUntilPattern } from "./agent/job-tools.js";
 import {
   createConnectedFolderCheckpoint,
   createConnectedFolderMutationCheckpoint,
-  discardConnectedFolderCheckpoint,
   getConnectedFolderCheckpoint,
   listConnectedFolderCheckpoints,
   listConnectedFolderCheckpointPage,
@@ -260,48 +241,31 @@ import type {
 } from "./cli/act-facade.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "./amplefile-cli-adapter.js";
 import { createLocalDevelopmentApiOptions, loadLocalEnvironmentFile } from "./server-dev-options.js";
-import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
 import {
   beginConnectedFolderRemoval,
   copyPathIntoConnectedFolder,
   createManagedConnectedFolder,
-  checkConnectedFolderMoves,
   createConnectedFolderFolder,
   createConnectedFolderTextFile,
-  deleteConnectedFolderEntry,
-  ensureSafeConnectedFolderRoot,
   finalizeConnectedFolderRemoval,
-  findExistingConnectedFolderFilePaths,
   getConnectedFolder,
-  getConnectedFolderEntryInfo,
-  getConnectedFolderFilePreview,
   listConnectedFolders,
   listPendingConnectedFolderRemovals,
   managedConnectedFolderDeletionPinIssue,
   moveConnectedFolderEntry,
-  outermostConnectedFolderPaths,
-  readConnectedFolderTextFile,
   renameConnectedFolderEntry,
   registerLinkedConnectedFolder,
   registerManagedConnectedFolder,
   renameConnectedFolder,
-  resolveConnectedFolderDeleteTarget,
   resolveConnectedFolderPath,
-  scanConnectedFolderTree,
-  nestedRegisteredConnectedFolderPaths,
   registeredConnectedFolderOutline,
   resolveNestableFolderPath,
   connectedFolderRemovalPendingResult,
   touchConnectedFolderRoot,
-  withConnectedFolderHistoryOperation,
   withConnectedFolderHistoryOperations,
   withConnectedFolderTouchBatch,
-  writeConnectedFolderTextFile,
-  writeUploadedFiles,
-  type ConnectedFolderMovedEntry,
   type ConnectedFolderRemovalIo,
   type ConnectedFolderRemovalResult,
-  type TreeEntry,
   type ConnectedFolderSummary,
 } from "./connected-folder.js";
 import {
@@ -330,8 +294,6 @@ import {
   flushAllTurnCheckpoints,
   handleEventStreamRoutes,
   openChatStream,
-  openConnectedFolderFileStream,
-  openStandardFolderFileStream,
   publishControlHint,
 } from "./api/event-streams.js";
 import {
@@ -341,6 +303,13 @@ import {
   routeExtensionEvent,
   routeExtensionRequest,
 } from "./api/extension-ui.js";
+import {
+  addExternalFilesInternal,
+  deleteConnectedFolderEntryWithRecovery,
+  normalizeConnectedFolderRelativePath,
+  pathContainsPath,
+} from "./api/file-changes.js";
+import { handleFileRoutes, handleSearchRoutes } from "./api/file-routes.js";
 import {
   authorize,
   automationErrorStatus,
@@ -355,7 +324,6 @@ import {
   notFound,
   numberFromEnv,
   optionalBoundedInteger,
-  parseRelativePaths,
   readJsonBody,
   readMultipartBody,
   sendError,
@@ -363,6 +331,7 @@ import {
   setCorsHeaders,
   unavailable,
 } from "./api/http.js";
+import { forgetOpenLocalApi, handlePlaceRoutes, rememberOpenLocalApi } from "./api/place-routes.js";
 import {
   assertCallerHandedWorkTo,
   assertCallerTurn,
@@ -420,6 +389,13 @@ import {
 import { acceptConversationTurn, changeQueuedMessage, optionalTurnIdentity, steerConversationTurn } from "./api/turn-acceptance.js";
 import { recoverDurableTurnState, yieldBackgroundCompaction } from "./api/turn-run.js";
 
+export type {
+  AmpleFileDeleteRecovery,
+  AmpleFileDeleteResult,
+  AmpleFileBatchDeleteResult,
+  AmpleFileBatchMoveResult,
+} from "./api/file-changes.js";
+export { transferFileEntries } from "./api/place-routes.js";
 export type { LocalFolderGrantProvider, LocalApiOptions } from "./api/state.js";
 
 export type AmpleFileAutomationSettingsOutcome =
@@ -1133,449 +1109,6 @@ async function handleConnectedFolderAppearanceRoutes({ state, req, res, url, met
   if (connectedFolderAppearanceMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
     sendJson(res, { appearance: await state.appearance.removeConnectedFolder(connectedFolder.id) });
-    return true;
-  }
-  return false;
-}
-
-/** Search inside one Connected Folder. */
-async function handleSearchRoutes({ req, res, url, method }: LocalApiRequest): Promise<boolean> {
-  const searchMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/search$/);
-  if (method === "GET" && searchMatch) {
-    const connectedFolder = await getConnectedFolder(searchMatch[1]);
-    const scope = url.searchParams.get("scope") ?? "all";
-    if (scope !== "all" && scope !== "files" && scope !== "chats") throw badRequest("Search scope is unsupported.");
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    req.once("aborted", abort);
-    res.once("close", abort);
-    try {
-      const result = await searchConnectedFolder(connectedFolder.connectedFolderRoot, url.searchParams.get("q") ?? "", {
-        includeFiles: scope !== "chats",
-        includeChats: scope !== "files",
-        signal: controller.signal,
-        path: url.searchParams.get("path") ?? undefined,
-        cursor: url.searchParams.get("cursor") ?? undefined,
-        maxMatches: optionalBoundedInteger(url.searchParams.get("limit"), "limit"),
-      });
-      if (!controller.signal.aborted && !res.destroyed) sendJson(res, result);
-    } catch (error) {
-      if (!controller.signal.aborted) throw error;
-    } finally {
-      req.off("aborted", abort);
-      res.off("close", abort);
-    }
-    return true;
-  }
-  return false;
-}
-
-/** The file manager's places beyond one Connected Folder: Standard Folders, transfers between places, Compress, Recents, and Go to Folder. */
-async function handlePlaceRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
-  // Standard Folders (docs/product-model.md, "The file manager window"):
-  // Desktop, Documents, and Downloads for the file manager's sidebar. The host
-  // resolves each from the home folder; nothing here writes `.amplefile/` data.
-  if (method === "GET" && url.pathname === "/api/standard-folders") {
-    sendJson(res, { folders: await listStandardFolders(await listConnectedFolders()) });
-    return true;
-  }
-  // Copy, paste, duplicate, and move across the file manager's places.
-  if (method === "POST" && url.pathname === "/api/file-transfer") {
-    const body = await readJsonBody<{ mode?: unknown; sources?: unknown; target?: unknown }>(state, req);
-    sendJson(res, await transferFileEntries(body, state));
-    return true;
-  }
-  // Compress: one item becomes "name.zip" beside it, several become "Archive.zip".
-  if (method === "POST" && url.pathname === "/api/file-transfer/compress") {
-    const body = await readJsonBody<{ place?: unknown; paths?: unknown }>(state, req);
-    sendJson(res, await compressEntries(body), 201);
-    return true;
-  }
-  // Recents: what changed lately across the Connected Folders and the top of Desktop, Documents, and Downloads.
-  if (method === "GET" && url.pathname === "/api/recents") {
-    sendJson(res, { recents: await recentFiles(await listConnectedFolders()) });
-    return true;
-  }
-  // Go to Folder (⇧⌘G): a typed path opens the Connected Folder or Standard Folder holding it, with completions.
-  if (method === "GET" && url.pathname === "/api/go-to-folder") {
-    sendJson(res, await goToFolder(url.searchParams.get("path") ?? "", await listConnectedFolders()));
-    return true;
-  }
-  // Remove from Sidebar: a folder the person added with + leaves the list; the folder stays as it is.
-  const sidebarFolderMatch = match(url.pathname, /^\/api\/standard-folders\/(added-[0-9a-f]{16})$/);
-  if (method === "DELETE" && sidebarFolderMatch) {
-    removeSidebarFolder(sidebarFolderMatch[1]);
-    sendJson(res, { removed: true });
-    return true;
-  }
-  const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|raw-file|events|rename-local-entry|folders|connected-folders)$/);
-  if (standardFolderMatch) {
-    const standardFolderId = standardFolderMatch[1];
-    if (!isStandardFolderId(standardFolderId)) throw notFound("That standard folder isn’t on this computer.");
-    const route = standardFolderMatch[2];
-    const path = url.searchParams.get("path") ?? "";
-    if (method === "GET" && route === "tree") {
-      sendJson(res, await scanStandardFolder(standardFolderId, path));
-      return true;
-    }
-    if (method === "GET" && route === "file-info") {
-      if (!path) throw badRequest("A path inside the folder is required.");
-      sendJson(res, await standardFolderEntryInfo(standardFolderId, path));
-      return true;
-    }
-    if (method === "GET" && route === "raw-file") {
-      if (!path) throw badRequest("File path is required.");
-      await sendConnectedFolderRawFile(res, standardFolderRoot(standardFolderId), path);
-      return true;
-    }
-    if (method === "GET" && route === "events") {
-      await openStandardFolderFileStream(state, createLocalEventSink(res), standardFolderId, path);
-      return true;
-    }
-    if (method === "POST" && route === "rename-local-entry") {
-      const body = await readJsonBody<{ path?: unknown; newName?: unknown }>(state, req);
-      if (typeof body.path !== "string" || typeof body.newName !== "string") throw badRequest("An item and a new name are required.");
-      sendJson(res, await renameStandardFolderEntry(standardFolderId, body.path, body.newName));
-      return true;
-    }
-    if (method === "POST" && route === "folders") {
-      const body = await readJsonBody<{ parentPath?: unknown; name?: unknown }>(state, req);
-      if (typeof body.name !== "string") throw badRequest("Enter a name.");
-      if (body.parentPath !== undefined && typeof body.parentPath !== "string") throw badRequest("Choose where the folder goes.");
-      sendJson(res, await createStandardFolderFolder(standardFolderId, body.parentPath ?? "", body.name), 201);
-      return true;
-    }
-    // "Connect This Folder": the click is the registration act, as choosing
-    // a folder in the picker is; the host resolved the standard folder itself.
-    if (method === "POST" && route === "connected-folders") {
-      const body = await readJsonBody<{ path?: unknown }>(state, req);
-      if (body.path !== undefined && typeof body.path !== "string") throw badRequest("Choose a folder.");
-      const target = await standardFolderRegistrationTarget(standardFolderId, body.path ?? "");
-      const connectedFolder = await registerConnectedFolderInternal(state, target);
-      sendJson(res, { connectedFolder }, 201);
-      return true;
-    }
-  }
-  return false;
-}
-
-/** One Connected Folder's files: suggestions, the tree, reading and saving, generated pictures, moves, renames, new folders, added files, deletes, ignore rules, file events, and uploads. */
-async function handleFileRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
-  // Suggested messages written from the folder: one bounded model call on the
-  // Connected Folder's model over its names and recent Chat titles, kept until the folder or its Chats change.
-  const suggestionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/suggestions$/);
-  if (method === "GET" && suggestionsMatch) {
-    const connectedFolder = await getConnectedFolder(suggestionsMatch[1]);
-    // The window drops this request when the person moves on; the model call
-    // behind it stops with it.
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    req.once("aborted", abort);
-    res.once("close", abort);
-    try {
-      const suggestions = await folderSuggestions(state, connectedFolder, url.searchParams.get("path") ?? "", controller.signal);
-      if (!controller.signal.aborted && !res.destroyed) sendJson(res, { suggestions });
-    } finally {
-      req.off("aborted", abort);
-      res.off("close", abort);
-    }
-    return true;
-  }
-
-  const treeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/tree$/);
-  if (method === "GET" && treeMatch) {
-    const connectedFolder = await getConnectedFolder(treeMatch[1]);
-    const maxDepthValue = Number(url.searchParams.get("maxDepth") ?? 20);
-    const maxDepth = Number.isFinite(maxDepthValue) ? Math.min(Math.max(Math.floor(maxDepthValue), 0), 50) : 20;
-    const scan = await scanConnectedFolderTree(
-      connectedFolder.connectedFolderRoot,
-      maxDepth,
-      url.searchParams.get("path") ?? "",
-      { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
-    );
-    sendJson(res, { tree: scan.entries, truncated: scan.truncated });
-    return true;
-  }
-
-  const fileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file$/);
-  if (method === "GET" && fileMatch) {
-    const connectedFolder = await getConnectedFolder(fileMatch[1]);
-    const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("File path is required.");
-    sendJson(res, await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, path));
-    return true;
-  }
-  if (method === "PUT" && fileMatch) {
-    const connectedFolder = await getConnectedFolder(fileMatch[1]);
-    const body = await readJsonBody<{ path?: string; text?: string; expectedHashSha256?: unknown }>(state, req);
-    if (!body.path?.trim() || typeof body.text !== "string") throw badRequest("A file path and text are required.");
-    // The hash the editor read (GET returns it, and each save returns the
-    // new one): a save over content that changed since is a 409, file untouched.
-    const expectedHashSha256 = body.expectedHashSha256;
-    if (expectedHashSha256 !== undefined && (typeof expectedHashSha256 !== "string" || !/^[0-9a-f]{64}$/iu.test(expectedHashSha256))) {
-      throw badRequest("expectedHashSha256 must be the file's SHA-256 hash.");
-    }
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      paths: [body.path],
-      reason: "pre_edit",
-      label: `Before editing ${body.path}`,
-    });
-    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.path!, body.text!, expectedHashSha256 === undefined ? {} : { expectedHashSha256 }));
-    sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return true;
-  }
-
-  const fileInfoMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-info$/);
-  if (method === "GET" && fileInfoMatch) {
-    const connectedFolder = await getConnectedFolder(fileInfoMatch[1]);
-    const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("Connected Folder item path is required.");
-    const hash = await fileInfoHashWanted(connectedFolder.connectedFolderRoot, path, url.searchParams.get("hash"));
-    sendJson(res, await getConnectedFolderEntryInfo(connectedFolder.connectedFolderRoot, path, { hash }));
-    return true;
-  }
-
-  const filePreviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-preview$/);
-  if (method === "GET" && filePreviewMatch) {
-    const connectedFolder = await getConnectedFolder(filePreviewMatch[1]);
-    const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("Connected Folder item path is required.");
-    sendJson(res, { preview: await getConnectedFolderFilePreview(connectedFolder.connectedFolderRoot, path) });
-    return true;
-  }
-
-  const pathsExistMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/paths-exist$/);
-  if (method === "POST" && pathsExistMatch) {
-    const connectedFolder = await getConnectedFolder(pathsExistMatch[1]);
-    const body = await readJsonBody<{ paths?: unknown }>(state, req);
-    if (!Array.isArray(body.paths) || body.paths.some((path) => typeof path !== "string")) {
-      throw badRequest("Connected Folder paths must be an array of strings.");
-    }
-    sendJson(res, { existing: await findExistingConnectedFolderFilePaths(connectedFolder.connectedFolderRoot, body.paths) });
-    return true;
-  }
-
-  // Pictures generate_image made: their bytes for a Chat to show,
-  // what the Chat needs to offer Add to folder or Show in Files, and Add to folder.
-  const generatedImageMatch = match(url.pathname, /^\/api\/generated-images\/([^/]+)$/);
-  if (method === "GET" && generatedImageMatch) {
-    const found = isGeneratedImageId(generatedImageMatch[1]) ? await state.generatedImages.read(generatedImageMatch[1]) : null;
-    if (!found) throw notFound("This picture is not on this computer.");
-    res.writeHead(200, {
-      "content-type": found.record.mimeType,
-      "content-length": found.bytes.length,
-      "content-disposition": "inline",
-      "cache-control": "private, max-age=31536000, immutable",
-    });
-    res.end(found.bytes);
-    return true;
-  }
-  const connectedFolderImageMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/generated-images\/([^/]+)(\/add)?$/);
-  if (connectedFolderImageMatch && (method === "GET" || (method === "POST" && connectedFolderImageMatch[3]))) {
-    const connectedFolder = await getConnectedFolder(connectedFolderImageMatch[1]);
-    const imageId = connectedFolderImageMatch[2]!;
-    const record = isGeneratedImageId(imageId) ? await state.generatedImages.get(imageId) : null;
-    if (!record) throw notFound("This picture is not on this computer.");
-    const addedPath = record.added?.[connectedFolder.id];
-    const stillThere = addedPath ? await state.generatedImages.matches(record, resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, addedPath)).catch(() => false) : false;
-    if (method === "GET") {
-      sendJson(res, { name: record.name, mimeType: record.mimeType, ...(stillThere ? { addedPath } : {}) });
-      return true;
-    }
-    // Add to folder: the same additive write and restore point as an upload.
-    if (stillThere) { sendJson(res, { path: addedPath, added: false }); return true; }
-    const found = await state.generatedImages.read(imageId);
-    if (!found) throw notFound("This picture is not on this computer.");
-    const [written] = await writeUploadedFiles(connectedFolder.connectedFolderRoot, "", [{ fileName: record.name, data: found.bytes }]);
-    await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, [written!.path], {
-      reason: "pre_upload",
-      label: `Before adding ${record.name}`,
-    });
-    await state.generatedImages.noteAdded(imageId, connectedFolder.id, written!.path);
-    sendJson(res, { path: written!.path, added: true }, 201);
-    return true;
-  }
-
-  const rawFileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/raw-file$/);
-  if (method === "GET" && rawFileMatch) {
-    const connectedFolder = await getConnectedFolder(rawFileMatch[1]);
-    const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("File path is required.");
-    await sendConnectedFolderRawFile(res, connectedFolder.connectedFolderRoot, path);
-    return true;
-  }
-
-  const moveMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entry$/);
-  if (method === "POST" && moveMatch) {
-    const connectedFolder = await getConnectedFolder(moveMatch[1]);
-    const body = await readJsonBody<{ sourcePath?: string; targetFolderPath?: string }>(state, req);
-    if (!body.sourcePath?.trim()) throw badRequest("Select a file or folder to move.");
-    const moveSource = normalizeConnectedFolderRelativePath(body.sourcePath);
-    const moveTargetFolder = normalizeConnectedFolderRelativePath(body.targetFolderPath ?? "");
-    const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
-      reason: "pre_move",
-      label: `Before moving ${body.sourcePath}`,
-    });
-    const moved = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => moveConnectedFolderEntry(connectedFolder.connectedFolderRoot, {
-      sourcePath: moveSource,
-      targetFolderPath: body.targetFolderPath ?? "",
-    }));
-    sendJson(res, { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return true;
-  }
-
-  // Several Files rows into one folder under one restore point.
-  const moveManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entries$/);
-  if (method === "POST" && moveManyMatch) {
-    const connectedFolder = await getConnectedFolder(moveManyMatch[1]);
-    const body = await readJsonBody<{ sourcePaths?: unknown; targetFolderPath?: unknown }>(state, req);
-    const sourcePaths = connectedFolderPathList(body.sourcePaths, "Select files or folders to move.");
-    if (body.targetFolderPath !== undefined && typeof body.targetFolderPath !== "string") throw badRequest("Choose a folder to move them into.");
-    const result = await moveConnectedFolderEntriesWithHistory(connectedFolder, sourcePaths, body.targetFolderPath ?? "");
-    sendJson(res, result);
-    return true;
-  }
-
-  const renameMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/rename-local-entry$/);
-  if (method === "POST" && renameMatch) {
-    const connectedFolder = await getConnectedFolder(renameMatch[1]);
-    const body = await readJsonBody<{ path?: string; newName?: string }>(state, req);
-    if (!body.path?.trim() || !body.newName?.trim()) throw badRequest("A Connected Folder item and new name are required.");
-    const renameSource = normalizeConnectedFolderRelativePath(body.path);
-    const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
-    const renameDestination = [renameParent, body.newName].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
-      reason: "pre_rename",
-      label: `Before renaming ${body.path}`,
-    });
-    const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: body.path!, newName: body.newName! }));
-    sendJson(res, { renamed, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return true;
-  }
-
-  const foldersMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/folders$/);
-  if (method === "POST" && foldersMatch) {
-    const connectedFolder = await getConnectedFolder(foldersMatch[1]);
-    const body = await readJsonBody<{ parentPath?: string; name?: string }>(state, req);
-    if (!body.name?.trim()) throw badRequest("A folder name is required.");
-    const folderTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      deleteOnRestore: [folderTarget],
-      reason: "pre_create",
-      label: `Before creating ${body.name}`,
-    });
-    const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!));
-    sendJson(res, { folder, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
-    return true;
-  }
-
-  const filesMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/files$/);
-  if (method === "POST" && filesMatch) {
-    const connectedFolder = await getConnectedFolder(filesMatch[1]);
-    const body = await readJsonBody<{ parentPath?: string; name?: string; text?: string }>(state, req);
-    if (!body.name?.trim()) throw badRequest("A file name is required.");
-    const fileTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      deleteOnRestore: [fileTarget],
-      reason: "pre_create",
-      label: `Before creating ${body.name}`,
-    });
-    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!, body.text ?? ""));
-    sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
-    return true;
-  }
-
-  const deleteMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-file$/);
-  if (method === "DELETE" && deleteMatch) {
-    const connectedFolder = await getConnectedFolder(deleteMatch[1]);
-    const body = await readJsonBody<{ path?: string }>(state, req);
-    if (!body.path?.trim()) throw badRequest("Select a file or folder to delete.");
-    // Every deletion the desktop performs leaves a receipt, and a delete
-    // History cannot fully keep a copy of lands in Recently deleted rather
-    // than being refused (docs/act-ledger.md).
-    const removal = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-      const value = await deleteConnectedFolderEntryWithRecovery(state, connectedFolder, body.path!, { receiptId: requestId });
-      return {
-        value,
-        detail: value.recovery.kind === "recently-deleted"
-          ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
-          : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
-      };
-    });
-    const { recovery, ...deleted } = removal.value;
-    sendJson(res, {
-      ...deleted,
-      historySkippedPaths: recovery.kind === "recently-deleted" ? recovery.uncovered.map((file) => file.path) : [],
-      ...(recovery.kind === "recently-deleted"
-        ? { recentlyDeleted: { entryId: recovery.entryId, restoreBy: recovery.restoreBy, uncoveredCount: recovery.uncovered.length } }
-        : {}),
-    });
-    return true;
-  }
-
-  // Several Files rows under one restore point: each row still
-  // gets its own receipt and its own History or Recently deleted recovery.
-  const deleteManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-files$/);
-  if (method === "DELETE" && deleteManyMatch) {
-    const connectedFolder = await getConnectedFolder(deleteManyMatch[1]);
-    const body = await readJsonBody<{ paths?: unknown }>(state, req);
-    const paths = connectedFolderPathList(body.paths, "Select files or folders to delete.");
-    const result = await deleteConnectedFolderEntriesWithRecovery(state, connectedFolder, paths);
-    sendJson(res, {
-      deleted: result.deleted.map(({ recovery, ...row }) => ({
-        ...row,
-        ...(recovery.kind === "recently-deleted"
-          ? { recentlyDeleted: { entryId: recovery.entryId, restoreBy: recovery.restoreBy, uncoveredCount: recovery.uncovered.length } }
-          : {}),
-      })),
-      safetyCheckpointId: result.safetyCheckpointId,
-      historySkippedPaths: result.deleted.flatMap((row) => row.recovery.kind === "recently-deleted" ? row.recovery.uncovered.map((file) => file.path) : []),
-      ...(result.failed ? { failed: result.failed, notDeleted: result.notDeleted } : {}),
-    });
-    return true;
-  }
-
-  const ignoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/ignore-paths$/);
-  if (method === "GET" && ignoreMatch) {
-    const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
-    sendJson(res, await readConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot));
-    return true;
-  }
-  if (method === "POST" && ignoreMatch) {
-    const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
-    const body = await readJsonBody<{ paths?: unknown; ignored?: unknown }>(state, req);
-    if (!Array.isArray(body.paths) || body.paths.some((path) => typeof path !== "string") || typeof body.ignored !== "boolean") {
-      throw badRequest("Connected Folder paths and an ignore decision are required.");
-    }
-    sendJson(res, await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, body.paths, body.ignored));
-    return true;
-  }
-
-  const fileEventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-events$/);
-  if (method === "GET" && fileEventsMatch) {
-    const connectedFolder = await getConnectedFolder(fileEventsMatch[1]);
-    await openConnectedFolderFileStream(state, createLocalEventSink(res), connectedFolder.connectedFolderRoot, fileEventsMatch[1]);
-    return true;
-  }
-
-  const uploadMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/upload-local-files$/);
-  if (method === "POST" && uploadMatch) {
-    const connectedFolder = await getConnectedFolder(uploadMatch[1]);
-    const multipart = await readMultipartBody(state, req);
-    const relativePaths = parseRelativePaths(multipart.fields.get("relativePaths"), multipart.files.length);
-    const uploaded = await writeUploadedFiles(
-      connectedFolder.connectedFolderRoot,
-      multipart.fields.get("targetFolderPath") ?? "",
-      multipart.files.map((file, index) => ({ fileName: file.fileName, relativePath: relativePaths[index], data: file.data })),
-    );
-    const safety = await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, uploaded.map((file) => file.path), {
-      reason: "pre_upload",
-      label: `Before uploading ${uploaded.length} file${uploaded.length === 1 ? "" : "s"}`,
-    });
-    sendJson(res, { uploaded, safetyCheckpointId: safety?.checkpointId ?? null, historySkippedPaths: safety?.skippedLargeFiles ?? [] }, 201);
     return true;
   }
   return false;
@@ -2474,7 +2007,7 @@ async function createConnectedFolderInternal(state: LocalApiState, name: string)
   return connectedFolder;
 }
 
-async function registerConnectedFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<ConnectedFolderSummary> {
+export async function registerConnectedFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<ConnectedFolderSummary> {
   const known = new Set((await registeredConnectedFolderOutline()).map((item) => item.id));
   const connectedFolder = await registerLinkedConnectedFolder(rootPath, providerHint);
   state.connectedFolderTrustAuthority.grant(connectedFolder.connectedFolderRoot);
@@ -3056,14 +2589,6 @@ async function removeConnectedFolderRegistrationInternal(
     }
   }), { requiredConnectedFolderIds: [connectedFolder.id] });
 }
-
-/**
- * The per–Connected Folder client that carries bounded inference (the file
- * manager's folder suggestions). It is streamed, never prompted, so no Chat is
- * created and no transcript exists; the name only keeps it separate from the
- * Connected Folder's real conversations.
- */
-const ampleFileInferenceConversationId = "amplefile.inference";
 
 /**
  * The act facade is the CLI act lane's in-process authority. Every method
@@ -5149,363 +4674,6 @@ async function recordFacadeAction(
   });
 }
 
-async function addExternalFilesInternal(
-  connectedFolder: ConnectedFolderSummary,
-  input: { fromPaths: string[]; toDir?: string; cwd: string },
-): Promise<{ copied: string[]; checkpointId: string | null }> {
-  if (!input.fromPaths.length) throw new AmpleFileCliError("usage", "Provide at least one --from <path> to add.");
-  const toDir = normalizeConnectedFolderRelativePath(input.toDir ?? "");
-  const sources: string[] = [];
-  for (const raw of input.fromPaths) {
-    const trimmed = raw.trim();
-    if (!trimmed) throw new AmpleFileCliError("usage", "Source paths cannot be empty.");
-    const source = isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
-    const info = await lstat(source).catch(() => null);
-    if (!info) throw new AmpleFileCliError("notFound", `Source not found: ${trimmed}.`);
-    if (info.isSymbolicLink()) throw new AmpleFileCliError("usage", `Symbolic-link sources cannot be added: ${trimmed}.`);
-    if (!info.isFile() && !info.isDirectory()) {
-      throw new AmpleFileCliError("usage", `Only files and folders can be added: ${trimmed}.`);
-    }
-    if (pathContainsPath(connectedFolder.connectedFolderRoot, source)) {
-      throw new AmpleFileCliError("usage", `Source is already inside this Connected Folder: ${trimmed}. Move it in Files instead.`);
-    }
-    if (pathContainsPath(source, connectedFolder.connectedFolderRoot)) {
-      throw new AmpleFileCliError("usage", `Source contains this Connected Folder and cannot be copied into it: ${trimmed}.`);
-    }
-    sources.push(source);
-  }
-  const copied: string[] = [];
-  try {
-    await withConnectedFolderTouchBatch(async () => {
-      for (const source of sources) copied.push(await copyPathIntoConnectedFolder(source, connectedFolder.connectedFolderRoot, toDir));
-    });
-  } catch (error) {
-    // A mid-batch failure must not strand earlier copies without a restore
-    // point: undo them best-effort, then surface the failure.
-    await Promise.all(copied.map((path) =>
-      rm(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
-    throw error;
-  }
-  const safety = await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, copied, {
-    reason: "pre_add",
-    label: `Before adding ${copied.length} item${copied.length === 1 ? "" : "s"}`,
-  });
-  return { copied, checkpointId: safety?.checkpointId ?? null };
-}
-
-export type AmpleFileDeleteRecovery =
-  | { kind: "history" }
-  | { kind: "recently-deleted"; entryId: string; restoreBy: string; uncovered: AmpleFileRecentlyDeletedUncoveredPath[] };
-
-export interface AmpleFileDeleteResult {
-  deleted: true;
-  path: string;
-  kind: "file" | "folder";
-  safetyCheckpointId: string;
-  recovery: AmpleFileDeleteRecovery;
-}
-
-/**
- * The one delete both the desktop route and `files delete` run
- * (docs/act-ledger.md). A delete never refuses for lack of
- * coverage: History keeps what it can, and when the restore point could not
- * cover every matched file the selected entry is *moved* into Recently
- * deleted instead of erased, so one delete keeps one undo reference.
- *
- * `.amplefile/`, `.work-fold/`, and `.pi/` remain invalid endpoints, and the
- * Connected Folder root still cannot be deleted: the path policy runs first, unchanged.
- */
-async function deleteConnectedFolderEntryWithRecovery(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  target: string,
-  context: { receiptId: string | null },
-): Promise<AmpleFileDeleteResult> {
-  // Queue for the folder's History first, then reserve and check for
-  // unsettled work, so a waiting delete holds nothing off and checks late.
-  return withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
-    reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
-    try {
-      return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntryWithRecovery(state, connectedFolder, target, context));
-    } finally {
-      state.capabilityMutations.delete(connectedFolder.id);
-    }
-  });
-}
-
-async function deleteSettledConnectedFolderEntryWithRecovery(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  target: string,
-  context: { receiptId: string | null },
-): Promise<AmpleFileDeleteResult> {
-  const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-    paths: [target],
-    reason: "pre_delete",
-    label: `Before deleting ${target}`,
-  });
-  return runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => applyConnectedFolderDelete(
-    state,
-    connectedFolder,
-    target,
-    safety.skippedFiles.map((file) => ({ path: file.path, reason: file.reason })),
-    safety.checkpointId,
-    context,
-  ));
-}
-
-/**
- * One delete under a restore point already taken: erased when History kept a
- * copy of all of it, else moved whole into Recently deleted with the files
- * History could not keep. One row and each row of a several-row delete run it.
- */
-async function applyConnectedFolderDelete(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  target: string,
-  uncovered: AmpleFileRecentlyDeletedUncoveredPath[],
-  safetyCheckpointId: string,
-  context: { receiptId: string | null },
-): Promise<AmpleFileDeleteResult> {
-  if (!uncovered.length) {
-    const deleted = await deleteConnectedFolderEntry(connectedFolder.connectedFolderRoot, target);
-    return { ...deleted, safetyCheckpointId, recovery: { kind: "history" as const } };
-  }
-  const entry = await resolveConnectedFolderDeleteTarget(connectedFolder.connectedFolderRoot, target);
-  let trashed: AmpleFileRecentlyDeletedEntry;
-  try {
-    trashed = await state.recentlyDeleted.moveTreeToRecentlyDeleted({
-      kind: entry.kind,
-      reason: "files.delete",
-      sourcePath: entry.absolutePath,
-      connectedFolderId: connectedFolder.id,
-      connectedFolderName: connectedFolder.name,
-      originalPath: entry.path,
-      receiptId: context.receiptId,
-      uncovered,
-    });
-  } catch (error) {
-    // An error naming an entry means a complete copy already landed in
-    // Recently Deleted (across volumes) and only releasing the original
-    // failed, possibly partway. The error says so and names the entry, so a
-    // caller can list it with what it kept.
-    if (error instanceof AmpleFileRecentlyDeletedError && error.entryId !== undefined) {
-      const kept = await state.recentlyDeleted.get(error.entryId).catch(() => null);
-      throw Object.assign(new AmpleFileCliError(
-        "failure",
-        `AmpleFile copied ${entry.path} into Recently Deleted but could not remove all of it from here: ${errorMessage(error.cause ?? error)}. The whole item is kept in Recently Deleted, and what could not be removed stays here.`,
-        { cause: error },
-      ), kept ? { recentlyDeleted: { entryId: kept.id, restoreBy: kept.restoreBy } } : {});
-    }
-    throw new AmpleFileCliError(
-      "failure",
-      `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error).replace(/\.$/u, "")}. Nothing was deleted.`,
-      { cause: error },
-    );
-  }
-  await touchConnectedFolderRoot(connectedFolder.connectedFolderRoot).catch(() => undefined);
-  return {
-    deleted: true as const,
-    path: entry.path,
-    kind: entry.kind,
-    safetyCheckpointId,
-    recovery: { kind: "recently-deleted" as const, entryId: trashed.id, restoreBy: trashed.restoreBy, uncovered },
-  };
-}
-
-/** A JSON list of Connected Folder paths from a request body. */
-function connectedFolderPathList(value: unknown, emptyMessage: string): string[] {
-  if (!Array.isArray(value) || !value.length) throw badRequest(emptyMessage);
-  if (value.some((path) => typeof path !== "string" || !path.trim())) throw badRequest("Each item must be a Connected Folder path.");
-  return value as string[];
-}
-
-export interface AmpleFileBatchDeleteResult {
-  deleted: Array<AmpleFileDeleteResult & { receiptId: string }>;
-  safetyCheckpointId: string;
-  /** Set when a row failed after earlier rows were deleted; the restore point still covers every row. */
-  failed?: { path: string; error: string };
-  notDeleted?: string[];
-}
-
-/**
- * Several rows deleted under one History restore point. Each row
- * keeps what one delete has: the busy refusal and the shared active-work
- * reservation held through every effect, the same path checks, its own
- * receipt, and History or Recently deleted for whatever History cannot keep.
- *
- * Every row is checked before anything is deleted. If a row still fails
- * partway, the rows already deleted stay deleted, the rest are left alone, and
- * the one restore point, which covers every row, brings back what was
- * deleted. When the first row fails, nothing was deleted and the restore point
- * is discarded, exactly as for one row. A row inside another row is deleted
- * with it.
- */
-async function deleteConnectedFolderEntriesWithRecovery(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  targets: readonly string[],
-): Promise<AmpleFileBatchDeleteResult> {
-  // Queue for the folder's History first, then reserve and check for
-  // unsettled work, so a waiting delete holds nothing off and checks late.
-  return withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
-    reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
-    try {
-      return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntries(state, connectedFolder, targets));
-    } finally {
-      state.capabilityMutations.delete(connectedFolder.id);
-    }
-  });
-}
-
-async function deleteSettledConnectedFolderEntries(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  targets: readonly string[],
-): Promise<AmpleFileBatchDeleteResult> {
-  const root = connectedFolder.connectedFolderRoot;
-  const paths = outermostConnectedFolderPaths(targets);
-  return withConnectedFolderTouchBatch(async () => {
-    if (!paths.length) throw badRequest("Select files or folders to delete.");
-    const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
-    for (const path of paths) entries.push(await resolveConnectedFolderDeleteTarget(root, path));
-    const safety = await createConnectedFolderMutationCheckpoint(root, {
-      paths: entries.map((entry) => entry.path),
-      reason: "pre_delete",
-      label: entries.length === 1 ? `Before deleting ${entries[0]!.path}` : `Before deleting ${entries.length} items`,
-    });
-    // History names the files it could not keep the way it names its capture
-    // roots; each one belongs to exactly one row.
-    const historyRoot = ensureSafeConnectedFolderRoot(root);
-    const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-    const uncovered = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
-    for (const file of safety.skippedFiles) {
-      const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
-      if (row < 0) {
-        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-        throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was deleted.`);
-      }
-      uncovered[row]!.push({ path: file.path, reason: file.reason });
-    }
-    const deleted: AmpleFileBatchDeleteResult["deleted"] = [];
-    for (const [index, entry] of entries.entries()) {
-      try {
-        const row = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-          const value = await applyConnectedFolderDelete(state, connectedFolder, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
-          return {
-            value,
-            detail: value.recovery.kind === "recently-deleted"
-              ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
-              : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
-          };
-        });
-        deleted.push({ ...row.value, receiptId: row.requestId });
-      } catch (error) {
-        if (!deleted.length) {
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw error;
-        }
-        return {
-          deleted,
-          safetyCheckpointId: safety.checkpointId,
-          failed: { path: entry.path, error: errorMessage(error) },
-          notDeleted: entries.slice(index + 1).map((item) => item.path),
-        };
-      }
-    }
-    return { deleted, safetyCheckpointId: safety.checkpointId };
-  });
-}
-
-export interface AmpleFileBatchMoveResult {
-  moved: ConnectedFolderMovedEntry[];
-  safetyCheckpointId: string;
-  historySkippedPaths: string[];
-  /** Set when an item failed after others had moved; the restore point then names exactly the moves that happened. */
-  failed?: { path: string; error: string };
-  notMoved?: string[];
-}
-
-/**
- * Several items moved into one folder under one History restore point.
- * Every item passes every check one move makes before any of
- * them moves, then each runs through `moveConnectedFolderEntry`, the move one item
- * takes. If one still fails partway, the items already moved stay moved, the
- * rest stay put, and the restore point is replaced by one that names exactly
- * the moves that happened, so restoring it undoes them. When the first item
- * fails, nothing moved and the restore point is discarded, as for one item.
- * An item inside another item moves with it.
- */
-async function moveConnectedFolderEntriesWithHistory(
-  connectedFolder: ConnectedFolderSummary,
-  sourcePaths: readonly string[],
-  targetFolderPath: string,
-): Promise<AmpleFileBatchMoveResult> {
-  return withConnectedFolderTouchBatch(async () => {
-    const root = connectedFolder.connectedFolderRoot;
-    const sources = outermostConnectedFolderPaths(sourcePaths);
-    if (!sources.length) throw badRequest("Select files or folders to move.");
-    const plans = await checkConnectedFolderMoves(root, sources, targetFolderPath);
-    const label = plans.length === 1 ? `Before moving ${plans[0]!.fromPath}` : `Before moving ${plans.length} items`;
-    const safety = await createConnectedFolderMutationCheckpoint(root, {
-      movesOnRestore: plans.map((plan) => ({ fromPath: plan.toPath, toPath: plan.fromPath })),
-      reason: "pre_move",
-      label,
-    });
-    const moved: ConnectedFolderMovedEntry[] = [];
-    for (const [index, plan] of plans.entries()) {
-      try {
-        moved.push(await moveConnectedFolderEntry(root, { sourcePath: plan.fromPath, targetFolderPath }));
-      } catch (error) {
-        if (!moved.length) {
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw error;
-        }
-        const kept = await restorePointForMoves(root, moved, label, safety.checkpointId, error);
-        return {
-          moved,
-          safetyCheckpointId: kept.checkpointId,
-          historySkippedPaths: kept.skippedLargeFiles,
-          failed: { path: plan.fromPath, error: errorMessage(error) },
-          notMoved: plans.slice(index + 1).map((item) => item.fromPath),
-        };
-      }
-    }
-    return { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
-  });
-}
-
-/**
- * The restore point for a several-item move that stopped partway: it names
- * only the moves that happened, because History will not undo a move whose
- * item is not where the move put it. If that record cannot be written, the
- * moves are put back so nothing is left moved without a restore point.
- */
-async function restorePointForMoves(
-  root: string,
-  moved: readonly ConnectedFolderMovedEntry[],
-  label: string,
-  plannedCheckpointId: string,
-  cause: unknown,
-): Promise<Awaited<ReturnType<typeof createConnectedFolderMutationCheckpoint>>> {
-  try {
-    const kept = await createConnectedFolderMutationCheckpoint(root, {
-      movesOnRestore: moved.map((item) => ({ fromPath: item.path, toPath: item.fromPath })),
-      reason: "pre_move",
-      label,
-    });
-    await discardConnectedFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
-    return kept;
-  } catch (recordError) {
-    for (const item of [...moved].reverse()) {
-      const parent = item.fromPath.includes("/") ? item.fromPath.slice(0, item.fromPath.lastIndexOf("/")) : "";
-      await moveConnectedFolderEntry(root, { sourcePath: item.path, targetFolderPath: parent });
-    }
-    await discardConnectedFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
-    throw new AmpleFileCliError("failure", `${errorMessage(cause)} History could not record the moves (${errorMessage(recordError)}), so they were put back.`, { cause });
-  }
-}
-
 /**
  * Splits one Connected Folder–relative act path into the desktop create routes' parent
  * and name inputs, so `files mkdir`/`files create` run the exact same
@@ -6510,11 +5678,6 @@ function toActFileVersionRef(version: ConnectedFolderFileVersion): AmpleFileActF
     checkpointId: version.checkpointId,
     ...(version.checkpointLabel ? { checkpointLabel: version.checkpointLabel } : {}),
   };
-}
-
-export function pathContainsPath(parent: string, candidate: string): boolean {
-  const rel = relative(resolve(parent), resolve(candidate));
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 function capabilityRegistryType(value: string | null): "all" | CapabilityType | undefined {
@@ -7526,446 +6689,4 @@ async function modelScope(scope: string | null | undefined, connectedFolderId?: 
   if (!connectedFolderId) throw badRequest("Connected Folder id is required.");
   const connectedFolder = await getConnectedFolder(connectedFolderId);
   return { id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, label: "this Connected Folder" };
-}
-
-async function sendConnectedFolderRawFile(res: ServerResponse, connectedFolderRoot: string, relativePath: string): Promise<void> {
-  const path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
-  const info = await stat(path).catch(() => null);
-  if (!info?.isFile()) throw notFound("File not found.");
-  res.writeHead(200, {
-    "content-type": contentTypeForPath(path),
-    "content-length": info.size,
-    "content-disposition": "inline",
-  });
-  if (!info.size) {
-    res.end();
-    return;
-  }
-  // A preview that changes aborts its fetch. pipeline() destroys the read
-  // stream when the response closes, so an abandoned read never keeps the file
-  // open, and the read stops at the length already promised to the client.
-  await pipeline(createReadStream(path, { end: info.size - 1 }), res);
-}
-
-/**
- * Whether the file-info route reads a whole file to hash it. The Info panel
- * needs only its dates and size; the hash is compared with History's versions
- * of the file. A caller says `hash=1` or `hash=0`; otherwise a file is hashed
- * only when it is small enough for History to keep versions of it (the same
- * limit as history.ts), so selecting a multi-gigabyte file never reads it all.
- */
-async function fileInfoHashWanted(connectedFolderRoot: string, path: string, requested: string | null): Promise<boolean> {
-  if (requested === "1" || requested === "true") return true;
-  if (requested === "0" || requested === "false") return false;
-  let absolutePath: string;
-  try { absolutePath = resolveConnectedFolderPath(connectedFolderRoot, path); } catch { return false; }
-  const info = await stat(absolutePath).catch(() => null);
-  return Boolean(info?.isFile() && info.size <= historyVersionedFileLimitBytes());
-}
-
-/** History's per-file limit for keeping versions; history.ts reads the same setting. */
-function historyVersionedFileLimitBytes(): number {
-  const configured = Number(process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES);
-  return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 100 * 1024 * 1024;
-}
-
-export function normalizeConnectedFolderRelativePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
-}
-
-function contentTypeForPath(path: string): string {
-  switch (extname(path).toLowerCase()) {
-    case ".txt": return "text/plain; charset=utf-8";
-    case ".md": case ".markdown": return "text/markdown; charset=utf-8";
-    case ".json": return "application/json; charset=utf-8";
-    case ".csv": return "text/csv; charset=utf-8";
-    case ".html": case ".htm": return "text/html; charset=utf-8";
-    case ".pdf": return "application/pdf";
-    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    case ".png": return "image/png";
-    case ".jpg": case ".jpeg": return "image/jpeg";
-    case ".gif": return "image/gif";
-    case ".svg": return "image/svg+xml";
-    default: return "application/octet-stream";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// The file manager's file operations, Recents, and folder suggestions
-// (docs/product-model.md, "The file manager window").
-
-type TransferPlaceRef = { kind: "connected-folder" | "standard"; id: string };
-
-/**
- * The running local APIs, newest last. The desktop's paste runs
- * `transferFileEntries` in the main process without a request; a move between
- * Connected Folders needs the API's request graph and Recently Deleted, so it
- * uses the open API's.
- */
-const openLocalApiStates: LocalApiState[] = [];
-
-/** Records a started local API as the newest open one. */
-function rememberOpenLocalApi(state: LocalApiState): void {
-  openLocalApiStates.push(state);
-}
-
-/** Forgets a local API that is closing. */
-function forgetOpenLocalApi(state: LocalApiState): void {
-  const open = openLocalApiStates.indexOf(state);
-  if (open >= 0) openLocalApiStates.splice(open, 1);
-}
-
-type TransferRestorePoint = { connectedFolderId: string; checkpointId: string };
-
-interface ResolvedTransferItem {
-  abs: string;
-  place: TransferPlaceRef | null;
-  connectedFolder: ConnectedFolderSummary | null;
-  relativePath: string;
-}
-
-function transferPlace(value: unknown): TransferPlaceRef {
-  const record = value as { kind?: unknown; id?: unknown } | null;
-  if (!record || (record.kind !== "connected-folder" && record.kind !== "standard") || typeof record.id !== "string" || !record.id) throw badRequest("Choose where the items are.");
-  return { kind: record.kind, id: record.id };
-}
-
-async function resolveTransferItem(place: TransferPlaceRef, path: string, purpose: "read" | "change" | "target"): Promise<ResolvedTransferItem> {
-  if (place.kind === "connected-folder") {
-    const connectedFolder = await getConnectedFolder(place.id);
-    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
-  }
-  if (!isStandardFolderId(place.id)) throw notFound("That folder isn’t in the sidebar anymore.");
-  const abs = purpose === "read"
-    ? resolveStandardFolderPath(place.id, path)
-    : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target" });
-  return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
-}
-
-/**
- * Copy (and Duplicate) adds to the target and keeps a restore point there; a
- * move inside one Connected Folder is History's own move; a move between two
- * Connected Folders keeps a restore point on each side; a move inside one Standard
- * Folder is a plain move, as Finder's. Any other move copies, leaving the
- * original where it is, and says so. Items from outside the places (a Finder
- * paste or drop) can only be copied in.
- */
-export async function transferFileEntries(
-  body: { mode?: unknown; sources?: unknown; target?: unknown },
-  state: LocalApiState | undefined = openLocalApiStates.at(-1),
-) {
-  const mode = body.mode === "move" || body.mode === "duplicate" ? body.mode : body.mode === "copy" ? "copy" : null;
-  if (!mode) throw badRequest("Choose copy, duplicate, or move.");
-  if (!Array.isArray(body.sources) || !body.sources.length || body.sources.length > 5_000) throw badRequest("Choose items to copy or move.");
-  const targetRecord = body.target as { place?: unknown; path?: unknown } | null;
-  const target = await resolveTransferItem(transferPlace(targetRecord?.place), typeof targetRecord?.path === "string" ? targetRecord.path : "", "target");
-  const targetInfo = await stat(target.abs).catch(() => null);
-  if (!targetInfo?.isDirectory()) throw badRequest("Choose a folder to put them in.");
-
-  const sources: ResolvedTransferItem[] = [];
-  for (const raw of body.sources as unknown[]) {
-    const record = raw as { nativePath?: unknown; place?: unknown; path?: unknown } | null;
-    if (typeof record?.nativePath === "string") {
-      if (mode === "move") throw badRequest("Items from Finder are copied in, not moved.");
-      const abs = resolve(record.nativePath);
-      if (!(await lstat(abs).catch(() => null))) throw badRequest(`“${basename(abs)}” isn’t there anymore.`);
-      sources.push({ abs, place: null, connectedFolder: null, relativePath: "" });
-      continue;
-    }
-    if (typeof record?.path !== "string" || !record.path.trim()) throw badRequest("Choose items to copy or move.");
-    sources.push(await resolveTransferItem(transferPlace(record.place), record.path, mode === "move" ? "change" : "read"));
-  }
-  for (const source of sources) {
-    if (isInside(source.abs, target.abs)) throw badRequest(`“${basename(source.abs)}” can’t go inside itself.`);
-  }
-
-  const sameConnectedFolder = (item: ResolvedTransferItem) => Boolean(item.connectedFolder && target.connectedFolder && item.connectedFolder.id === target.connectedFolder.id);
-  const placeKey = (item: ResolvedTransferItem) => item.place ? `${item.place.kind}:${item.place.id}` : "";
-
-  if (mode === "move" && sources.every(sameConnectedFolder)) {
-    const moved = await moveConnectedFolderEntriesWithHistory(target.connectedFolder!, sources.map((item) => item.relativePath), target.relativePath);
-    return {
-      mode,
-      written: moved.moved.map((item) => item.path),
-      restorePoints: [{ connectedFolderId: target.connectedFolder!.id, checkpointId: moved.safetyCheckpointId }],
-      ...(moved.failed ? { failed: moved.failed } : {}),
-    };
-  }
-  if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => placeKey(item) === placeKey(target))) {
-    const moves: Array<{ from: string; to: string }> = [];
-    for (const source of sources) {
-      const destination = await moveInto(source.abs, target.abs);
-      moves.push({ from: source.relativePath, to: relativeTo(standardFolderRoot(target.place.id as StandardFolderId), destination) });
-    }
-    return { mode, written: moves.map((item) => item.to), moves, restorePoints: [] };
-  }
-  const sourceConnectedFolder = sources[0]?.connectedFolder ?? null;
-  const crossConnectedFolderMove = mode === "move" && Boolean(target.connectedFolder) && Boolean(sourceConnectedFolder)
-    && sources.every((item) => item.connectedFolder?.id === sourceConnectedFolder!.id);
-  if (crossConnectedFolderMove) {
-    if (!state) throw unavailable("AmpleFile isn’t ready to move items between Connected Folders yet.");
-    return moveBetweenConnectedFolders(state, sourceConnectedFolder!, sources, target);
-  }
-  const copiedInstead = mode === "move";
-  const label = (verb: string) => `Before ${verb} ${sources.length === 1 ? basename(sources[0]!.abs) : `${sources.length} items`}`;
-
-  const written: string[] = [];
-  try {
-    for (const source of sources) {
-      const sameFolder = dirname(source.abs) === target.abs;
-      written.push(await copyInto(source.abs, target.abs, { duplicate: mode === "duplicate" || sameFolder }));
-    }
-  } catch (error) {
-    await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
-    throw error;
-  }
-  const targetRoot = target.connectedFolder?.connectedFolderRoot ?? (target.place?.kind === "standard" ? standardFolderRoot(target.place.id as StandardFolderId) : target.abs);
-  const writtenPaths = written.map((path) => relativeTo(targetRoot, path));
-  const restorePoints: TransferRestorePoint[] = [];
-  if (target.connectedFolder) {
-    const targetSafety = await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, writtenPaths, { reason: "pre_copy", label: label(mode === "duplicate" ? "duplicating" : "pasting") });
-    if (targetSafety) restorePoints.push({ connectedFolderId: target.connectedFolder.id, checkpointId: targetSafety.checkpointId });
-  }
-  return { mode: copiedInstead ? "copy" : mode, written: writtenPaths, restorePoints, ...(copiedInstead ? { copiedInstead: true } : {}) };
-}
-
-/**
- * A move between two Connected Folders: a copy into the target, carrying any
- * `.amplefile` identity a disconnected Connected Folder keeps, then the
- * source's own delete. Every source passes the delete's checks before
- * anything is copied (never the Connected Folder itself, never a nested
- * Connected Folder or anything inside one, whose Chats and History are its
- * own), and the move waits for the source's outstanding work as a delete
- * does. Each source then leaves through the delete's recovery: erased when
- * the source's restore point kept all of it, else moved whole into Recently
- * Deleted with the files History could not keep (docs/act-ledger.md).
- */
-async function moveBetweenConnectedFolders(
-  state: LocalApiState,
-  from: ConnectedFolderSummary,
-  sources: readonly ResolvedTransferItem[],
-  target: ResolvedTransferItem,
-) {
-  const to = target.connectedFolder!;
-  for (const source of sources) {
-    const path = normalizeConnectedFolderRelativePath(source.relativePath);
-    if (!path || path === ".") throw badRequest(`${from.name} can’t be moved into ${to.name}. Choose the items inside it.`);
-  }
-  if (state.requests.list({ connectedFolderId: from.id }).some((request) => requestHasUnsettledWork(state, request))) {
-    throw httpError(409, `Finish or stop ${from.name}’s outstanding work before moving items out of it.`);
-  }
-  // Both Connected Folders' History is claimed at once, before the source is
-  // reserved: a waiting move holds nothing off, and two opposite moves
-  // between the same folders cannot hold each other up.
-  return withConnectedFolderHistoryOperations([from.connectedFolderRoot, to.connectedFolderRoot], async () => {
-    reserveCapabilityMutation(state, from.id, "project", from.id);
-    try {
-      // One touch of the source when the move ends, not one per item it removes.
-      return await runSettledConnectedFolderDeletion(state, from.id, () => withConnectedFolderTouchBatch(async () => {
-        const root = from.connectedFolderRoot;
-        const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
-        for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
-          entries.push(await resolveConnectedFolderDeleteTarget(root, path));
-        }
-        const label = entries.length === 1 ? `Before moving ${basename(entries[0]!.absolutePath)}` : `Before moving ${entries.length} items`;
-        const safety = await createConnectedFolderMutationCheckpoint(root, {
-          paths: entries.map((entry) => entry.path),
-          reason: "pre_move",
-          label: `${label} to ${to.name}`,
-        });
-        // History names the files it could not keep the way it names its
-        // capture roots; each one belongs to exactly one source.
-        const historyRoot = ensureSafeConnectedFolderRoot(root);
-        const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-        const notKept = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
-        for (const file of safety.skippedFiles) {
-          const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
-          if (row < 0) {
-            await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-            throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
-          }
-          notKept[row]!.push({ path: file.path, reason: file.reason });
-        }
-
-        const written: string[] = [];
-        try {
-          // A moved folder keeps its `.amplefile` identity and Chats: registered
-          // nested Connected Folders were refused above, so this is only ever a
-          // disconnected one, and the original is about to go.
-          for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs, { withIdentity: true }));
-        } catch (error) {
-          await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw error;
-        }
-        const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
-        // What History could not keep is safe when the copy holds all of it (a
-        // `.git`, an ignored build folder, a large file, a link), checked file
-        // by file. Anything else, and any `.amplefile` identity, keeps the item
-        // out of a plain delete: it leaves the source whole, by moving into
-        // Recently Deleted.
-        const uncovered = await Promise.all(entries.map(async (entry, row) => {
-          const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
-          for (const file of notKept[row]!) {
-            const inside = (file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1)).split("/").filter(Boolean);
-            const identity = inside.some((segment) => segment === ".amplefile");
-            if (identity || !await copyHoldsAll(join(entry.absolutePath, ...inside), join(written[row]!, ...inside))) missing.push(file);
-          }
-          return missing;
-        }));
-        let targetSafety: ConnectedFolderCheckpoint | null;
-        try {
-          targetSafety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, writtenPaths, { reason: "pre_move", label });
-        } catch (error) {
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw error;
-        }
-        const restorePoints: TransferRestorePoint[] = [
-          ...(targetSafety ? [{ connectedFolderId: to.id, checkpointId: targetSafety.checkpointId }] : []),
-          { connectedFolderId: from.id, checkpointId: safety.checkpointId },
-        ];
-        const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
-        for (const [index, entry] of entries.entries()) {
-          try {
-            // Each item leaving the source is that Connected Folder's delete,
-            // with the delete's own receipt, as the delete routes record it.
-            const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-              const value = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
-              return {
-                value,
-                detail: value.recovery.kind === "recently-deleted"
-                  ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
-                  : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
-              };
-            });
-            if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
-          } catch (error) {
-            // A release across volumes that failed partway still left a whole
-            // copy in Recently Deleted; it is listed with the rest.
-            const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
-            if (kept) recentlyDeleted.push({ path: entry.path, entryId: kept.entryId, restoreBy: kept.restoreBy });
-            // Everything is already in the target; what could not leave the
-            // source stays there, and both restore points still apply. A copied
-            // identity whose original is still whole in the source goes from
-            // the copy, so no identity exists twice; one whose original did not
-            // survive stays in the copy. One that could not be removed from the
-            // copy is named, not hidden.
-            const duplicateIdentities: string[] = [];
-            for (const [offset, copy] of written.slice(index).entries()) {
-              const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
-              duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
-            }
-            return {
-              mode: "move" as const,
-              written: writtenPaths,
-              restorePoints,
-              ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
-              failed: { path: entry.path, error: errorMessage(error) },
-              notRemoved: entries.slice(index).map((item) => item.path),
-              ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
-            };
-          }
-        }
-        return { mode: "move" as const, written: writtenPaths, restorePoints, ...(recentlyDeleted.length ? { recentlyDeleted } : {}) };
-      }));
-    } finally {
-      state.capabilityMutations.delete(from.id);
-    }
-  });
-}
-
-async function compressEntries(body: { place?: unknown; paths?: unknown }) {
-  const place = transferPlace(body.place);
-  if (!Array.isArray(body.paths) || !body.paths.length || body.paths.some((path) => typeof path !== "string" || !path.trim())) throw badRequest("Choose items to compress.");
-  const items = await Promise.all((body.paths as string[]).map((path) => resolveTransferItem(place, path, "read")));
-  const folder = dirname(items[0]!.abs);
-  const folderRelative = items[0]!.relativePath.includes("/") ? items[0]!.relativePath.slice(0, items[0]!.relativePath.lastIndexOf("/")) : "";
-  const target = await resolveTransferItem(place, folderRelative, "target");
-  const archive = await compressInto(items.map((item) => item.abs), folder);
-  const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
-  const path = relativeTo(root, archive);
-  const safety = target.connectedFolder
-    ? await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, [path], { reason: "pre_compress", label: `Before compressing ${items.length === 1 ? basename(items[0]!.abs) : `${items.length} items`}` })
-    : null;
-  return { path, restorePoints: safety ? [{ connectedFolderId: target.connectedFolder!.id, checkpointId: safety.checkpointId }] : [] };
-}
-
-/**
- * Recents: files changed in the last 30 days, newest first: everything in the
- * Connected Folders (as their own rules show them) and the files at the top of
- * Desktop, Documents, and Downloads.
- */
-async function recentFiles(connectedFolders: readonly ConnectedFolderSummary[]) {
-  const since = Date.now() - 30 * 24 * 60 * 60 * 1_000;
-  const found: Array<{ place: TransferPlaceRef; path: string; name: string; kind: "file"; sizeBytes?: number; updatedAt: string; where: string }> = [];
-  const collect = (place: TransferPlaceRef, where: string, entries: readonly TreeEntry[]) => {
-    for (const entry of entries) {
-      if (entry.nestedFolder) continue;
-      if (entry.children) collect(place, where, entry.children);
-      if (entry.kind !== "file" || !entry.updatedAt || Date.parse(entry.updatedAt) < since) continue;
-      found.push({ place, path: entry.path, name: entry.name, kind: "file", ...(typeof entry.sizeBytes === "number" ? { sizeBytes: entry.sizeBytes } : {}), updatedAt: entry.updatedAt, where });
-    }
-  };
-  for (const connectedFolder of connectedFolders) {
-    const scan = await scanConnectedFolderTree(connectedFolder.connectedFolderRoot, 20, "", { includeIgnored: false, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) }).catch(() => null);
-    if (scan) collect({ kind: "connected-folder", id: connectedFolder.id }, connectedFolder.name, scan.entries);
-  }
-  const standard = await listStandardFolders(connectedFolders).catch(() => []);
-  for (const folder of standard) {
-    if (folder.connectedFolderId || !["desktop", "documents", "downloads"].includes(folder.id)) continue;
-    const scan = await scanStandardFolder(folder.id, "").catch(() => null);
-    if (scan) collect({ kind: "standard", id: folder.id }, folder.name, scan.tree);
-  }
-  return found.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 200);
-}
-
-const folderSuggestionCache = new Map<string, { key: string; at: number; suggestions: string[] }>();
-const folderSuggestionLifetimeMs = 30 * 60 * 1_000;
-
-/**
- * Up to four short messages a person might send next, written by the
- * Connected Folder's own model from the folder's names (and the folder shown inside
- * it) and its recent Chat titles. Kept while those stay the same; an empty
- * list means "use the plain ones" (no model, or the call failed).
- */
-async function folderSuggestions(state: LocalApiState, connectedFolder: ConnectedFolderSummary, path: string, signal?: AbortSignal): Promise<string[]> {
-  const relativePath = normalizeConnectedFolderRelativePath(path);
-  const scan = await scanConnectedFolderTree(connectedFolder.connectedFolderRoot, 0, relativePath, { includeIgnored: false, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) }).catch(() => null);
-  const entries = (scan?.entries ?? []).slice(0, 80).map((entry) => `${entry.kind === "folder" ? "folder" : "file"}: ${entry.name}${entry.updatedAt ? ` (changed ${entry.updatedAt.slice(0, 10)})` : ""}`);
-  const chats = (await listConversations(connectedFolder.connectedFolderRoot).catch(() => [])).slice(0, 8).map((chat) => chat.title).filter(Boolean);
-  const key = JSON.stringify([relativePath, entries, chats]);
-  const cacheKey = `${connectedFolder.id}\0${relativePath}`;
-  const cached = folderSuggestionCache.get(cacheKey);
-  if (cached && cached.key === key && Date.now() - cached.at < folderSuggestionLifetimeMs) return cached.suggestions;
-  if (signal?.aborted) return [];
-  try {
-    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileInferenceConversationId);
-    const outcome = await client.infer({
-      instructions: [
-        "Suggest up to four short messages this person might send next to the assistant that works in this folder.",
-        "Each is an instruction or question in their own words, 2 to 6 words, plain and specific to what is actually here (name real files or folders when it helps).",
-        "No numbering, quotes, or emoji. Prefer useful work: tidy, summarize, find, compare, plan, draft. Don't suggest anything that deletes files.",
-      ].join(" "),
-      input: JSON.stringify({ folder: relativePath ? `${connectedFolder.name}/${relativePath}` : connectedFolder.name, items: entries, recentChats: chats }),
-      outputSchema: {
-        type: "object",
-        properties: { suggestions: { type: "array", items: { type: "string", maxLength: 48 }, maxItems: 4 } },
-        required: ["suggestions"],
-        additionalProperties: false,
-      } as never,
-      maxOutputBytes: 2_048,
-      ...(signal ? { signal } : {}),
-    });
-    // A call stopped because the window moved on says nothing about the folder.
-    if (signal?.aborted) return [];
-    const suggestions = outcome.kind === "json"
-      ? ((outcome.json as { suggestions?: unknown }).suggestions as unknown[] ?? []).filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim().replace(/[.]$/, "")).slice(0, 4)
-      : [];
-    folderSuggestionCache.set(cacheKey, { key, at: Date.now(), suggestions });
-    return suggestions;
-  } catch {
-    return [];
-  }
 }
