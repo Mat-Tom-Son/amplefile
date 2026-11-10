@@ -451,45 +451,161 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
   } finally { await rm(scratch, { recursive: true, force: true }); }
 });
 
-test("actual catalog markup keeps text-only rows and aligned controls at desktop and narrow sizes", { timeout: 60_000 }, async (t) => {
+test("actual catalog markup keeps one header row, one toolbar row, and openable rows in the window's style", { timeout: 60_000 }, async (t) => {
   const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].filter(Boolean) as string[];
   let browser: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
   if (!browser) { t.skip("Chromium is needed for actual catalog layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {} }));
-  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-discover-card").length === 3);
-  assert.equal(dom.container.querySelectorAll(".capabilities-discover-card :is(svg,img,.capabilities-kind-icon,.capabilities-monogram)").length, 0);
+  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {}, headerEnd: createElement("button", { className: "ui-control ui-control--icon skills-extensions-close", type: "button", "aria-label": "Close Skills & Extensions" }) }));
+  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-discover-card").length === 5);
   assert.equal(dom.container.querySelector('input[type="search"]')?.getAttribute("aria-label"), "Search the catalog");
+  assert.equal(dom.container.querySelectorAll(".capabilities-discover-card .capabilities-kind-chip").length >= 5, true, "catalog rows name their kinds with the shared chip");
+  assert.equal(dom.container.querySelectorAll(".capabilities-discover-open").length, 4, "every installable row has one control that opens its details");
+  assert.match(dom.container.querySelector(".capabilities-discover-card:not(.openable)")!.textContent!, /Reference Only/);
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-catalog-css-"));
   try {
-    const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css"].map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
-    const scenarios = (["light", "dark"] as const).map(mode => ({ mode, variables: applicationAppearanceVariables({ ...defaultApplicationAppearance, palette: "paper", textSize: "large", accent: "#397451" }, mode) }));
+    const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css", "components/file-manager/file-manager-tokens.css", "components/file-manager/file-manager-dialogs.css"].map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
+    const scenarios = ([["light", "standard"], ["dark", "large"]] as const).map(([mode, textSize]) => ({ mode, textSize, variables: applicationAppearanceVariables({ ...defaultApplicationAppearance, textSize }, mode) }));
     const payload = JSON.stringify({ markup: dom.container.innerHTML, css, scenarios }).replace(/</g, "\\u003c");
     const html = `<!doctype html><pre id="result">pending</pre><script>
       const p=${payload}, results=[];
-      for(const scenario of p.scenarios) for(const width of [360,800,1200]) {
-        const f=document.createElement('iframe');f.style.cssText='width:'+width+'px;height:640px';document.body.append(f);
-        const d=f.contentDocument;d.open();d.write('<!doctype html><html data-theme="'+scenario.mode+'"><head><style>'+p.css+'</style></head><body><div class="app-shell"><div class="modal-backdrop"><section class="skills-extensions-modal">'+p.markup+'</section></div></div></body></html>');d.close();
+      for(const scenario of p.scenarios) for(const [width,height] of [[520,600],[1100,760],[1280,820]]) {
+        const f=document.createElement('iframe');f.style.cssText='width:'+width+'px;height:'+height+'px';document.body.append(f);
+        const d=f.contentDocument;d.open();d.write('<!doctype html><html data-theme="'+scenario.mode+'" data-amplefile-text-size="'+scenario.textSize+'"><head><style>'+p.css+'body{margin:0}</style></head><body><div class="app-shell layout-file-manager"><div class="modal-backdrop"><section class="skills-extensions-modal">'+p.markup+'</section></div></div></body></html>');d.close();
         for(const [key,value] of Object.entries(scenario.variables))d.documentElement.style.setProperty(key,value);
-        const rect=s=>{const r=d.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,height:r.height}};
-        const pane=d.querySelector('.capabilities-pane');
-        results.push({width,mode:scenario.mode,header:rect('.skills-extensions-header'),search:rect('.capabilities-search'),filters:rect('.capabilities-type-chips'),sort:rect('.capabilities-sort select'),row:rect('.capabilities-discover-card .capabilities-resource-copy'),nav:rect('.capabilities-navigation'),tabs:rect('.capabilities-view-tabs'),add:rect('.capabilities-add-trigger'),pageWidth:d.documentElement.scrollWidth,paneWidth:pane.clientWidth,paneScrollWidth:pane.scrollWidth});f.remove();
+        const rect=s=>{const r=d.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height}};
+        const body=d.querySelector('.skills-extensions-body');
+        const all=s=>[...d.querySelectorAll(s)];
+        const clipped=all('.capabilities-resource-title strong, .capabilities-resource-meta > span, .capabilities-kind-chip, .capabilities-view-tabs button, .capabilities-type-chips button, .capabilities-add-trigger').filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent);
+        const before=rect('.skills-extensions-header'); body.scrollTop=body.scrollHeight;
+        results.push({width,mode:scenario.mode,header:before,headerAfterScroll:rect('.skills-extensions-header'),title:rect('.skills-extensions-header h1'),tabs:rect('.capabilities-view-tabs'),add:rect('.capabilities-add-trigger'),close:rect('.skills-extensions-close'),search:rect('.capabilities-search'),filters:rect('.capabilities-type-chips'),sort:rect('.capabilities-sort select'),list:rect('.capabilities-discover-list'),firstRow:rect('.capabilities-discover-card'),copy:rect('.capabilities-discover-card .capabilities-resource-copy'),scrolled:body.scrollTop,bodyTop:rect('.skills-extensions-body').top,clipped,pageWidth:d.documentElement.scrollWidth,bodyWidth:body.clientWidth,bodyScrollWidth:body.scrollWidth,listBackground:getComputedStyle(d.querySelector('.capabilities-discover-list')).backgroundColor,segmentBackground:[getComputedStyle(d.querySelector('.capabilities-view-tabs')).backgroundColor,getComputedStyle(d.querySelector('.capabilities-type-chips')).backgroundColor]});f.remove();
       }
       document.getElementById('result').textContent=JSON.stringify(results);
     </script>`;
     const path = join(scratch,"fixture.html"); await writeFile(path,html);
-    const {stdout} = await promisify(execFile)(browser,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--disable-background-networking","--disable-extensions","--use-mock-keychain","--password-store=basic","--virtual-time-budget=1000","--disable-features=HangWatcher",`--user-data-dir=${join(scratch,"profile")}`,"--dump-dom",pathToFileURL(path).href],{timeout:35_000,maxBuffer:2_000_000});
+    const {stdout} = await promisify(execFile)(browser,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--disable-background-networking","--disable-extensions","--use-mock-keychain","--password-store=basic","--virtual-time-budget=1000","--disable-features=HangWatcher",`--user-data-dir=${join(scratch,"profile")}`,"--dump-dom",pathToFileURL(path).href],{timeout:35_000,maxBuffer:4_000_000});
     const serialized=/<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1]; assert.ok(serialized && serialized!=="pending");
     const results=JSON.parse(serialized.replaceAll("&quot;",'"').replaceAll("&amp;","&")); assert.equal(results.length,6);
+    assert.ok(results.filter((item: { scrolled: number }) => item.scrolled > 0).length >= 2, "the short sizes really scroll the body");
     for(const item of results) {
-      assert.ok(Math.abs(item.header.left-item.search.left)<1,"title and search use the same gutter");
-      assert.ok(Math.abs(item.header.left-item.row.left)<1,"catalog text aligns with the title and search");
-      assert.equal(item.search.height,36); assert.equal(item.filters.height,36); assert.equal(item.sort.height,36);
-      assert.ok(item.pageWidth<=item.width && item.paneScrollWidth<=item.paneWidth,"no horizontal overflow");
-      assert.ok(item.tabs.left>=item.nav.left && item.add.right<=item.nav.right+1,"navigation controls stay inside their row");
-      if(item.width===1200) assert.ok(Math.abs(item.search.top-item.filters.top)<1 && Math.abs(item.search.top-item.sort.top)<1,"desktop controls share a baseline");
-      else assert.ok(item.filters.top>=item.search.top+item.search.height,"narrow toolbar wraps cleanly below search");
+      const where = `${item.mode} at ${item.width}px`;
+      assert.deepEqual(item.clipped, [], `nothing is cut off without a wrap (${where})`);
+      assert.ok(item.pageWidth<=item.width && item.bodyScrollWidth<=item.bodyWidth,`no horizontal overflow (${where})`);
+      assert.ok(Math.abs(item.headerAfterScroll.top-item.header.top)<1,`the header stays put while the body scrolls (${where})`);
+      assert.ok(item.close.right<=item.width && item.add.right<=item.close.left,`Add Custom sits before Close, never under it (${where})`);
+      assert.equal(item.segmentBackground[0], item.segmentBackground[1], `one segmented control style (${where})`);
+      assert.notEqual(item.listBackground, "rgba(0, 0, 0, 0)", `results sit on a card (${where})`);
+      assert.ok(Math.abs(item.search.left-item.list.left)<1,`toolbar and results share one gutter (${where})`);
+      assert.ok(item.copy.left>=item.list.left+20,`row text is inset from the card edge (${where})`);
+      assert.ok(item.sort.top>=item.search.bottom,`sorting sits with the results, not in the search row (${where})`);
+      if(item.width>=1000) {
+        assert.ok(Math.abs((item.title.top+item.title.height/2)-(item.tabs.top+item.tabs.height/2))<2 && Math.abs((item.tabs.top+item.tabs.height/2)-(item.add.top+item.add.height/2))<2,`title, switch, Add Custom and Close share one row (${where})`);
+        assert.ok(Math.abs(item.list.right-item.filters.right)<1,`the type filter ends on the results' right edge (${where})`);
+        assert.ok(Math.abs(item.search.top-item.filters.top)<2 && Math.abs(item.search.height-item.filters.height)<1,`search and the type filter share one row and height (${where})`);
+      } else assert.ok(item.filters.top>=item.search.bottom,`narrow toolbar wraps cleanly below search (${where})`);
     }
   } finally { await rm(scratch,{recursive:true,force:true}); }
+});
+
+test("Discover looks like loading until results arrive, says when the catalog fails, and opens a row's details from the row", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup());
+  const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
+  const item = { id: "pi-web-tools", name: "Pi web tools", description: "Browser tools.", types: ["extension"], sourceKind: "npm", installSource: "npm:@pi/web-tools", official: false, author: "Pi community", downloads: 12, repositoryUrl: "https://github.com/example/web-tools" };
+  const reference = { id: "reference", name: "Reference prompts", description: "Read on GitHub.", types: ["skill"], sourceKind: "git", official: true, repositoryUrl: "https://github.com/example/reference" };
+  const pendingSearches: Array<(response: Response) => void> = [];
+  const searches: string[] = [];
+  let failNext = false;
+  let completeDetails: (() => void) | undefined;
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    if (url.includes("/capabilities/discover")) {
+      searches.push(new URL(url, "http://local").searchParams.get("query") ?? "");
+      if (failNext) { failNext = false; return Response.json({ error: "The catalog server did not answer." }, { status: 502 }); }
+      return new Promise<Response>((resolve) => pendingSearches.push(resolve));
+    }
+    if (url.includes("/capabilities/details")) return new Promise<Response>((resolve) => { completeDetails = () => resolve(Response.json({ item: { ...item, skills: [], extensions: ["extensions/web.ts"], prompts: [], themes: [] } })); });
+    return Response.json({ diagnostics: [], packages: [], skills: [], extensions: [], resources: [], tools: [] });
+  }) as typeof fetch;
+  const text = () => dom.container.querySelector(".capabilities-discover-stack")?.textContent ?? "";
+  const summary = () => dom.container.querySelector("#capabilities-catalog-title + p")?.textContent;
+  const results = (items: unknown[]) => Response.json({ items, total: items.length, offset: 0, limit: 24, catalogUrl: "https://pi.dev/packages" });
+  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", onError(message) { assert.fail(message ?? "Unexpected error"); }, onViewChange() {} }));
+
+  // Before the debounced request, and while it runs, the results area is loading, never empty.
+  assert.match(text(), /Loading the Pi catalog/);
+  assert.doesNotMatch(text(), /No Catalog Matches/);
+  assert.equal(summary(), "Loading…");
+  await dom.waitFor(() => pendingSearches.length === 1);
+  assert.match(text(), /Loading the Pi catalog/);
+  await dom.act(() => pendingSearches.shift()!(results([item, reference])));
+  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-discover-card").length === 2);
+  assert.equal(summary(), "2 results");
+
+  // A new search keeps the old rows but marks them as not yet answering it.
+  const search = dom.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  const type = async (value: string) => dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(search, value);
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  failNext = true;
+  await type("web");
+  assert.ok(dom.container.querySelector(".capabilities-discover-list.pending"), "rows from the previous search are marked as stale");
+  assert.equal(summary(), "Loading…");
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[role="alert"]')));
+  assert.match(dom.container.querySelector('[role="alert"]')!.textContent!, /Couldn’t Load the Pi Catalog.*did not answer/);
+  assert.equal(dom.container.querySelectorAll(".capabilities-discover-card").length, 0, "a failed search never shows the previous search's results");
+  assert.doesNotMatch(text(), /No Catalog Matches/);
+
+  const tryAgain = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')].find((button) => button.textContent === "Try Again")!;
+  await dom.act(() => tryAgain.click());
+  await dom.waitFor(() => pendingSearches.length === 1);
+  assert.equal(searches.at(-1), "web", "Try Again repeats the current search");
+  assert.match(text(), /Loading the Pi catalog/);
+  await dom.act(() => pendingSearches.shift()!(results([])));
+  await dom.waitFor(() => text().includes("No Catalog Matches"));
+  assert.match(text(), /Try other words, or show All\./);
+  assert.equal(summary(), "0 results");
+
+  await type("");
+  await dom.waitFor(() => pendingSearches.length === 1);
+  await dom.act(() => pendingSearches.shift()!(results([item, reference])));
+  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-discover-card").length === 2);
+  const referenceRow = [...dom.container.querySelectorAll(".capabilities-discover-card")].find((row) => row.textContent!.includes("Reference prompts"))!;
+  assert.equal(referenceRow.querySelector("button"), null, "a reference-only row has nothing to open");
+  assert.ok(referenceRow.querySelector('a[href="https://github.com/example/reference"]'), "View Source stays reachable on every row");
+  const open = dom.container.querySelector<HTMLButtonElement>(".capabilities-discover-open")!;
+  assert.equal(open.textContent, "Pi web tools");
+  await dom.act(() => { open.focus(); open.click(); });
+  await dom.waitFor(() => Boolean(completeDetails));
+  assert.equal(open.getAttribute("aria-disabled"), "true", "rows wait while one row's details load");
+  assert.ok(document.activeElement === open, "loading the details never takes focus from the row, as disabling it would");
+  await dom.act(() => completeDetails!());
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".capability-review-dialog")));
+  const byline = dom.container.querySelector(".capability-review-byline")!;
+  assert.deepEqual([...byline.querySelectorAll(".capabilities-kind-chip")].map((chip) => chip.textContent), ["Extension"]);
+  assert.match(byline.textContent!, /Pi community/);
+  await dom.act(() => document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  assert.equal(dom.container.querySelector(".capability-review-dialog"), null);
+  await dom.waitFor(() => document.activeElement === open);
+  assert.equal(open.getAttribute("aria-disabled"), null, "while details loaded the row stayed focusable, so focus returns to it");
+});
+
+test("Installed says when its catalog cannot load and offers Try Again instead of loading forever", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup());
+  const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
+  let fail = true;
+  globalThis.fetch = (async (input) => {
+    if (String(input).includes("included-tools")) return Response.json({ tools: [] });
+    if (fail) return Response.json({ error: "Pi did not start." }, { status: 500 });
+    return Response.json({ diagnostics: [], packages: [], skills: [], extensions: [], resources: [], tools: [] });
+  }) as typeof fetch;
+  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never, view: "installed", onError(message) { assert.fail(message ?? "A first load reports in place"); }, onViewChange() {} }));
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".capabilities-state-card.error")));
+  assert.match(dom.container.textContent!, /Couldn’t Load Skills & Extensions/);
+  assert.doesNotMatch(dom.container.textContent!, /Loading Skills & Extensions/);
+  fail = false;
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".capabilities-state-card.error button")!.click());
+  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-scope-group").length === 2);
+  assert.equal(dom.container.querySelector(".capabilities-state-card.error"), null);
 });

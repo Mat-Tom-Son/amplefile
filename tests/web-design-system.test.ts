@@ -23,6 +23,7 @@ const [
   desktopSettingsSource,
   capabilitiesSource,
   fileManagerViewSource,
+  fileManagerDialogsCss,
 ] = await Promise.all([
   readRenderer("App.tsx"),
   readRenderer("main.tsx"),
@@ -37,6 +38,7 @@ const [
   readRenderer("components/modals/DesktopSettingsModal.tsx"),
   readRenderer("components/panes/CapabilitiesPane.tsx"),
   readRenderer("components/file-manager/FileManagerView.tsx"),
+  readRenderer("components/file-manager/file-manager-dialogs.css"),
 ]);
 
 test("the desktop has no Library", () => {
@@ -118,8 +120,9 @@ test("Skills & Extensions opens as a popup from the Add button", () => {
   ]) {
     assert.equal(hasClassSelector(surfacesCss, className), true, `Capabilities class .${className} must be styled`);
   }
+  // The dialog's file manager skin (one header row, one segmented control, chip, row and card) lives beside the other dialogs.
   for (const className of [...staticClassTokens(capabilitiesSource)].filter((name) => /^capabilit(?:y|ies)-/.test(name))) {
-    assert.equal(hasClassSelector(surfacesCss, className), true, `Static Capabilities class .${className} must be styled`);
+    assert.equal(hasClassSelector(surfacesCss + fileManagerDialogsCss, className), true, `Static Capabilities class .${className} must be styled`);
   }
   assert.match(surfacesCss, /\.skills-extensions-modal\s*\{[^}]*container-name: skills-and-extensions;[^}]*container-type: inline-size/);
   assert.match(surfacesCss, /@container skills-and-extensions \(max-width: 540px\)[\s\S]*?\.capabilities-discover-card/);
