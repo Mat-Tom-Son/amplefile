@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import feedModule from "./mac-release-feed.cjs";
+import { releaseManifestFeedFailures } from "./mac-release-publication.mjs";
 
 const run = promisify(execFile);
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -137,13 +138,7 @@ function verifyReleaseManifest() {
     if (manifest.version !== version) failures.push(`Release manifest version ${manifest.version || "missing"} does not match ${version}.`);
     if (manifest.platform !== "darwin" || manifest.arch !== arch) failures.push("Release manifest platform or architecture is incorrect.");
     if (manifest.unsignedSmokeBuild !== !releaseBuild) failures.push("Release manifest signed/unsigned mode does not match the current verification mode.");
-    if (manifest.feed?.owner !== expectedFeedOwner || manifest.feed?.repo !== expectedFeedRepo) failures.push("Release manifest feed does not match the embedded Mac feed.");
-    if (manifest.feedStage !== feed.stage) failures.push(`Release manifest feed stage ${manifest.feedStage || "missing"} does not match ${feed.stage}.`);
-    const publishTargets = (manifest.publishTargets ?? []).map((target) => `${target?.owner}/${target?.repo}`);
-    const expectedTargets = feed.targets.map((target) => target.slug);
-    if (JSON.stringify(publishTargets) !== JSON.stringify(expectedTargets)) {
-      failures.push(`Release manifest publication targets ${publishTargets.join(", ") || "missing"} do not match ${expectedTargets.join(", ")}.`);
-    }
+    failures.push(...releaseManifestFeedFailures(manifest, feed));
     const artifacts = new Map((manifest.artifacts ?? []).map((artifact) => [artifact.name, artifact]));
     for (const path of [dmgPath, `${dmgPath}.blockmap`, zipPath, `${zipPath}.blockmap`, updatePath]) {
       if (!existsSync(path)) continue;

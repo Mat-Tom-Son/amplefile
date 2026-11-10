@@ -1,9 +1,235 @@
+import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import feedModule from "./mac-release-feed.cjs";
 
 const { sameRepository } = feedModule;
 
-// The publisher's decisions, kept apart from the commands that carry them out
-// so each guard can be tested without GitHub.
+// How a release reaches its feeds. Every GitHub command goes through an
+// injected `gh` runner, so the whole sequence, and each guard in it, can be
+// tested against a stand-in for GitHub.
+
+/**
+ * Publish one built release to the next feed that does not serve it yet.
+ *
+ * `github` is `createGitHubReleases(...)`. `assets` lists the files to
+ * upload as `{ name, path }`. `beforePublic` rechecks the source and the
+ * build immediately before the draft becomes public; `afterSourcePublication`
+ * confirms the annotated source tag is the one verified before upload.
+ *
+ * Returns the feed published to and, for the bridge's first run, the feed
+ * still waiting for a later run.
+ */
+export async function publishMacRelease({
+  feed,
+  version,
+  productName,
+  arch,
+  teamId,
+  assets,
+  github,
+  replaceBridge = "",
+  beforePublic,
+  afterSourcePublication,
+  log = () => {},
+}) {
+  const tag = `v${version}`;
+  for (const target of feed.targets) github.assertPublic(target, productName);
+
+  const plans = feed.targets.map((target) => ({
+    target,
+    action: planTargetPublication({ target, tag, existing: github.existingRelease(target, tag), publishesToSeveral: feed.targets.length > 1 }),
+  }));
+  const local = assets.map((asset) => ({
+    ...asset,
+    bytes: statSync(asset.path).size,
+    sha256: createHash("sha256").update(readFileSync(asset.path)).digest("hex"),
+  }));
+  const remote = (repository, expectDraft) => assertRemoteRelease({
+    release: github.release(repository, tag), repository, tag, productName, assets: local, expectDraft,
+  });
+
+  // The bridge is published to one feed per run. A feed that already serves
+  // these exact bytes is done; any other release under this tag was refused.
+  const alreadyPublished = plans.filter((plan) => plan.action === "verify-published").map((plan) => plan.target);
+  for (const held of alreadyPublished) {
+    remote(held, false);
+    log(`${held.slug} already serves ${tag} with identical assets.`);
+  }
+  const target = nextPublicationTarget({ plans });
+  if (!target) throw new Error(`${tag} is already published to ${feed.targets.map((entry) => entry.slug).join(" and ")}.`);
+
+  assertFeedContinuity({
+    feed,
+    version,
+    latest: { separate: github.latestRelease(feed.separate), source: github.latestRelease(feed.source) },
+    replaceBridge,
+    alreadyPublished,
+  });
+
+  // The draft is uploaded and verified before anything becomes public.
+  log(`Uploading ${tag} to ${target.slug} as a draft.`);
+  github.createDraft(releaseCreateArguments({
+    target,
+    source: feed.source,
+    tag,
+    title: `${productName} ${version} for macOS`,
+    notes: releaseNotes({ feed, target, productName, version, arch, teamId }),
+    assetPaths: local.map((asset) => asset.path),
+  }), `Could not create draft ${productName} macOS release ${tag} in ${target.slug}`);
+  remote(target, true);
+
+  // Uploads take time. Recheck authority and bytes at the public effect boundary.
+  await beforePublic();
+  github.publishDraft(target, tag, `Could not publish ${productName} macOS release ${tag} in ${target.slug}`);
+  const release = remote(target, false);
+  // Installed copies are offered the release GitHub marks latest, so it must be this one.
+  const latest = github.latestTag(target);
+  if (latest !== tag) {
+    throw new Error(`${target.slug} serves ${latest || "no release"} as its latest release, not ${tag}. Installed copies will not be offered ${tag} until it is marked latest.`);
+  }
+  // In the source repository the release attached to the annotated tag; it must not have replaced it.
+  if (sameRepository(target, feed.source)) await afterSourcePublication();
+  log(`Published ${release.url}`);
+
+  const remaining = plans.find((plan) => plan.action === "publish" && plan.target !== target)?.target ?? null;
+  return { published: target, remaining, url: release.url };
+}
+
+/**
+ * GitHub Releases as the publisher needs them, over `run(args, { timeoutMs })`,
+ * which runs `gh` with those arguments and returns `{ status, stdout, stderr,
+ * error }` as `spawnSync` does. `manifestName` is the release manifest asset.
+ */
+export function createGitHubReleases({ run, manifestName }) {
+  const attempt = (args, timeoutMs = 120_000) => {
+    const result = run(args, { timeoutMs });
+    const stdout = String(result.stdout ?? "");
+    const output = `${stdout}\n${result.stderr ?? ""}`.trim();
+    return { ok: !result.error && result.status === 0, stdout: stdout.trim(), output: result.error?.message || output || `exit code ${result.status ?? 1}` };
+  };
+  const gh = (args, label, timeoutMs) => {
+    const result = attempt(args, timeoutMs);
+    if (!result.ok) throw new Error(`${label}: ${compactText(result.output)}`);
+    return result.stdout;
+  };
+  const readLatest = (repository) => {
+    const result = attempt(["api", `repos/${repository.slug}/releases/latest`]);
+    if (result.ok) return JSON.parse(result.stdout);
+    if (/HTTP 404/.test(result.output)) return null;
+    throw new Error(`Could not read the latest release in ${repository.slug}: ${compactText(result.output)}`);
+  };
+
+  return {
+    assertPublic(repository, productName) {
+      const info = JSON.parse(gh(["repo", "view", repository.slug, "--json", "isPrivate,visibility,url"], `Mac release feed ${repository.slug} was not found`));
+      if (info.isPrivate || info.visibility !== "PUBLIC") {
+        throw new Error(`${repository.slug} must be public so installed ${productName} apps can update without a GitHub token.`);
+      }
+    },
+
+    /** The release already published or drafted under this tag, or null. A bare tag is not a release. */
+    existingRelease(repository, tag) {
+      const result = attempt(["release", "view", tag, "--repo", repository.slug, "--json", "tagName,isDraft,url"]);
+      return result.ok ? JSON.parse(result.stdout) : null;
+    },
+
+    /** The release under this tag with its assets' names, sizes, and digests. */
+    release(repository, tag) {
+      return JSON.parse(gh(
+        ["release", "view", tag, "--repo", repository.slug, "--json", "tagName,isDraft,isPrerelease,assets,url"],
+        `Could not verify macOS release ${tag} in ${repository.slug}`,
+      ));
+    },
+
+    /**
+     * What the repository serves as its latest release: `null` when it has
+     * none, otherwise `{ tag, feed }`, where `feed` is the repository that
+     * release's packaged app checks, from its release manifest, or `null`
+     * when it carries no manifest.
+     */
+    latestRelease(repository) {
+      const release = readLatest(repository);
+      if (!release) return null;
+      if (!(release.assets ?? []).some((asset) => asset.name === manifestName)) return { tag: release.tag_name, feed: null };
+      const manifest = JSON.parse(gh(
+        ["release", "download", release.tag_name, "--repo", repository.slug, "--pattern", manifestName, "--output", "-"],
+        `Could not read the release manifest of ${release.tag_name} in ${repository.slug}`,
+      ));
+      return { tag: release.tag_name, feed: manifestFeed(manifest) };
+    },
+
+    /** The tag of the release GitHub marks latest, or "" when there is none. */
+    latestTag(repository) {
+      return String(readLatest(repository)?.tag_name ?? "");
+    },
+
+    createDraft(args, label) {
+      return gh(args, label, 45 * 60_000);
+    },
+
+    publishDraft(repository, tag, label) {
+      return gh(["release", "edit", tag, "--repo", repository.slug, "--draft=false", "--latest"], label);
+    },
+  };
+}
+
+/** The remote release must be in the expected state and hold exactly these bytes for every asset. */
+export function assertRemoteRelease({ release, repository, tag, productName, assets, expectDraft }) {
+  if (release.tagName !== tag || release.isDraft !== expectDraft || release.isPrerelease) {
+    throw new Error(`${productName} Mac release ${tag} in ${repository.slug} has unexpected draft or prerelease state.`);
+  }
+  const remote = new Map((release.assets ?? []).map((asset) => [asset.name, asset]));
+  for (const asset of assets) {
+    const found = remote.get(asset.name);
+    if (!found) throw new Error(`${productName} Mac release ${tag} in ${repository.slug} is missing ${asset.name}.`);
+    if (found.size !== asset.bytes) throw new Error(`${asset.name} is ${found.size} bytes in ${repository.slug} but ${asset.bytes} bytes locally.`);
+    if (found.digest !== `sha256:${asset.sha256}`) {
+      throw new Error(`${asset.name} has remote digest ${found.digest || "missing"} in ${repository.slug}; expected sha256:${asset.sha256}.`);
+    }
+  }
+  return release;
+}
+
+/**
+ * How a release manifest disagrees with the feed this checkout resolves:
+ * the feed the packaged app checks, the stage, and the publication targets.
+ * A manifest written before the stage existed has neither of the last two.
+ */
+export function releaseManifestFeedFailures(manifest, feed) {
+  const failures = [];
+  if (!sameRepository(manifestFeed(manifest), feed.packaged)) failures.push("Release manifest feed does not match the embedded Mac feed.");
+  if (manifest?.feedStage !== feed.stage) failures.push(`Release manifest feed stage ${manifest?.feedStage || "missing"} does not match ${feed.stage}.`);
+  const targets = (manifest?.publishTargets ?? []).map((target) => `${target?.owner}/${target?.repo}`);
+  const expected = feed.targets.map((target) => target.slug);
+  if (JSON.stringify(targets) !== JSON.stringify(expected)) {
+    failures.push(`Release manifest publication targets ${targets.join(", ") || "missing"} do not match ${expected.join(", ")}.`);
+  }
+  return failures;
+}
+
+/**
+ * The stage in use must be the one the tagged source records.
+ * `taggedIdentity` is product-identity.json as the release tag holds it.
+ */
+export function assertTaggedFeedStage({ feed, tag, taggedIdentity }) {
+  const tagged = typeof taggedIdentity?.macUpdateFeedStage === "string" ? taggedIdentity.macUpdateFeedStage : "";
+  if (tagged !== feed.stage) {
+    throw new Error(
+      `Source tag ${tag} records the Mac update feed stage ${tagged || "(none)"}, but this publication uses ${feed.stage}. `
+      + "A stage change belongs in the release commit, before the tag.",
+    );
+  }
+}
+
+function manifestFeed(manifest) {
+  const owner = typeof manifest?.feed?.owner === "string" ? manifest.feed.owner.trim() : "";
+  const repo = typeof manifest?.feed?.repo === "string" ? manifest.feed.repo.trim() : "";
+  return owner && repo ? { owner, repo } : null;
+}
+
+function compactText(value) {
+  return String(value).replace(/\s+/g, " ").trim().slice(0, 1800);
+}
 
 /** A public release records its feed stage in the tagged source, not in a workstation's environment. */
 export function assertCheckedInFeedStage(feed) {

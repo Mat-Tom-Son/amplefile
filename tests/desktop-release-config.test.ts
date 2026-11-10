@@ -102,7 +102,8 @@ test("Mac-only CI and publication keep credentials out of the application", () =
   assert.match(macPublisher, /assertSourceTagPublished\(\)/);
   assert.match(macPublisher, /Source tag .* public repository are verified/);
   assert.doesNotMatch(macPublisher, /mac-first|Mac-first|Setup-\$\{version\}\.exe|latest\.yml/);
-  assert.match(macPublisher, /remote\.digest !== `sha256:\$\{localDigest\}`/);
+  // tests/mac-release-publisher.test.ts drives the remote size and digest checks.
+  assert.match(read("scripts/mac-release-publication.mjs"), /found\.digest !== `sha256:\$\{asset\.sha256\}`/);
   assert.doesNotMatch(macPublisher, /allow-dirty|allowDirty/);
 });
 

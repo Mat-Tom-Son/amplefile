@@ -129,8 +129,6 @@ test("every release script takes the feed from the one resolver", () => {
   const manifest = read("scripts/write-mac-release-manifest.mjs");
   assert.match(manifest, /feed: \{ owner: feed\.packaged\.owner, repo: feed\.packaged\.repo \}/);
   assert.match(manifest, /publishTargets: feed\.targets\.map/);
-  const state = read("scripts/mac-release-state.mjs");
-  assert.match(state, /feedStage: String\(descriptor\.feedStage \?\? ""\)/, "a checkpoint built for one stage cannot be published in another");
 });
 
 test("a public release must use the feed stage its tagged source records", () => {
@@ -253,9 +251,6 @@ test("a published release is never replaced, and only a two-feed publication res
       /already contains v0\.1\.5 as a draft/,
     );
   }
-  const publisher = read("scripts/publish-mac-release.mjs");
-  assert.match(publisher, /for \(const target of alreadyPublished\) \{\n    verifyRemoteRelease\(target, false\);/);
-  assert.match(publisher, /if \(!target\) throw new Error\(`\$\{tag\} is already published to/);
 });
 
 test("a run publishes to one feed, and the separate repository only after the source repository", () => {
@@ -292,14 +287,9 @@ test("a release in the source repository attaches to its annotated tag and never
   assert.ok(!inSeparate.includes("--verify-tag"));
   assert.ok(inSeparate.includes("--draft") && inSource.includes("--draft"), "nothing is public until its draft is verified");
 
-  const publisher = read("scripts/publish-mac-release.mjs");
-  assert.doesNotMatch(publisher, /cleanup-tag|release", "delete|"tag", "-d|push.*--force/, "the publisher never deletes or moves a tag");
-  assert.match(
-    publisher,
-    /assertServedAsLatest\(target\);\n  if \(sameRepository\(target, feed\.source\)\) \{\n[^\n]*\n    await verifyReleaseSource\(\{ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence\.tagObjectSha \}\);/,
-    "after publishing there, the annotated tag object is the one verified before upload",
-  );
-  assert.match(publisher, /`repos\/\$\{target\.slug\}\/releases\/latest`, "--jq", "\.tag_name"/, "installed copies are offered what GitHub marks latest");
+  for (const script of ["scripts/publish-mac-release.mjs", "scripts/mac-release-publication.mjs"]) {
+    assert.doesNotMatch(read(script), /cleanup-tag|release", "delete|"tag", "-d|push.*--force/, `${script} never deletes or moves a tag`);
+  }
 });
 
 test("the bridge's notes in the separate repository say where later releases are", () => {
@@ -333,10 +323,7 @@ test("release versions compare by number, and a prerelease is below its release"
 test("the installed-app verifier checks the packaged feed unless a proof names another", () => {
   const verifier = read("scripts/verify-installed-mac-app.mjs");
   assert.match(verifier, /argumentValue\("--feed"\)\n  \? feedModule\.parseRepository\(argumentValue\("--feed"\)\)\n  : feedModule\.resolveMacReleaseFeed\(identity\)\.packaged;/);
-  const release = read("scripts/verify-mac-release.mjs");
-  assert.match(release, /const expectedFeedOwner = feed\.packaged\.owner;/);
-  assert.match(release, /manifest\.feedStage !== feed\.stage/);
-  assert.match(release, /do not match \$\{expectedTargets\.join\(", "\)\}/);
+  assert.match(read("scripts/verify-mac-release.mjs"), /const expectedFeedOwner = feed\.packaged\.owner;/);
 });
 
 test("the public feed is read the way an installed copy reads it", async () => {
