@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in AmpleFile does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Keep API keys, tokens, personal paths, and private file contents out of this report. For a security problem, use a [private security advisory](https://github.com/Mat-Tom-Son/amplefile/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: AmpleFile version
+      description: From Settings → About, or the commit if you run from source.
+      placeholder: 0.1.3
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest steps that show the problem, with non-private files.
+      placeholder: |
+        1. Connect a folder with …
+        2. Ask the Worker to …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the exact message and a screenshot if it helps.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model provider and model, if a Worker or the AmpleFile Agent was involved
+      placeholder: OpenRouter, Claude Sonnet

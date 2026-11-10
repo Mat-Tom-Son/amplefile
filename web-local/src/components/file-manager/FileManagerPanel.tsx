@@ -221,7 +221,8 @@ function ItemInfo({ apiBase, entry, where, fixtureMode, itemCount }: { apiBase: 
     setModifiedAt(null);
     if (fixtureMode || !apiBase) return;
     let cancelled = false;
-    void api<{ modifiedAt: string }>(`${apiBase}/file-info?path=${encodeURIComponent(entry.path)}`)
+    // Info shows only the date, so the host need not hash the file.
+    void api<{ modifiedAt: string }>(`${apiBase}/file-info?path=${encodeURIComponent(entry.path)}&hash=0`)
       .then((result) => { if (!cancelled) setModifiedAt(result.modifiedAt); })
       .catch(() => undefined);
     return () => { cancelled = true; };

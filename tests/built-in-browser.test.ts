@@ -18,11 +18,15 @@ import { localServerHref } from "../web-local/src/lib/browser-links.js";
 import {
   browserAddressFor,
   browserConnection,
+  browserOpenerAddress,
+  browserPopupWindowTitle,
   browserDisplayAddress,
   browserPermissionPhrase,
   browserUserAgent,
+  isBrowserAddress,
   isBrowserPageId,
   isBrowserUrl,
+  isPageReachableUrl,
   permissionKinds,
   bubbleText,
   siteOrigin,
@@ -48,10 +52,10 @@ test("the address bar turns hosts, local servers, and files into addresses and e
   assert.equal(browserAddressFor("   "), null);
 });
 
-test("browser tabs show only web pages, files, and a blank page", () => {
+test("pages reach only web addresses; the address bar and Workers may also open local files", () => {
   assert.equal(isBrowserUrl("https://example.com/"), true);
   assert.equal(isBrowserUrl("http://localhost:3000/"), true);
-  assert.equal(isBrowserUrl("file:///Users/me/index.html"), true);
+  assert.equal(isBrowserUrl("file:///Users/me/index.html"), false, "a local file is not a web address");
   assert.equal(isBrowserUrl("about:blank"), true);
   assert.equal(isBrowserUrl("about:settings"), false);
   assert.equal(isBrowserUrl("javascript:alert(1)"), false);
@@ -59,6 +63,16 @@ test("browser tabs show only web pages, files, and a blank page", () => {
   assert.equal(isBrowserUrl("amplefile-desktop://app/index.html"), false);
   assert.equal(isBrowserUrl("chrome://settings"), false);
   assert.equal(isBrowserUrl("not a url"), false);
+  assert.equal(isBrowserAddress("file:///Users/me/index.html"), true);
+  assert.equal(isBrowserAddress("https://example.com/"), true);
+  assert.equal(isBrowserAddress("mailto:someone@example.com"), false);
+  assert.equal(isBrowserAddress("chrome://settings"), false);
+  // A web page never reaches a local file; a saved local page may link to its own files.
+  assert.equal(isPageReachableUrl("https://evil.example/", "file:///Users/me/.ssh/id_ed25519"), false);
+  assert.equal(isPageReachableUrl("about:blank", "file:///etc/hosts"), false);
+  assert.equal(isPageReachableUrl("file:///Users/me/site/index.html", "file:///Users/me/site/about.html"), true);
+  assert.equal(isPageReachableUrl("file:///Users/me/site/index.html", "https://example.com/"), true);
+  assert.equal(isPageReachableUrl("https://example.com/", "javascript:alert(1)"), false);
   assert.equal(browserDisplayAddress("about:blank"), "");
   assert.equal(isBrowserPageId("k3j9x2"), true);
   assert.equal(isBrowserPageId("browser:k3j9x2"), false);
@@ -255,7 +269,7 @@ test("a focused browser page forwards Cmd/Ctrl+Shift+T and offers spelling sugge
 test("Workers get the browser tools in every session", async () => {
   const piClient = await readFile("src/local/agent/pi-client.ts", "utf8");
   assert.match(piClient, /this\.options\.browser \? createBrowserTools\(\{ host: this\.options\.browser, \.\.\.\(this\.options\.browserOwner \? \{ owner: this\.options\.browserOwner \} : \{\}\) \}\)/);
-  const server = await readFile("src/local/server.ts", "utf8");
+  const server = await readFile("src/local/api/conversation-clients.ts", "utf8");
   assert.match(server, /\.\.\.\(state\.browser \? \{ browser: state\.browser, browserOwner: `\$\{connectedFolderId\}\/\$\{conversationId\}` \} : \{\}\)/, "every scope, the AmpleFile Agent included, gets the browser, with its own Chat identity");
   const main = await readFile("desktop/src/main.ts", "utf8");
   assert.match(main, /browser: ensureBuiltInBrowser\(\)\.toolHost/);
@@ -365,4 +379,45 @@ test("a job's own announcement of a local server reaches the Worker, and Chat li
   assert.equal(localServerHref("http://my-app.localhost:3000/"), "http://my-app.localhost:3000/");
   assert.equal(localServerHref("https://example.com/"), null);
   assert.equal(localServerHref("file:///etc/hosts"), null);
+});
+
+test("page-supplied addresses follow the reach of the frame that supplied them; only the address bar, Workers, and restored tabs use local-file addresses", async () => {
+  // A web frame inside a local page decides for window.open, since Electron names no frame there.
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "about:blank"]), "file:///Users/me/site/index.html");
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "https://ads.example/frame"]), "https://ads.example/frame");
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "data:text/html,hi"]), "data:text/html,hi");
+  assert.equal(browserOpenerAddress("https://example.com/", ["https://example.com/"]), "https://example.com/");
+  assert.equal(isPageReachableUrl(browserOpenerAddress("file:///a/index.html", ["file:///a/index.html", "https://ads.example/"]), "file:///etc/hosts"), false);
+
+  const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
+  // Context-menu links and images come from the frame the menu was opened in.
+  assert.match(host, /const menuFrameAddress = params\.frameURL \|\| contents\.getURL\(\);\n\s*if \(params\.linkURL && isPageReachableUrl\(menuFrameAddress, params\.linkURL\)\)/);
+  assert.match(host, /isPageReachableUrl\(menuFrameAddress, params\.srcURL\)/);
+  // Navigations and redirects are judged from the frame that started them.
+  assert.match(host, /if \(isPageReachableUrl\(frameAddress\(initiator\) \?\? openerAddress\(contents\), url\)\) return;/);
+  assert.equal((host.match(/contents\.on\("will-navigate", \(event\) => this\.#guardNavigation\(event, contents, event\.url, event\.initiator \?\? event\.frame\)\)/g) ?? []).length, 2);
+  assert.equal((host.match(/contents\.on\("will-redirect", \(event\) => this\.#guardNavigation\(event, contents, event\.url, event\.initiator \?\? event\.frame\)\)/g) ?? []).length, 2);
+  // window.open in tabs and pop-ups, and the blocked pop-up offer.
+  assert.match(host, /if \(!isPageReachableUrl\(openerAddress\(opener\.view\.webContents\), details\.url\) && details\.url !== ""\)/);
+  assert.match(host, /if \(!isPageReachableUrl\(openerAddress\(contents\), details\.url\)\) \{/);
+  assert.match(host, /!isPageReachableUrl\(openerAddress\(contents\), url\)\) return;/);
+  assert.doesNotMatch(host, /isPageReachableUrl\(contents\.getURL\(\)/);
+  // Trusted sources.
+  assert.equal((host.match(/!isBrowserAddress\(address\)\) throw new Error/g) ?? []).length, 2);
+  assert.doesNotMatch(host, /\bisBrowserUrl\(/);
+});
+
+test("a pop-up window's title always leads with the site it shows, not what the page claims", async () => {
+  assert.equal(browserPopupWindowTitle("https://accounts.example.com/signin?x=1", "Sign in"), "accounts.example.com — Sign in");
+  assert.equal(browserPopupWindowTitle("https://evil.example/", "accounts.google.com — Sign in"), "evil.example — accounts.google.com — Sign in");
+  assert.equal(browserPopupWindowTitle("http://192.168.1.4:8080/login", "Router"), "http://192.168.1.4:8080 — Router");
+  assert.equal(browserPopupWindowTitle("https://xn--80ak6aa92e.com/", "Apple"), "xn--80ak6aa92e.com — Apple", "lookalike hosts stay in their ASCII form");
+  assert.equal(browserPopupWindowTitle("https://evil.example/", "\u202egoogle.com\u202c"), "evil.example — google.com", "direction overrides are dropped");
+  assert.equal(browserPopupWindowTitle("https://example.com/", ""), "example.com");
+  assert.equal(browserPopupWindowTitle("about:blank", ""), "about:blank");
+  assert.equal(browserPopupWindowTitle("not a url", "Hi"), "Pop-up — Hi");
+  const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
+  const popup = host.slice(host.indexOf("#configurePopup(window: BrowserWindow"));
+  assert.match(popup, /window\.on\("page-title-updated", \(event, title\) => \{\n\s*event\.preventDefault\(\);\n[^\n]*window\.setTitle\(browserPopupWindowTitle\(contents\.getURL\(\), title\)\);/);
+  assert.match(popup, /contents\.on\("did-navigate", retitle\);/);
 });

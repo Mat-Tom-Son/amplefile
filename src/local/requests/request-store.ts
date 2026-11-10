@@ -46,7 +46,6 @@
  *   record is a projection over turns and receipts, so a lost line degrades to
  *   the turn-only view rather than keeping the app from starting.
  */
-import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -62,10 +61,14 @@ import {
   isAmpleFileRequestTerminalState,
   parseAmpleFileChecklistItems,
   parseAmpleFileQuestionRecord,
+  parseAmpleFileRequestAction,
   parseAmpleFileRequestRecord,
+  scrubAmpleFileRequestText,
   parseAmpleFileResultEnvelope,
   parseAmpleFileResultRecord,
   ampleFileQuestionRecordSchema,
+  ampleFileRequestActionListMaxEntries,
+  ampleFileRequestActionPathMaxLength,
   ampleFileRequestIdPattern,
   ampleFileRequestLimitError,
   AmpleFileRequestLineageError,
@@ -496,7 +499,7 @@ export class AmpleFileRequestStore {
           state: input.status,
           settledAt: this.#now().toISOString(),
           messageId: input.messageId ?? turn.messageId,
-          error: input.error ? input.error.slice(0, maximumErrorLength) : turn.error,
+          error: input.error ? scrubAmpleFileRequestText(input.error, maximumErrorLength) : turn.error,
         };
       }, input.usage);
       if (!record) return null;
@@ -597,8 +600,11 @@ export class AmpleFileRequestStore {
 
   /**
    * Attributes one landed act to the request that named it. Returns the
-   * request id it credited, or `null` when nothing was named or the trail is
-   * already at its bound — attribution never refuses the act itself.
+   * request id it credited, or `null` when nothing was named or the action
+   * cannot be recorded — attribution never refuses the act itself, which has
+   * already happened. A `sources` or `copied` list past its bound keeps the
+   * entries that match the request's attachments first, then the earliest,
+   * and counts the rest in `sourcesOmitted`/`copiedOmitted`.
    */
   recordAction(parentTaskId: string | undefined, action: AmpleFileRequestAction): Promise<string | null> {
     if (!parentTaskId) return Promise.resolve(null);
@@ -606,7 +612,13 @@ export class AmpleFileRequestStore {
       const requestId = this.#byTask.get(parentTaskId);
       const record = requestId ? this.#records.get(requestId) : undefined;
       if (!record) return null;
-      await this.#writeRequest({ ...record, actions: [...record.actions, structuredClone(action)] });
+      let bounded: AmpleFileRequestAction;
+      try {
+        bounded = parseAmpleFileRequestAction(boundActionLists(structuredClone(action), record.attachments));
+      } catch {
+        return null;
+      }
+      await this.#writeRequest({ ...record, actions: [...record.actions, bounded] });
       return record.requestId;
     });
   }
@@ -894,7 +906,7 @@ export class AmpleFileRequestStore {
             state: (recovered?.status ?? "interrupted") as AmpleFileRequestTurnState,
             settledAt: recovered?.updatedAt ?? now.toISOString(),
             messageId: recovered?.messageId ?? turn.messageId,
-            error: recovered?.error ?? (recovered ? turn.error : interruptedByShutdown),
+            error: recovered?.error != null ? scrubAmpleFileRequestText(recovered.error, maximumErrorLength) : recovered ? turn.error : interruptedByShutdown,
           };
         });
         // Nothing runs across a restart: a job still recorded running was
@@ -1138,7 +1150,9 @@ export class AmpleFileRequestStore {
       openQuestions: this.#openQuestionCount(record.requestId),
       openBlockingQuestions: this.questions(record.requestId).filter(question => !question.asynchronous && (question.state === "open" || (question.state === "answered" && question.continuationTaskId === null))).length,
       openDescendantQuestions: record.childRequestIds.reduce((total, id) => total + this.#openQuestionCount(id, true), 0),
-      childStates: record.childRequestIds.map((id) => this.#records.get(id)?.state ?? null),
+      // A child the read cache trimmed is still on record with its settled
+      // state; only a child on record nowhere reads as lost.
+      childStates: record.childRequestIds.map((id) => this.#records.get(id)?.state ?? this.#trimmed.get(id)?.state ?? null),
       resultOutcomes: record.results.filter((ref) => ref.taskId === record.turns.at(-1)!.taskId).slice(-1).map((ref) => ref.outcome),
       limitHit: record.limitHit,
       jobStates: (record.jobs ?? []).filter(job => !job.service).map((job) => job.state),
@@ -1336,15 +1350,22 @@ export class AmpleFileRequestStore {
 
   /**
    * The in-memory map is a bounded READ CACHE, never the record itself. Past
-   * the bound the oldest settled records leave memory; they stay in the
+   * the bound the oldest records of wholly settled families leave memory; they stay in the
    * journal, come back on the next start, and `#trimmed` keeps the three
    * fields retention needs so they still leave on their own window rather
    * than on a cache bound (docs/act-ledger.md).
    */
   #trimMemory(): void {
     if (this.#records.size <= this.#maxRecords) return;
+    // A family leaves memory only once all of it has settled: an open
+    // parent still reads its children's states, results, and questions, and
+    // a child missing from memory would read as lost.
+    const settled = (record: AmpleFileRequestRecord) =>
+      isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running");
+    const openRoots = new Set<string>();
+    for (const record of this.#records.values()) if (!settled(record)) openRoots.add(record.rootId);
     const records = [...this.#records.values()]
-      .filter((record) => isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running"))
+      .filter((record) => settled(record) && !openRoots.has(record.rootId))
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     for (const record of records.slice(0, Math.max(0, this.#records.size - this.#maxRecords))) {
       for (const turn of record.turns) this.#byTask.delete(turn.taskId);
@@ -1432,11 +1453,39 @@ function newId(prefix: "req" | "q" | "res", at: string): string {
 }
 
 function boundContent(content: string): string {
-  const limit = ampleFileRequestLimits.maxRequestContentBytes;
-  if (Buffer.byteLength(content, "utf8") <= limit) return content;
-  // Cut on a byte bound, then drop a trailing partial character rather than
-  // storing a replacement glyph the person never wrote.
-  return Buffer.from(content, "utf8").subarray(0, limit).toString("utf8").replace(/\uFFFD+$/u, "");
+  return scrubAmpleFileRequestText(content, ampleFileRequestLimits.maxRequestContentBytes);
+}
+
+/**
+ * Keeps an action's path lists inside the record's bounds. Entries the parser
+ * would refuse (empty, or longer than a path entry may be) are counted as
+ * omitted rather than failing the whole action.
+ */
+function boundActionLists(action: AmpleFileRequestAction, attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileRequestAction {
+  const targets = new Set(attachments.map((attachment) => attachment.target));
+  const bound = (entries: string[] | undefined, previouslyOmitted: number | undefined, preferAttachments: boolean) => {
+    if (entries === undefined) return { entries: undefined, omitted: previouslyOmitted };
+    const valid = entries.filter((entry) => typeof entry === "string" && entry.length > 0 && entry.length <= ampleFileRequestActionPathMaxLength);
+    const indexes = valid.map((_, index) => index);
+    // Attachment matches come first only to survive the cut; the record
+    // keeps the act's own order.
+    const ordered = preferAttachments
+      ? [...indexes.filter((index) => targets.has(valid[index]!)), ...indexes.filter((index) => !targets.has(valid[index]!))]
+      : indexes;
+    const kept = ordered.slice(0, ampleFileRequestActionListMaxEntries).sort((left, right) => left - right).map((index) => valid[index]!);
+    const omitted = (previouslyOmitted ?? 0) + (entries.length - kept.length);
+    return { entries: kept, omitted: omitted || undefined };
+  };
+  const sources = bound(action.sources, action.sourcesOmitted, true);
+  const copied = bound(action.copied, action.copiedOmitted, false);
+  const next: AmpleFileRequestAction = { ...action };
+  delete next.sourcesOmitted;
+  delete next.copiedOmitted;
+  if (sources.entries !== undefined) next.sources = sources.entries;
+  if (sources.omitted !== undefined) next.sourcesOmitted = sources.omitted;
+  if (copied.entries !== undefined) next.copied = copied.entries;
+  if (copied.omitted !== undefined) next.copiedOmitted = copied.omitted;
+  return next;
 }
 
 function dedupeAttachments(attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileAgentAttachmentRef[] {

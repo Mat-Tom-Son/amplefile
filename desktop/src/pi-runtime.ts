@@ -231,7 +231,8 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
   }
 
   async flush(): Promise<void> {
-    if (this.credentialsPromise) await (await this.credentialsPromise).flush();
+    // A load that failed has nothing to flush.
+    if (this.credentialsPromise) await this.credentialsPromise.then((storage) => storage.flush(), () => undefined);
   }
 
   getExtensionUiBridge(): PiExtensionUiBridge | undefined {
@@ -239,11 +240,19 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
   }
 
   private credentials(): Promise<PersistentPiAuthStorage> {
-    this.credentialsPromise ??= createPersistentPiAuthStorage({
+    if (this.credentialsPromise) return this.credentialsPromise;
+    const pending = createPersistentPiAuthStorage({
       agentDir: this.options.agentDir,
       ...(this.options.authStorageHost ? { host: this.options.authStorageHost } : {}),
     });
-    return this.credentialsPromise;
+    this.credentialsPromise = pending;
+    // One failed load (a denied Keychain prompt, a locked keychain) must not
+    // disable provider credentials until restart: forget it so the next
+    // caller tries again.
+    pending.catch(() => {
+      if (this.credentialsPromise === pending) this.credentialsPromise = null;
+    });
+    return pending;
   }
 }
 

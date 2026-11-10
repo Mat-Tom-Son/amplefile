@@ -1095,14 +1095,19 @@ test("an automation stops at a question and an answer never replays later hops",
       { id: "copy", kind: "files", fromConnectedFolder: source.id, from: { kind: "paths", paths: ["notes.md"] }, toConnectedFolder: destination.id, to: "Incoming" },
     ] });
     await api.automations.enable({ declaration, expectedDigest: ampleFileAutomationDigest(declaration), grant: { requestId: "automation-question", surface: "main-window" } });
-    const run = api.automations.runNow(declaration.id);
+    let runSettled = false;
+    const run = api.automations.runNow(declaration.id).finally(() => { runSettled = true; });
     await waitFor(async () => h.pending.some((turn) => turn.connectedFolderId === source.id));
     const task = h.pending.find((turn) => turn.connectedFolderId === source.id)!;
     const asked = await api.actFacade.chatAsk({ connectedFolder: source.id, taskId: task.taskId, question: "Which quarter?", respondent: "person" });
+    // Asking does not end the turn, so the hop waits for it to finish.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    assert.equal(runSettled, false, "the hop holds while the asking turn still runs");
+    await h.release(task.taskId);
     const result = await run;
     assert.equal(result.outcome, "failure");
     assert.equal(existsSync(join(destination.connectedFolderRoot, "Incoming", "notes.md")), false);
-    await h.release(task.taskId); await settled(api, source.id, task.taskId);
+    await settled(api, source.id, task.taskId);
     const answered = await api.actFacade.chatAnswer({ connectedFolder: source.id, questionId: asked.question.questionId, answer: "/hold Q3" });
     await h.release(answered.continuation.taskId); await settled(api, source.id, answered.continuation.taskId);
     assert.equal(api.requests.byTaskId(task.taskId)?.state, "done");

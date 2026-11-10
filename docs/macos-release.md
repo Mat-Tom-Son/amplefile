@@ -78,6 +78,10 @@ Apple submission.
 - **0.1.2** was published to `Mat-Tom-Son/amplefile-mac-releases` on
   November 8, 2026, from the annotated source tag `v0.1.2` (commit
   `999292f`): the AmpleFile Agent name and the redrawn menu-bar chat.
+- **0.1.3** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 8, 2026, from the annotated source tag `v0.1.3` (commit
+  `10cd011`): the G app icon, provider sign-in finished in the app, and a
+  first run without Chrome.
 
 ## Release procedure
 

@@ -43,7 +43,11 @@ module.exports = {
     output: outputDirectory,
     buildResources: "desktop/assets",
   },
-  files: ["package.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "dist/desktop/**/*", "resources/included-tools/**/*"],
+  // The renderer build (the main window and the AmpleFile Agent popover) is
+  // archived with the main process so ASAR integrity validation covers every
+  // byte of code the windows run. Never list it under extraResources or
+  // asarUnpack: both put it on disk as loose files the fuses do not check.
+  files: ["package.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "dist/desktop/**/*", "dist/web-local/**/*", "resources/included-tools/**/*"],
   extraFiles: [
     {
       from: "desktop/cli",
@@ -52,10 +56,6 @@ module.exports = {
     },
   ],
   extraResources: [
-    {
-      from: "dist/web-local",
-      to: "web-local",
-    },
     {
       from: "desktop/assets",
       to: "assets",
@@ -68,6 +68,9 @@ module.exports = {
   asar: true,
   // Node worker entrypoints and native canvas bindings must be real files.
   // PDF.js, its fonts and other JS libraries remain in the verified archive.
+  // Electron Builder also unpacks, whole, every package that contains a
+  // binary or an executable (docs/macos-build.md names them); unpacked files
+  // are outside ASAR integrity and covered by the code signature only.
   asarUnpack: ["resources/included-tools/documents/worker.mjs", "node_modules/@napi-rs/**/*.node"],
   compression: "normal",
   npmRebuild: false,

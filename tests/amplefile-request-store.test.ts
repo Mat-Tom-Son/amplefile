@@ -1021,3 +1021,219 @@ test("only the running turn changes its request's checklist, an empty list clear
   assert.equal(await store.setChecklist("task-checklist", []), null);
   assert.equal(store.byTaskId("task-checklist")?.checklist, undefined);
 });
+
+test("message text with control characters is accepted, scrubbed, and always reloads", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  // Every C0/C1 and bidi control, plus the ones people paste: Word's soft
+  // line break (U+000B), a form feed, an ANSI escape, and U+202B.
+  const controls = [
+    ...Array.from({ length: 0x20 }, (_, code) => String.fromCharCode(code)),
+    ...Array.from({ length: 0x21 }, (_, offset) => String.fromCharCode(0x7f + offset)),
+    "‪", "‫", "‬", "‭", "‮", "⁦", "⁧", "⁨", "⁩",
+  ];
+  const pasted = `Line one\u000bline two\fpage two \u001b[31mred\u001b[0m ‫مرحبا‬\r\n\tend ${controls.join("")}`;
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1", content: pasted });
+  assert.equal(request.content, request.assignment);
+  assert.match(request.content, /^Line one\nline two\npage two �\[31mred�\[0m �مرحبا�\r\n\tend /u);
+  assert.doesNotMatch(request.content.replace(/[\n\r\t]/g, " "), /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/u);
+
+  await store.settleTurn("task-1", { status: "succeeded" });
+  const joined = await store.joinTurn({ requestId: request.requestId, taskId: "task-2", content: `follow-up\u0085next\u0007` });
+  assert.equal(joined.content, "follow-up\nnext�");
+  const child = await store.beginChild({
+    parentTaskId: "task-2", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-3",
+    content: "handoff\u000c\u009b",
+  });
+  assert.equal(child.assignment, "handoff\n�");
+
+  // Oversized text is cut on a character boundary, after scrubbing.
+  const limit = ampleFileRequestLimits.maxRequestContentBytes;
+  const oversized = await store.beginRoot({
+    kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: "task-4",
+    content: `${"a".repeat(limit - 2)}é\u0001`,
+  });
+  assert.equal(oversized.content, `${"a".repeat(limit - 2)}é`);
+  const cut = await store.beginRoot({
+    kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: "task-5",
+    content: `${"a".repeat(limit - 1)}é`,
+  });
+  assert.equal(cut.content, "a".repeat(limit - 1));
+  await store.flush();
+
+  // A record the store accepted always reloads, byte for byte.
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  for (const accepted of [store.get(request.requestId)!, store.get(child.requestId)!, store.get(oversized.requestId)!, store.get(cut.requestId)!]) {
+    assert.deepEqual(reopened.get(accepted.requestId), accepted);
+  }
+});
+
+test("the read cache never trims a settled child while its family is open, and a trimmed child keeps its state", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 2 });
+
+  const parent = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-parent" });
+  const children = [];
+  for (const index of [1, 2]) {
+    clock.advance(1_000);
+    const child = await store.beginChild({ parentTaskId: "task-parent", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: `task-child-${index}` });
+    await store.settleTurn(`task-child-${index}`, { status: "succeeded" });
+    children.push(child);
+  }
+  // Unrelated settled work pushes the cache past its bound.
+  for (const index of [1, 2, 3]) {
+    clock.advance(1_000);
+    await store.beginRoot({ kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: `task-other-${index}` });
+    await store.settleTurn(`task-other-${index}`, { status: "succeeded" });
+  }
+  for (const child of children) assert.equal(store.get(child.requestId)?.state, "done", "an open family keeps its settled children");
+  assert.equal(store.children(parent.requestId).length, 2);
+  await store.settleTurn("task-parent", { status: "succeeded" });
+  assert.equal(store.get(parent.requestId)?.state, "done", "a successful parent never reads as failed");
+
+  // Once the family has settled, its children may leave memory; the parent
+  // reopening later still reads their settled state rather than a loss.
+  for (const index of [4, 5, 6]) {
+    clock.advance(1_000);
+    await store.beginRoot({ kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: `task-other-${index}` });
+    await store.settleTurn(`task-other-${index}`, { status: "succeeded" });
+  }
+  await store.flush();
+  // Nine records, room for seven: the two oldest, the children, leave memory
+  // while the parent, touched last in its family, stays.
+  const withParent = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 7 });
+  assert.ok(withParent.get(parent.requestId));
+  for (const child of children) assert.equal(withParent.get(child.requestId), null);
+  await withParent.joinTurn({ requestId: parent.requestId, taskId: "task-parent-2", content: "And one more thing." });
+  await withParent.settleTurn("task-parent-2", { status: "succeeded" });
+  assert.equal(withParent.get(parent.requestId)?.state, "done");
+});
+
+test("an oversized attribution list is truncated with a count, never thrown after the act landed", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const attached = "/tmp/inbox/file-299.pdf";
+  const request = await store.beginRoot({
+    kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1",
+    attachments: [{ kind: "file", target: attached, name: "file-299.pdf" }],
+  });
+  const sources = Array.from({ length: 300 }, (_, index) => `/tmp/inbox/file-${index}.pdf`);
+  const copied = Array.from({ length: 300 }, (_, index) => `Inbox/file-${index}.pdf`);
+  assert.equal(await store.recordAction("task-1", {
+    command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits",
+    sources: [...sources, "", `/${"x".repeat(2_000)}`], copied, checkpointId: "checkpoint-1",
+  }), request.requestId);
+  const action = store.get(request.requestId)!.actions[0]!;
+  assert.equal(action.sources!.length, 256);
+  assert.equal(action.sourcesOmitted, 46, "300 sources plus two unusable entries, 256 kept");
+  assert.ok(action.sources!.includes(attached), "an attachment's own source survives the cut");
+  assert.deepEqual(action.sources!.slice(0, 3), sources.slice(0, 3), "the act's own order is kept");
+  assert.deepEqual(action.copied, copied.slice(0, 256));
+  assert.equal(action.copiedOmitted, 44);
+
+  // A list inside the bound carries no marker.
+  await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), sources: ["/tmp/a.pdf"], copied: ["a.pdf"] });
+  const small = store.get(request.requestId)!.actions[1]!;
+  assert.equal(small.sourcesOmitted, undefined);
+  assert.equal(small.copiedOmitted, undefined);
+
+  // An action the trail cannot hold at all credits nothing instead of throwing.
+  assert.equal(await store.recordAction("task-1", { command: "files.add", at: "not a time" }), null);
+  assert.equal(store.get(request.requestId)!.actions.length, 2);
+
+  await store.flush();
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  assert.deepEqual(reopened.get(request.requestId)!.actions, store.get(request.requestId)!.actions);
+});
+
+test("every declared limit name reads back from a stored limit hit", async (t) => {
+  const { ampleFileRequestLimitNames, parseAmpleFileRequestRecord } = await import("../src/local/requests/request-records.js");
+  // The type and the parser share one list; this pins that the list is the
+  // whole type, so a new name cannot be declared without being readable.
+  const everyName: Record<AmpleFileRequestLimitName, true> = {
+    childTasks: true, depth: true, concurrentChildren: true, continuations: true, providerBudget: true,
+    questionLifetime: true, questionText: true, questionOptions: true, questionOptionText: true, answerText: true,
+    checklistItems: true, checklistItemText: true, resultSummary: true, resultData: true, resultFiles: true,
+    questionsPerRequest: true, resultsPerRequest: true, turnsPerRequest: true, actionsPerRequest: true,
+  };
+  assert.deepEqual([...ampleFileRequestLimitNames].sort(), Object.keys(everyName).sort());
+
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  for (const limit of ampleFileRequestLimitNames) {
+    const parsed = parseAmpleFileRequestRecord({ ...request, limitHit: { limit, at: request.createdAt } });
+    assert.equal(parsed.limitHit?.limit, limit);
+  }
+  assert.throws(() => parseAmpleFileRequestRecord({ ...request, limitHit: { limit: "noSuchLimit", at: request.createdAt } }), /limit name/);
+});
+
+test("questions, answers, choices, checklists, summaries, and turn errors scrub pasted control characters", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "main-window", taskId: "task-1" });
+
+  const question = await store.ask({
+    requestId: request.requestId, taskId: "task-1", respondent: "person",
+    text: "Which \u001b[1mformat\u001b[0m?\u000bPick one.", options: ["PDF‮", "Word"],
+  });
+  assert.equal(question.text, "Which �[1mformat�[0m?\nPick one.");
+  assert.deepEqual(question.options, ["PDF�", "Word"]);
+  await store.settleTurn("task-1", { status: "succeeded" });
+  assert.equal(store.get(request.requestId)?.state, "waiting");
+
+  // A person's pasted reply with a Word soft line break answers the question.
+  const answered = await store.answer({ questionId: question.questionId, answer: "PDF,\u000bplease\f", answeredByConnectedFolderId: connectedFolderOwner.connectedFolderId });
+  assert.equal(answered.state, "answered");
+  assert.equal(answered.answer, "PDF,\nplease\n");
+  await store.joinTurn({ requestId: request.requestId, taskId: "task-2", content: "PDF, please" });
+  await store.linkContinuation(question.questionId, "task-2");
+  assert.equal((await store.setChecklist("task-2", [{ text: "Export\u000bthe\u0007file", status: "doing" }]))?.items[0]?.text, "Export the�file");
+  const result = await store.recordResult({ requestId: request.requestId, taskId: "task-2", receiptId: "receipt-1", envelope: { summary: "Exported\u0085done ⁦ok⁩", outcome: "succeeded" } });
+  assert.equal(result.envelope.summary, "Exported\ndone �ok�");
+
+  // The size bound still refuses rather than cutting a question.
+  await assert.rejects(
+    () => store.ask({ requestId: request.requestId, taskId: "task-2", respondent: "person", text: "x".repeat(ampleFileRequestLimits.maxQuestionTextBytes + 1) }),
+    (error: unknown) => error instanceof AmpleFileRequestLimitError,
+  );
+
+  // A provider error with ANSI colour and multi-byte text still settles the turn.
+  await store.settleTurn("task-2", { status: "failed", error: `\u001b[31m${"é".repeat(2_000)}\u001b[0m` });
+  const failedTurn = store.get(request.requestId)!.turns.at(-1)!;
+  assert.equal(failedTurn.state, "failed");
+  assert.ok(Buffer.byteLength(failedTurn.error!, "utf8") <= 2_048);
+  assert.ok(failedTurn.error!.startsWith("�[31mé"));
+
+  await store.flush();
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  assert.deepEqual(reopened.get(request.requestId), store.get(request.requestId));
+  assert.deepEqual(reopened.question(question.questionId), store.question(question.questionId));
+  assert.equal((await reopened.results(request.requestId))[0]?.state, "ok");
+});
+
+test("a retried answer matches the recorded one after the store's cleaning", async (t) => {
+  const { ampleFileAnswerMatchesRecorded, scrubAmpleFileRequestControls } = await import("../src/local/requests/request-records.js");
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "main-window", taskId: "task-1" });
+  const question = await store.ask({ requestId: request.requestId, taskId: "task-1", respondent: "person", text: "Format?", asynchronous: true });
+  assert.equal(ampleFileAnswerMatchesRecorded(question, "PDF"), false, "an unanswered question matches nothing");
+
+  const pasted = "PDF,\u000bplease\u0007";
+  const answered = await store.answer({ questionId: question.questionId, answer: pasted, answeredByConnectedFolderId: connectedFolderOwner.connectedFolderId });
+  assert.notEqual(answered.answer, pasted, "the stored answer is the cleaned one");
+  assert.equal(answered.answer, scrubAmpleFileRequestControls(pasted), "and exactly the canonical cleaner's output");
+  // A retry of the same pasted text is the same answer; a different one is not.
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, pasted), true);
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, "PDF,\nplease�"), true);
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, "Word"), false);
+});

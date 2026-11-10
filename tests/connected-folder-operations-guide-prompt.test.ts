@@ -61,7 +61,7 @@ test("a Connected Folder Chat's system prompt carries Connected Folder instructi
 /**
  * What the guide teaches has to be what the host does. Two rules cost a Connected Folder
  * Agent a refused command or a false boundary if the text drifts:
- * `chat answer` names the ASKING Connected Folder, not this one (src/local/server.ts
+ * `chat answer` names the ASKING Connected Folder, not this one (src/local/api/act-lane.ts
  * refuses any other), and `chat wait` returns the destination turn's own
  * latest reply and the selected request result.
  */

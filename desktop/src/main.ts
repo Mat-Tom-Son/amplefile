@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
@@ -72,6 +72,7 @@ import { createJiti } from "jiti";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
+import { HeadlessQuitSequence } from "./headless-quit.js";
 import {
   ampleFileDesktopUserDataPath,
   ampleFileDesktopStateOverride,
@@ -115,6 +116,7 @@ import {
 } from "./command-line-install.js";
 import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
+import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
 
 const productionProductName = productIdentity.productName;
 const localMacSmokeProductName = productIdentity.macSmokeProductName;
@@ -122,7 +124,6 @@ const localMacSmokeBuild = process.platform === "darwin" && app.isPackaged && pa
 const productName = localMacSmokeBuild ? localMacSmokeProductName : productionProductName;
 const appProtocol = productIdentity.internalProtocol;
 const appUserModelId = productIdentity.productionAppId;
-const desktopAssetRoutePrefix = "/_desktop-assets/";
 const desktopTitleBarHeight = 40;
 const desktopTitleBarOverlayPalettes = {
   light: { color: "#f2f4ef", symbolColor: "#1c2530" },
@@ -222,6 +223,7 @@ let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
+let chromeConnectionStartRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
@@ -358,12 +360,11 @@ app.on("before-quit", (event) => {
 async function prepareForApplicationQuit(): Promise<QuitPreparationOutcome> {
   destroyTray();
   if (desktopUpdater?.shouldInstallOnQuit()) {
-    await shutdownForUpdateInstall();
+    // The updater stages and validates the payload first, then runs the
+    // update shutdown, then hands off. If staging fails nothing has shut down
+    // yet and the ordinary quit below continues; `shutdown()` is idempotent.
     const status = await desktopUpdater.installDownloadedUpdateOnQuit();
     if (status.phase === "installing") return "handoff";
-    desktopUpdater.dispose();
-    desktopUpdater = null;
-    return "quit";
   }
   await shutdown();
   desktopUpdater?.dispose();
@@ -496,7 +497,11 @@ async function startInteractiveApp(): Promise<void> {
   interactiveRequested = true;
   if (interactiveStartupPromise) return interactiveStartupPromise;
   interactiveStartupPromise = (async () => {
+    // A headless CLI host may be tearing down; it re-checks for this launch
+    // afterwards and stays up, but the new act token must not race it.
+    await headlessQuit.whenTeardownSettled();
     const host = await ensureDesktopHost();
+    chromeConnectionStartRequested = true;
     await host.chromeConnection.startIfEnabled().catch(() => console.warn("Chrome connection startup requires setup."));
     const api = await ensureInteractiveLocalApi();
     loadDesktopPreferences();
@@ -517,29 +522,39 @@ async function startInteractiveApp(): Promise<void> {
   return interactiveStartupPromise;
 }
 
-async function quitAfterCliRequest(): Promise<void> {
-  const host = await ensureDesktopHost();
-  while (!interactiveRequested) {
-    const observedGeneration = cliRequestGeneration;
+const headlessQuit = new HeadlessQuitSequence({
+  interactiveRequested: () => interactiveRequested,
+  cliRequestGeneration: () => cliRequestGeneration,
+  waitForIdle: async () => {
+    const host = await ensureDesktopHost();
     await host.cli.whenIdle();
     await host.runtime.flush();
     await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, headlessCliIdleGraceMs));
-    if (observedGeneration === cliRequestGeneration) break;
-  }
-  if (interactiveRequested) {
-    await startInteractiveApp();
-    return;
-  }
-  await host.chromeConnection.close();
+  },
   // A headless boot proves no interactive app holds the single-instance lock,
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
-  await removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined);
-  quitting = true;
-  // Exit synchronously after the queue and host-backed auth storage are both
-  // drained so a new process cannot hand work to a half-shutdown primary.
-  quitCoordinator.allowNativeQuit();
-  app.quit();
+  removeActToken: () => removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined),
+  // Only interactive startup starts the Chrome connection, and closing it is
+  // permanent for this process (the Pi runtime holds the same service). A
+  // headless host that never started it leaves it alone, so a person who
+  // opens AmpleFile during teardown still gets a working Chrome connection.
+  closeChromeConnection: async () => {
+    if (!chromeConnectionStartRequested) return;
+    await (await ensureDesktopHost()).chromeConnection.close();
+  },
+  quit: () => {
+    quitting = true;
+    // Exit synchronously after the queue and host-backed auth storage are both
+    // drained so a new process cannot hand work to a half-shutdown primary.
+    quitCoordinator.allowNativeQuit();
+    app.quit();
+  },
+});
+
+async function quitAfterCliRequest(): Promise<void> {
+  await ensureDesktopHost();
+  if (await headlessQuit.run() === "interactive") await startInteractiveApp();
 }
 
 function reportStartupError(error: unknown): void {
@@ -726,26 +741,11 @@ function registerRendererProtocol(): void {
   rendererProtocolRegistered = true;
   const rendererRoot = resolveRendererDir();
   const desktopAssets = resolveDesktopAssetsDir();
-  protocol.handle(appProtocol, (request) => {
-    const url = new URL(request.url);
-    if (url.hostname !== "app") return new Response("Not found", { status: 404 });
-    if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-    const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
-    if (requestedPath.startsWith(desktopAssetRoutePrefix)) {
-      if (requestedPath !== `${desktopAssetRoutePrefix}icon-32.png`) return new Response("Not found", { status: 404 });
-      return fetchProtocolFile(desktopAssets, "icon-32.png", request.method);
-    }
-    return fetchProtocolFile(rendererRoot, requestedPath.replace(/^\/+/, ""), request.method);
-  });
-}
-
-function fetchProtocolFile(rootDir: string, requestedPath: string, method: string): Promise<Response> | Response {
-  const candidate = resolve(rootDir, requestedPath);
-  const relativeCandidate = relative(rootDir, candidate);
-  if (/^\.\.(?:[\\/]|$)/.test(relativeCandidate) || isAbsolute(relativeCandidate)) return new Response("Not found", { status: 404 });
-  if (!existsSync(candidate)) return new Response("Not found", { status: 404 });
-  if (method === "HEAD") return new Response(null, { status: 200 });
-  return net.fetch(pathToFileURL(candidate).href);
+  protocol.handle(appProtocol, (request) => handleRendererRequest(request, {
+    rendererRoot,
+    desktopAssets,
+    fetchFile: (fileUrl) => net.fetch(fileUrl),
+  }));
 }
 
 async function openModelContextWindow(): Promise<void> {
@@ -802,18 +802,18 @@ function registerIpc(): void {
     modelContextWindow.closeFrom(event);
   });
   ipcMain.handle("amplefile:api:session-headers", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     return { "x-amplefile-session": apiSessionToken };
   });
   ipcMain.handle("amplefile:runtime:health", async (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return {
       pi: piRuntime ? await piRuntime.health() : { ok: false, configured: false, version: "", message: "Pi is still starting." },
-      settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [] },
+      settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false },
     };
   });
   ipcMain.handle("amplefile:connected-folder:choose-folder", async (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, { title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] });
@@ -877,14 +877,14 @@ function registerIpc(): void {
     return facade.delete(automationId!);
   });
   ipcMain.handle("amplefile:connected-folder:reveal-folder", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "string") throw new Error("A Connected Folder id is required.");
     const connectedFolder = await getConnectedFolder(value);
     const error = await shell.openPath(connectedFolder.connectedFolderRoot);
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     const request = connectedFolderPathRequest(value);
     const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     if (request.action === "reveal") {
@@ -895,7 +895,7 @@ function registerIpc(): void {
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:connected-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = connectedFolderPathRequest(value, false);
     return openFileWithPickedApp(process.platform, {
       resolveFile: async () => {
@@ -914,7 +914,7 @@ function registerIpc(): void {
     });
   });
   ipcMain.handle("amplefile:connected-folder:start-drag", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = connectedFolderPathRequest(value, false);
     const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     const info = await stat(filePath);
@@ -940,7 +940,7 @@ function registerIpc(): void {
   // the same open, Quick Look, and drag paths as a Connected Folder's files, and
   // Move to Trash where a Connected Folder would use Recently deleted.
   ipcMain.handle("amplefile:standard-folder:open-path", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value, true);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (request.action === "reveal" && request.path) {
@@ -951,7 +951,7 @@ function registerIpc(): void {
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:standard-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value);
     return openFileWithPickedApp(process.platform, {
       resolveFile: async () => {
@@ -969,7 +969,7 @@ function registerIpc(): void {
     });
   });
   ipcMain.handle("amplefile:standard-folder:start-drag", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (!(await stat(filePath)).isFile()) throw new Error("Only files can be dragged out.");
@@ -1084,12 +1084,12 @@ function registerIpc(): void {
     if (typeof value === "string" && pendingOpenConnectedFolderRequest?.token === value) pendingOpenConnectedFolderRequest = null;
   });
   ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "string") throw new Error("A URL is required.");
     await openExternal(value);
   });
   ipcMain.handle("amplefile:window:accent-color", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     return getSystemAccentColor();
   });
   ipcMain.handle("amplefile:agent:open-agent-draft", async (event, value: unknown) => {
@@ -1099,17 +1099,17 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.on("amplefile:agent:hide", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
   });
   ipcMain.handle("amplefile:agent:open-main", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
     showWindow();
     return true;
   });
   ipcMain.handle("amplefile:agent:open-ai-models-settings", async (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
     await ensureMainWindow();
     showWindow();
@@ -1117,17 +1117,17 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.handle("amplefile:window:get-close-to-tray", (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return closeToTrayStatus();
   });
   ipcMain.handle("amplefile:window:set-close-to-tray", (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "boolean") throw new Error("Close-to-background preference must be a boolean.");
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
   ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
@@ -1141,11 +1141,11 @@ function registerIpc(): void {
     }
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     updateApplicationMenuState(value);
   });
   ipcMain.handle("amplefile:menu:popup", (event, menuId: unknown, bounds: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     popupApplicationSubmenu(menuId, bounds);
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
@@ -1178,8 +1178,8 @@ function registerIpc(): void {
     return outsideAgentSkill();
   });
   ipcMain.handle("amplefile:settings:status", (event) => {
-    assertTrustedRenderer(event);
-    return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [] };
+    assertTrustedMainRenderer(event);
+    return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
   });
   ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1271,19 +1271,19 @@ function registerIpc(): void {
     ensureBuiltInBrowser().showDownload(path);
   });
   ipcMain.handle("amplefile:updates:status", (event): DesktopUpdateStatus => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return getUpdateStatus();
   });
   ipcMain.handle("amplefile:updates:check", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return checkForUpdates();
   });
   ipcMain.handle("amplefile:updates:install", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return desktopUpdater?.install() ?? getUpdateStatus();
   });
   ipcMain.handle("amplefile:updates:update-now", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return desktopUpdater?.updateNow() ?? getUpdateStatus();
   });
 }
@@ -1533,6 +1533,13 @@ function configureUpdater(): void {
   desktopUpdater = new DesktopUpdater({
     getWindow: () => mainWindow,
     prepareToInstall: shutdownForUpdateInstall,
+    // The local API, Pi runtime, and act token are already gone, so the
+    // window cannot work again: never offer the update as ready here.
+    onInstallFailedAfterShutdown: ({ message, relaunch }) => {
+      console.error(`${productName} update install failed after shutdown; ${relaunch ? "restarting" : "quitting"}: ${message}`);
+      if (relaunch) app.relaunch();
+      app.quit();
+    },
   });
   desktopUpdater.start();
 }
@@ -1775,27 +1782,7 @@ async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Prom
 }
 
 function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFileMenuCommand | null> {
-  const window = mainWindow;
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
-    return Promise.reject(new Error("The AmpleFile window is not available."));
-  }
-  return new Promise((resolveCommand) => {
-    let settled = false;
-    const finish = (command: NativeFileMenuCommand | null) => {
-      if (settled) return;
-      settled = true;
-      resolveCommand(command);
-    };
-    const template = nativeFileMenuItems(request).map<MenuItemConstructorOptions>((item) => item.type === "separator"
-      ? { type: "separator" }
-      : { label: nativeMenuLabel(item.label), click: () => finish(item.command), ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}) });
-    Menu.buildFromTemplate(template).popup({
-      window,
-      x: request.point.x,
-      y: request.point.y,
-      callback: () => finish(null),
-    });
-  });
+  return popupNativeCommandMenu(nativeFileMenuItems(request), request.point);
 }
 
 function popupNativeTabMenu(request: NativeTabMenuRequest): Promise<NativeTabMenuCommand | null> {
@@ -1804,10 +1791,9 @@ function popupNativeTabMenu(request: NativeTabMenuRequest): Promise<NativeTabMen
 
 type NativeCommandMenuItem<Command extends string> =
   | { type: "separator" }
-  | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false }
+  | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false; icon?: "amplefile" }
   | { type: "submenu"; label: string; items: NativeCommandMenuItem<Command>[] };
 
-/** Shows a native menu at a point in the app's CSS pixels; resolves with the chosen command, or null. */
 /** The files on the system pasteboard (Finder's Copy), newest format first; empty when it holds no files. */
 function readPasteboardFilePaths(): string[] {
   if (process.platform !== "darwin") return [];
@@ -1845,6 +1831,10 @@ function nativeMenuLabel(label: string): string {
   return label.replace(/&/g, "&&");
 }
 
+/**
+ * Shows a native menu at a point in the app's CSS pixels; resolves with the
+ * chosen command, or null. Every native context menu goes through here.
+ */
 function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenuItem<Command>[], point: { x: number; y: number }): Promise<Command | null> {
   const window = mainWindow;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
@@ -1860,7 +1850,13 @@ function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenu
     const template = (entries: NativeCommandMenuItem<Command>[]): MenuItemConstructorOptions[] => entries.map((item) => {
       if (item.type === "separator") return { type: "separator" };
       if (item.type === "submenu") return { label: nativeMenuLabel(item.label), submenu: template(item.items) };
-      return { label: nativeMenuLabel(item.label), ...(item.sublabel ? { sublabel: item.sublabel } : {}), enabled: item.enabled !== false, click: () => finish(item.command) };
+      return {
+        label: nativeMenuLabel(item.label),
+        ...(item.sublabel ? { sublabel: item.sublabel } : {}),
+        ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}),
+        enabled: item.enabled !== false,
+        click: () => finish(item.command),
+      };
     });
     // The point is in the app's CSS pixels; the menu goes where the pointer is in the zoomed window.
     const zoom = window.webContents.getZoomFactor() || 1;
@@ -2405,12 +2401,10 @@ async function showRendererRecoveryFailedDialog(reason: string): Promise<void> {
   const result = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showMessageBox(mainWindow, options)
     : await dialog.showMessageBox(options);
-  if (result.response === 0) {
-    app.relaunch();
-    app.exit(0);
-  } else {
-    app.quit();
-  }
+  // Restart goes through the ordinary graceful quit, so turns and History
+  // flush and the CLI act token is revoked before the new instance starts.
+  if (result.response === 0) app.relaunch();
+  app.quit();
 }
 
 function configureWindowNavigation(window: BrowserWindow): void {
@@ -2481,6 +2475,24 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) throw new Error("Untrusted renderer IPC request.");
 }
 
+/**
+ * The handful of channels the AmpleFile Agent popover's narrow preload uses.
+ * Every other handler requires the main renderer, so popover isolation does
+ * not rest on its preload alone.
+ */
+function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  if (ampleFileAgentPopover?.owns(event.sender)) {
+    assertTrustedRenderer(event);
+    const frame = event.senderFrame;
+    const mainFrame = event.sender.mainFrame;
+    if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+      throw new Error("This request requires the AmpleFile Agent popover's main frame.");
+    }
+    return;
+  }
+  assertTrustedMainRenderer(event);
+}
+
 function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   assertTrustedRenderer(event);
   const frame = event.senderFrame;
@@ -2531,7 +2543,9 @@ function productRendererArguments(): string[] {
 }
 
 function resolveRendererDir(): string {
-  const directory = app.isPackaged ? join(process.resourcesPath, "web-local") : join(repoRoot, "dist", "web-local");
+  // A packaged app's root is app.asar, so its renderer is read from the
+  // integrity-checked archive rather than from loose files beside it.
+  const directory = rendererBuildDirectory(app.isPackaged ? app.getAppPath() : repoRoot);
   if (!existsSync(join(directory, "index.html"))) throw new Error(`${productName} renderer build was not found at ${directory}. Run npm run local:build.`);
   return directory;
 }

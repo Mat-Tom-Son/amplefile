@@ -13,7 +13,7 @@ test("the persistent menu-bar popover reconciles replies whenever it becomes vis
   assert.match(source, /refreshConversation\(\)/);
   assert.match(source, /api<\{ messages: AmpleFileAgentMessage\[\] \}>\(`\/api\/amplefile-agent\/conversations\/\$\{encodeURIComponent\(nextConversationId\)\}`\)/);
   assert.match(source, /messages\.map\(\(message\) =>/);
-  assert.match(source, /message\.role === "assistant"[\s\S]*?<ReactMarkdown remarkPlugins=\{\[remarkGfm\]\} rehypePlugins=\{\[rehypeSingleLineBreaks\]\}>\{message\.content\}<\/ReactMarkdown>/);
+  assert.match(source, /message\.role === "assistant"[\s\S]*?<PopoverMarkdown text=\{message\.content\} \/>/);
   assert.doesNotMatch(source, /\{request\.reply\.content\}/);
 });
 
@@ -70,7 +70,7 @@ test("the AmpleFile Agent streams its steps and keeps one compact line for deleg
   assert.match(popover, /\{request && activePhases\.has\(request\.phase\) \? \(\s*<div className="agent-tail">/);
   // The agent's own turn shows its thinking and tool steps the way a Worker's Chat does.
   assert.match(popover, /<RuntimeContextPreview entries=\{liveSteps\} running=\{request\?\.phase === "working"\} replyStarted=\{Boolean\(streamingAssistant\)\}/);
-  assert.match(popover, /<RuntimeContextPreview entries=\{savedWorkTrailPreviews\(message as ChatMessage\)\}/);
+  assert.match(popover, /savedWorkTrailPreviews\(message as ChatMessage\)[\s\S]*?<RuntimeContextPreview entries=\{steps\}/);
   assert.match(popover, /<span className="working-elapsed">\{elapsedLabel\}<\/span>/);
   assert.match(popover, /Working in \{request\.children\.filter\(\(child\) => child\.state === "running"\)\.length === 1 \? "a Connected Folder" : "Connected Folders"\}…/);
   assert.match(popover, /className="working-line" role="status" aria-live="polite"/);
@@ -105,7 +105,7 @@ test("the popover renders the live agent response and reconciles the durable tra
   assert.match(popover, /event\.type === "assistant_message" && typeof event\.text === "string"[\s\S]*replaceStreamingAssistant\(event\.text\)/);
   assert.match(popover, /window\.requestAnimationFrame\(flushStreamingAssistant\)/);
   assert.match(popover, /className="popover-message assistant streaming" aria-label="amplefile is replying"/);
-  assert.match(popover, /<ReactMarkdown remarkPlugins=\{\[remarkGfm\]\} rehypePlugins=\{\[rehypeSingleLineBreaks\]\}>\{streamingAssistant\}<\/ReactMarkdown>/);
+  assert.match(popover, /<PopoverMarkdown text=\{streamingAssistant\} \/>/);
   assert.match(popover, /if \(!summary\.latestRequest \|\| !activePhases\.has\(summary\.latestRequest\.phase\)\) \{\s*replaceStreamingAssistant\(""\);/);
 });
 
@@ -115,9 +115,10 @@ test("the compact popover leaves the overview to the main window and approved we
   assert.doesNotMatch(popover, /\/api\/amplefile-agent\/overview/);
 });
 
-test("Escape still hides the popover and the AmpleFile Agent region stays live", async () => {
+test("Escape still hides the popover and the AmpleFile Agent turn is announced", async () => {
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
-  assert.match(popover, /aria-label="AmpleFile Agent chat" aria-live="polite"/);
+  assert.match(popover, /<TurnAnnouncer conversationKey=\{conversationId\} status=\{request && !loadingChat \? popoverTurnStatus\[request\.phase\] : null\} who="The AmpleFile Agent" \/>/);
+  assert.match(popover, /aria-label="AmpleFile Agent chat"/);
   assert.match(popover, /if \(event\.key === "Escape"\) \{[\s\S]*?else bridge\?\.ampleFileAgent\?\.hide\(\);/);
 });
 

@@ -11,6 +11,8 @@ import { accentIdentityFromHex, resolveConnectedFolderAppearance, wcagContrast }
 
 const desktopSheets = ["brand.css", "styles.css", "components/chat/work-steps.css", "application-appearance.css"];
 const popoverSheets = ["brand.css", "components/file-manager/file-manager-tokens.css", "popover/popover.css", "popover/popover-document.css", "components/chat/work-steps.css", "application-appearance.css"];
+// The panel's Chat as the file manager draws it: the app's sheets, then the file manager's tokens and rules.
+const panelSheets = [...desktopSheets, "components/file-manager/file-manager-tokens.css", "components/file-manager/file-manager.css"];
 const exec = promisify(execFile);
 
 test("actual desktop and popover CSS honor appearance roles, reading, density and accessibility", { timeout: 60_000 }, async (t) => {
@@ -23,6 +25,7 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
     const sheets = async (names: string[]) => (await Promise.all(names.map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const desktopCss = await sheets(desktopSheets);
     const popoverCss = await sheets(popoverSheets);
+    const panelCss = await sheets(panelSheets);
     const scenarios = Object.keys(applicationPalettes).flatMap((palette) => (["light", "dark"] as const).map((mode) => {
       const preferences = { ...defaultApplicationAppearance, palette: palette as keyof typeof applicationPalettes, mode, accent: "#f5e600", readingSize: 22, readingFont: "serif" as const, codeFont: "consolas" as const, textSize: "large" as const, density: "compact" as const, measure: "focused" as const, spacing: "relaxed" as const };
       const ground = applicationPalettes[preferences.palette];
@@ -39,7 +42,11 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
     // Native pointer and keyboard behavior is checked in the dev app too.
     const chatStateCss = desktopCss.replaceAll(":hover", "[data-test-hover]").replaceAll(":active", "[data-test-pressed]").replaceAll(":focus-visible", "[data-test-focus-visible]").replaceAll(":focus-within", "[data-test-focus-within]") + "\n* { transition: none !important; animation: none !important; }";
     const emptyChat = '<div class="chat-empty-state"><strong>Ready when you are.</strong><span class="chat-empty-connected-folder"><svg></svg><span>Workshop</span></span></div>';
-    const payload = { desktopCss, popoverCss, desktopBody: desktopBody.replace('<section class="chat-panel">','<section class="chat-panel">'+emptyChat), popoverBody, scenarios, chatStateCss };
+    // A person's message with a link in it, in the panel and in the popover.
+    const panelBubbleBody = '<div class="app-shell layout-file-manager"><div class="fm-shell"><aside class="fm-panel"><div class="fm-chat"><section class="chat-panel is-in-panel"><div class="message-list"><article class="message user"><div class="message-surface"><div class="message-body"><p>Plan a workshop <a href="#">from these notes</a></p></div></div></article></div></section></div></aside></div></div>';
+    const popoverBubbleBody = popoverBody.replace("Plan a workshop</div>", 'Plan a workshop <a href="#">from these notes</a></div>');
+    assert.notEqual(popoverBubbleBody, popoverBody);
+    const payload = { panelCss, panelBubbleBody, popoverBubbleBody, desktopCss, popoverCss, desktopBody: desktopBody.replace('<section class="chat-panel">','<section class="chat-panel">'+emptyChat), popoverBody, scenarios, chatStateCss };
     // A disposable, non-interactive browser evaluates the exact shipped CSS
     // cascade. It never loads app scripts, an account, or a personal profile.
     const html = `<!doctype html><meta charset="utf-8"><pre id="result">pending</pre><script>
@@ -95,8 +102,16 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
         result.popoverPrimary = [p('button.primary').backgroundColor,p('button.primary').color];
         result.popoverReading = [p('.popover-message-body').fontSize,p('.popover-message-body').fontFamily]; result.popoverCode = p('code').fontFamily;
         result.popoverRow = p('.agent-chat-row').minHeight; result.surfaces.push(p('body').backgroundColor);
+        // A person's message is a soft accent tint under the popover's own text, and Reading Font: App Font is the font the popover is drawn in.
+        result.popoverBubble = [p('.popover-message.user').backgroundColor, p('.popover-message.user').color, color(p('.popover').getPropertyValue('--fm-bubble')), color(p('.popover').getPropertyValue('--fm-text'))];
+        frame.contentDocument.documentElement.setAttribute('data-appearance-reading-font','app');
+        result.popoverAppFont = [p('.popover-message-body').fontFamily, p('.popover').fontFamily];
+        frame.contentDocument.documentElement.setAttribute('data-amplefile-font','verdana');
+        result.popoverAppFont.push(p('.popover-message-body').fontFamily, p('.popover').fontFamily);
         const popoverQuiet = fixture(payload.popoverCss, payload.popoverBody, spaciousScenario);
         result.quiet.push(popoverQuiet('.popover-message.user').backgroundColor,popoverQuiet('.popover-message.user').color);
+        // In the popover a quiet message is the file manager's card, in the tokens the popover wears.
+        result.popoverCard = ['--fm-card','--fm-text'].map((name) => color(popoverQuiet('.popover').getPropertyValue(name)));
         result.spacious.push(popoverQuiet('.agent-chat-row').minHeight);
         const feedbackBody = '<div class="app-shell"><button id="neutral" class="ui-control">Open</button><button id="primary" class="ui-control ui-control--primary">Save</button><button id="icon" class="ui-control ui-control--icon">Icon</button><button id="disabled" class="ui-control" disabled>Disabled</button><button id="danger" class="ui-control danger">Delete</button><button id="commands" class="composer-command-trigger">Commands</button><div class="context-menu"><button id="menu">Rename</button></div><button id="nameSave" class="connected-folder-name-save">Save</button><button id="upload" class="connected-folder-banner-upload-button">Upload</button><button id="modelTrigger" class="model-catalog-trigger">Model</button><button id="modelOption" class="model-catalog-option">Model option</button><div class="composer-menu"><button id="composerOption">Reasoning</button></div><button id="send" class="send-button">Send</button><div class="composer-command-menu"><button id="model">Model</button></div><button id="copy" class="message-copy-button">Copy</button><button id="included" class="capabilities-included-tile">Tool</button><button id="resource" class="capabilities-resource-card">Skill</button><button id="automation" class="automation-list-row">Automation</button><section class="settings-window"><button id="settingsTab" class="settings-tab">Appearance</button></section></div>';
         const feedback = fixture(payload.chatStateCss,feedbackBody,scenario);
@@ -117,6 +132,22 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
         result.floating = ['.composer-mention-menu','.composer-menu','.model-catalog-popover'].map(selector=>{ const el=feedbackDoc.createElement('div');el.className=selector.slice(1); feedbackDoc.querySelector('.app-shell').append(el);const c=feedback(selector);return {selector,background:c.backgroundColor,shadow:c.boxShadow}; });
         result.settingsFrames = ['ai-models-scope-control','ai-models-connection-panel'].map(name=>{ const window=feedbackDoc.createElement('section');window.className='settings-window';const el=feedbackDoc.createElement(name==='ai-models-scope-control'?'fieldset':'div');el.className=name;window.append(el);feedbackDoc.querySelector('.app-shell').append(window);return feedback('.'+name).borderTopWidth; });
         result.feedbackExpected = {hover:color('var(--ui-surface-hover)'),pressed:color('var(--ui-control-pressed)'),primaryHover:color('var(--ui-primary-hover)'),primaryPressed:color('var(--ui-primary-pressed)'),danger:color('var(--ui-danger)'),sendHover:color('color-mix(in srgb,'+scenario.identity.solid+' 28%,var(--ui-surface))'),sendPressed:color('color-mix(in srgb,'+scenario.identity.solid+' 38%,var(--ui-surface))')};
+        // Text and links on a person's tinted message, measured over the real ground:
+        // the tint is translucent, so each color is composited down to the first opaque layer.
+        const rgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d'); x.clearRect(0,0,1,1); x.fillStyle = value; x.fillRect(0,0,1,1); const d = x.getImageData(0,0,1,1).data; return [d[0],d[1],d[2],d[3]/255]; };
+        const over = (top, under) => [0,1,2].map(i => top[i]*top[3] + under[i]*(1-top[3])).concat(1);
+        const luminance = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v/12.92 : ((v+0.055)/1.055)**2.4; }; return 0.2126*f(c[0]) + 0.7152*f(c[1]) + 0.0722*f(c[2]); };
+        const contrastOf = (el) => { const style = (node) => frame.contentWindow.getComputedStyle(node); const layers = []; for (let node = el; node; node = node.parentElement) { const c = rgba(style(node).backgroundColor); if (c[3] > 0) layers.push(c); if (c[3] === 1) break; }
+          let ground = [255,255,255,1]; for (const layer of layers.reverse()) ground = over(layer, ground); const ink = over(rgba(style(el).color), ground); const a = luminance(ink), b = luminance(ground); return Math.round(((Math.max(a,b)+0.05)/(Math.min(a,b)+0.05))*100)/100; };
+        const bubble = (css, body, text, link, attributes) => { fixture(css, body, scenario); const doc = frame.contentDocument; for (const [name, value] of Object.entries(attributes)) doc.documentElement.setAttribute(name, value); return [contrastOf(doc.querySelector(text)), contrastOf(doc.querySelector(link))]; };
+        const panelText = '.message.user .message-body p', panelLink = '.message.user .message-body a', popoverText = '.popover-message.user .popover-message-body', popoverLink = '.popover-message.user a';
+        // The popover is measured without Opaque Surfaces, over the grey that stands in for its window material in a preview.
+        result.bubbleContrast = {
+          'panel': bubble(payload.panelCss, payload.panelBubbleBody, panelText, panelLink, {}),
+          'panel, chosen accent': bubble(payload.panelCss, payload.panelBubbleBody, panelText, panelLink, {'data-appearance-accent':'custom'}),
+          'popover': bubble(payload.popoverCss, payload.popoverBubbleBody, popoverText, popoverLink, {'data-appearance-transparency':'system','data-preview-window':'mac'}),
+          'popover, chosen accent': bubble(payload.popoverCss, payload.popoverBubbleBody, popoverText, popoverLink, {'data-appearance-transparency':'system','data-preview-window':'mac','data-appearance-accent':'custom'}),
+        };
         results.push(result);
       }
       document.body.innerHTML = '<pre id="result"></pre>'; document.getElementById('result').textContent = JSON.stringify(results);
@@ -142,7 +173,15 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
       assert.equal(item.measure, "600px"); assert.equal(Number.parseFloat(item.paragraph), 26.4);
       assert.deepEqual(item.surfaces, [expected["--ui-canvas"], expected["--ui-canvas"]], item.name + " opaque covers native material");
       assert.deepEqual(item.tinted, [item.expectedConnectedFolder[0], item.expectedConnectedFolder[2]], item.name + " tint keeps Connected Folder identity");
-      assert.deepEqual(item.quiet, [expected["--ui-surface-subtle"], expected["--ui-text"], expected["--ui-surface-subtle"], expected["--ui-text"]], item.name + " quiet messages");
+      assert.deepEqual(item.quiet, [expected["--ui-surface-subtle"], expected["--ui-text"], ...item.popoverCard], item.name + " quiet messages");
+      assert.deepEqual(item.popoverBubble.slice(0, 2), item.popoverBubble.slice(2), item.name + " tinted popover message is the accent tint under the popover's text");
+      assert.equal(item.popoverAppFont[0], item.popoverAppFont[1], item.name + " Reading Font: App Font is the popover's own font");
+      assert.equal(item.popoverAppFont[2], item.popoverAppFont[3], item.name + " and follows a chosen App Font");
+      assert.notEqual(item.popoverAppFont[2], item.popoverAppFont[0]);
+      for (const [surface, [text, link]] of Object.entries(item.bubbleContrast as Record<string, [number, number]>)) {
+        assert.ok(text >= 4.5, `${item.name} ${surface}: text on a person's message is ${text}:1`);
+        assert.ok(link >= 4.5, `${item.name} ${surface}: a link on a person's message is ${link}:1`);
+      }
       assert.deepEqual(item.spacious, ["38px", "38px"]); assert.equal(item.motion, "1e-05s"); assert.equal(item.timeOpacity, "1");
       assert.deepEqual(item.steps, ["grid", "grid", "none", "grid"], item.name + " current-step view hides finished rows while running");
       assert.equal(item.design.shellOutline, "solid", item.name + " whole composer owns focus");

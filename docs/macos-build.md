@@ -69,6 +69,31 @@ only unpacked Mach-O binaries whose signatures legitimately changed their bytes;
 the existing code-signature checks verify those binaries. This catches source
 size changes that otherwise leave a validly signed but unreadable archive.
 
+The renderer build for the main window and the AmpleFile Agent popover is
+archived at `dist/web-local` inside `app.asar`, beside the compiled main
+process, so the ASAR integrity fuse covers the code both windows run. The
+internal scheme serves it from the archive; nothing is copied to
+`Contents/Resources/web-local`. Packaged-asset verification compares the
+archive's `dist/web-local` with the tree's own `dist/web-local` build file
+for file, by name and SHA-256, so a missing lazily loaded chunk, font, or
+image and a stale file both fail; that is one more reason to verify a package
+from the tree that built it. It also requires both pages to name their
+scripts and stylesheets by path inside the build, and fails on a link, an
+unpacked renderer file, or a loose copy beside the archive.
+
+What stays outside the archive is not window code, but some of it is code.
+`app.asar.unpacked` holds the document worker entrypoint and, because
+Electron Builder unpacks any package that contains a binary or an executable
+as a whole, these packages with all their JavaScript: `@earendil-works/pi-tui`,
+`@injaneity/pi-computer-use`, `jszip`, `esbuild` with `@esbuild/darwin-arm64`,
+`quickjs-wasi`, and the `@napi-rs/canvas` native binding. Electron reads
+unpacked files straight from disk, so the ASAR integrity fuse does not cover
+them at run time; the build-time hash checks above and the bundle's code
+signature do. The same holds for the icons under `Contents/Resources/assets`,
+the Computer helper, the Chrome native host, and the CLI shims under
+`Contents/bin`. List `app.asar.unpacked` in a built candidate to see the
+current set.
+
 Before signing or contacting Apple, the macOS packager also runs a bounded
 native-tool smoke against an isolated clone of the complete built archive.
 Development Electron loads that archive's compiled Chat runtime and its own Pi
@@ -272,7 +297,9 @@ Do not diagnose this with `security find-generic-password ... -g`: `-g` requests
 
 ## Code map
 
-- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, and DMG layout.
+- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, DMG layout, and what is archived in `app.asar`.
+- `desktop/src/renderer-protocol.ts`: where the renderer build lives and how the internal scheme serves it.
+- `scripts/verify-packaged-app-assets.mjs`: packaged layout, fuses, and ASAR integrity; `scripts/verify-packaged-renderer.mjs` is its check that the archive holds the renderer build.
 - `scripts/generate-dmg-background.mjs`: installer-only DMG artwork under ignored build output.
 - `scripts/build-mac-release-candidate.mjs`: app-only signed/notarized interactive release candidate.
 - `scripts/verify-mac-release-candidate.mjs`: signature, hardened-runtime, staple, Gatekeeper, identity, version, and architecture verification for the app-only candidate.

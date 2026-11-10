@@ -242,7 +242,19 @@ export function isBrowserPageId(value: unknown): value is string {
   return typeof value === "string" && pageIdPattern.test(value);
 }
 
-/** Schemes a browser tab may show. Anything else is handed to the system or refused. */
+function urlProtocol(value: string): string | null {
+  try {
+    return new URL(value).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Web addresses: what any page may reach on its own (a link, a redirect, a
+ * pop-up, "Open Link in New Tab"). Anything else is handed to the system or
+ * refused.
+ */
 export function isBrowserUrl(value: string): boolean {
   let url: URL;
   try {
@@ -250,8 +262,26 @@ export function isBrowserUrl(value: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "file:") return true;
+  if (url.protocol === "http:" || url.protocol === "https:") return true;
   return url.protocol === "about:" && url.pathname === "blank";
+}
+
+/**
+ * What a tab may show when the person types it in the address bar or a Worker
+ * opens it: a web address or a local file on this computer.
+ */
+export function isBrowserAddress(value: string): boolean {
+  return isBrowserUrl(value) || urlProtocol(value) === "file:";
+}
+
+/**
+ * Whether a page showing `from` may itself open `to`. Web addresses always; a
+ * local file only from another local file (a saved page linking to its own
+ * files), never from a web page, as in Chrome.
+ */
+export function isPageReachableUrl(from: string, to: string): boolean {
+  if (isBrowserUrl(to)) return true;
+  return urlProtocol(to) === "file:" && urlProtocol(from) === "file:";
 }
 
 const schemePattern = /^[a-z][a-z0-9+.-]*:/i;
@@ -330,6 +360,49 @@ export function siteOrigin(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The address a page-supplied target is judged from when the opening frame is
+ * not known (Electron's window-open handler names no frame): the first frame
+ * in the page that is not a local file or a blank page, else the page itself.
+ * A local page with a web frame inside therefore cannot open local files.
+ */
+export function browserOpenerAddress(pageUrl: string, frameUrls: readonly string[]): string {
+  for (const url of frameUrls) {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      return url;
+    }
+    if (protocol !== "file:" && protocol !== "about:") return url;
+  }
+  return pageUrl;
+}
+
+const titleControlPattern = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * The title of a pop-up window a site opened. A pop-up has no address bar and
+ * its page controls its own title, so the real site always leads: "https"
+ * sites by host, anything else by its full origin or kind, then the page's
+ * title with direction and control characters removed.
+ */
+export function browserPopupWindowTitle(url: string, pageTitle: string): string {
+  let site: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:") site = parsed.host;
+    else if (parsed.protocol === "http:") site = parsed.origin;
+    else if (parsed.protocol === "file:") site = "Local File";
+    else if (parsed.protocol === "about:") site = "about:blank";
+    else site = parsed.protocol.replace(/:$/, "");
+  } catch {
+    site = "Pop-up";
+  }
+  const title = pageTitle.replace(titleControlPattern, "").replace(/\s+/g, " ").trim().slice(0, 200);
+  return title && title !== site ? `${site} — ${title}` : site;
 }
 
 /** A long address keeps its start and end: "example.com/very/…/page.html". */

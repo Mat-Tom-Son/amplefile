@@ -60,17 +60,10 @@ button {
   --amplefile-font-weight-heavy: 700;
 }
 
-:root[data-amplefile-text-size="compact"] {
-  --amplefile-font-size: 14px;
-  --amplefile-readable-line-height: 1.52;
-  --amplefile-composer-line-height: 1.42;
-}
-
-:root[data-amplefile-text-size="comfortable"] {
-  --amplefile-font-size: 16px;
-  --amplefile-readable-line-height: 1.62;
-  --amplefile-composer-line-height: 1.52;
-}
+/* Text Size has no rule here. The appearance hook sets --amplefile-font-size
+   for the chosen size, the file manager scales from data-amplefile-text-size
+   in its tokens, and reading line height belongs to Line Spacing alone
+   (application-appearance.css). */
 
 * {
   box-sizing: border-box;
@@ -2889,6 +2882,23 @@ to {
   overflow-x: auto;
   border: 1px solid #d8e0e8;
   border-radius: 8px;
+}
+
+/* A table scrolled sideways fades at the edge that still has columns out of view. */
+
+.message-table-scroll[data-more="end"] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+}
+
+.message-table-scroll[data-more="start"] {
+  -webkit-mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent);
+}
+
+.message-table-scroll[data-more="both"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent);
 }
 
 .message-body table {
@@ -13169,7 +13179,9 @@ textarea:focus-visible,
 }
 
 /* Skills & Extensions: the icon sits above the name, so long names like
-   Service Connections stay on one line at the minimum window width. */
+   Service Connections stay on one line at the minimum window width. A larger
+   Text Size or a wider App Font wraps the name onto a second line instead of
+   cutting it. */
 .capabilities-included-name {
   flex-direction: column;
   align-items: flex-start;
@@ -13177,10 +13189,12 @@ textarea:focus-visible,
 }
 
 .capabilities-included-name strong {
+  display: -webkit-box;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* Settings → Automations: each row is one line per fact; the full title is
