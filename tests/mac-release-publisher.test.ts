@@ -113,6 +113,15 @@ class FakeGitHub {
       return JSON.stringify({ isPrivate: repository.isPrivate, visibility: repository.isPrivate ? "PRIVATE" : "PUBLIC", url: `https://github.com/${args[2]}` });
     }
     if (command === "api") {
+      const list = /^repos\/(.+)\/releases\?per_page=100$/.exec(verb!);
+      if (list) {
+        assert.deepEqual(args.slice(2), ["--paginate", "--slurp"]);
+        // One page per two releases, as --slurp returns them.
+        const releases = this.repository(list[1]!).releases.map((release) => ({
+          tag_name: release.tagName, draft: release.isDraft, prerelease: release.isPrerelease, assets: release.assets.map(({ name }) => ({ name })),
+        }));
+        return JSON.stringify([releases.slice(0, 2), releases.slice(2)]);
+      }
       const match = /^repos\/(.+)\/releases\/latest$/.exec(verb!);
       assert.ok(match, `unexpected api call ${verb}`);
       const repository = this.repository(match[1]!);
@@ -427,6 +436,58 @@ test("a failed lookup of the existing release stops the run before anything is u
   } finally {
     release.cleanup();
   }
+});
+
+test("the separate repository stays closed when its bridge is no longer latest or reached only the source repository", async () => {
+  // Someone marked 0.1.4 latest again after the bridge.
+  const reverted = new FakeGitHub();
+  reverted.seedMacRelease(separateSlug, "v0.1.5", sourceSlug);
+  reverted.seedMacRelease(sourceSlug, "v0.1.5", sourceSlug);
+  reverted.repository(separateSlug).latest = "v0.1.4";
+  reverted.repository(sourceSlug).latest = null;
+  const release = candidate("separate-repository", "0.1.6");
+  try {
+    await assert.rejects(
+      release.publish(reverted),
+      /Mat-Tom-Son\/amplefile-mac-releases holds the bridge release v0\.1\.5, although it is not its latest release: copies installed from it check Mat-Tom-Son\/amplefile and would never see v0\.1\.6/,
+    );
+    assert.deepEqual(reverted.changes(), []);
+
+    // The bridge is public in the source repository and was abandoned before its second run.
+    const abandoned = new FakeGitHub();
+    abandoned.seedMacRelease(sourceSlug, "v0.1.5", sourceSlug);
+    await assert.rejects(
+      release.publish(abandoned),
+      /Mat-Tom-Son\/amplefile already serves the Mac release v0\.1\.5, and copies installed from it check Mat-Tom-Son\/amplefile: they would never see v0\.1\.6 in Mat-Tom-Son\/amplefile-mac-releases\. Finish the move with the bridge stage/,
+    );
+    assert.deepEqual(abandoned.changes(), []);
+
+    // A latest release there that is not a Mac release is no bridge.
+    const linux = new FakeGitHub();
+    linux.seedMacRelease(sourceSlug, "linux-0.1.5", null);
+    assert.equal((await release.publish(linux)).published.slug, separateSlug);
+  } finally {
+    release.cleanup();
+  }
+});
+
+test("every published release in a repository is listed with the feed its copies check", () => {
+  const github = new FakeGitHub();
+  for (const tag of ["v0.1.1", "v0.1.2", "v0.1.3"]) github.seedMacRelease(separateSlug, tag, separateSlug);
+  github.seedMacRelease(separateSlug, "v0.1.5", sourceSlug);
+  github.repository(separateSlug).releases.push({
+    tagName: "v0.1.6", isDraft: true, isPrerelease: false, title: "", notes: "", verifyTag: false, target: "main", assets: [],
+  });
+  const client = createGitHubReleases({ run: github.run, manifestName });
+  const separateFeed = { owner: "Mat-Tom-Son", repo: "amplefile-mac-releases" };
+  assert.deepEqual(client.publishedReleases(feedAt("bridge").separate), [
+    { tag: "v0.1.4", feed: separateFeed },
+    { tag: "v0.1.1", feed: separateFeed },
+    { tag: "v0.1.2", feed: separateFeed },
+    { tag: "v0.1.3", feed: separateFeed },
+    { tag: "v0.1.5", feed: { owner: "Mat-Tom-Son", repo: "amplefile" } },
+  ], "across pages, without the draft");
+  assert.deepEqual(client.publishedReleases(feedAt("bridge").source), [{ tag: "linux-test-0.1.4", feed: null }]);
 });
 
 test("the latest release and its feed are read from GitHub, not assumed", () => {

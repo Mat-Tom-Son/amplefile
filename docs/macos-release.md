@@ -82,8 +82,10 @@ manifest, the feed its copies check.
   feed it is published to, each of those feeds must be public, and after
   publication each must serve this release as its latest.
 - `separate-repository`: the separate repository's latest release must check
-  the separate repository. Once a bridge is its latest release, nothing more
-  is published there this way.
+  the separate repository. Once a bridge is published, nothing more is
+  published this way: the publisher refuses when any release in the
+  separate repository names the source repository, latest or not, and when
+  the source repository already serves a Mac release that checks it.
 - `bridge`: the separate repository must have a release to bridge from. A
   run publishes to one feed. The first run publishes to the source
   repository, which nothing reads until a bridged copy is installed, and
@@ -440,8 +442,10 @@ for as long as any copy could still be on an older version:
   check in step 4, a failed upload), no installed copy has changed. Fix the
   cause and publish a higher version as the bridge. A bridge already public
   in the source repository stays there; the next bridge supersedes it as
-  latest. Before anything is tagged, the stage can simply go back to
-  `separate-repository`.
+  latest. The stage can go back to `separate-repository` only while no
+  bridge is public in either repository: after that the publisher refuses a
+  release to the separate repository alone, because a copy installed from
+  the source repository's bridge would never see it.
 - **An ordinary defect in a published bridge**, one that leaves launching
   and updating intact, is fixed by the next release in the
   `source-repository` stage. Copies on the bridge take it from the source
@@ -456,8 +460,9 @@ for as long as any copy could still be on an older version:
   run is repaired by installing the replacement's DMG over it, which keeps
   its profile; no arrangement of feeds can reach it. Steps 3 and 4 of the
   bridge release exist to catch this before step 5.
-- The stage never goes back to `separate-repository` after step 5. The
-  publisher refuses it, because bridged copies would never see the release.
+- The stage never goes back to `separate-repository` once a bridge is
+  public. The publisher refuses it, because bridged copies would never see
+  the release.
 
 ## Updater evidence
 

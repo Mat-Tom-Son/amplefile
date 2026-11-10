@@ -62,6 +62,7 @@ export async function publishMacRelease({
     feed,
     version,
     latest: { separate: github.latestRelease(feed.separate), source: github.latestRelease(feed.source) },
+    separateReleases: feed.stage === "separate-repository" ? github.publishedReleases(feed.separate) : [],
     replaceBridge,
     alreadyPublished,
   });
@@ -112,6 +113,11 @@ export function createGitHubReleases({ run, manifestName }) {
     if (!result.ok) throw new Error(`${label}: ${compactText(result.output)}`);
     return result.stdout;
   };
+  const manifestFeedOf = (repository, tag) => manifestFeed(JSON.parse(gh(
+    ["release", "download", tag, "--repo", repository.slug, "--pattern", manifestName, "--output", "-"],
+    `Could not read the release manifest of ${tag} in ${repository.slug}`,
+  )));
+  const hasManifest = (release) => (release.assets ?? []).some((asset) => asset.name === manifestName);
   const readLatest = (repository) => {
     const result = attempt(["api", `repos/${repository.slug}/releases/latest`]);
     if (result.ok) return JSON.parse(result.stdout);
@@ -156,12 +162,19 @@ export function createGitHubReleases({ run, manifestName }) {
     latestRelease(repository) {
       const release = readLatest(repository);
       if (!release) return null;
-      if (!(release.assets ?? []).some((asset) => asset.name === manifestName)) return { tag: release.tag_name, feed: null };
-      const manifest = JSON.parse(gh(
-        ["release", "download", release.tag_name, "--repo", repository.slug, "--pattern", manifestName, "--output", "-"],
-        `Could not read the release manifest of ${release.tag_name} in ${repository.slug}`,
+      return { tag: release.tag_name, feed: hasManifest(release) ? manifestFeedOf(repository, release.tag_name) : null };
+    },
+
+    /** Every published release in the repository as `{ tag, feed }`, with `feed` as `latestRelease` gives it. */
+    publishedReleases(repository) {
+      const pages = JSON.parse(gh(
+        ["api", `repos/${repository.slug}/releases?per_page=100`, "--paginate", "--slurp"],
+        `Could not list the releases in ${repository.slug}`,
       ));
-      return { tag: release.tag_name, feed: manifestFeed(manifest) };
+      return pages.flat().filter((release) => !release.draft).map((release) => ({
+        tag: release.tag_name,
+        feed: hasManifest(release) ? manifestFeedOf(repository, release.tag_name) : null,
+      }));
     },
 
     /** The tag of the release GitHub marks latest, or "" when there is none. */
@@ -257,10 +270,14 @@ export function assertCheckedInFeedStage(feed) {
  * release's packaged app checks, read from its release manifest, or `null`
  * when the release carries no AmpleFile Mac manifest.
  *
+ * `separateReleases` lists every published release in the separate
+ * repository as `{ tag, feed }`; it is read in the `separate-repository`
+ * stage, where a bridge anywhere in that history closes the feed.
+ *
  * `alreadyPublished` lists the repositories that already hold this exact
- * release, from an interrupted publication to both feeds.
+ * release, from the bridge's earlier run.
  */
-export function assertFeedContinuity({ feed, version, latest, replaceBridge = "", alreadyPublished = [] }) {
+export function assertFeedContinuity({ feed, version, latest, separateReleases = [], replaceBridge = "", alreadyPublished = [] }) {
   const { stage, source, separate } = feed;
   const tag = `v${version}`;
   const held = (repository) => alreadyPublished.some((entry) => sameRepository(entry, repository));
@@ -276,6 +293,22 @@ export function assertFeedContinuity({ feed, version, latest, replaceBridge = ""
           + `and would never see ${tag}. Publish with the source-repository stage.`,
         );
       }
+    }
+    // The latest release is not the whole story: an older release can be
+    // marked latest again, and a bridge can be public in the source
+    // repository without having reached the separate one.
+    const bridge = separateReleases.find((release) => release.feed && !sameRepository(release.feed, separate));
+    if (bridge) {
+      throw new Error(
+        `${separate.slug} holds the bridge release ${bridge.tag}, although it is not its latest release: copies installed from it check `
+        + `${describe(bridge.feed)} and would never see ${tag}. Mark ${bridge.tag} latest again and publish with the source-repository stage.`,
+      );
+    }
+    if (latest.source?.feed && sameRepository(latest.source.feed, source)) {
+      throw new Error(
+        `${source.slug} already serves the Mac release ${latest.source.tag}, and copies installed from it check ${source.slug}: `
+        + `they would never see ${tag} in ${separate.slug}. Finish the move with the bridge stage.`,
+      );
     }
   } else if (stage === "bridge") {
     if (!latest.separate) {
