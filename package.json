@@ -40,7 +40,7 @@
     "site:build": "node site/build.mjs",
     "desktop:check": "tsc --noEmit -p tsconfig.desktop.json",
     "desktop:compile": "node scripts/clean-desktop-dist.mjs && tsc -p tsconfig.desktop.json",
-    "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:chrome-native-host && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",
+    "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",
     "desktop:make:mac": "node scripts/build-mac-desktop.mjs --unsigned-smoke",
     "desktop:rc:mac": "node scripts/build-mac-release-candidate.mjs",
     "desktop:make:mac:release": "node scripts/build-mac-desktop.mjs --release",
@@ -62,9 +62,7 @@
     "desktop:browser:smoke": "electron scripts/browser-electron-smoke.mjs",
     "desktop:verify:packaged-assets": "node scripts/verify-packaged-app-assets.mjs",
     "desktop:verify:release:mac": "node scripts/verify-mac-release.mjs",
-    "desktop:computer-helper": "node scripts/build-computer-helper.mjs",
-    "desktop:chrome-native-host": "node scripts/build-chrome-native-host.mjs",
-    "chrome:build": "node scripts/build-chrome-store.mjs"
+    "desktop:computer-helper": "node scripts/build-computer-helper.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.1.0",
@@ -80,7 +78,6 @@
     "jszip": "^3.10.1",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.3.289",
-    "pi-chrome": "0.15.51",
     "pi-web-access": "0.29.0",
     "pptxgenjs": "4.0.1",
     "protobufjs": "7.6.5",

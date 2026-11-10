@@ -183,7 +183,7 @@ Apple submission.
 - **0.1.3** was published to `Mat-Tom-Son/amplefile-mac-releases` on
   November 8, 2026, from the annotated source tag `v0.1.3` (commit
   `10cd011`): the G app icon, provider sign-in finished in the app, and a
-  first run without Chrome.
+  first run that offers only Computer Control.
 - **0.1.4** was published to `Mat-Tom-Son/amplefile-mac-releases` on
   November 9, 2026, from the annotated source tag `v0.1.4` (commit
   `16eae93`): the renderer inside `app.asar`, the redrawn Chat, and an

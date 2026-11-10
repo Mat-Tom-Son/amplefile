@@ -8,7 +8,7 @@ import sharp from "sharp";
 // desktop/assets/brand/ (see its README). Nothing here redraws the mark:
 // - icon.icns packs Apple's own Icon Composer exports (AmpleFile.iconset,
 //   refreshed by `npm run brand:icon`); icon.png is the 1024 px Default.
-// - The flat mark PNGs (Chrome, Windows, drag images) render the SVG
+// - The flat mark PNGs (favicons, Windows, drag images) render the SVG
 //   masters: the optically redrawn small master up to 32 px, the full master
 //   above that.
 // - The menu-bar template pair renders amplefile-menubar.svg at 18 and 36 px,

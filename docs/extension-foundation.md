@@ -22,7 +22,7 @@ authority; host facilities cannot sandbox arbitrary shell access.
 configuration, diagnostics, update, enable/disable and removal. It is a popup
 dialog opened from the toolbar's **Action** (⋯) menu or a Connected Folder's
 right-click menu, pinned to the Connected Folder it was opened from. Its
-Installed view starts with an **Included with AmpleFile** strip holding the five
+Installed view starts with an **Included with AmpleFile** strip holding the four
 included tools; **Everywhere** and **This Connected Folder only** are the scope
 groups below it, side by side. Account and OS setup stays on a trusted local surface.
 
@@ -42,9 +42,6 @@ bus query, `amplefile:extension-host:v1`, provides explicit runtime paths,
 catalog/session mode and on-demand configuration callbacks. This context stays
 inside the full-trust native runtime; it is not a renderer
 API, and other native Extensions can use the same supported event bus.
-
-Chrome production distribution, native bootstrap ownership and independent update
-compatibility are defined in [Chrome extension distribution](chrome-extension-distribution.md).
 
 ## Live Extension interactions
 
@@ -83,12 +80,14 @@ is not rendered as a desktop component.
 | Tool | Included implementation | Setup and supported boundary |
 |---|---|---|
 | Computer Control | `@injaneity/pi-computer-use` 0.5.1; existing native observations/input coordination with reviewed helper lifecycle changes | Apple-silicon macOS helper built from source and included in the app signing lane. Accessibility and Screen Recording setup names the actual helper. Requested observations and actions, no continuous recorder. |
-| Chrome | `pi-chrome` 0.15.51; shared transport with independent Chat targets and embedded-host ownership | Install AmpleFile from the Chrome Web Store and choose Connect in the selected profile. Native bootstrap and authenticated protocol/capability checks precede use. Signed-in account effects use that profile's authority; cleanup preserves user tabs. |
 | Web | `pi-web-access` 0.29.0 pure search and readable-page functions through an additive native factory | DuckDuckGo search needs no key; optional Brave key is entered in tool setup. Explicit HTTP(S) reading, bounded output and cancellation. No automatic cookie/profile import, media service, global fetch replacement or hidden model call. Challenges and rate limits remain visible failures. |
 | Documents | Ordinary JavaScript worker, maintained document libraries and a standard document-work Skill | DOCX/XLSX/PPTX/PDF creation, spreadsheet read/write, PDF text extraction and selected page rendering using bundled dependencies. No separate Node/Python required. The separate `document_engine` tool detects installed LibreOffice for Office rendering/XLSX recalculation and Tesseract for page-image OCR. These optional engines are not bundled; missing setup is explicit. Built-in PDF text extraction itself is not OCR. |
 | Service Connections | Pi 1.1.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP has no elicitation or sampling path. No automatic imports from other applications. |
 
-Email, calendars, databases and project services remain user-selected
+Interactive web work—opening pages, signing in, clicking and typing—uses the
+[built-in browser](built-in-browser.md)'s `browser_*` tools, which every Worker
+and the AmpleFile Agent has; it is part of AmpleFile itself rather than an
+included tool. Email, calendars, databases and project services remain user-selected
 connections. Included does not mean every account is connected or every server
 starts. Factories stay cold during catalog inspection; credentials are read
 when an operation needs them. The document worker imports its libraries on
@@ -141,21 +140,17 @@ diagnostics and observed tool readiness (`ready`, `setup_required`,
 `unavailable`, `unknown`, with specific failure detail). A saved credential or
 successful module import alone does not prove an operation works. An MCP connection check
 performs bounded native connect and tool/resource/prompt discovery, without
-invoking a server tool. Chrome checks its authenticated companion; computer
+invoking a server tool. Computer
 checks report actual helper/permission state. Web reports configured or unknown
 until the relevant operation supplies evidence; the default keyless Web path
 is available without setup. Included tiles in the Installed view's **Included with AmpleFile** strip read
 cold host status. While the popup is visible they refresh every five seconds
 and when the window returns to the foreground; hidden or closed surfaces stop
 reading. A failed read keeps previously verified evidence neutral and historical
-(including Last Connected for Chrome) with an error, rather than claiming live
+with an error, rather than claiming live
 readiness or discarding the timestamp. Opening the popup launches no helper, browser, or MCP server. Native
 load state stays in Technical details and never establishes readiness.
 
-Chrome uses recent authenticated contacts from the selected profile: compatible
-polls, active-command heartbeats and accepted results. A lease alone is
-Connecting; a selected profile with no recent contact says Not Connected and
-reconnects when Chrome opens. Transport startup failures show a bounded diagnosis.
 Computer Control records actual helper and permission evidence after use or an
 explicit **Check**. Use coalesces no-launch permission observations for thirty
 seconds without delaying tool results. After five minutes a successful observation becomes neutral **Last
@@ -262,12 +257,12 @@ and failures, document structure/render provenance, and actual Electron module
 loading. Relevant suites include `extension-interactions`,
 `extension-questions-rendering`, `resource-lifecycle`, `included-toolkit-native`,
 `included-mcp-settings-api`, `included-mcp-callbacks`, `included-computer-native`,
-`included-chrome-native`, `included-documents` and
+`included-documents` and
 `included-documents-packaging` under `tests/`.
 
 Passing isolated fixtures does not certify the signed installed user journey
 or a model's judgment. Release acceptance still requires live model work in
-disposable Connected Folders, real desktop/companion setup and recovery, computer-use
+disposable Connected Folders, real desktop setup and recovery, computer-use
 inspection, repository and desktop checks, and the normal signed/notarized
 candidate lane. Record that evidence for the exact candidate rather than
 inferring it from source or a previous build. Document acceptance must
@@ -278,7 +273,6 @@ artifact, and concurrent Chat/Stop tests must preserve unrelated work.
 
 - [Pi Extensions](https://pi.dev/docs/latest/extensions) and [Pi packages](https://pi.dev/docs/latest/packages)
 - [pi-computer-use](https://github.com/injaneity/pi-computer-use)
-- [pi-chrome](https://github.com/tianrendong/pi-chrome)
 - [pi-web-access](https://github.com/nicobailon/pi-web-access)
 - [Pi native MCP](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/mcp.md)
 

@@ -78,9 +78,9 @@ module.exports = {
   compression: "normal",
   npmRebuild: false,
   mac: {
-    extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }, { from: "out/included-tools/chrome-native-host", to: "chrome-native-host" }],
+    extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }],
     // The afterPack hook signs this Swift app without Electron JIT entitlements.
-    signIgnore: ["/computer-helper/", "/chrome-native-host/"],
+    signIgnore: ["/computer-helper/"],
     target: ["dmg", "zip"],
     icon: path.join(root, "desktop", "assets", "icon.icns"),
     category: "public.app-category.productivity",

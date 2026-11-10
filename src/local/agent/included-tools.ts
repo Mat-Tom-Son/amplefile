@@ -7,7 +7,6 @@ import type { ResolvedPiRuntime } from "./pi-runtime-config.js";
 import type { NativeResource } from "./resource-lifecycle.js";
 
 import { includedToolDefinitions } from "../../shared/included-tools.js";
-import type { IncludedChromeConnectionHost } from "./included-chrome-connection.js";
 import type { DocumentEngineSearch } from "../../../resources/included-tools/readiness.js";
 import { beginIncludedToolObservation } from "./included-tool-observations.js";
 import { toolInputFeedbackExtension } from "./tool-input-feedback.js";
@@ -20,7 +19,6 @@ export interface IncludedToolsConfiguration {
   helperAppPath?: string;
   prepareComputerHelper?: () => Promise<void>;
   repairComputerHelper?: (beforeReplace: () => Promise<void>) => Promise<void>;
-  chromeConnection?: IncludedChromeConnectionHost;
   /** Where Documents looks for LibreOffice and Tesseract; defaults to this computer's usual install locations. */
   documentEngineSearch?: DocumentEngineSearch;
 }
@@ -82,13 +80,6 @@ export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRu
       ...(config.documentEngineSearch ? { documentEngineSearch: config.documentEngineSearch } : {}),
       prepareComputerHelper: config.prepareComputerHelper,
       ...(mode === "session" ? { beginIncludedToolObservation: (id: "computer" | "documents") => beginIncludedToolObservation(runtime, id) } : {}),
-      companionPath: join(config.stateRoot, "chrome-companion"),
-      ...(config.chromeConnection ? {
-        getChromeConnection: config.chromeConnection.getChromeConnection,
-        onChromeConnectionRevoked: config.chromeConnection.onChromeConnectionRevoked,
-        reportChromeConnectionObservation: config.chromeConnection.reportChromeConnectionObservation,
-        beginChromeWork: config.chromeConnection.beginChromeWork,
-      } : {}),
       getMcpOptions: () => mcpOptions,
       // Credentials are read only when an operation actually needs them.
       getSearchConfig: async () => {

@@ -134,7 +134,7 @@ for capture stages, coverage and bounds.
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
 | `desktop/cli/`, `desktop/assets/` | The installed `amplefile` command's shims; icons and brand artwork |
-| `resources/included-tools/`, `patches/included-tools/` | The five included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
+| `resources/included-tools/`, `patches/included-tools/` | The four included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
 | `examples/packages/` | Example Pi packages, not installed by default |
 | `tests/` | Application regression tests (`*.test.ts`; see [Verification](#verification)) |
 | `scripts/` | Shared development, validation, and release commands |

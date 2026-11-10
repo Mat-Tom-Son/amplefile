@@ -180,10 +180,8 @@ export function collect() {
       const lineContracts = contractsIn(region.value, file, region.cls);
       for (const match of region.value.matchAll(tokenPattern)) {
         const token = match[0];
-        // Literal values that keep the old spelling: the published Chrome
-        // companion's native-messaging host id, and the earlier app's portable
-        // `.work-fold/` folder, which AmpleFile hides and never reads.
-        if (region.cls === "doc" && token === "com.work_fold.chrome") continue;
+        // A literal value that keeps the old spelling: the earlier app's
+        // portable `.work-fold/` folder, which AmpleFile hides and never reads.
         if (/^work-fold$/i.test(token) && region.value[match.index - 1] === ".") continue;
         const parts = wordParts(token);
         let concept = concepts.find((candidate) => candidate.test(parts, token));

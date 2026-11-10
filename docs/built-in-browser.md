@@ -86,9 +86,10 @@ site's question.
 ## Profile and sign-ins
 
 One persistent Chromium profile serves every browser page and every Connected
-Folder. It lives in AmpleFile's machine-local app data, apart from Chrome, from
-the app's own window, and from every Connected Folder; cookies are encrypted
-with the operating system's keychain like the rest of the app's Chromium data.
+Folder. It lives in AmpleFile's machine-local app data, apart from any other
+browser on the Mac, from the app's own window, and from every Connected Folder;
+cookies are encrypted with the operating system's keychain like the rest of the
+app's Chromium data.
 A sign-in in one page holds for every page.
 
 The browser identifies itself the way Claude's own browser does: Chromium's
@@ -132,9 +133,10 @@ way**).
 ## Workers
 
 Every Worker and the AmpleFile Agent in the desktop app carry the browser
-tools, registered beside the background job tools. They are part of the app,
-not one of the five included tools, so the Skills & Extensions strip does not
-list them and there is nothing to set up. A development API without Electron
+tools, registered beside the background job tools, and they are how an agent
+uses the web interactively. They are part of the app, not one of the four
+included tools, so the Skills & Extensions strip does not list them and there
+is nothing to set up. A development API without Electron
 has no browser and no browser tools.
 
 | Tool | What it does |

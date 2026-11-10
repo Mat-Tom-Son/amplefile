@@ -16,24 +16,12 @@ The application's Node runtime minimum is 22.19.0. The included computer
 helper requires macOS 14 or later; other tools remain available on the app's
 supported systems.
 
-`desktop:prepare` builds the Computer app and Chrome Native Messaging bootstrap
-from reviewed source. The signing hook signs both with the app's Developer ID
-before the outer bundle is sealed. The Computer app retains its product icon
-and `com.amplefile.desktop.computer` identity. After signing, a bounded packaging
-probe uses the archived installation code to verify a standalone copy in a
-temporary private directory, without launching it or requesting permissions;
-it also verifies the Chrome bootstrap rejects an unowned origin with one
-bounded protocol frame.
-
-The Chrome bootstrap embeds the exact item ID from
-`src/shared/chrome-distribution.json`; a release build refuses a missing ID.
-An ordinary development build can produce an inert bootstrap while Store setup
-is unavailable. Explicit Chrome setup copies the verified signed executable to
-a private versioned path and registers only that exact extension origin in the
-user's Google Chrome NativeMessagingHosts directory. Development, Local Smoke
-and custom-data-profile hosts cannot replace that registration. The helper
-reads only its sibling per-launch descriptor and forwards bounded setup
-requests; it does not own connection state or execute browser operations.
+`desktop:prepare` builds the Computer app from reviewed source. The signing
+hook signs it with the app's Developer ID before the outer bundle is sealed.
+The Computer app retains its product icon and `com.amplefile.desktop.computer`
+identity. After signing, a bounded packaging probe uses the archived
+installation code to verify a standalone copy in a temporary private directory,
+without launching it or requesting permissions.
 Automatic startup may update an owned registration, but a removed or changed
 registration requires explicit Connect to repair. No profile files are read.
 
@@ -90,14 +78,14 @@ as a whole, these packages with all their JavaScript: `@earendil-works/pi-tui`,
 unpacked files straight from disk, so the ASAR integrity fuse does not cover
 them at run time; the build-time hash checks above and the bundle's code
 signature do. The same holds for the icons under `Contents/Resources/assets`,
-the Computer helper, the Chrome native host, and the CLI shims under
+the Computer helper, and the CLI shims under
 `Contents/bin`. List `app.asar.unpacked` in a built candidate to see the
 current set.
 
 Before signing or contacting Apple, the macOS packager also runs a bounded
 native-tool smoke against an isolated clone of the complete built archive.
 Development Electron loads that archive's compiled Chat runtime and its own Pi
-and Jiti dependencies, checks all five included tools in two Chats, invokes a
+and Jiti dependencies, checks all four included tools in two Chats, invokes a
 local synthetic MCP service, and creates and renders documents through native
 tool calls. No model or credentials are used. Poisoned ancestor packages and
 reported library origins prove document runtime dependencies stay in the app;
