@@ -69,6 +69,18 @@ only unpacked Mach-O binaries whose signatures legitimately changed their bytes;
 the existing code-signature checks verify those binaries. This catches source
 size changes that otherwise leave a validly signed but unreadable archive.
 
+The renderer build for the main window and the AmpleFile Agent popover is
+archived at `dist/web-local` inside `app.asar`, beside the compiled main
+process, so the ASAR integrity fuse covers the code both windows run. The
+internal scheme serves it from the archive; nothing is copied to
+`Contents/Resources/web-local`. Packaged-asset verification requires both
+pages and every script and stylesheet they load to be in the archive, and
+fails on an unpacked renderer file or a loose copy beside the archive. What
+stays outside is not window code: icons under `Contents/Resources/assets`, the
+document worker entrypoint and native canvas bindings under
+`app.asar.unpacked`, the Computer helper, the Chrome native host, and the CLI
+shims under `Contents/bin`.
+
 Before signing or contacting Apple, the macOS packager also runs a bounded
 native-tool smoke against an isolated clone of the complete built archive.
 Development Electron loads that archive's compiled Chat runtime and its own Pi
@@ -272,7 +284,9 @@ Do not diagnose this with `security find-generic-password ... -g`: `-g` requests
 
 ## Code map
 
-- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, and DMG layout.
+- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, DMG layout, and what is archived in `app.asar`.
+- `desktop/src/renderer-protocol.ts`: where the renderer build lives and how the internal scheme serves it.
+- `scripts/verify-packaged-app-assets.mjs`: packaged layout, fuses, and ASAR integrity; `scripts/verify-packaged-renderer.mjs` is its archived-renderer check.
 - `scripts/generate-dmg-background.mjs`: installer-only DMG artwork under ignored build output.
 - `scripts/build-mac-release-candidate.mjs`: app-only signed/notarized interactive release candidate.
 - `scripts/verify-mac-release-candidate.mjs`: signature, hardened-runtime, staple, Gatekeeper, identity, version, and architecture verification for the app-only candidate.

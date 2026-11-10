@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
@@ -116,6 +116,7 @@ import {
 } from "./command-line-install.js";
 import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
+import { rendererBuildDirectory, serveProtocolFile } from "./renderer-protocol.js";
 
 const productionProductName = productIdentity.productName;
 const localMacSmokeProductName = productIdentity.macSmokeProductName;
@@ -741,6 +742,7 @@ function registerRendererProtocol(): void {
   rendererProtocolRegistered = true;
   const rendererRoot = resolveRendererDir();
   const desktopAssets = resolveDesktopAssetsDir();
+  const fetchLocalFile = (fileUrl: string): Promise<Response> => net.fetch(fileUrl);
   protocol.handle(appProtocol, (request) => {
     const url = new URL(request.url);
     if (url.hostname !== "app") return new Response("Not found", { status: 404 });
@@ -748,19 +750,10 @@ function registerRendererProtocol(): void {
     const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
     if (requestedPath.startsWith(desktopAssetRoutePrefix)) {
       if (requestedPath !== `${desktopAssetRoutePrefix}icon-32.png`) return new Response("Not found", { status: 404 });
-      return fetchProtocolFile(desktopAssets, "icon-32.png", request.method);
+      return serveProtocolFile(desktopAssets, "icon-32.png", request.method, fetchLocalFile);
     }
-    return fetchProtocolFile(rendererRoot, requestedPath.replace(/^\/+/, ""), request.method);
+    return serveProtocolFile(rendererRoot, requestedPath.replace(/^\/+/, ""), request.method, fetchLocalFile);
   });
-}
-
-function fetchProtocolFile(rootDir: string, requestedPath: string, method: string): Promise<Response> | Response {
-  const candidate = resolve(rootDir, requestedPath);
-  const relativeCandidate = relative(rootDir, candidate);
-  if (/^\.\.(?:[\\/]|$)/.test(relativeCandidate) || isAbsolute(relativeCandidate)) return new Response("Not found", { status: 404 });
-  if (!existsSync(candidate)) return new Response("Not found", { status: 404 });
-  if (method === "HEAD") return new Response(null, { status: 200 });
-  return net.fetch(pathToFileURL(candidate).href);
 }
 
 async function openModelContextWindow(): Promise<void> {
@@ -2558,7 +2551,9 @@ function productRendererArguments(): string[] {
 }
 
 function resolveRendererDir(): string {
-  const directory = app.isPackaged ? join(process.resourcesPath, "web-local") : join(repoRoot, "dist", "web-local");
+  // A packaged app's root is app.asar, so its renderer is read from the
+  // integrity-checked archive rather than from loose files beside it.
+  const directory = rendererBuildDirectory(app.isPackaged ? app.getAppPath() : repoRoot);
   if (!existsSync(join(directory, "index.html"))) throw new Error(`${productName} renderer build was not found at ${directory}. Run npm run local:build.`);
   return directory;
 }
