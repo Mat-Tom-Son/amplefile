@@ -74,7 +74,7 @@ browser journeys verify visible state, controls, focus, and rendering.
 ## Implementation and verification
 
 The host projection is `src/shared/request-presentation.ts`, served by the
-local adapter in `src/local/server.ts`. Desktop surfaces share
+local adapter in `src/local/api/request-routes.ts`. Desktop surfaces share
 `web-local/src/components/chat/WorkRequest.tsx`.
 
 `tests/amplefile-collaboration-journeys.test.ts` exercises actual host admission,

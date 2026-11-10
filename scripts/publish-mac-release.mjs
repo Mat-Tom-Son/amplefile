@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
@@ -7,6 +6,17 @@ import { fileURLToPath } from "node:url";
 import { verifyReleaseSource } from "./release-source.mjs";
 import { assertPublishableMacState } from "./mac-publication-state.mjs";
 import { assertLocalReleaseVerification, assertVerifiedBuildOrder, withReleaseVerificationLock } from "./local-release-verification.mjs";
+import feedModule from "./mac-release-feed.cjs";
+import {
+  assertCheckedInFeedStage,
+  assertTaggedFeedStage,
+  bridgePauseMessage,
+  createGitHubReleases,
+  publishMacRelease,
+  releaseManifestFeedFailures,
+} from "./mac-release-publication.mjs";
+
+const { resolveMacReleaseFeed } = feedModule;
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 loadLocalReleaseEnvironment();
@@ -14,10 +24,11 @@ const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const version = String(packageJson.version ?? "").trim();
 const arch = stringValue(process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
-const owner = stringValue(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner;
-const repo = stringValue(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName;
-const releaseRepo = `${owner}/${repo}`;
-const sourceRepo = `${identity.sourceRepositoryOwner}/${identity.sourceRepositoryName}`;
+// Where the packaged app looks for updates and where this release goes. They
+// differ only for the bridge release, which is published to both feeds.
+const feed = resolveMacReleaseFeed(identity);
+const sourceRepo = feed.source.slug;
+const teamId = stringValue(process.env.AMPLEFILE_MAC_TEAM_ID) || "464JD5K8DC";
 const tag = `v${version}`;
 const builderDir = join(rootDir, "out", "builder");
 const stem = `${identity.productName}-${version}-mac-${arch}`;
@@ -40,22 +51,18 @@ if (process.env.AMPLEFILE_SOURCE_RELEASE_REPO && process.env.AMPLEFILE_SOURCE_RE
 }
 
 await withReleaseVerificationLock(rootDir, "publication", async (lockToken) => {
+  assertCheckedInFeedStage(feed);
   const sourceSha = assertSourceState();
   run("gh", ["auth", "status"], "GitHub CLI authentication is required");
   assertSourceTagPublished();
+  assertTaggedFeedStage({
+    feed,
+    tag,
+    taggedIdentity: JSON.parse(capture("git", ["show", `${tag}:src/shared/product-identity.json`], `Could not read the product identity at ${tag}`)),
+  });
   const sourceEvidence = await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag });
   console.log(`[${identity.productName} macOS release] Exact source verified: ${JSON.stringify(sourceEvidence)}`);
   await assertBuildState(lockToken);
-  const repoInfo = JSON.parse(run("gh", ["repo", "view", releaseRepo, "--json", "isPrivate,visibility,url"], `Mac release feed ${releaseRepo} was not found`));
-  if (repoInfo.isPrivate || repoInfo.visibility !== "PUBLIC") {
-    throw new Error(`${releaseRepo} must be public so installed ${identity.productName} apps can update without a GitHub token.`);
-  }
-
-  const existingRelease = spawnSync("gh", ["release", "view", tag, "--repo", releaseRepo, "--json", "tagName,isDraft,url"], commandOptions());
-  if (existingRelease.status === 0) {
-    const existing = JSON.parse(existingRelease.stdout);
-    throw new Error(`${releaseRepo} already contains ${tag}${existing.isDraft ? " as a draft" : ""}. Bump the shared version or delete only a failed draft before retrying. ${existing.url}`);
-  }
 
   for (const name of requiredAssets) {
     const path = join(builderDir, name);
@@ -69,41 +76,34 @@ await withReleaseVerificationLock(rootDir, "publication", async (lockToken) => {
   if (manifest.version !== version || manifest.platform !== "darwin" || manifest.arch !== arch || manifest.unsignedSmokeBuild !== false) {
     throw new Error(`The ${identity.productName} macOS manifest is not a signed release for the current version and architecture.`);
   }
-  if (manifest.feed?.owner !== owner || manifest.feed?.repo !== repo) {
-    throw new Error(`The ${identity.productName} manifest feed does not match ${releaseRepo}.`);
+  const manifestFailures = releaseManifestFeedFailures(manifest, feed);
+  if (manifestFailures.length) {
+    throw new Error(`The ${identity.productName} manifest was not built for the ${feed.stage} stage. ${manifestFailures.join(" ")}`);
   }
 
-  const notes = [
-    `${identity.productName} ${version} for macOS`,
-    "",
-    `Signed with Apple Team ID ${stringValue(process.env.AMPLEFILE_MAC_TEAM_ID) || "464JD5K8DC"}, notarized by Apple, and published for ${arch}.`,
-    "Use the DMG for a first install. Existing updater-capable Mac installs consume the ZIP and latest-mac.yml assets.",
-  ].join("\n");
-
-  console.log(`[${identity.productName} macOS release] Uploading ${tag} to ${releaseRepo} as a draft.`);
-  run(
-    "gh",
-    [
-      "release", "create", tag,
-      "--repo", releaseRepo,
-      "--target", "main",
-      "--title", `${identity.productName} ${version} for macOS`,
-      "--notes", notes,
-      "--draft",
-      ...requiredAssets.map((name) => join(builderDir, name)),
-    ],
-    `Could not create draft ${identity.productName} macOS release ${tag}`,
-    45 * 60_000,
-  );
-
-  verifyRemoteRelease(true);
-  // Uploads take time. Recheck authority and bytes at the public effect boundary.
-  if (assertSourceState() !== sourceSha) throw new Error("Release source changed during upload. The release remains a draft.");
-  await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha });
-  await assertBuildState(lockToken);
-  run("gh", ["release", "edit", tag, "--repo", releaseRepo, "--draft=false", "--latest"], `Could not publish ${identity.productName} macOS release ${tag}`);
-  const release = verifyRemoteRelease(false);
-  console.log(`[${identity.productName} macOS release] Published ${release.url}`);
+  const { remaining, published } = await publishMacRelease({
+    feed,
+    version,
+    productName: identity.productName,
+    arch,
+    teamId,
+    assets: requiredAssets.map((name) => ({ name, path: join(builderDir, name) })),
+    github: createGitHubReleases({
+      manifestName,
+      run: (args, { timeoutMs = 120_000 } = {}) => spawnSync("gh", args, { ...commandOptions(), timeout: timeoutMs }),
+    }),
+    replaceBridge: stringValue(process.env.AMPLEFILE_MAC_REPLACE_BRIDGE),
+    beforePublic: async () => {
+      if (assertSourceState() !== sourceSha) throw new Error("Release source changed during upload. The release remains a draft.");
+      await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha });
+      await assertBuildState(lockToken);
+    },
+    afterSourcePublication: () => verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha }),
+    log: (message) => console.log(`[${identity.productName} macOS release] ${message}`),
+  });
+  if (remaining) {
+    console.log(`\n${bridgePauseMessage({ feed, version, productName: identity.productName, published, remaining })}`);
+  }
 });
 
 function assertSourceState() {
@@ -112,7 +112,13 @@ function assertSourceState() {
   run("git", ["fetch", "--quiet", "origin", "main"], "Could not refresh origin/main before publishing");
   const head = run("git", ["rev-parse", "HEAD"], "Could not read local HEAD");
   const remoteHead = run("git", ["rev-parse", "origin/main"], "Could not read origin/main");
-  if (head !== remoteHead) throw new Error(`Local HEAD ${head} does not match origin/main ${remoteHead}. Push the release commit first.`);
+  if (head !== remoteHead) {
+    throw new Error(
+      `Local HEAD ${head} does not match origin/main ${remoteHead}. Push the release commit first. `
+      + "If main has moved past the tagged release commit, this version can no longer be published: a release is published only from main's head, "
+      + "and finishing needs a higher version.",
+    );
+  }
   return head;
 }
 
@@ -126,8 +132,9 @@ async function assertBuildState(lockToken) {
     nodeVersion: process.version,
     signIdentity: stringValue(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
     teamId: stringValue(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-    feedOwner: owner,
-    feedRepo: repo,
+    feedOwner: feed.packaged.owner,
+    feedRepo: feed.packaged.repo,
+    feedStage: feed.stage,
   }, requiredAssets);
   assertVerifiedBuildOrder(state, verification);
 }
@@ -151,29 +158,6 @@ function assertSourceTagPublished() {
   console.log(`[${identity.productName} macOS release] Source tag ${tag} and public repository are verified at ${head}.`);
 }
 
-function verifyRemoteRelease(expectDraft) {
-  const release = JSON.parse(run(
-    "gh",
-    ["release", "view", tag, "--repo", releaseRepo, "--json", "tagName,isDraft,isPrerelease,assets,url"],
-    `Could not verify ${identity.productName} macOS release ${tag}`,
-  ));
-  if (release.tagName !== tag || release.isDraft !== expectDraft || release.isPrerelease) {
-    throw new Error(`${identity.productName} Mac release ${tag} has unexpected draft or prerelease state.`);
-  }
-  const assets = new Map(release.assets.map((asset) => [asset.name, asset]));
-  for (const name of requiredAssets) {
-    const remote = assets.get(name);
-    if (!remote) throw new Error(`${identity.productName} Mac release ${tag} is missing ${name}.`);
-    const localSize = statSync(join(builderDir, name)).size;
-    if (remote.size !== localSize) throw new Error(`${name} is ${remote.size} bytes remotely but ${localSize} bytes locally.`);
-    const localDigest = createHash("sha256").update(readFileSync(join(builderDir, name))).digest("hex");
-    if (remote.digest !== `sha256:${localDigest}`) {
-      throw new Error(`${name} has remote digest ${remote.digest || "missing"}; expected sha256:${localDigest}.`);
-    }
-  }
-  return release;
-}
-
 function runNpmScript(name) {
   const npmExecPath = process.env.npm_execpath;
   if (npmExecPath && existsSync(npmExecPath)) {
@@ -184,12 +168,17 @@ function runNpmScript(name) {
 }
 
 function run(command, args, label, timeout = 120_000) {
+  return capture(command, args, label, timeout, true);
+}
+
+/** Run a command and return its standard output; `echo` also prints it, as the release log expects. */
+function capture(command, args, label, timeout = 120_000, echo = false) {
   const result = spawnSync(command, args, { ...commandOptions(), timeout });
   const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
   if (result.error || result.status !== 0) {
     throw new Error(`${label}: ${compactText(result.error?.message || output || `exit code ${result.status ?? 1}`)}`);
   }
-  if (output) console.log(output);
+  if (echo && output) console.log(output);
   return String(result.stdout || "").trim();
 }
 

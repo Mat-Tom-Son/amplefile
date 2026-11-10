@@ -1,7 +1,7 @@
 # Linux builds
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
-packages. [Linux test preview 0.1.4](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.4)
+packages. [Linux test preview 0.1.6](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.6)
 uses a separate prerelease tag in the source repository. The public Mac release
 and updater remain separate; Linux previews have no automatic update feed.
 The build command itself never publishes.
@@ -143,7 +143,7 @@ Mac reliability fixes in `d8c90fc7`, `5543df03` and `9a24cd0e` from the source
 project. The Mac helper's reviewed bytes and common text-result verification
 remain intact; shared-screen support extends the native Extension entrypoint.
 
-Provider sign-in waits for the browser callback automatically. **Paste Callback URL…**
-is an optional fallback in first-run setup and AI Models; it opens only when
-chosen. Required provider codes and device-code instructions still appear.
+Provider sign-in waits for the browser callback automatically. **Paste Link**
+is an optional inline fallback in first-run setup and AI Models; sign-in can also
+be cancelled there. Required provider codes and device-code instructions still appear.
 Chrome is omitted from Linux first-run setup.

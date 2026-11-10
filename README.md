@@ -8,122 +8,96 @@
 <p align="center">Workers for the folders you work in.</p>
 
 <p align="center">
-  <a href="https://www.amplefile.com/download/macos">Download for Mac</a> ·
+  <a href="https://github.com/Mat-Tom-Son/amplefile/releases/latest">Download for Mac</a> ·
   <a href="https://www.amplefile.com/">Website</a> ·
-  <a href="CONTRIBUTING.md">Contribute</a> ·
-  <a href="docs/README.md">Docs</a>
+  <a href="docs/README.md">Docs</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-AmpleFile is an open-source Mac app that brings your files, AI conversations, and project tools together. Open a folder, tell its Worker what you need, and work on the actual files. Research, writing, planning, code—whatever belongs in that folder.
+<p align="center">
+  <img src="docs/images/amplefile-window.png" alt="The AmpleFile window: a sidebar of Standard Folders and Connected Folders, a folder's files, and a right panel with the Worker's recent changes, Automations, and the message box." width="860" />
+</p>
 
-For example: open a folder of vendor quotes, ask for a comparison, and have the Worker write a decision brief beside the originals. Come back tomorrow and pick up the same conversation.
+AmpleFile is an open-source Mac app: a file manager for the ordinary folders
+you already work in, with an AI **Worker** for each one. It is for people who
+keep their work in folders—research, writing, planning, paperwork, code—and
+want an assistant that works on the actual files, beside the originals,
+instead of copies pasted into a chat.
 
-A [Linux preview build lane](docs/linux-build.md) also produces x64 RPM, DEB and AppImage candidates, including Linux Computer Control. Download the [Linux 0.1.4 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.4). These previews are separate from the Mac release and updater.
+For example: open a folder of vendor quotes, ask for a comparison, and have the
+Worker write a decision brief next to them. Come back tomorrow and pick up the
+same conversation.
 
-## Connected Folders and Workers
+## Install
 
-Each **Connected Folder** has its own **Worker** and conversations. Your files stay ordinary files, accessible in Finder and your existing tools. A Connected Folder is an ordinary folder you choose to work in; it is never converted into a proprietary container.
+1. [Download the latest release](https://github.com/Mat-Tom-Son/amplefile/releases/latest)
+   for an Apple-silicon Mac and drag AmpleFile to Applications.
+2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or
+   OpenRouter, or paste an API key; provider usage may cost money), then asks
+   for your first folder. Change the model anytime in **Settings → AI Models**.
+3. Choose **Set Up for Me** to have the Worker organize the folder and give it
+   a look, or just start a Chat.
 
-The **AmpleFile Agent** is the agent above your Connected Folders. Ask it what needs attention or have it coordinate work between projects from the Mac menu bar. Hand a piece of work to one Connected Folder's Worker and it reports back here; if it needs something first it asks, and your answer picks the work up where it stopped.
+Files stay on your computer. Content a Worker uses goes to the model provider
+you choose; see [Privacy](PRIVACY.md).
 
-You can register Connected Folders inside another Connected Folder. The sidebar
-shows each nested Connected Folder under its parent, and opening one shows it
-with its own Worker. Type `@` in a Chat or the AmpleFile Agent's message box to
-address a Worker.
-The local `amplefile connected-folders list --json` projection includes `parentConnectedFolderId`
-for a nested Connected Folder; see [the AmpleFile Agent and CLI guide](docs/amplefile-agent-and-cli.md).
+Linux x64 previews provide RPM, DEB and AppImage packages, including Computer Control.
+Download the [Linux 0.1.6 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.6);
+see [Linux builds](docs/linux-build.md) for setup and verification.
 
-As a project grows, set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. They are optional; start with a Connected Folder and a conversation.
+## Run from source
 
-Workers and the AmpleFile Agent can also use AmpleFile's
-[built-in browser](docs/built-in-browser.md). They can read and use pages,
-inspect screenshots, hover and drag, work inside scrolling panels, attach local
-files to file inputs, and find completed downloads. Its sign-ins belong to
-AmpleFile's own profile, separate from Chrome.
-
-What a Worker or the AmpleFile Agent does happens right away and leaves a record you can read in the app. Nothing it deletes is gone for good: **History** keeps versions of your files, and anything History cannot keep waits in **Recently Deleted** for 30 days. Anything running on a schedule can be turned off afterwards.
-
-Use **Compare** in a file's **Version History** to read saved text beside the current file before restoring. Binary, oversized, uncaptured, and incomplete comparisons explain their limits. The authenticated CLI offers paged `history list`/`versions`, verified `history read --offset-bytes 0` ranges for large saved text, and streaming `search` with `--path` narrowing and `--cursor` continuation; see `amplefile help history` and `amplefile help search`.
-
-## Try it
-
-1. [Download AmpleFile](https://www.amplefile.com/download/macos) for an Apple silicon Mac.
-2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or OpenRouter, or paste an API key; provider usage may cost money), optionally sets up Chrome and Computer Control, then asks for your first folder. You can change the model anytime in **Settings → AI Models**.
-3. Choose **Set Up for Me** to have the Worker organize the folder and give it a look, or just start a Chat.
-
-Microsoft Foundry chat deployments connect in **Settings → AI Models** using
-separate Responses, Chat Completions, and Anthropic connections. Enter the
-endpoint, API key, and deployment names for each format you use; all three can
-stay connected together. See
-[model connections](docs/skills-and-extensions.md) for setup and scope.
-
-Files live on your computer. Content a Worker uses goes to your chosen model provider. See [Privacy](PRIVACY.md) for details.
-
-## Under the hood
-
-Handed-off work is tracked as a durable request: a question
-waits for its answer and continues once, and each Worker reports one result to
-whoever asked. The request graph and original assignments stay machine-local,
-and only results a Worker deliberately releases reach another Connected Folder's Chat.
-See the
-[collaboration contract](docs/collaboration-contract.md#completion-delivery-and-recovery)
-for stop, expiry, and restart behavior, and the
-[collaboration experience](docs/collaboration-experience.md) for how progress,
-questions, and result files appear in Chats and the AmpleFile Agent.
-
-Claude Code, Codex, and other AI agents can use AmpleFile too: **Settings →
-Command Line** adds the `amplefile` command to Terminal and adds a short skill
-that teaches an agent to hand work to your Workers, follow it, and run
-Automations. See [the CLI guide](docs/amplefile-agent-and-cli.md).
-
-Long work runs in the background: a Worker or the AmpleFile Agent starts an
-export, build, install, or server as a background job, keeps working or ends
-its turn, and is brought back to the same Chat once with the result when the
-command finishes. History captures what the job changed, its output stays on
-this computer, and Stop or quitting ends it. See
-[Background jobs](docs/background-jobs.md).
-
-Workers also have structured collaboration tools, asynchronous questions,
-interactive terminal input, managed Git working copies, and focused read-only
-helpers. Workers and the AmpleFile Agent can recover completed tool evidence
-and saved findings after compaction with `progress`, including file freshness
-checks. See [Worker tools](docs/worker-tools.md) for their lifecycle and limits.
-
-The AmpleFile Agent's menu-bar popover has a **Chats** view that reopens saved
-conversations and keeps unsent drafts while you switch.
-
-**Skills & Extensions** manages native Pi resources, package updates and
-removal, and setup for the included Computer Control, Chrome, Web, Documents,
-and Service Connections tools, which use the same Pi formats and tool loop as
-Extensions you add. Computer permissions, the Chrome companion (installed from
-the [Chrome Web Store](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)),
-and service credentials are explicit setup; web search
-and the document runtime work without them. An ordinary Extension's questions appear in its owning Chat and
-end with Stop or the session; a Worker's durable questions keep their own
-continuation contract. See [Extensions and computer work](docs/extension-foundation.md)
-for supported jobs, dependencies, reviewed patches, and release acceptance.
-
-Developers can inspect upcoming model calls through the local `?dev-context`
-diagnostic route. Recording starts off, has no Chat or Settings entry, and
-keeps assembled context, provider payloads, and source provenance in bounded
-local memory. The [feedback contract](docs/tool-feedback.md) keeps Pi's tool
-loop for text, data, and selected images without continuous screen recording.
-
-## Help build AmpleFile
-
-This is an actively developed independent project, and I'd love people to build and maintain it with me. UI polish, reliable tests, clearer onboarding, and real-world bug reports would all help.
-
-[Open an issue](https://github.com/Mat-Tom-Son/amplefile/issues) with something you'd like to improve, or start with the [contributing guide](CONTRIBUTING.md). Small, focused contributions are welcome.
-
-Built with Electron, React, TypeScript, and the [Pi agent runtime](https://pi.dev). To run a clone locally, use Node 24 (`.nvmrc`):
+You need Git, **Node 24**, and **npm 11.16 or newer** (check `npm --version`;
+some Node 24 releases bundle an older npm).
 
 ```sh
+git clone https://github.com/Mat-Tom-Son/amplefile.git
+cd amplefile
 npm ci
 npm run local:dev
 ```
 
-Open **http://localhost:5173** for the browser development UI. See [Contributing](CONTRIBUTING.md) for native Electron and agent setup.
+Open **http://localhost:5173** for the app in a browser, or
+**http://localhost:5173/?fixture=connected-folder** for a preview with sample
+data that needs no model or folder. [Contributing](CONTRIBUTING.md) covers the
+native app, tests, and what to do when the toolchain is wrong.
 
-Check changes with `npm run check` and `npm test`; run `npm run desktop:prepare` for desktop integration changes. The [docs map](docs/README.md) covers architecture, product decisions, and release procedures. [AGENTS.md](AGENTS.md) is the shared contributor contract.
+## How it works
 
-[MIT License](LICENSE) · [Security](SECURITY.md) · [Development](docs/development.md)
+- **Connected Folders.** Each Connected Folder is an ordinary folder you chose,
+  with its own Worker and Chats. It is never moved or converted; it stays usable
+  in Finder and your other tools. Connected Folders can nest, and `@` in a
+  message box addresses a Worker.
+- **The AmpleFile Agent** lives in the menu bar, above all your Connected
+  Folders. Ask it what needs attention, or have it hand work to a Worker; the
+  Worker reports back, and asks rather than guesses when it needs something.
+  See the [collaboration experience](docs/collaboration-experience.md).
+- **Automations** run fixed steps on a schedule or after chosen files change.
+  They are deterministic, optional, and can be turned off. See
+  [Automations](docs/automations.md).
+- **Nothing is lost.** What a Worker or the AmpleFile Agent does happens right
+  away and leaves a record you can read in the app. **History** keeps versions
+  of your files, and anything History cannot keep waits in
+  **Recently Deleted** for 30 days.
+- **Tools.** Workers can use a [built-in browser](docs/built-in-browser.md),
+  run long commands as [background jobs](docs/background-jobs.md), use
+  [collaboration and Git tools](docs/worker-tools.md), and use the
+  included Computer Control, Chrome, Web, Documents, and Service Connections
+  tools, managed with any Skills and Extensions you add in
+  **Skills & Extensions** ([details](docs/skills-and-extensions.md)).
+- **Other agents.** **Settings → Command Line** adds the `amplefile` command so
+  Claude Code, Codex, and other shell agents can hand work to your Workers and
+  follow it. See [the AmpleFile Agent and CLI](docs/amplefile-agent-and-cli.md).
+
+Built with Electron, React, TypeScript, and the [Pi agent runtime](https://pi.dev).
+The [docs map](docs/README.md) covers architecture, product contracts, and
+release procedures.
+
+## Help build AmpleFile
+
+AmpleFile is an actively developed independent project, and help building and
+maintaining it is welcome: UI polish, reliable tests, clearer onboarding, and
+real-world bug reports. [Open an issue](https://github.com/Mat-Tom-Son/amplefile/issues/new/choose)
+or start with the [contributing guide](CONTRIBUTING.md).
+
+[MIT License](LICENSE) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Development](docs/development.md)

@@ -1,13 +1,16 @@
 const path = require("node:path");
 const identity = require("./src/shared/product-identity.json");
+const { resolveMacReleaseFeed } = require("./scripts/mac-release-feed.cjs");
 
 const root = __dirname;
 const macReleaseBuild = process.env.AMPLEFILE_MAC_RELEASE_BUILD === "1";
 const unsignedMacBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
 const macSignIdentity = process.env.AMPLEFILE_MAC_SIGN_IDENTITY?.trim();
 const electronBuilderMacIdentity = macSignIdentity?.replace(/^Developer ID Application:\s*/i, "");
-const macReleaseOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
-const macReleaseRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
+// The feed the packaged app checks. Electron Builder writes this entry into
+// Contents/Resources/app-update.yml; the build never uploads (--publish
+// never), and scripts/publish-mac-release.mjs decides where the release goes.
+const macUpdateFeed = resolveMacReleaseFeed(identity).packaged;
 const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
 
 module.exports = {
@@ -24,8 +27,8 @@ module.exports = {
   publish: [
     {
       provider: "github",
-      owner: macReleaseOwner,
-      repo: macReleaseRepo,
+      owner: macUpdateFeed.owner,
+      repo: macUpdateFeed.repo,
       releaseType: "release",
     },
   ],
@@ -43,7 +46,11 @@ module.exports = {
     output: outputDirectory,
     buildResources: "desktop/assets",
   },
-  files: ["package.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "dist/desktop/**/*", "resources/included-tools/**/*"],
+  // The renderer build (the main window and the AmpleFile Agent popover) is
+  // archived with the main process so ASAR integrity validation covers every
+  // byte of code the windows run. Never list it under extraResources or
+  // asarUnpack: both put it on disk as loose files the fuses do not check.
+  files: ["package.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "dist/desktop/**/*", "dist/web-local/**/*", "resources/included-tools/**/*"],
   extraFiles: [
     {
       from: "desktop/cli",
@@ -52,10 +59,6 @@ module.exports = {
     },
   ],
   extraResources: [
-    {
-      from: "dist/web-local",
-      to: "web-local",
-    },
     {
       from: "desktop/assets",
       to: "assets",
@@ -68,6 +71,9 @@ module.exports = {
   asar: true,
   // Node worker entrypoints and native canvas bindings must be real files.
   // PDF.js, its fonts and other JS libraries remain in the verified archive.
+  // Electron Builder also unpacks, whole, every package that contains a
+  // binary or an executable (docs/macos-build.md names them); unpacked files
+  // are outside ASAR integrity and covered by the code signature only.
   asarUnpack: ["resources/included-tools/documents/worker.mjs", "node_modules/@napi-rs/**/*.node"],
   compression: "normal",
   npmRebuild: false,

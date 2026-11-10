@@ -1,10 +1,8 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useState, type ReactElement, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Checkmark20Regular, Copy20Regular, Sparkle20Regular } from "@fluentui/react-icons";
 
-import { safeExternalHref } from "../../lib/api";
-import { localServerHref } from "../../lib/browser-links";
 import { copyToClipboard } from "../../lib/clipboard";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { formatDateTime } from "../../lib/format";
@@ -17,6 +15,7 @@ import { FluentGlyph } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type ConnectedFolderPathLinkResolver } from "./activity";
 import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
+import { SafeMarkdownAnchor } from "./SafeMarkdownAnchor";
 
 export type { ConnectedFolderPathLinkResolver };
 
@@ -56,10 +55,14 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onCopyMessage,
   onContinue,
 }: ChatMessageRowProps) {
-  const [connectedFolderLinkVersion, setConnectedFolderLinkVersion] = useState(0);
   const connectedFolderLinkCacheKey = `${connectedFolderId}:${message.id}`;
+  // Links resolved for this exact reply text. Kept in state, so resolving
+  // them re-renders only the linked text instead of remounting the reply.
+  const [resolvedLinks, setResolvedLinks] = useState<{ cacheKey: string; content: string; links: Map<string, string> } | null>(null);
   const cachedConnectedFolderLinks = assistantMessageConnectedFolderPathCache.get(connectedFolderLinkCacheKey);
-  const connectedFolderLinks = cachedConnectedFolderLinks?.content === message.content ? cachedConnectedFolderLinks.resolved : null;
+  const connectedFolderLinks = resolvedLinks?.cacheKey === connectedFolderLinkCacheKey && resolvedLinks.content === message.content
+    ? resolvedLinks.links
+    : cachedConnectedFolderLinks?.content === message.content && cachedConnectedFolderLinks.resolved.size ? cachedConnectedFolderLinks.resolved : null;
   const messageTime = message.createdAt ? formatDateTime(message.createdAt) : "";
   const savedRuntimePreviews = savedWorkTrailPreviews(message);
   const visibleRuntimePreviews = showRuntimePreview && runtimePreviews.length
@@ -71,19 +74,24 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     ? turnChangedFiles(visibleRuntimePreviews, connectedFolderRoot)
     : [];
 
+  const opensFiles = Boolean(onOpenConnectedFolderFile);
   useEffect(() => {
-    if (message.role !== "assistant" || !resolveConnectedFolderPathLinks || !onOpenConnectedFolderFile) return;
+    if (message.role !== "assistant" || !resolveConnectedFolderPathLinks || !opensFiles) return;
     const candidates = collectConnectedFolderPathCandidates(message.content);
     if (!candidates.length) return;
     let cancelled = false;
-    void resolveMessageConnectedFolderLinks(connectedFolderLinkCacheKey, message.content, candidates, resolveConnectedFolderPathLinks)
-      .then(() => {
-        if (!cancelled) setConnectedFolderLinkVersion((current) => current + 1);
+    const content = message.content;
+    void resolveMessageConnectedFolderLinks(connectedFolderLinkCacheKey, content, candidates, resolveConnectedFolderPathLinks)
+      .then((links) => {
+        if (cancelled) return;
+        setResolvedLinks((current) => current?.cacheKey === connectedFolderLinkCacheKey && current.content === content && sameLinks(current.links, links)
+          ? current
+          : { cacheKey: connectedFolderLinkCacheKey, content, links });
       });
     return () => {
       cancelled = true;
     };
-  }, [message.content, message.id, message.role, onOpenConnectedFolderFile, resolveConnectedFolderPathLinks, connectedFolderLinkCacheKey]);
+  }, [message.content, message.id, message.role, opensFiles, resolveConnectedFolderPathLinks, connectedFolderLinkCacheKey]);
 
   if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with the results from delegated work.</p>;
   if (message.kind === "context_compaction") return <p className="work-continuation" role="note">{message.content}</p>;
@@ -105,7 +113,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           content={turnView.answer}
           connectedFolderLinks={message.role === "assistant" ? connectedFolderLinks : null}
           onOpenConnectedFolderFile={message.role === "assistant" ? onOpenConnectedFolderFile : undefined}
-          key={connectedFolderLinkVersion}
         /> : null}
         {generatedImages.length ? <GeneratedImages images={generatedImages} connectedFolderId={connectedFolderId} onOpenConnectedFolderFile={onOpenConnectedFolderFile} /> : null}
         {changedFiles.length && onOpenConnectedFolderFile && resolveConnectedFolderPathLinks
@@ -301,7 +308,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
     return (
       <section className="turn-interruption" role="status" aria-label="Failed Worker response">
         <strong>Request Stopped</strong>
-        <span>AmpleFile saved this result with your Chat. You can try again whenever you’re ready.</span>
+        <span>AmpleFile saved this result with your Chat.{onContinue ? " Continue whenever you’re ready." : ""}</span>
         <ContinueButton onContinue={onContinue} />
       </section>
     );
@@ -335,7 +342,75 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
   );
 }
 
-export function MarkdownMessage({
+interface MarkdownLinkTargets {
+  connectedFolderLinks: Map<string, string> | null;
+  onOpenConnectedFolderFile?: (path: string) => void;
+}
+
+const MarkdownLinkContext = createContext<MarkdownLinkTargets>({ connectedFolderLinks: null });
+const markdownRemarkPlugins = [remarkGfm];
+const markdownRehypePlugins = [rehypeSingleLineBreaks];
+
+function useLinkedChildren(children: ReactNode): ReactNode {
+  const { connectedFolderLinks, onOpenConnectedFolderFile } = useContext(MarkdownLinkContext);
+  return linkConnectedFolderPathText(children, connectedFolderLinks, onOpenConnectedFolderFile);
+}
+
+// Element renderers are module-level so their identity never changes: a new
+// function per render would make React replace every element of every reply
+// (losing text selection) each time a Chat re-renders. Links come from context.
+const markdownComponents: Components = {
+  p: function MarkdownParagraph({ children }) { return <p>{useLinkedChildren(children)}</p>; },
+  li: function MarkdownListItem({ children, className }) { return <li className={className}>{useLinkedChildren(children)}</li>; },
+  td: function MarkdownCell({ children }) { return <td>{useLinkedChildren(children)}</td>; },
+  th: function MarkdownHeaderCell({ children }) { return <th>{useLinkedChildren(children)}</th>; },
+  table: ({ children }) => <MessageTable>{children}</MessageTable>,
+  pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+  code: function MarkdownCode({ children, className }) {
+    const { connectedFolderLinks, onOpenConnectedFolderFile } = useContext(MarkdownLinkContext);
+    const text = reactNodeText(children);
+    if (className || text.includes("\n")) return <code className={className}>{children}</code>;
+    const normalizedPath = connectedFolderPathCandidate(text, { allowConnectedFolders: true });
+    const resolvedPath = normalizedPath ? connectedFolderLinks?.get(normalizedPath) ?? null : null;
+    if (!resolvedPath || !onOpenConnectedFolderFile) return <code>{children}</code>;
+    return (
+      <button
+        className="connected-folder-file-link connected-folder-file-link-code"
+        type="button"
+        onClick={() => onOpenConnectedFolderFile(resolvedPath)}
+        title={resolvedPath}
+      >
+        {text}
+      </button>
+    );
+  },
+  a: function MarkdownLink({ href, children }) {
+    const { connectedFolderLinks, onOpenConnectedFolderFile } = useContext(MarkdownLinkContext);
+    const connectedFolderPath = connectedFolderPathCandidate(href ?? "", { allowConnectedFolders: true });
+    const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
+    if (resolvedPath && onOpenConnectedFolderFile) {
+      return <button className="connected-folder-file-link" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
+    }
+    return <SafeMarkdownAnchor href={href}>{children}</SafeMarkdownAnchor>;
+  },
+  img: function MarkdownImage({ src, alt }) {
+    const { connectedFolderLinks, onOpenConnectedFolderFile } = useContext(MarkdownLinkContext);
+    const source = typeof src === "string" ? src : "";
+    const connectedFolderPath = connectedFolderPathCandidate(source, { allowConnectedFolders: true });
+    const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
+    if (resolvedPath && onOpenConnectedFolderFile) {
+      return <button className="message-image-file" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{alt || resolvedPath.split("/").pop() || "Open Image"}</button>;
+    }
+    const resolution = resolveMessageImageSource(source, window.location.href);
+    if (resolution.kind === "embed") return <img className="message-image" src={resolution.src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" />;
+    if (resolution.kind === "external-link") {
+      return <a className="message-image-external" href={resolution.href} target="_blank" rel="noreferrer">{alt ? `Open Image: ${alt}` : "Open External Image"}</a>;
+    }
+    return <span className="message-image-unavailable">{alt ? `${alt} (image unavailable)` : "Image Unavailable"}</span>;
+  },
+};
+
+export const MarkdownMessage = memo(function MarkdownMessage({
   content,
   connectedFolderLinks = null,
   onOpenConnectedFolderFile,
@@ -344,67 +419,52 @@ export function MarkdownMessage({
   connectedFolderLinks?: Map<string, string> | null;
   onOpenConnectedFolderFile?: (path: string) => void;
 }) {
-  const linkChildren = (children: ReactNode) => linkConnectedFolderPathText(children, connectedFolderLinks, onOpenConnectedFolderFile);
+  const links = useMemo<MarkdownLinkTargets>(() => ({ connectedFolderLinks, onOpenConnectedFolderFile }), [connectedFolderLinks, onOpenConnectedFolderFile]);
   return (
     <div className="message-body">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSingleLineBreaks]}
-        components={{
-          p: ({ children }) => <p>{linkChildren(children)}</p>,
-          li: ({ children, className }) => <li className={className}>{linkChildren(children)}</li>,
-          td: ({ children }) => <td>{linkChildren(children)}</td>,
-          th: ({ children }) => <th>{linkChildren(children)}</th>,
-          table: ({ children }) => <div className="message-table-scroll"><table>{children}</table></div>,
-          pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
-          code: ({ children, className }) => {
-            const text = reactNodeText(children);
-            if (className || text.includes("\n")) return <code className={className}>{children}</code>;
-            const normalizedPath = connectedFolderPathCandidate(text, { allowConnectedFolders: true });
-            const resolvedPath = normalizedPath ? connectedFolderLinks?.get(normalizedPath) ?? null : null;
-            if (!resolvedPath || !onOpenConnectedFolderFile) return <code>{children}</code>;
-            return (
-              <button
-                className="connected-folder-file-link connected-folder-file-link-code"
-                type="button"
-                onClick={() => onOpenConnectedFolderFile(resolvedPath)}
-                title={resolvedPath}
-              >
-                {text}
-              </button>
-            );
-          },
-          a: ({ href, children }) => {
-            const connectedFolderPath = connectedFolderPathCandidate(href ?? "", { allowConnectedFolders: true });
-            const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
-            if (resolvedPath && onOpenConnectedFolderFile) {
-              return <button className="connected-folder-file-link" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
-            }
-            // A server on this computer, such as a Worker's dev server, opens in the default browser.
-            const localServer = localServerHref(href);
-            if (localServer) return <a className="message-external-link" href={localServer} target="_blank" rel="noreferrer">{children}</a>;
-            const safeHref = safeExternalHref(href);
-            return safeHref ? <a className="message-external-link" href={safeHref} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>;
-          },
-          img: ({ src, alt }) => {
-            const connectedFolderPath = connectedFolderPathCandidate(src ?? "", { allowConnectedFolders: true });
-            const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
-            if (resolvedPath && onOpenConnectedFolderFile) {
-              return <button className="message-image-file" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{alt || resolvedPath.split("/").pop() || "Open Image"}</button>;
-            }
-            const resolution = resolveMessageImageSource(src, window.location.href);
-            if (resolution.kind === "embed") return <img className="message-image" src={resolution.src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" />;
-            if (resolution.kind === "external-link") {
-              return <a className="message-image-external" href={resolution.href} target="_blank" rel="noreferrer">{alt ? `Open Image: ${alt}` : "Open External Image"}</a>;
-            }
-            return <span className="message-image-unavailable">{alt ? `${alt} (image unavailable)` : "Image Unavailable"}</span>;
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      <MarkdownLinkContext.Provider value={links}>
+        <ReactMarkdown remarkPlugins={markdownRemarkPlugins} rehypePlugins={markdownRehypePlugins} components={markdownComponents}>
+          {content}
+        </ReactMarkdown>
+      </MarkdownLinkContext.Provider>
     </div>
   );
+});
+
+function sameLinks(left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>): boolean {
+  if (left === right) return true;
+  if (left.size !== right.size) return false;
+  for (const [key, value] of left) if (right.get(key) !== value) return false;
+  return true;
+}
+
+/**
+ * A table wider than the Chat scrolls sideways. `data-more` names the side
+ * that still has columns out of view, which the styles fade.
+ */
+function MessageTable({ children }: { children: ReactNode }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState<"start" | "end" | "both" | null>(null);
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const measure = () => {
+      const start = element.scrollLeft > 1;
+      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+      setMore(start && end ? "both" : start ? "start" : end ? "end" : null);
+    };
+    measure();
+    element.addEventListener("scroll", measure, { passive: true });
+    // The panel can be resized and a streamed table grows, so both are watched.
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    return () => {
+      element.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, []);
+  return <div className="message-table-scroll" data-more={more ?? undefined} ref={scroller}><table>{children}</table></div>;
 }
 
 function MarkdownCodeBlock({ children }: { children: ReactNode }) {

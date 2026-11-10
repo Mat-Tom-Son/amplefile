@@ -41,6 +41,8 @@ async function setup(t: TestContext) {
         init.signal?.addEventListener("abort", () => { eventStreams.clear(); controller.close(); }, { once: true });
       },
     })));
+    // The sign-in panel's status reads answer at once and stay out of the request log.
+    if (String(input) === "/api/agent/oauth/pending") return Promise.resolve(Response.json({ acceptsPaste: false }));
     return new Promise<Response>((resolve) => {
     requests.push({ path: String(input), init, body: init.body ? JSON.parse(String(init.body)) : null,
       finish: (body, responseStatus = 200) => resolve(new Response(JSON.stringify(body), { status: responseStatus, headers: { "content-type": "application/json" } })),
@@ -203,8 +205,11 @@ test("Codex is a distinct available connection and signing in preserves a workin
   const request = ui.requests.at(-1)!;
   assert.equal(request.path, "/api/agent/oauth");
   assert.equal(request.body?.provider, "openai-codex");
+  assert.equal(ui.dom.container.querySelector(".provider-sign-in-text")?.textContent, "Finish signing in to OpenAI in your browser");
+  assert.ok(ui.button("Cancel"), "a sign-in waiting on the browser can be cancelled here");
   await ui.finish(request, { status, models, providers: providers.map(provider => provider.id === "openai-codex" ? { ...provider, configured: true, authType: "oauth", authSource: "stored" } : provider) });
   assert.equal(selectedModel(ui.dom), "model-a");
+  assert.equal(ui.dom.container.querySelector(".provider-sign-in"), null);
 });
 
 test("obsolete scope reads and Strict Mode replay cannot overwrite the current target or request a missing Connected Folder", async (t) => {
@@ -817,4 +822,21 @@ test("a newer control-event refresh supersedes a cached scope's older quiet read
   await ui.finish(quietRead, modelResponse());
   assert.equal(selectedModel(ui.dom), "model-b");
   assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "Updated externally");
+});
+
+test("AI Models asks the person to connect again when saved credentials could not be read", async t => {
+  const ui = await setup(t);
+  let status: { encryptionAvailable: boolean; configuredProviders: string[]; credentialsNeedReentry?: boolean } = { encryptionAvailable: true, configuredProviders: [], credentialsNeedReentry: true };
+  const desktop = window as unknown as { ampleFileDesktop?: unknown };
+  desktop.ampleFileDesktop = { api: { getSessionHeaders: async () => ({}) }, settings: { getStatus: async () => status } };
+  t.after(() => { delete desktop.ampleFileDesktop; });
+  await ui.render(connectedFolder("a"));
+  await ui.dom.waitFor(() => ui.requests.length > 0);
+  await ui.finish(ui.requests[0]!, modelResponse());
+  await ui.dom.waitFor(() => /connect your AI provider again/i.test(ui.dom.container.textContent ?? ""));
+  assert.equal(ui.dom.container.querySelector(".ai-models-credentials-notice")?.getAttribute("role"), "status");
+  // Once the person connects again the desktop app stops reporting it.
+  status = { encryptionAvailable: true, configuredProviders: ["openrouter"] };
+  await ui.dom.act(() => { window.dispatchEvent(new window.Event("focus")); });
+  await ui.dom.waitFor(() => !ui.dom.container.querySelector(".ai-models-credentials-notice"));
 });

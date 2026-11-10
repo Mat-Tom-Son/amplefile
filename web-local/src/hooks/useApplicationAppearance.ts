@@ -57,13 +57,15 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
     const resolved = { ...preferences, font: typographyFontForPlatform(preferences.font) };
     root.dataset.theme = theme;
     root.style.colorScheme = theme;
-    root.dataset.ampleFileFont = resolved.font;
-    root.dataset.ampleFileTextSize = preferences.textSize;
+    // One word, so the attributes are data-amplefile-font and data-amplefile-text-size, as the stylesheets select them.
+    root.dataset.amplefileFont = resolved.font;
+    root.dataset.amplefileTextSize = preferences.textSize;
     root.dataset.appearancePalette = preferences.palette;
     // The file manager keeps its own blue for the device accent and takes a chosen one.
     root.dataset.appearanceAccent = preferences.accent === "system" ? "system" : "custom";
     root.dataset.appearanceDensity = preferences.density;
     root.dataset.appearanceMessages = preferences.messages;
+    root.dataset.appearanceReadingFont = preferences.readingFont;
     root.dataset.appearanceChatSteps = preferences.chatSteps;
     root.dataset.appearanceContrast = effective.contrast ? "more" : "system";
     root.dataset.appearanceMotion = effective.motion ? "reduce" : "system";

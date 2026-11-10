@@ -1,9 +1,9 @@
-import { OAuthCallbackFallback } from "../onboarding/OAuthCallbackFallback";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { ModelCatalogList, modelCatalogKey } from "./ModelCatalogList";
 import { ImageModelSection, type ImageModelSettings } from "./ImageModelSection";
 import { ProviderAccountDetails } from "./ProviderAccountDetails";
 import { ConnectAi, featuredProviders } from "../onboarding/ConnectAi";
+import { ProviderSignInWaiting } from "../onboarding/ProviderSignInWaiting";
 import { RefreshCw } from "../chrome/icons";
 import { Eye20Regular, EyeOff20Regular } from "@fluentui/react-icons";
 import { api, errorText } from "../../lib/api";
@@ -57,6 +57,7 @@ export function AiModelsPane(props: AiModelsProps & {
   /** Unsaved edits per scope; a host that outlives this pane passes one so closing it keeps them. */
   drafts?: Map<string, AiModelsDraft>;
 }) {
+  const credentialsNeedReentry = useCredentialsNeedReentry();
   const { connectedFolder, embedded = false, initialScope, active = true, focusModelOnOpen = false, focusInstructionsOnOpen = false } = props;
   const identity = JSON.stringify([connectedFolder?.id ?? null, initialScope ?? null]);
   const defaultScope = initialScope === "agent" || !connectedFolder ? "agent" : "connected-folder";
@@ -127,6 +128,9 @@ export function AiModelsPane(props: AiModelsProps & {
 
   return (
     <div className={embedded ? "assistant-settings-panel professional-setup" : "connected-folder-pane-content ai-models-pane professional-surface professional-setup"}>
+      {credentialsNeedReentry ? <p className="professional-field-hint ai-models-credentials-notice" role="status">
+        AmpleFile could not read the provider keys and sign-ins saved on this computer, so it set them aside. Connect your AI provider again to keep using it.
+      </p> : null}
       {connectedFolder ? <fieldset className="ai-models-scope-control">
         <legend>Model Defaults</legend>
         <label className={scope === "connected-folder" ? "active" : ""}>
@@ -206,8 +210,10 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
   const [modelFeedback, setModelFeedback] = useState<AiModelsFeedback | null>(null);
   const [connectionFeedback, setConnectionFeedback] = useState<AiModelsFeedback | null>(null);
   const [instructionsFeedback, setInstructionsFeedback] = useState<AiModelsFeedback | null>(null);
-  const [oauthBusy, setOAuthBusy] = useState(false);
   const [saving, setSaving] = useState<"model" | "connection" | "remove" | null>(null);
+  /** Whose browser sign-in is under way here, and whether its Cancel was chosen. */
+  const [signingIn, setSigningIn] = useState<string | null>(null);
+  const signInCancelled = useRef(false);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const live = useRef(false);
@@ -435,8 +441,9 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
     const connection = kind !== "model";
     const feedback = connection ? setConnectionFeedback : setModelFeedback;
     setSaving(connection ? "connection" : "model");
-    setOAuthBusy(kind === "oauth");
     feedback(null);
+    signInCancelled.current = false;
+    if (kind === "oauth" && !fixtureMode) setSigningIn(providerName);
     const submittedApiKey = kind === "key" ? apiKey.trim() : "";
     try {
       const result = fixtureMode ? { status: kind === "model" ? { ...scopeStatus, configured: true, provider: modelProvider, model } : scopeStatus, foundry: submittedAzure ? { ...savedFoundry, [provider]: submittedAzure } : undefined, models: undefined }
@@ -465,8 +472,8 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
       if (connection) { setApiKey(""); setEditingApiKey(false); setShowApiKey(false); }
       reportConfigured(result.status);
       feedback({ text: submittedAzure ? provider === AZURE_OPENAI_PROVIDER ? "Azure settings saved" : "Foundry settings saved" : connection ? "Connection saved" : "Model saved" });
-    } catch (caught) { if (live.current) feedback({ error: true, text: errorText(caught) }); }
-    finally { if (live.current) setSaving(null); setOAuthBusy(false); release(); }
+    } catch (caught) { if (live.current && !(kind === "oauth" && signInCancelled.current)) feedback({ error: true, text: errorText(caught) }); }
+    finally { if (live.current) { setSaving(null); setSigningIn(null); } release(); }
   }
 
   async function removeCredential() {
@@ -503,7 +510,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
       setModelFeedback(null);
       setConnectionFeedback({ text: providerAuth?.authType === "oauth" ? "Account disconnected" : "API key removed" });
     } catch (caught) { if (live.current) setConnectionFeedback({ error: true, text: errorText(caught) }); }
-    finally { if (live.current) setSaving(null); setOAuthBusy(false); release(); }
+    finally { if (live.current) setSaving(null); release(); }
   }
 
   async function refreshModels() {
@@ -636,11 +643,11 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
           </label>
           <div className="ai-models-form-actions ai-models-connection-actions"><button className="ui-control ui-control--primary" type="submit" disabled={operationBusy || (isAzure ? !parseAzureDeploymentNames(azure.deployments).length || !azure.baseUrl.trim() || (!authConfigured && !apiKey.trim()) || (authConfigured && !azureChanged && !apiKey.trim()) : !apiKey.trim())}>{saving === "connection" ? "Saving…" : isAzure ? provider === AZURE_OPENAI_PROVIDER ? "Save Azure Settings" : "Save Foundry Settings" : editingApiKey ? "Save API Key" : "Connect Provider"}</button></div>
         </form> : null}
-        <OAuthCallbackFallback active={oauthBusy} onError={(message) => setConnectionFeedback({ error: true, text: message })} />
         {oauthSupported || selectedProvider?.guidedSetup ? <div className="ai-models-provider-actions">
           {oauthSupported ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("oauth")}>{saving === "connection" ? "Connecting…" : providerAuth?.authType === "oauth" ? "Reconnect Account" : selectedProvider?.oauthLabel ?? "Connect Account"}</button> : null}
           {selectedProvider?.guidedSetup ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("setup")}>Guided Setup</button> : null}
         </div> : null}
+        {signingIn ? <ProviderSignInWaiting providerName={signingIn} onCancelRequested={() => { signInCancelled.current = true; }} /> : null}
         {accountOnly && !oauthSupported ? <p className="professional-field-hint">Account sign-in is available in the desktop app.</p> : null}
         {!apiKeySupported && !selectedProvider?.oauth ? <p className="professional-field-hint">Uses credentials configured outside AmpleFile.</p> : null}
         {connectionFeedback ? <AiModelsOperationStatus feedback={connectionFeedback} /> : null}
@@ -713,4 +720,24 @@ function modelScopeBody(scope: ModelScope, connectedFolder: ConnectedFolderSumma
 }
 function formatCatalogDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * True while the desktop app reports that saved provider credentials could
+ * not be decrypted and were set aside. Re-read on model changes and when the
+ * window regains focus, so it clears once the person connects again.
+ */
+function useCredentialsNeedReentry(): boolean {
+  const [needed, setNeeded] = useState(false);
+  useEffect(() => {
+    const getStatus = window.ampleFileDesktop?.settings?.getStatus;
+    if (!getStatus) return;
+    let disposed = false;
+    const read = () => { void getStatus().then((status) => { if (!disposed) setNeeded(status?.credentialsNeedReentry === true); }).catch(() => undefined); };
+    read();
+    const unsubscribe = subscribeControlEvents((hint) => { if (hint === "models" || hint === "reset") read(); });
+    window.addEventListener("focus", read);
+    return () => { disposed = true; unsubscribe(); window.removeEventListener("focus", read); };
+  }, []);
+  return needed;
 }

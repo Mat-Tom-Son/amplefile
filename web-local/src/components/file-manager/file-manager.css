@@ -38,6 +38,11 @@
   user-select: none;
 }
 
+/* Headings are drawn in the font around them, not the wider app's display face. */
+.fm-shell :is(h1, h2, h3) {
+  font-family: inherit;
+}
+
 /* Under the Mac window material the window itself is see-through; the
    sidebar panel lets a little of it show, the content stays solid. */
 :root[data-window-material="vibrancy"] .fm-shell {
@@ -199,6 +204,157 @@
 .fm-sidebar-scroll {
   display: flex;
   flex-direction: column;
+}
+
+/* The update indicator: the sidebar's foot, below the scrolling lists, and
+   only while an update needs the person. It is the same band as the path bar
+   beside it (28px, flush with the window's bottom, one 1px rule on top), so
+   the two rules run as one line. Its dot and label line up with the rows above. */
+.fm-update {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  margin: 0 -10px -12px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--fm-line);
+  /* Measured in the label's own size, so the narrow rule follows Text Size. */
+  container-type: inline-size;
+  font-size: calc(13px * var(--fm-scale));
+}
+
+.fm-update-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* Leaves room inside the 28px band for the focus ring. */
+  height: 20px;
+  padding: 0 8px 0 var(--fm-sidebar-gutter, 21px);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fm-text);
+  font-size: calc(13px * var(--fm-scale));
+  text-align: left;
+}
+
+/* The band is flush with the window's bottom; the ring hugs the button so it
+   is never cut off there. */
+:root[data-theme] .app-shell .fm-shell .fm-update-button:focus-visible {
+  outline-offset: 0;
+}
+
+.fm-update-button:hover:not([aria-disabled="true"]) {
+  background: var(--fm-hover);
+}
+
+.fm-update-button[aria-disabled="true"],
+.fm-update-button.is-error {
+  color: var(--fm-text2);
+}
+
+.fm-update-button[aria-disabled="true"] {
+  cursor: default;
+}
+
+.fm-update-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+}
+
+.fm-update-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fm-accent);
+}
+
+/* Ready: the same dot, ringed, because one click now restarts the app. The
+   ring is stronger on a dark sidebar, and stronger again with Higher Contrast. */
+.fm-update-button.is-ready .fm-update-dot {
+  box-shadow: 0 0 0 3px var(--fm-accent-soft);
+}
+
+:root[data-theme="dark"] .fm-update-button.is-ready .fm-update-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fm-accent) 34%, transparent);
+}
+
+:root[data-appearance-contrast="more"] .fm-update-button.is-ready .fm-update-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fm-accent) 55%, transparent);
+}
+
+/* Downloading: a ring that fills with the download; still, never spinning. */
+.fm-update-button.is-downloading .fm-update-dot {
+  width: 12px;
+  height: 12px;
+  background: conic-gradient(var(--fm-accent) var(--fm-update-progress, 0%), color-mix(in srgb, var(--fm-text) 16%, transparent) 0);
+  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+}
+
+.fm-update-button.is-installing .fm-update-dot {
+  opacity: 0.55;
+}
+
+/* Failed: quiet, a hollow ring in the sidebar's secondary ink. */
+.fm-update-button.is-error .fm-update-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fm-text3);
+}
+
+.fm-update-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The version or progress: quiet, and gone rather than cut when the sidebar
+   is too narrow for it and the label both. The label and tooltip still name it. */
+.fm-update-detail {
+  flex: none;
+  color: var(--fm-text3);
+  font-size: calc(12px * var(--fm-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@container (max-width: 15.75em) {
+  .fm-update-detail {
+    display: none;
+  }
+}
+
+/* At the sidebar's narrowest the label shortens rather than cut off:
+   Update, Restart, Restarting, Failed. The button's name keeps the whole label. */
+.fm-update-label-short {
+  display: none;
+}
+
+@container (max-width: 12.25em) {
+  .fm-update-label-full {
+    display: none;
+  }
+
+  .fm-update-label-short {
+    display: inline;
+  }
+}
+
+/* Restarting to Update is the longest label and shortens a little sooner. */
+@container (max-width: 14em) {
+  .fm-update-button.is-installing .fm-update-label-full {
+    display: none;
+  }
+
+  .fm-update-button.is-installing .fm-update-label-short {
+    display: inline;
+  }
 }
 
 
@@ -1228,8 +1384,42 @@
     display: none;
   }
 
+  /* Search narrows to its icon first; only then does the folder's name give
+     way, so the toolbar never spills onto the panel. */
   .fm-search {
-    flex: 1 1 236px;
+    flex: 1 1000 236px;
+  }
+
+  .fm-title {
+    flex-shrink: 1;
+  }
+
+  .fm-title > :first-child {
+    flex: none;
+  }
+}
+
+/* The narrowest list, beside a panel dragged wide: the toolbar tightens, and
+   the title keeps at least its icon. */
+@container fm-main (max-width: 480px) {
+  .fm-toolbar {
+    gap: 6px;
+  }
+
+  .fm-title {
+    min-width: 20px;
+  }
+}
+
+/* With no room for more than a letter, the name stays only for assistive technology. */
+@container fm-main (max-width: 384px) {
+  .fm-title-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 
@@ -1497,21 +1687,27 @@
   max-width: 85%;
 }
 
-/* Above the appearance palette's soft bubble: the design draws the person's message in solid accent. */
+/* A person's message: a soft tint of the accent, with the window's own text
+   color on it, so it marks who spoke without outshouting the reply. */
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   padding: 7px 12px;
   border-radius: 16px;
-  background: var(--fm-accent);
-  color: var(--fm-on-accent);
+  background: var(--fm-bubble);
+  color: var(--fm-text);
   line-height: 1.4;
 }
 
-
-/* The palette colors message text itself; in the panel the design's colors win. */
+/* The palette colors message text itself; in the panel the window's colors win. */
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body,
-:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, strong, em),
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, code, strong, em),
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body {
-  color: var(--fm-on-accent);
+  color: var(--fm-text);
+}
+
+/* On the tint a link is mixed toward the text color. At 68 percent it stays
+   above 4.5:1 on every palette, in both modes (application-appearance-surfaces.test.ts measures it). */
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(a, .connected-folder-file-link) {
+  color: color-mix(in srgb, var(--fm-link) 68%, var(--fm-text));
 }
 
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.assistant .message-body,
@@ -1560,6 +1756,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--fm-text);
+  font-family: var(--fm-font);
   font-size: calc(13px * var(--fm-scale));
   line-height: 20px;
 }
@@ -2000,7 +2197,7 @@
   background: var(--fm-window);
 }
 
-/* Your Messages: Quiet draws the person's message as a plain card instead of the accent bubble. */
+/* Your Messages: Quiet draws the person's message as a plain card instead of the tinted bubble. */
 :root[data-appearance-messages="quiet"] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   background: var(--fm-card);
   box-shadow: 0 0 0 0.5px var(--fm-card-line);
@@ -2844,7 +3041,7 @@
   margin: 0.8em 0;
   overflow: hidden;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
   box-shadow: none;
 }
@@ -2904,12 +3101,13 @@
   font-size: inherit;
 }
 
-/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways. */
+/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways.
+   Table, code, and files cards share the History cards' 10px corners and hairline. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-table-scroll {
   margin: 0.8em 0;
   overflow-x: auto;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
 }
 
@@ -2956,17 +3154,17 @@
   margin-bottom: 0;
 }
 
+/* A task's words stay ordinary inline text, so a file link keeps its place in
+   the sentence; the checkbox hangs in the indent beside the first line. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .task-list-item {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 8px;
+  position: relative;
+  padding-left: 22px;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .task-list-item input[type="checkbox"] {
-  position: relative;
-  top: 2px;
-  flex: none;
+  position: absolute;
+  top: calc(0.75em - 7px);
+  left: 0;
   width: 14px;
   height: 14px;
   margin: 0;
@@ -2992,10 +3190,11 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  height: 24px;
-  padding: 0 9px;
+  min-height: 24px;
+  padding: 3px 9px;
   border: 0;
-  border-radius: 999px;
+  /* Half the one-line height: a pill on one line, a rounded card on two. */
+  border-radius: 12px;
   background: var(--fm-cap);
   color: var(--fm-text2);
   font-size: calc(12px * var(--fm-scale));
@@ -3011,12 +3210,6 @@
   flex: none;
   width: 12px;
   height: 12px;
-}
-
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .work-steps-label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .work-steps-rows {
@@ -3099,7 +3292,7 @@
   font-weight: 500;
 }
 
-/* A reply's Copy shows while the pointer is on it; the time stays out of the way. */
+/* A message's Copy and its time show while the pointer or the keyboard is on it. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-footer {
   display: flex;
   min-height: 20px;
@@ -3114,7 +3307,10 @@
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-time {
-  display: none;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  font-weight: 400;
+  opacity: 1;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-copy-button {
@@ -3134,8 +3330,10 @@
   color: var(--fm-text);
 }
 
+/* A person's own message has the same footer, under the bubble's right edge
+   and tucked partly into the gap below so the reply stays close. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-footer {
-  display: none;
+  margin-bottom: -8px;
 }
 
 /* Nested Connected Folders: each sits under its parent, indented, and a

@@ -238,6 +238,53 @@ test("composer menus choose the available side and follow window resizing", asyn
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "651px");
 });
 
+test("a long multi-line command reaches its step as a one-line record marked as cut short, shown to read and not to copy", async (t) => {
+  // The command goes through the runtime's own projection of a tool call and
+  // then through the Chat's own handling of the event it emits.
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { PiConversationClient } = await import("../src/local/agent/pi-client.js");
+  const root = await mkdtemp(join(tmpdir(), "amplefile-step-record-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = new PiConversationClient("chat", root);
+  const emitted: Array<Record<string, unknown>> = [];
+  client.on("event", (event) => emitted.push(event));
+  const command = [
+    // The key sits inside the part the record keeps, so the redaction check
+    // below cannot pass merely because the cut removed it.
+    "cd ~/Projects/site && export API_KEY=sk-live-0123456789abcdef",
+    "# rebuild from scratch",
+    `rm -rf "/Users/me/Documents/Clients/Northwind Traders/site/dist" "/Users/me/Documents/Clients/Northwind Traders/tmp" && npm run build`,
+  ].join("\n");
+  assert.ok(command.length > 160);
+  (client as unknown as { handleSessionEvent(event: unknown): void }).handleSessionEvent({ type: "tool_execution_start", toolCallId: "bash-1", toolName: "bash", args: { command } });
+  const { conversationId: _conversationId, raw: _raw, ...toolEvent } = emitted.find((event) => event.type === "tool")!;
+  const record = String(toolEvent.detail);
+  assert.ok(record.length <= 160 && record.length >= 150, "the record stays within its existing bound");
+  assert.ok(record.endsWith("…"), "a record that was cut says so");
+  assert.doesNotMatch(record, /\n/);
+  assert.doesNotMatch(record, /sk-live-0123456789abcdef/);
+  assert.match(record, /API_KEY=\[redacted\]/, "the key is redacted in the kept part, not merely cut off");
+  assert.notEqual(record, command);
+  // A command that fits is recorded whole, with no mark.
+  (client as unknown as { handleSessionEvent(event: unknown): void }).handleSessionEvent({ type: "tool_execution_start", toolCallId: "bash-2", toolName: "bash", args: { command: "ls -la" } });
+  assert.equal(emitted.filter((event) => event.type === "tool").at(-1)!.detail, "ls -la");
+
+  const { dom, emit } = await chatHarness(t);
+  await emit({ type: "turn_snapshot", running: true, turnId: "turn-one", text: "", presentation: { text: "", workTrail: [], truncated: false } });
+  await emit({ ...(toolEvent as Omit<ChatStreamEvent, "conversationId">), turnId: "turn-one" });
+  const row = dom.container.querySelector<HTMLButtonElement>(".work-step.tool .work-step-toggle")!;
+  assert.equal(row.querySelector(".work-step-target.command")!.textContent, record, "the closed row shows the record");
+  await dom.act(() => row.click());
+  const opened = dom.container.querySelector(".work-step-command")!;
+  assert.equal(opened.querySelector(".work-step-command-bar")!.textContent, "Recorded Command");
+  assert.equal(opened.querySelector("pre")!.textContent, record, "the opened row shows the same record, not the command that ran");
+  assert.ok(opened.querySelector("pre")!.textContent!.endsWith("…"));
+  assert.equal(opened.querySelector("button"), null, "nothing offers the shortened record to copy and run");
+  assert.equal(dom.container.querySelector('[aria-label="Copy Command"]'), null);
+});
+
 test("Chat reconnect replaces stable steps, resumes their updates, and clears a different turn", async (t) => {
   const { dom, emit } = await chatHarness(t);
   const snapshot: Omit<ChatStreamEvent, "conversationId"> = { type: "turn_snapshot", running: true, turnId: "turn-one", text: "Checking.", presentation: {

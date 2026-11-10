@@ -74,6 +74,34 @@ other surface.
   from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
+- **Update indicator:** while an update needs the person, the foot of the
+  sidebar holds one button with a dot in the window's accent. The foot sits
+  below the scrolling lists, in a band level with the path bar. It shows one
+  of these:
+  - **Update Available** with the version. A click downloads the update, and
+    AmpleFile then restarts into it on its own.
+  - **Downloading** with its progress. A click opens Settings → About.
+  - **Restart to Update**. A click installs it now.
+  - **Restarting to Update** while AmpleFile quits.
+  - A quiet **Update Failed** when a download, staging step, or install
+    failed. A click opens Settings → About, which has the detail and
+    **Retry**.
+
+  A click either uses the same updater action as Settings → About's update
+  button or opens About. Before any update that ends in a restart, from
+  either place, AmpleFile asks **Restart AmpleFile to Update?**. The question
+  names the Worker Chats that are working, with their Connected Folders, and
+  says when the AmpleFile Agent is working. It says that restarting stops
+  that work, which is not run again, and that queued messages are dropped.
+  Cancel does nothing.
+
+  A failed check, with nothing being updated, appears only in Settings →
+  About, and retrying it only checks again. During a check the indicator
+  keeps what it showed before. A screen reader hears when an update becomes
+  available, becomes ready, or fails. At the sidebar's narrowest the label
+  shortens (Update, Restart, Restarting, Failed). While AmpleFile is up to
+  date or has no updater, the sidebar shows nothing there. **AmpleFile >
+  Check for Updates…** and Settings → About are where to check.
 - **Nested Connected Folders:** a Connected Folder registered inside another
   sits under it, indented, behind a caret in the left gutter. The caret (or
   the arrow keys) shows and hides the Connected Folders inside, the sidebar
@@ -110,8 +138,20 @@ other surface.
   Files dropped on a sidebar place go to its top. Every change keeps a
   History restore point in each Connected Folder it touches (a Standard
   Folder has none), and ⌘Z and ⇧⌘Z undo and redo the last file change. A
-  move between Connected Folders keeps a restore point on both sides; any
-  other move across places copies and says the original stays.
+  move between Connected Folders copies the items, then deletes each from
+  its source with that delete's receipt, and keeps a restore point on both
+  sides. It refuses, before copying anything, while the source Connected
+  Folder has unfinished work (a running turn or a question waiting on an
+  answer), and for an item that is, holds, or sits inside a nested
+  Connected Folder. A copy leaves a folder's `.amplefile/` behind; a move
+  carries it, so a disconnected Connected Folder keeps its identity and
+  Chats. An item whose copy did not carry everything History could not
+  keep leaves its source through Recently Deleted rather than being erased,
+  and an item that cannot leave its source stays there and the move says
+  so; its copy then drops the `.amplefile/` the source still holds, and the
+  move names any it could not drop. Any other move across places copies and says the original stays.
+  Compress writes the archive beside the items under a hidden working name
+  and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it; a long path keeps the disk and its
   last four items whole with "…" between. The button at the bar's start, or
@@ -189,8 +229,9 @@ other surface.
 
 With no Connected Folder yet, the window opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
-Use Your Mac** when the app includes Chrome, Computer Control, or the
-command line and something is not yet set up, and **Pick a Folder to Start
+Use Your Mac** when the app includes Computer Control or the command line
+and something is not yet set up (Chrome is set up only in Skills &
+Extensions), and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
 click beside Connect Folder and New Connected Folder.
 
@@ -460,7 +501,13 @@ sign-in methods and labels. Providers with no chat models can connect
 without changing the Worker's model. Guided setup runs Pi's native
 credential prompts, including provider-specific configuration and cloud
 credential choices. ChatGPT sign-in uses the installation UUID Pi saves in
-global settings, never a project identity. Connections keep the complete
+global settings, never a project identity. A browser sign-in (in AI Models or
+Connect Your AI) opens the provider's page and completes on its own when the
+browser returns to this Mac; while it waits, the place that started it says
+**Finish signing in to … in your browser** with **Cancel**, and **Paste Link**
+for the rare browser that cannot return the sign-in. No dialog asks for the
+callback link, and where Pi offers a choice of sign-in method the app takes
+browser sign-in. Starting another sign-in cancels one left waiting. Connections keep the complete
 credential in encrypted machine-local storage; only non-secret connection
 status and model metadata reach Settings. Settings also offers **OpenAI
 (Codex subscription)** as a distinct connection for Codex models and account
@@ -661,7 +708,7 @@ tools, taught to prefer receipted `amplefile` commands for work that touches
 Connected Folders. It is reached through `amplefile agent …` and the
 menu-bar popover. The popover is drawn as a Chat in the file manager's
 panel, in the same design tokens, so Settings → Appearance restyles both:
-the person's messages are solid accent bubbles on the right and agent
+the person's messages are soft accent-tinted bubbles on the right and agent
 replies are unboxed on the left. Its header shows the current Chat title
 over a hairline, with icon buttons for **Chats** and **New Chat**; **Chats**
 replaces the title with a back button and lists saved Chats by day in

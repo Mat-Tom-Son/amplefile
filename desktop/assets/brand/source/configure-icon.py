@@ -11,7 +11,7 @@ package = root / 'AmpleFile.icon'
 
 def color(hex_value):
     values = [int(hex_value[i:i+2],16)/255 for i in (1,3,5)]
-    return 'srgb:'+','.join(f'{v:.7f}' for v in values)+',1.0000000'
+    return 'srgb:'+','.join(f'{v:.5f}' for v in values)+',1.00000'
 
 
 light, ink = color('#F4F5F6'), color('#16202B')

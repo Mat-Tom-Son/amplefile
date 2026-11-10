@@ -179,6 +179,64 @@ test("a person's reply joins the request that was waiting on it and answers its 
   }
 });
 
+test("a reply with control characters near the answer limit still answers the question, and a window retry of a cleaned answer is acknowledged", async (t) => {
+  const { open } = await sandboxApi(t);
+  let releaseAmpleFileAgentTurn!: () => void;
+  const ampleFileAgentTurnGate = new Promise<void>((resolve) => { releaseAmpleFileAgentTurn = resolve; });
+  const api = await open(async (event) => {
+    if (event.connectedFolderId === ampleFileAgentScopeId) await ampleFileAgentTurnGate;
+  });
+  try {
+    const first = await api.actFacade.agentSend({ content: "/hold" });
+    const record = api.requests.byTaskId(first.taskId)!;
+    const question = await api.requests.ask({ requestId: record.requestId, taskId: first.taskId, respondent: "person", text: "Which quarter?" });
+    releaseAmpleFileAgentTurn();
+    await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: first.taskId })).task.state !== "running");
+    assert.equal(api.requests.get(record.requestId)!.state, "waiting");
+
+    // One byte under the limit as written, but cleaning turns the control
+    // byte into a three-byte U+FFFD, so the cleaned text is over it. The
+    // reply is cut after cleaning and still becomes the answer.
+    const limit = 4 * 1024 * 1024;
+    const content = `/hold \u0001${"x".repeat(limit - 8)}`;
+    assert.equal(Buffer.byteLength(content, "utf8"), limit - 1);
+    const reply = await fetch(new URL("/api/amplefile-agent/messages", api.origin), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content, conversationId: first.conversationId, continuationTaskId: first.taskId }),
+    });
+    assert.equal(reply.status, 202);
+    const continued = await reply.json() as { taskId: string };
+    const answered = api.requests.question(question.questionId)!;
+    assert.equal(answered.state, "answered", "the question is answered, not left open");
+    assert.equal(Buffer.byteLength(answered.answer!, "utf8"), limit);
+    assert.ok(answered.answer!.startsWith("/hold \uFFFDx"));
+    assert.equal(answered.continuationTaskId, continued.taskId);
+    await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: continued.taskId })).task.state !== "running");
+
+    // A second question answered with a pasted soft line break; the window
+    // retries the same text after a lost response, and the retry is
+    // acknowledged as already delivered rather than refused.
+    const again = await api.actFacade.agentSend({ content: "/hold", conversationId: first.conversationId });
+    const second = await api.requests.ask({ requestId: api.requests.byTaskId(again.taskId)!.requestId, taskId: again.taskId, respondent: "person", text: "Which format?" });
+    await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: again.taskId })).task.state !== "running");
+    const softBreak = "/hold PDF\u000bplease";
+    const delivered = await api.actFacade.agentAnswer({ questionId: second.questionId, answer: softBreak });
+    assert.equal(api.requests.question(second.questionId)!.answer, "/hold PDF\nplease");
+    assert.ok(delivered.continuation);
+    const retry = await fetch(new URL(`/api/requests/${second.requestId}/answer`, api.origin), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ questionId: second.questionId, answer: softBreak }),
+    });
+    assert.equal(retry.status, 200, await retry.clone().text());
+    await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: delivered.continuation!.taskId })).task.state !== "running");
+  } finally {
+    releaseAmpleFileAgentTurn();
+    await api.close();
+  }
+});
+
 test("parent synthesis preserves a partial child graph despite its latest succeeded report", async (t) => {
   const { open } = await sandboxApi(t);
   const pending = new Map<string, () => void>();

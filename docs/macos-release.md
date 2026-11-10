@@ -1,6 +1,8 @@
 # macOS release runbook
 
-This runbook publishes the Apple-silicon AmpleFile desktop release to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases). Source and release tags live in [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile).
+This runbook publishes the Apple-silicon AmpleFile desktop release to GitHub Releases in the source repository, [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile), which also holds the source and the release tags. It is the feed every version from 0.1.5 on checks. Versions 0.1.0 through 0.1.4 check the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases), whose last release is the bridge, 0.1.5.
+
+[Update feed](#update-feed) describes the stages, and [Moving the feed to the source repository](#moving-the-feed-to-the-source-repository) is the procedure the feed moved by.
 
 ## One-time workstation setup
 
@@ -10,6 +12,106 @@ This runbook publishes the Apple-silicon AmpleFile desktop release to the separa
 4. Confirm `gh auth status` uses the `Mat-Tom-Son` account and that the Mac feed repository is public.
 
 Do not export or commit the certificate, private key, app-specific password, or notary credentials.
+
+## Update feed
+
+An installed copy checks one GitHub repository for updates: the one named in
+its own `Contents/Resources/app-update.yml`. Electron Builder writes that file
+when it packages the app, from the single `publish` entry in
+`electron-builder.desktop.cjs`. Nothing overrides it at run time:
+`desktop/src/updater.ts` never sets a feed. The build uploads nothing
+(`--publish never`); `scripts/publish-mac-release.mjs` uploads the finished
+artifacts with `gh`. So the feed a version checks is fixed when it is built,
+and where a release is published is a separate decision.
+
+`scripts/mac-release-feed.cjs` makes both decisions, for the builder
+configuration and every release script, from the feed stage:
+`macUpdateFeedStage` in `src/shared/product-identity.json`.
+
+| Stage | The packaged app checks | The release is published to |
+| --- | --- | --- |
+| `separate-repository` | `Mat-Tom-Son/amplefile-mac-releases` | `Mat-Tom-Son/amplefile-mac-releases` |
+| `bridge` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile`, then `Mat-Tom-Son/amplefile-mac-releases` |
+| `source-repository` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile` |
+
+**The checked-in stage is `source-repository`.** A release cut from this
+source checks `Mat-Tom-Son/amplefile` and is published there alone. 0.1.5
+was the bridge, published to both repositories; versions 0.1.0 through
+0.1.4 check `Mat-Tom-Son/amplefile-mac-releases`.
+
+`AMPLEFILE_MAC_RELEASE_OWNER` and `AMPLEFILE_MAC_RELEASE_REPO` name the
+separate release repository in every stage; they never select the source
+repository. `AMPLEFILE_MAC_UPDATE_FEED_STAGE` overrides the stage for a
+candidate build, for example to inspect a bridge's `app-update.yml` from the
+ad hoc lane. The publisher refuses an overridden stage: a public release uses
+the stage its tagged source records. The build checkpoint and the release
+manifest record the stage, the packaged feed (`feed`), and the publication
+targets (`publishTargets`), so a candidate built in one stage cannot be
+published in another.
+
+### How an installed copy reads a feed
+
+The updater runs with prereleases off. On each check it asks github.com,
+anonymously, for the repository's `releases.atom`, then for
+`releases/latest`, and downloads `latest-mac.yml` from the release GitHub
+marks latest. It offers that version when it is higher than its own.
+
+- Drafts, prereleases, and tags without a release are never offered.
+- A repository with no latest release is an error, not "up to date": the
+  check ends with "Update check failed." A repository whose only releases
+  are prereleases, as the source repository's `linux-test-*` releases are,
+  is in that state, however many tags it has.
+- Whatever is marked latest is what every copy is offered. A latest release
+  without `latest-mac.yml` fails every check. Once copies check the source
+  repository, every other release there has to be a prerelease, never the
+  latest release: see [Release ownership](#release-ownership).
+
+`npm run desktop:verify:feed:mac` reads a feed the same way and prints the
+version an installed copy would be offered. It reads the feed the checkout
+packages; `-- --feed <owner>/<repo>` names another, and `-- --version
+<version>` fails unless that version is offered.
+
+### What the publisher checks about the feed
+
+Besides the source, receipt, and artifact checks in
+[Release procedure](#release-procedure), the publisher refuses a publication
+that would leave installed copies on a feed that gets no further release. It
+reads the latest release of both repositories and, from that release's
+manifest, the feed its copies check.
+
+- In every stage, the version must be higher than the latest release of each
+  feed it is published to, each of those feeds must be public, and after
+  publication each must serve this release as its latest.
+- `separate-repository`: the separate repository's latest release must check
+  the separate repository. Once a bridge is published, nothing more is
+  published this way: the publisher refuses when any release in the
+  separate repository names the source repository, latest or not, and when
+  the source repository already serves a Mac release that checks it.
+- `bridge`: the separate repository must have a release to bridge from. A
+  run publishes to one feed. The first run publishes to the source
+  repository, which nothing reads until a bridged copy is installed, and
+  stops, saying what to check. Only a later run, which finds the identical
+  release already served there, publishes to the separate repository; until
+  then nothing, not even a draft, is created in it. That later run also
+  requires the source repository to serve the bridge as its latest release,
+  before the upload and again immediately before publication: if another
+  release took "latest" during the pause, it refuses and says to mark the
+  bridge latest again. A second bridge needs
+  `AMPLEFILE_MAC_REPLACE_BRIDGE=v<bridge version>`, naming the bridge it
+  replaces.
+- `source-repository`: the separate repository's latest release must already
+  check the source repository, and the source repository must already serve
+  a Mac release. A release that skips the bridge is refused.
+- In the source repository, the release attaches to the annotated
+  `v<version>` tag that already exists: the draft is created with
+  `--verify-tag` and no target, so GitHub cannot create a tag, and the
+  publisher confirms afterwards that the annotated tag object is the one it
+  verified before upload. The separate release repository has no source
+  history; GitHub creates a lightweight `v<version>` tag on its `main` when
+  the draft is published.
+- A feed that already serves the identical assets is verified and skipped.
+  A draft left behind by an interrupted run is refused until it is deleted,
+  in either repository.
 
 ## Release workflow and checkpoints
 
@@ -75,6 +177,34 @@ Apple submission.
   older-product compatibility are gone. It carries the same assets as 0.1.0.
 - The first in-place update, installed `0.1.0` to `0.1.1`, passed on
   November 8, 2026. See [Updater evidence](#updater-evidence).
+- **0.1.2** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 8, 2026, from the annotated source tag `v0.1.2` (commit
+  `999292f`): the AmpleFile Agent name and the redrawn menu-bar chat.
+- **0.1.3** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 8, 2026, from the annotated source tag `v0.1.3` (commit
+  `10cd011`): the G app icon, provider sign-in finished in the app, and a
+  first run without Chrome.
+- **0.1.4** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 9, 2026, from the annotated source tag `v0.1.4` (commit
+  `16eae93`): the renderer inside `app.asar`, the redrawn Chat, and an
+  update staged before the app shuts down to install it.
+- **0.1.5**, the bridge release, was published on November 10, 2026, from
+  the annotated source tag `v0.1.5` (commit `360ed59`), first to
+  `Mat-Tom-Son/amplefile` and then to `Mat-Tom-Son/amplefile-mac-releases`.
+  Copies of it check `Mat-Tom-Son/amplefile`. It adds the update indicator
+  at the foot of the sidebar, asks before an update restarts the app, and
+  reworks the Skills & Extensions dialog.
+- The update from the separate feed to the bridge, installed `0.1.4` to
+  `0.1.5`, passed on November 10, 2026. See
+  [Updater evidence](#updater-evidence).
+- **0.1.6** was published to `Mat-Tom-Son/amplefile` alone on November 10,
+  2026, from the annotated source tag `v0.1.6` (commit `86f3249`): the first
+  release in the `source-repository` stage, with download links moved to
+  the source repository and no other application change.
+- The update from the bridge to the first release in the source repository,
+  installed `0.1.5` to `0.1.6`, passed on November 10, 2026. Both proofs the
+  feed move requires are recorded, and the move is complete. See
+  [Updater evidence](#updater-evidence).
 
 ## Release procedure
 
@@ -129,10 +259,16 @@ Apple submission.
    commit them, run local verification again, and build a fresh candidate
    before tagging. Review dependency audit results separately with
    `npm audit --audit-level=high` as part of release review.
-4. Create and push the annotated source tag for the checked release commit:
+4. Create and push the annotated source tag for the checked release commit.
+   Nothing else may be merged to `main` from the push of the release commit
+   until publication has finished: the tag is made from the local checkout,
+   and the publisher requires `origin/main` to be the tagged commit. The
+   first line refuses to tag when `main` has moved:
 
    ```bash
-   git tag -a v<version> -m "amplefile <version>" &&
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v<version> -m "amplefile <version>" &&
      git push origin refs/tags/v<version>:refs/tags/v<version>
    ```
 
@@ -140,8 +276,10 @@ Apple submission.
    Publication verifies the package version, annotated tag, and canonical source
    identity directly. `npm run desktop:release:mac:ci` is an optional
    diagnostic for the dormant workflows.
-5. Confirm the build checkpoint and local receipt still match, then publish
-   through the resume lane without repeating completed Apple work:
+5. Confirm the build checkpoint and local receipt still match, and that the
+   status command names the feed stage, packaged feed, and publication
+   targets you expect. Then publish through the resume lane without
+   repeating completed Apple work:
 
    ```bash
    npm run desktop:release:mac:status
@@ -159,7 +297,13 @@ Apple submission.
    created on GitHub is intentionally not overwritten by resume; apply the
    failed-draft recovery rule below before retrying publication.
 6. Confirm the command reports a public, non-draft `v<version>` release with
-   the DMG, ZIP, both blockmaps, `latest-mac.yml`, checksums, and both manifests.
+   the DMG, ZIP, both blockmaps, `latest-mac.yml`, checksums, and both
+   manifests, in each repository the stage publishes to. Then read the feed
+   as an installed copy does:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --version <version>
+   ```
 7. When installation is authorized, install or update the app and verify it:
 
    ```bash
@@ -172,17 +316,354 @@ Apple submission.
    installation to them; do not report the new version as installed.
 
 The publisher refuses a dirty/unpushed source tree, a mismatched annotated
-source tag, a private source repository or Mac feed, an existing Mac tag,
+source tag, a private source repository or Mac feed, an existing release for
+the tag in a feed it publishes to, a feed stage the source does not record,
+a publication that breaks [feed continuity](#what-the-publisher-checks-about-the-feed),
 missing or stale local verification, changed Node/npm or dependency state, an
 incompatible signed artifact checkpoint or one begun before local checks passed,
 an unsigned manifest, a missing asset, or any remote size/digest mismatch.
-It does not inspect or require GitHub Actions status or a
-source-repository GitHub Release. Installer-only artwork is generated under
+It does not inspect or require GitHub Actions status. In the
+`separate-repository` stage it creates no GitHub Release in the source
+repository. Installer-only artwork is generated under
 ignored `out/` build output so the release build cannot dirty its own checkout.
 The publisher uploads a draft first and verifies every asset's GitHub SHA-256
 against the local file. Immediately before making it public, it rechecks the
 local receipt, canonical source identity, and signed artifact evidence. Direct
 publisher invocation has the same checks.
+
+## Moving the feed to the source repository
+
+Every copy of 0.1.0 through 0.1.4 carries an `app-update.yml` that names
+`Mat-Tom-Son/amplefile-mac-releases`, and that cannot be changed from
+outside. Those copies reach the source repository only by updating, through
+the separate repository, to a version that names it. The move is therefore
+two releases:
+
+1. **The bridge release** is built in the `bridge` stage and published to
+   both repositories. Copies on the separate feed update to it as to any
+   release, and from then on check the source repository, where the same
+   release is already the latest: they report that they are up to date
+   rather than failing their check.
+2. **Every later release** is built in the `source-repository` stage and
+   published to the source repository alone, attached to its annotated
+   `v<version>` tag. The separate repository keeps the bridge as its last
+   release, permanently, so a copy that was never updated can still step
+   through it.
+
+Download links follow the stage. They stay on the separate repository
+through the bridge, whose latest release is then the bridge itself, and move
+to the source repository in the `source-repository` stage, when it already
+serves a Mac release as its latest.
+
+### Changing the stage
+
+A stage change is part of the release commit for the version that ships it:
+
+1. Set `macUpdateFeedStage` in `src/shared/product-identity.json`.
+2. Set `CHECKED_IN_STAGE` in `tests/mac-release-feed.test.ts` to the same
+   value. The last test in that file then fails until every place below
+   follows.
+3. Update the places that name a feed or state the stage:
+   - `PRIVACY.md`, "Application updates": the feed installed copies check.
+   - `SECURITY.md`, "Release integrity": where public Mac releases are
+     published.
+   - `AGENTS.md`, Releases: the first bullet (where artifacts and automatic
+     updates belong), the bullet that states the checked-in stage, and the
+     automatic-updates bullet's repositories.
+   - `.agents/skills/ship-macos-release/SKILL.md`, step 7 of "Establish the
+     release context": the checked-in stage and what it means.
+   - This runbook: the opening paragraphs, the paragraph under the stage
+     table that states the checked-in stage, and
+     [Release ownership](#release-ownership).
+   - [The build lanes](macos-build.md), "Public releases": the two
+     paragraphs about the feeds and the stage.
+   - When download links move, in the `source-repository` stage only: the
+     two `releases/latest` links in `README.md`, the sentence in
+     [the website guide](website.md) that names the repository, and the
+     built site, with `npm run site:build`.
+4. Add the release to the [Release record](#release-record).
+
+The two procedures below list the exact edits for 0.1.5 and 0.1.6.
+
+### The bridge release: 0.1.5
+
+0.1.5 is the bridge and 0.1.6 is the first release in the source repository.
+Both were published on November 10, 2026, by the two procedures below, which
+stay here as the record of the move and as the model for moving a feed.
+Every feed check below names its feed, because the feed the plain command
+reads changes with the stage.
+
+1. Confirm the starting state. The separate feed offers 0.1.4, the source
+   repository has no latest release (the second command is expected to fail
+   with "has no latest release"), its other releases are all prereleases,
+   and the installed 0.1.4 checks the separate feed:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.4
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile
+   gh release list --repo Mat-Tom-Son/amplefile
+   npm run desktop:verify:installed:mac -- --version 0.1.4 --feed Mat-Tom-Son/amplefile-mac-releases
+   ```
+
+2. Make the 0.1.5 release commit: the version, the `bridge` stage, and what
+   [Changing the stage](#changing-the-stage) lists. **Freeze `main` when
+   that commit is pushed.** From then until step 7 has finished, nothing
+   may be merged or pushed to `main`, by anyone or any session; say so
+   before pushing. The check, the signed build, and notarization take a
+   long time, the tag is made from the local checkout, and every publisher
+   run requires `origin/main` to be the tagged release commit. The bridge
+   takes two runs with a manual check between them. A merge anywhere in
+   that span cannot be worked around: before the tag it means a new release
+   commit, check, and build; after the tag the remaining runs are refused
+   for good, a bridge already public in the source repository stays there
+   alone, and finishing the move needs a higher bridge version with a new
+   tag, build, and notarization. No installed copy is harmed by that, since
+   copies stay on the separate feed at their version, but 0.1.5 is spent.
+
+   The commit holds exactly these edits besides the version and the
+   release record:
+
+   - `src/shared/product-identity.json`: `"macUpdateFeedStage": "bridge"`.
+   - `tests/mac-release-feed.test.ts`: `CHECKED_IN_STAGE = "bridge"`.
+   - `PRIVACY.md`: installed Mac builds check the
+     `Mat-Tom-Son/amplefile` feed; versions through 0.1.4 check
+     `Mat-Tom-Son/amplefile-mac-releases`.
+   - `SECURITY.md`: public Mac releases are published to
+     `Mat-Tom-Son/amplefile`, and the bridge also to
+     `Mat-Tom-Son/amplefile-mac-releases`.
+   - `AGENTS.md`: artifacts and automatic updates belong in both
+     repositories for the bridge; the stage it states becomes `bridge`,
+     with the move under way; the automatic-updates bullet names both
+     repositories.
+   - `.agents/skills/ship-macos-release/SKILL.md`: the stage it states
+     becomes `bridge`, with the feed and the two publication targets.
+   - `docs/macos-release.md`: the opening paragraphs, the checked-in stage
+     paragraph, and Release ownership.
+   - `docs/macos-build.md`: "Public releases".
+
+   The README, the website guide, and the built site do not change:
+   download links stay on the separate repository through the bridge.
+
+   Merge and push the commit to `main`, then check and build:
+
+   ```bash
+   npm run check
+   npm test
+   npm run desktop:release:mac:check
+   npm run desktop:make:mac:release
+   npm run desktop:release:mac:status
+   ```
+
+   The status must name the `bridge` stage, `Mat-Tom-Son/amplefile` as the
+   feed the packaged app checks, and both repositories as publication
+   targets. The strict verifier has already failed the build unless the
+   packaged `app-update.yml` names `Mat-Tom-Son/amplefile`.
+3. Confirm `main` is still the release commit, then tag. The first line
+   refuses to tag when `main` has moved since step 2:
+
+   ```bash
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v0.1.5 -m "amplefile 0.1.5" &&
+     git push origin refs/tags/v0.1.5:refs/tags/v0.1.5
+   ```
+
+4. Publish, first run. In the `bridge` stage it publishes to the source
+   repository only and stops, printing the checks in steps 5 and 6. Nothing
+   installed reads that feed yet, so this changes no installed copy:
+
+   ```bash
+   npm run desktop:release:mac:resume
+   ```
+
+5. Read both feeds as an installed copy does. The source repository offers
+   0.1.5; the separate repository still offers 0.1.4:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.5
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.4
+   ```
+
+6. Check the built bridge against the source repository before any
+   installed copy is offered it. Quit the installed AmpleFile, open a copy
+   of the signed candidate with a disposable profile, and choose
+   **AmpleFile > Check for Updates...**:
+
+   ```bash
+   ditto out/builder/mac-arm64/AmpleFile.app /tmp/amplefile-bridge-check/AmpleFile.app
+   AMPLEFILE_DESKTOP_STATE_DIR=/tmp/amplefile-bridge-check/profile \
+     /tmp/amplefile-bridge-check/AmpleFile.app/Contents/MacOS/AmpleFile
+   ```
+
+   It must report that 0.1.5 is up to date. "Update check failed." means
+   the bridge cannot read the source repository: stop, and see
+   [If the bridge is bad](#if-the-bridge-is-bad). The copy keeps the
+   checkpointed candidate untouched; the profile override does not isolate
+   Keychain.
+7. Publish, second run: the same command. It finds 0.1.5 already served by
+   the source repository, with identical assets, and publishes to the
+   separate repository. This is the step that cannot be taken back: running
+   copies check within four hours, and each one that updates checks the
+   source repository from then on.
+
+   ```bash
+   npm run desktop:release:mac:resume
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.5
+   ```
+
+   The freeze on `main` ends when both feed checks pass.
+8. Record the first proof in [Updater evidence](#updater-evidence). The
+   installed 0.1.4 is offered 0.1.5 and installs it; then:
+
+   ```bash
+   npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile
+   ```
+
+   and **Check for Updates...** in the installed 0.1.5 reports it is up to
+   date.
+
+If a run stops after it has uploaded a draft, the next run refuses that
+draft. Confirm it is still a draft, delete it, and run again. In the
+separate repository a draft has no tag yet; in the source repository never
+add `--cleanup-tag`:
+
+```bash
+gh release view v0.1.5 --repo <owner>/<repo> --json isDraft
+gh release delete v0.1.5 --repo <owner>/<repo> --yes
+```
+
+### The first release in the source repository: 0.1.6
+
+1. Make the 0.1.6 release commit: the version, the `source-repository`
+   stage, and what [Changing the stage](#changing-the-stage) lists. It
+   holds exactly these edits besides the version and the release record:
+
+   - `src/shared/product-identity.json`:
+     `"macUpdateFeedStage": "source-repository"`.
+   - `tests/mac-release-feed.test.ts`:
+     `CHECKED_IN_STAGE = "source-repository"`.
+   - `README.md`: both `releases/latest` links, the "Download for Mac" link
+     at the top and "Download the latest release" under Install, point at
+     `https://github.com/Mat-Tom-Son/amplefile/releases/latest`.
+   - `site/public/`: rebuilt with `npm run site:build`, so its Download and
+     Releases links and its GitHub request use `Mat-Tom-Son/amplefile`.
+   - `docs/website.md`: download links open the latest release in
+     `Mat-Tom-Son/amplefile`.
+   - `SECURITY.md`: public Mac releases are published to
+     `Mat-Tom-Son/amplefile` alone; the separate repository keeps the
+     bridge as its last release.
+   - `AGENTS.md`: artifacts and automatic updates belong in the source
+     repository's GitHub Releases; the stage it states becomes
+     `source-repository`; the automatic-updates bullet names
+     `Mat-Tom-Son/amplefile`.
+   - `.agents/skills/ship-macos-release/SKILL.md`: the stage it states
+     becomes `source-repository`.
+   - `docs/macos-release.md`: the opening paragraphs, the checked-in stage
+     paragraph, and Release ownership.
+   - `docs/macos-build.md`: "Public releases".
+
+   `PRIVACY.md` already names the source repository from the bridge.
+
+   **`main` is frozen from the push of this commit** until step 2 has
+   finished. Merge and push it to `main`, then check and build:
+
+   ```bash
+   npm run check
+   npm test
+   npm run desktop:release:mac:check
+   npm run desktop:make:mac:release
+   npm run desktop:release:mac:status
+   ```
+
+   The status must name the `source-repository` stage and
+   `Mat-Tom-Son/amplefile` as both the packaged feed and the only
+   publication target.
+2. Tag and publish. `main` stays frozen from the push in step 1 until this
+   step has finished, and the first line refuses to tag when it has moved.
+   One run publishes to the source repository, attached to the annotated
+   tag. The publisher refuses unless the separate repository's latest
+   release is the bridge and the source repository already serves it:
+
+   ```bash
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v0.1.6 -m "amplefile 0.1.6" &&
+     git push origin refs/tags/v0.1.6:refs/tags/v0.1.6
+   npm run desktop:release:mac:resume
+   ```
+
+3. Read both feeds. The source repository offers 0.1.6, and the separate
+   repository still offers the bridge:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.6
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5
+   ```
+
+4. Record the second proof: the installed 0.1.5 is offered 0.1.6 from the
+   source repository and installs it.
+
+   ```bash
+   npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile
+   npm run desktop:verify:installed:mac -- --version 0.1.6 --feed Mat-Tom-Son/amplefile
+   ```
+
+5. Deploy the website ([Website](website.md#deploy)) so its Download links
+   use the source repository. Until then they download the bridge, which
+   updates itself.
+
+### What each step makes permanent
+
+| Step | What it fixes |
+| --- | --- |
+| Committing a stage | Nothing, until the commit is tagged. |
+| Pushing `v<version>` | The version and its tag. A failed candidate's tag is never moved, reused, or deleted. |
+| Publishing the bridge to the source repository (first run) | A public release there. No installed copy reads that feed yet. `main` must not move until the second run. |
+| Publishing the bridge to the separate repository (second run) | The move itself. Copies that take the bridge check the source repository from then on and cannot be sent back. |
+| The first `source-repository` release | Nothing further; the separate repository is already closed. |
+
+After the bridge is in the separate repository, three things must stay true
+for as long as any copy could still be on an older version:
+
+- `Mat-Tom-Son/amplefile-mac-releases` stays public, under its name, with a
+  bridge as its latest release. Archiving it keeps its releases
+  downloadable and can be undone; deleting it, renaming it, or making it
+  private strands every copy that has not updated yet.
+- `Mat-Tom-Son/amplefile` always serves a Mac release as its latest release.
+  Any other release there is a prerelease
+  ([Release ownership](#release-ownership)).
+- A release in the source repository is deleted, if ever, without
+  `--cleanup-tag`: that option deletes the source tag.
+
+### If the bridge is bad
+
+- **Before it reaches the separate repository** (a failed build, a failed
+  check in step 5 or 6, a failed upload, a merge to `main` during the
+  freeze), no installed copy has changed. Fix the cause and publish a
+  higher version as the bridge. A bridge already public
+  in the source repository stays there; the next bridge supersedes it as
+  latest. The stage can go back to `separate-repository` only while no
+  bridge is public in either repository: after that the publisher refuses a
+  release to the separate repository alone, because a copy installed from
+  the source repository's bridge would never see it.
+- **An ordinary defect in a published bridge**, one that leaves launching
+  and updating intact, is fixed by the next release in the
+  `source-repository` stage. Copies on the bridge take it from the source
+  repository; older copies take the bridge first and then the fix.
+- **A published bridge that cannot update from the source repository**
+  strands only the copies that already took it, and only if it cannot
+  update at all. Publish a replacement bridge at once: a higher version in
+  the `bridge` stage with `AMPLEFILE_MAC_REPLACE_BRIDGE=v<bad bridge
+  version>`. It becomes the latest release in both repositories, so copies
+  still on an older version skip the bad bridge, and copies on the bad
+  bridge take it if their updater works at all. A copy whose updater cannot
+  run is repaired by installing the replacement's DMG over it, which keeps
+  its profile; no arrangement of feeds can reach it. Steps 5 and 6 of the
+  bridge release exist to catch this before step 7.
+- The stage never goes back to `separate-repository` once a bridge is
+  public. The publisher refuses it, because bridged copies would never see
+  the release.
 
 ## Updater evidence
 
@@ -191,7 +672,7 @@ Repeat a lower-version-to-current installed update whenever updater code, Electr
 The accepted proof must show:
 
 - the lower app is Developer ID-signed, notarized, stapled, and installed under `/Applications`;
-- `Contents/Resources/app-update.yml` names `Mat-Tom-Son/amplefile-mac-releases`;
+- `Contents/Resources/app-update.yml` in the lower app names the feed that version was built to check, `Mat-Tom-Son/amplefile-mac-releases` for every version through 0.1.4;
 - the lower app's **AmpleFile > Check for Updates...** command offers the expected higher version and the Settings update surface reports the same state;
 - the cached ZIP SHA-256 equals the published GitHub asset digest;
 - AmpleFile shuts down, replaces the app, and relaunches at the higher version;
@@ -199,6 +680,29 @@ The accepted proof must show:
 - a full quit and reopen does not ask for repeated Keychain passwords.
 
 Record each proof here as it passes, with the two versions and the date.
+
+A feed change needs two proofs, because two different feeds each have to
+deliver an update:
+
+1. **Separate feed to bridge.** A copy of the last version that checks
+   `Mat-Tom-Son/amplefile-mac-releases` is offered the bridge there and
+   installs it. Before the update, verify the lower app against the feed it
+   was built for; afterwards, the bridge against the source repository:
+
+   ```bash
+   npm run desktop:verify:installed:mac -- --version <lower version> --feed Mat-Tom-Son/amplefile-mac-releases
+   npm run desktop:verify:installed:mac -- --version <bridge version> --feed Mat-Tom-Son/amplefile
+   ```
+
+   Also record that the installed bridge's **Check for Updates...** reports
+   it is up to date, which is its first read of the source repository.
+2. **Bridge to the first release in the source repository.** The installed
+   bridge is offered that release from `Mat-Tom-Son/amplefile` and installs
+   it. This is also the first update the bridge's own updater performs.
+
+For each, record what the list above requires, and add the feed the lower
+app named, the feed the higher app names, and the output of
+`npm run desktop:verify:feed:mac` for the feed that delivered the update.
 
 **0.1.0 → 0.1.1, November 8, 2026**
 
@@ -220,11 +724,78 @@ Record each proof here as it passes, with the two versions and the date.
 - Not observed in this proof: the Settings update surface during the update,
   and a later full quit and reopen.
 
+**0.1.4 → 0.1.5, November 10, 2026: separate feed to bridge**
+
+- The installed `0.1.4` passed
+  `npm run desktop:verify:installed:mac -- --version 0.1.4 --feed Mat-Tom-Son/amplefile-mac-releases`:
+  Developer ID-signed for team `464JD5K8DC`, under `/Applications`, with an
+  `app-update.yml` naming `Mat-Tom-Son/amplefile-mac-releases`.
+- Before the bridge reached the separate repository, a copy of the signed
+  `0.1.5` candidate with its own profile failed its check with "No published
+  versions on GitHub" while `Mat-Tom-Son/amplefile` had no latest release,
+  and reported "AmpleFile 0.1.5 is up to date." once the bridge was
+  published there.
+- `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5`
+  reported that the feed offers AmpleFile 0.1.5 from `v0.1.5`.
+- The installed `0.1.4` reported "AmpleFile 0.1.5 is available." at launch.
+  The update was started through the app's own update action, the one the
+  Settings button calls, over a local debugging port rather than by a click.
+- Both the cached `pending/AmpleFile-0.1.5-mac-arm64.zip` and `update.zip`
+  hashed to SHA-256 `3c2020db09c63a0978aa68c4cb5cd6aa899c4021a2c7ed7180c568b4a888acc7`,
+  the published asset digest in both repositories.
+- ShipIt logged `Installation completed successfully` and relaunched
+  `/Applications/AmpleFile.app`, which reported `0.1.5`, about 13 seconds
+  after the download began. The existing profile and its registered
+  Connected Folder were kept. This was the first update performed by the
+  updater that stages with Squirrel.Mac before shutting down, which shipped
+  in `0.1.4`.
+- `npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile`
+  passed without requesting Keychain secret data.
+- After a full quit and reopen, the installed `0.1.5` checked
+  `Mat-Tom-Son/amplefile` and reported "AmpleFile 0.1.5 is up to date."
+- Not observed in this proof: the Settings update surface and the menu
+  command on screen, and whether a Keychain prompt appeared on reopen.
+
+**0.1.5 → 0.1.6, November 10, 2026: bridge to the source repository**
+
+- The installed `0.1.5` passed
+  `npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile`,
+  and its `app-update.yml` named `Mat-Tom-Son/amplefile`.
+- `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.6`
+  reported that the feed offers AmpleFile 0.1.6 from `v0.1.6`, and the
+  separate repository still offered the bridge, `0.1.5`. The annotated tag
+  `v0.1.6` was the same object before and after publication.
+- A check from the installed `0.1.5` within about a minute of publication
+  still reported "AmpleFile 0.1.5 is up to date."; a check a minute later
+  reported "AmpleFile 0.1.6 is available." GitHub serves the latest release
+  to anonymous readers with a short delay.
+- The sidebar's update indicator then showed "Update Available 0.1.6" at the
+  foot of the sidebar and announced it. Activating it opened "Restart
+  AmpleFile to Update?"; the updater was not called until **Update and
+  Restart** was chosen. The indicator showed the download's progress and
+  then "Restarting to Update". The indicator and the dialog were driven
+  over a local debugging port rather than by a click.
+- Both the cached `pending/AmpleFile-0.1.6-mac-arm64.zip` and `update.zip`
+  hashed to SHA-256 `571dc453e5c059d6969010faf57a5ac26454d9c915fb6c6cc699ddf409977cc0`,
+  the published asset digest.
+- ShipIt logged `Installation completed successfully` and relaunched
+  `/Applications/AmpleFile.app`, which reported `0.1.6`, about 13 seconds
+  after the download began. The existing profile and its registered
+  Connected Folder were kept. This was the first update the bridge's own
+  updater performed.
+- `npm run desktop:verify:installed:mac -- --version 0.1.6 --feed Mat-Tom-Son/amplefile`
+  passed without requesting Keychain secret data.
+- Not observed in this proof: the indicator and the dialog on screen, the
+  confirmation naming running work (nothing was running), a later check
+  from the installed `0.1.6`, and whether a Keychain prompt appeared on
+  reopen.
+
 ## Recovery rules
 
 - Never replace assets in a published release. Correct a bad release with a higher shared version.
 - Never move, reuse, or delete a failed candidate's pushed source tag. It is immutable evidence even when no Mac-feed draft or public release exists; a correction to tagged source requires a higher version, release commit, and tag. Before tagging, fix an ordinary local-check failure, commit, and rerun verification without consuming a version. GitHub Actions status does not determine publication eligibility.
-- A failed draft may be deleted only after confirming it was never published or consumed by an installed app.
+- A failed draft may be deleted only after confirming it was never published or consumed by an installed app. In the source repository, delete a draft or release without `--cleanup-tag`, which would delete the source tag.
+- A feed move that goes wrong is recovered as [If the bridge is bad](#if-the-bridge-is-bad) describes, never by publishing to the separate repository in the `separate-repository` stage again.
 - Inspect `npm run desktop:release:mac:check -- --status` for the exact-commit local receipt and `npm run desktop:release:mac:status` for the build before retrying. If its checkpoint is compatible, use the matching `:resume` build/release command instead of rebuilding the app and repeating notarization.
 - If a build fails inside DMG finalization before its checkpoint is written, the resumable lane reruns the finalizer. It detects an already valid signed/stapled DMG and refreshes only updater metadata.
 - Never rename or install `AmpleFile Local Smoke.app` over the production app. A user-data override does not isolate Keychain; use the signed candidate or a disposable macOS account for interactive testing.
@@ -233,4 +804,9 @@ Record each proof here as it passes, with the two versions and the date.
 
 ## Release ownership
 
-The source repository owns code, exact release tags, issues, and documentation. `amplefile-mac-releases` is the active desktop artifact feed only. Do not develop or hand-edit release metadata in the feed repository, and do not add a competing tag publisher.
+The source repository owns code, exact release tags, issues, and documentation, and its GitHub Releases are the Mac update feed. `amplefile-mac-releases` holds the bridge, 0.1.5, as its last release and stays public for copies that have not updated yet; nothing more is published there. Do not develop or hand-edit release metadata in either repository's releases, and do not add a competing tag publisher.
+
+The source repository's GitHub Releases also hold `linux-test-*` prereleases. Its latest release is what every installed Mac copy from 0.1.5 on is offered, so two rules hold for anything else published in it:
+
+- A Linux preview is published as a prerelease and never as the latest release. `gh release create` marks a release latest unless it is given `--prerelease` or `--latest=false`. If one does take latest, every Mac copy's update check fails until it is undone: mark the last Mac release latest again with `gh release edit v<version> --repo Mat-Tom-Son/amplefile --latest`, or make the other release a prerelease with `gh release edit <tag> --repo Mat-Tom-Son/amplefile --prerelease`. Then confirm with `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile`. The Mac publisher refuses to publish while a release that is not a Mac release is latest there, and checks after publishing that its own release is.
+- The updater reads only the latest release. If Linux ever gets an updater feed of its own in this repository, both platforms have to ship in the same release for each version, with `latest-mac.yml` and the Linux update metadata as assets of that one release.

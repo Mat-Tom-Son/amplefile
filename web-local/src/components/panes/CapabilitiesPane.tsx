@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,6 +19,7 @@ import {
   BookToolbox20Regular,
   ChevronRight16Regular,
   Box16Regular,
+  ErrorCircle20Regular,
   Code16Regular,
   Delete16Regular,
   Dismiss20Regular,
@@ -106,6 +108,7 @@ export function CapabilitiesPane({
   onError,
   onCatalogChanged,
   onViewChange,
+  headerEnd,
 }: {
   connectedFolder: ConnectedFolderSummary;
   status: AgentStatus;
@@ -114,8 +117,11 @@ export function CapabilitiesPane({
   onError: (message: string | null) => void;
   onCatalogChanged?: (catalog: AgentCatalog) => void;
   onViewChange: (view: SkillsExtensionsView) => void;
+  /** The popup's Close control, drawn at the end of the header row. */
+  headerEnd?: ReactNode;
 }) {
   const [catalog, setCatalog] = useState<AgentCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<{ connectedFolderId: string; tools: IncludedToolStatus[]; error?: string } | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<CapabilityTypeFilter>("all");
@@ -133,7 +139,9 @@ export function CapabilitiesPane({
   const [discoverDiagnostics, setDiscoverDiagnostics] = useState<string[]>([]);
   const [discoverTruncated, setDiscoverTruncated] = useState(false);
   const [discoverLoading, setDiscoverLoading] = useState(false);
-  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  /** The search, type and sort the shown results answer; anything else is still loading. */
+  const [discoverLoadedKey, setDiscoverLoadedKey] = useState<string | null>(null);
+  const [discoverError, setDiscoverError] = useState<{ message: string; more: boolean } | null>(null);
   const [reviewingItemId, setReviewingItemId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
@@ -143,12 +151,14 @@ export function CapabilitiesPane({
   const catalogRequestRef = useRef(0);
   const readinessRevisions = useRef(new Map<IncludedToolId, number>());
   const discoverRequestRef = useRef(0);
+  const discoverKey = JSON.stringify([query.trim(), typeFilter, discoverSort]);
   const operationGateRef = useRef(createConnectedFolderOperationGate(connectedFolder.id));
   operationGateRef.current.activate(connectedFolder.id);
   const readinessOwner = operationGateRef.current.capture();
 
   useEffect(() => {
     setCatalog(null);
+    setCatalogError(null);
     setInstallScope("global");
     setTypeFilter("all");
     setQuery("");
@@ -158,7 +168,7 @@ export function CapabilitiesPane({
     setBusy(false);
     setPackageBusy(null);
     setReviewingItemId(null);
-    void loadCatalog(operationGateRef.current.capture());
+    void loadCatalog(operationGateRef.current.capture(), { firstLoad: true });
   }, [fixtureMode, connectedFolder.id]);
 
   useEffect(() => {
@@ -213,8 +223,14 @@ export function CapabilitiesPane({
     });
   }
 
-  async function loadCatalog(operation: ConnectedFolderOperationToken = operationGateRef.current.capture()) {
+  /**
+   * A first load (opening, a new Connected Folder, or Try Again) reports a failure in
+   * place; a reload after a change keeps what is shown and reports it. Callers say
+   * which, because this render's catalog can belong to the previous Connected Folder.
+   */
+  async function loadCatalog(operation: ConnectedFolderOperationToken = operationGateRef.current.capture(), { firstLoad = false }: { firstLoad?: boolean } = {}) {
     const requestId = ++catalogRequestRef.current;
+    setCatalogError(null);
     if (fixtureMode) {
       if (operationGateRef.current.isCurrent(operation)) {
         const next = fixtureCatalog();
@@ -230,13 +246,17 @@ export function CapabilitiesPane({
         onCatalogChanged?.(next);
       }
     } catch (caught) {
-      if (catalogRequestRef.current === requestId && operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+      if (catalogRequestRef.current === requestId && operationGateRef.current.isCurrent(operation)) {
+        if (firstLoad) setCatalogError(errorText(caught));
+        else onError(errorText(caught));
+      }
     }
   }
 
   async function loadDiscover(reset: boolean) {
     const requestId = ++discoverRequestRef.current;
     const offset = reset ? 0 : discoverItems.length;
+    const key = discoverKey;
     setDiscoverLoading(true);
     setDiscoverError(null);
     if (fixtureMode) {
@@ -246,6 +266,7 @@ export function CapabilitiesPane({
       setDiscoverCatalogUrl(response.catalogUrl);
       setDiscoverDiagnostics(response.diagnostics ?? []);
       setDiscoverTruncated(Boolean(response.truncated));
+      setDiscoverLoadedKey(key);
       setDiscoverLoading(false);
       return;
     }
@@ -264,8 +285,17 @@ export function CapabilitiesPane({
       setDiscoverCatalogUrl(response.catalogUrl);
       setDiscoverDiagnostics(response.diagnostics ?? []);
       setDiscoverTruncated(Boolean(response.truncated));
+      setDiscoverLoadedKey(key);
     } catch (caught) {
-      if (discoverRequestRef.current === requestId) setDiscoverError(errorText(caught));
+      if (discoverRequestRef.current !== requestId) return;
+      // A failed search must not leave the previous search's results looking like answers to this one.
+      if (reset) {
+        setDiscoverItems([]);
+        setDiscoverTotal(0);
+        setDiscoverTruncated(false);
+        setDiscoverLoadedKey(key);
+      }
+      setDiscoverError({ message: errorText(caught), more: !reset });
     } finally {
       if (discoverRequestRef.current === requestId) setDiscoverLoading(false);
     }
@@ -313,7 +343,7 @@ export function CapabilitiesPane({
    * shell out of view.
    */
   function resetPaneScroll() {
-    paneRef.current?.scrollTo({ top: 0 });
+    if (paneRef.current) paneRef.current.scrollTop = 0;
   }
 
   function changeQuery(value: string) {
@@ -505,36 +535,36 @@ export function CapabilitiesPane({
     }
   }
 
-  return (
-    <div ref={paneRef} className="connected-folder-pane-content capabilities-pane skills-extensions-pane professional-surface professional-setup">
-      <header className="skills-extensions-header">
-        <div>
-          <h1>Skills &amp; Extensions</h1>
-        </div>
-      </header>
+  const discoverPending = discoverLoading || discoverLoadedKey !== discoverKey;
 
-      <div className="capabilities-navigation">
+  return (
+    <div className="connected-folder-pane-content capabilities-pane skills-extensions-pane professional-surface professional-setup">
+      {/* One header row that stays put while the body scrolls. */}
+      <header className="skills-extensions-header">
+        <h1>Skills &amp; Extensions</h1>
         <div className="capabilities-view-tabs" role="tablist" aria-label="Skills & Extensions view">
           <button id="capabilities-installed-tab" type="button" role="tab" tabIndex={view === "installed" ? 0 : -1} aria-controls="capabilities-installed-panel" aria-selected={view === "installed"} className={view === "installed" ? "active" : ""} onKeyDown={handleViewTabKeyDown} onClick={() => selectView("installed")}>Installed</button>
           <button id="capabilities-discover-tab" type="button" role="tab" tabIndex={view === "discover" ? 0 : -1} aria-controls="capabilities-discover-panel" aria-selected={view === "discover"} className={view === "discover" ? "active" : ""} onKeyDown={handleViewTabKeyDown} onClick={() => selectView("discover")}>Discover</button>
         </div>
-        <button className="ui-control capabilities-add-trigger" type="button" onClick={() => openAddDialog()}><Add16Regular aria-hidden="true" />Add Custom</button>
-      </div>
+        <div className="skills-extensions-header-actions">
+          <button className="ui-control capabilities-add-trigger" type="button" onClick={() => openAddDialog()}><Add16Regular aria-hidden="true" />Add Custom</button>
+          {headerEnd}
+        </div>
+      </header>
 
+      <div ref={paneRef} className="skills-extensions-body">
       {view === "installed" ? (
         <section ref={installedViewRef} id="capabilities-installed-panel" className="capabilities-view-content" role="tabpanel" aria-labelledby="capabilities-installed-tab" tabIndex={-1}>
           <CapabilityToolbar
             view="installed"
             query={query}
             typeFilter={typeFilter}
-            discoverSort={discoverSort}
             onQueryChange={changeQuery}
             onTypeChange={changeTypeFilter}
-            onDiscoverSortChange={setDiscoverSort}
           />
-          {!catalog ? <div className="professional-loading-row" role="status"><ArrowSync16Regular className="spin" />Loading Skills & Extensions</div> : null}
+          {!catalog && !catalogError ? <CapabilityLoading label="Loading Skills & Extensions" /> : null}
+          {!catalog && catalogError ? <CapabilityError title="Couldn’t Load Skills & Extensions" detail={catalogError} onRetry={() => void loadCatalog(undefined, { firstLoad: true })} /> : null}
           {readiness?.connectedFolderId === connectedFolder.id && readiness.error ? <div className="inline-error" role="alert">Setup status could not be loaded: {readiness.error}</div> : null}
-          {catalog && !installedVisible && installedTotal ? <CapabilityEmpty title="No Matching Tools" /> : null}
           {catalog ? (
             <>
               <IncludedToolsStrip items={includedResources} statuses={includedStatuses} onSelect={setSelectedCapability} />
@@ -556,10 +586,10 @@ export function CapabilitiesPane({
               </div>
             </>
           ) : null}
-          {catalog && !query.trim() ? (
-            <section className="capabilities-panel capabilities-supporting-details" aria-labelledby="capabilities-supporting-title">
-              <div className="capabilities-supporting-heading">
-                <h3 id="capabilities-supporting-title">Tools and Packages</h3>
+          {catalog && !query.trim() && (catalog.tools.some(isCoreTool) || catalog.packages.length) ? (
+            <section className="capabilities-supporting-details" aria-labelledby="capabilities-supporting-title">
+              <div className="capabilities-scope-heading">
+                <div><h3 id="capabilities-supporting-title">Tools and Packages</h3><p>Pi’s built-in tools and the Pi packages installed through it</p></div>
               </div>
               <div className="capabilities-supporting-list">
                 <CoreToolsSection tools={catalog.tools} management={catalog.toolManagement} />
@@ -570,34 +600,42 @@ export function CapabilitiesPane({
         </section>
       ) : (
         <section ref={discoverViewRef} id="capabilities-discover-panel" className="capabilities-view-content" role="tabpanel" aria-labelledby="capabilities-discover-tab" tabIndex={-1}>
-          <div className="capabilities-view-heading">
-            <div><h2>Pi Catalog</h2></div>
-            <div className="capabilities-view-actions">{catalogHref ? <ExternalSourceLink href={catalogHref} label="Browse the Catalog" /> : null}</div>
-          </div>
           <CapabilityToolbar
             view="discover"
             query={query}
             typeFilter={typeFilter}
-            discoverSort={discoverSort}
             onQueryChange={changeQuery}
             onTypeChange={changeTypeFilter}
-            onDiscoverSortChange={setDiscoverSort}
           />
-          <section className="capabilities-panel capabilities-discover-panel" aria-label="Catalog results">
-          <DiscoverCapabilities
-            items={discoverItems}
-            total={discoverTotal}
-            loading={discoverLoading}
-            error={discoverError}
-            diagnostics={discoverDiagnostics}
-            truncated={discoverTruncated}
-            reviewingItemId={reviewingItemId}
-            onInstall={reviewDiscoverItem}
-            onLoadMore={() => void loadDiscover(false)}
-          />
+          <section className="capabilities-discover-panel" aria-labelledby="capabilities-catalog-title" aria-busy={discoverPending}>
+            <div className="capabilities-scope-heading">
+              <div>
+                <h3 id="capabilities-catalog-title">Pi Catalog</h3>
+                <p role="status">{discoverSummary({ pending: discoverPending, error: discoverError, total: discoverTotal })}</p>
+              </div>
+              <div className="capabilities-section-actions">
+                <label className="capabilities-sort"><span>Sort By</span><select aria-label="Catalog Sort" value={discoverSort} onChange={(event) => setDiscoverSort(event.target.value as DiscoverSort)}><option value="official">First-Party First</option><option value="downloads">Most Downloads</option><option value="recent">Recently Updated</option><option value="name">Name</option></select></label>
+                {catalogHref ? <ExternalSourceLink href={catalogHref} label="Browse the Catalog" /> : null}
+              </div>
+            </div>
+            <DiscoverCapabilities
+              items={discoverItems}
+              total={discoverTotal}
+              pending={discoverPending}
+              loading={discoverLoading}
+              error={discoverError}
+              diagnostics={discoverDiagnostics}
+              truncated={discoverTruncated}
+              filtered={Boolean(query.trim()) || typeFilter !== "all"}
+              reviewingItemId={reviewingItemId}
+              onOpen={reviewDiscoverItem}
+              onRetry={() => void loadDiscover(!discoverError?.more)}
+              onLoadMore={() => void loadDiscover(false)}
+            />
           </section>
         </section>
       )}
+      </div>
 
       <input hidden ref={importRef} type="file" accept=".zip,.skill,.md" multiple onChange={chooseSkillFiles} />
       {addOpen ? (
@@ -642,18 +680,14 @@ function CapabilityToolbar({
   view,
   query,
   typeFilter,
-  discoverSort,
   onQueryChange,
   onTypeChange,
-  onDiscoverSortChange,
 }: {
   view: SkillsExtensionsView;
   query: string;
   typeFilter: CapabilityTypeFilter;
-  discoverSort: DiscoverSort;
   onQueryChange: (value: string) => void;
   onTypeChange: (value: CapabilityTypeFilter) => void;
-  onDiscoverSortChange: (value: DiscoverSort) => void;
 }) {
   const types: Array<{ value: CapabilityTypeFilter; label: string }> = [
     { value: "all", label: "All" },
@@ -663,15 +697,10 @@ function CapabilityToolbar({
   return (
     <section className="capabilities-toolbar" aria-label={`${view === "installed" ? "Installed" : "Discover"} tool filters`}>
       <label className="capabilities-search"><Search20Regular aria-hidden="true" /><input type="search" aria-label={view === "installed" ? "Search installed tools" : "Search the catalog"} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={view === "installed" ? "Search installed tools" : "Search the catalog"} /></label>
-      <div className="capabilities-filter-row">
-        <div className="capabilities-type-chips" role="group" aria-label="Tool type">
-          {types.map((type) => (
-            <button key={type.value} type="button" className={typeFilter === type.value ? "active" : ""} aria-pressed={typeFilter === type.value} onClick={() => onTypeChange(type.value)}>{type.label}</button>
-          ))}
-        </div>
-        {view === "discover" ? (
-          <label className="capabilities-sort"><span>Sort</span><select aria-label="Catalog Sort" value={discoverSort} onChange={(event) => onDiscoverSortChange(event.target.value as DiscoverSort)}><option value="official">First-Party First</option><option value="downloads">Most Downloads</option><option value="recent">Recently Updated</option><option value="name">Name</option></select></label>
-        ) : null}
+      <div className="capabilities-type-chips" role="group" aria-label="Tool type">
+        {types.map((type) => (
+          <button key={type.value} type="button" className={typeFilter === type.value ? "active" : ""} aria-pressed={typeFilter === type.value} onClick={() => onTypeChange(type.value)}>{type.label}</button>
+        ))}
       </div>
     </section>
   );
@@ -818,7 +847,7 @@ function PackageManagementSection({ packages, packageBusy, onPackageAction }: {
   return (
     <details className="capabilities-packages capabilities-management-section">
       <summary>
-        <span><Box16Regular aria-hidden="true" /><strong>Packages</strong></span>
+        <span><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" /><Box16Regular aria-hidden="true" /><strong>Packages</strong></span>
         <small>{packages.length}{updates ? ` · ${updates} ${updates === 1 ? "update" : "updates"}` : ""}</small>
       </summary>
       <div className="capabilities-package-list">{packages.map((item) => {
@@ -835,7 +864,7 @@ function CoreToolsSection({ tools, management }: { tools: AgentTool[]; managemen
   if (!coreTools.length) return null;
   return (
     <details className="capabilities-core-tools capabilities-management-section" data-management-mode={management?.mode}>
-      <summary><span><Code16Regular aria-hidden="true" /><strong>Built-In Tools</strong></span><small>{coreTools.length}</small></summary>
+      <summary><span><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" /><Code16Regular aria-hidden="true" /><strong>Built-In Tools</strong></span><small>{coreTools.length}</small></summary>
       <div className="capabilities-core-tools-body">
         <div className="capabilities-core-tool-list">{coreTools.map((tool) => (
           <article className="capabilities-core-tool-row" key={`${tool.source}:${tool.name}`}>
@@ -868,7 +897,7 @@ function InstalledCapabilityRow({ item, onSelect }: { item: InstalledCapability;
     <button className="capabilities-resource-card" type="button" onClick={onSelect}>
       <span className="capabilities-kind-icon" aria-hidden="true">{item.kind === "skill" ? <BookToolbox20Regular /> : <PlugConnected20Regular />}</span>
       <span className="capabilities-resource-copy">
-        <span className="capabilities-resource-title"><strong>{item.name}</strong><span>{item.kind === "skill" ? "Skill" : "Extension"}</span>{!item.enabled ? <span className="capabilities-resource-state">Turned Off</span> : trouble ? <span className="capabilities-resource-state error">{statusLabel(item.status)}</span> : null}</span>
+        <span className="capabilities-resource-title"><strong>{item.name}</strong><KindChips types={[item.kind]} />{!item.enabled ? <span className="capabilities-resource-state">Turned Off</span> : trouble ? <span className="capabilities-resource-state error">{statusLabel(item.status)}</span> : null}</span>
         {detail ? <span className="capabilities-resource-detail">{detail}</span> : null}
       </span>
       <ChevronRight16Regular className="capabilities-resource-chevron" aria-hidden="true" />
@@ -876,45 +905,84 @@ function InstalledCapabilityRow({ item, onSelect }: { item: InstalledCapability;
   );
 }
 
-function DiscoverCapabilities({ items, total, loading, error, diagnostics, truncated, reviewingItemId, onInstall, onLoadMore }: {
+/** "Skill" and "Extension" as the same small chip in every row and dialog. */
+function KindChips({ types }: { types: Array<"skill" | "extension"> }) {
+  return <>{types.map((type) => <span className="capabilities-kind-chip" key={type}>{type === "skill" ? "Skill" : "Extension"}</span>)}</>;
+}
+
+/** The catalog heading's one line of state: loading, a count, or nothing beside an error. */
+function discoverSummary({ pending, error, total }: { pending: boolean; error: { more: boolean } | null; total: number }): string {
+  if (pending) return "Loading…";
+  if (error && !error.more) return "";
+  return `${total.toLocaleString()} ${total === 1 ? "result" : "results"}`;
+}
+
+function DiscoverCapabilities({ items, total, pending, loading, error, diagnostics, truncated, filtered, reviewingItemId, onOpen, onRetry, onLoadMore }: {
   items: CapabilityDiscoverItem[];
   total: number;
+  /** The shown results do not yet answer the current search, type and sort. */
+  pending: boolean;
   loading: boolean;
-  error: string | null;
+  error: { message: string; more: boolean } | null;
   diagnostics: string[];
   truncated: boolean;
+  filtered: boolean;
   reviewingItemId: string | null;
-  onInstall: (item: CapabilityDiscoverItem) => void;
+  onOpen: (item: CapabilityDiscoverItem) => void;
+  onRetry: () => void;
   onLoadMore: () => void;
 }) {
+  const failed = error && !error.more;
   return (
     <div className="capabilities-discover-stack">
-      {diagnostics.length ? <div className="professional-diagnostics" role="status">{diagnostics.map((message) => <span key={message}>{message}</span>)}</div> : null}
-      {error ? <div className="inline-error" role="alert">{error}</div> : null}
-      {loading && !items.length ? <div className="professional-loading-row" role="status"><ArrowSync16Regular className="spin" />Loading catalog…</div> : null}
-      {items.length ? <div className="capabilities-discover-list">{items.map((item) => <DiscoverCapabilityCard key={item.id} item={item} busy={reviewingItemId === item.id} disabled={Boolean(reviewingItemId) || !canInstallDiscoverItem(item)} onInstall={() => onInstall(item)} />)}</div> : !loading && !error ? <CapabilityEmpty title="No Catalog Matches" /> : null}
-      {items.length < total ? <button className="ui-control capabilities-load-more" type="button" disabled={loading} onClick={onLoadMore}>{loading ? <ArrowSync16Regular className="spin" /> : null}Load More</button> : null}
-      {truncated && !loading ? <p className="capabilities-results-summary capabilities-window-note">First {npmSearchWindowSize} npm matches</p> : null}
+      {diagnostics.length && !failed ? <div className="professional-diagnostics" role="status">{diagnostics.map((message) => <span key={message}>{message}</span>)}</div> : null}
+      {failed ? <CapabilityError title="Couldn’t Load the Pi Catalog" detail={error.message} onRetry={onRetry} />
+        : !items.length && pending ? <CapabilityLoading label="Loading the Pi catalog" />
+        : !items.length ? <CapabilityEmpty title="No Catalog Matches" detail={filtered ? "Try other words, or show All." : "The catalog has nothing to show right now."} />
+        : (
+          <div className={`capabilities-resource-list capabilities-discover-list${pending ? " pending" : ""}`}>
+            {items.map((item) => <DiscoverCapabilityCard key={item.id} item={item} busy={reviewingItemId === item.id} disabled={Boolean(reviewingItemId) || !canInstallDiscoverItem(item)} onOpen={() => onOpen(item)} />)}
+          </div>
+        )}
+      {error?.more ? <CapabilityError title="Couldn’t Load More" detail={error.message} onRetry={onRetry} /> : null}
+      {items.length && items.length < total && !pending && !failed && !error?.more ? <button className="ui-control capabilities-load-more" type="button" disabled={loading} onClick={onLoadMore}>{loading ? <ArrowSync16Regular className="spin" /> : null}Load More</button> : null}
+      {truncated && !pending ? <p className="capabilities-results-summary capabilities-window-note">First {npmSearchWindowSize} npm matches</p> : null}
     </div>
   );
 }
 
-function DiscoverCapabilityCard({ item, busy, disabled, onInstall }: { item: CapabilityDiscoverItem; busy: boolean; disabled: boolean; onInstall: () => void }) {
+/**
+ * One catalog result, laid out like an installed row: the whole row opens its
+ * details, and View Source stays its own link. While another row's details
+ * load the button says it is unavailable rather than becoming disabled, so
+ * keyboard focus stays on it and returns to it when the details close.
+ */
+function DiscoverCapabilityCard({ item, busy, disabled, onOpen }: { item: CapabilityDiscoverItem; busy: boolean; disabled: boolean; onOpen: () => void }) {
   const repositoryHref = safeExternalHref(item.repositoryUrl || item.homepageUrl || item.npmUrl);
   const installable = canInstallDiscoverItem(item);
   return (
-    <article className="capabilities-discover-card">
-      <div className="capabilities-resource-copy">
-        <div className="capabilities-resource-title"><strong>{item.name}</strong>{item.types.map((type) => <span className="capabilities-resource-kind" key={type}>{type === "skill" ? "Skill" : "Extension"}</span>)}</div>
-        <p>{item.description}</p>
-        <div className="capabilities-resource-meta">
+    <article className={`capabilities-discover-card${installable ? " openable" : ""}`} aria-busy={busy || undefined}>
+      <span className="capabilities-kind-icon" aria-hidden="true">{item.types.includes("extension") ? <PlugConnected20Regular /> : <BookToolbox20Regular />}</span>
+      <span className="capabilities-resource-copy">
+        <span className="capabilities-resource-title">
+          {installable
+            ? <button className="capabilities-discover-open" type="button" aria-disabled={disabled || undefined} aria-haspopup="dialog" onClick={() => { if (!disabled) onOpen(); }}><strong>{item.name}</strong></button>
+            : <strong>{item.name}</strong>}
+          <KindChips types={item.types} />
+        </span>
+        {item.description ? <span className="capabilities-resource-detail capabilities-discover-description">{item.description}</span> : null}
+        <span className="capabilities-resource-meta">
           {item.author ? <span>{item.author}</span> : null}
           {item.official ? <span title="On Pi's first-party / reference list. That says where it comes from, not that it was safety-reviewed.">First-Party / Reference</span> : null}
           {typeof item.downloads === "number" ? <span>{item.downloads.toLocaleString()} downloads</span> : null}
-          {repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" icon={false} /> : null}
-        </div>
-      </div>
-      {installable ? <button className="ui-control" type="button" disabled={disabled} onClick={onInstall}>{busy ? "Loading…" : "Details"}</button> : <span className="professional-status-badge">Reference Only</span>}
+        </span>
+      </span>
+      <span className="capabilities-discover-trailing">
+        {repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" icon={false} /> : null}
+        {!installable ? <span className="capabilities-kind-chip">Reference Only</span>
+          : busy ? <ArrowSync16Regular className="spin capabilities-resource-chevron" aria-label="Loading details" />
+          : <ChevronRight16Regular className="capabilities-resource-chevron" aria-hidden="true" />}
+      </span>
     </article>
   );
 }
@@ -986,7 +1054,7 @@ function InstallReviewDialog({ pending, connectedFolderName, busy, onClose, onSc
         <div className="modal-title">
           <div>
             <h2 id="capability-install-review-title">{title}</h2>
-            {catalogInstall ? <p className="capability-review-byline"><span>{pending.item.types.map(capabilityTypeLabel).join(" and ")}</span>{pending.item.author ? <span>{pending.item.author}</span> : null}{repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" /> : null}</p> : null}
+            {catalogInstall ? <p className="capability-review-byline"><KindChips types={pending.item.types} />{pending.item.author ? <span className="capability-review-author">{pending.item.author}</span> : null}{repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" /> : null}</p> : null}
           </div>
           <button className="ui-control ui-control--icon" type="button" onClick={onClose} disabled={busy} aria-label="Close Review"><Dismiss20Regular /></button>
         </div>
@@ -1012,7 +1080,7 @@ function InstallReviewDialog({ pending, connectedFolderName, busy, onClose, onSc
             </div>
           </div>
           <details className="capability-technical-details">
-            <summary>Technical Details</summary>
+            <summary><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" />Technical Details</summary>
             <div className="capability-technical-body">
               <dl className="capability-review-facts">
                 <div><dt>Source</dt><dd>{source}</dd></div>
@@ -1069,7 +1137,7 @@ export function CapabilityDetailsDialog({ item, connectedFolderId, busy, onClose
           {item.included ? <IncludedToolSetup key={`${connectedFolderId}:${item.included.id}`} connectedFolderId={connectedFolderId} tool={item.included} enabled={item.enabled} onStatusChange={onReadinessChange} /> : null}
           {item.diagnostics.length ? <div className="professional-diagnostics" role="status">{item.diagnostics.map((diagnostic, index) => <span className={diagnostic.type} key={`${diagnostic.message}:${index}`}>{diagnostic.message}</span>)}</div> : null}
           <details className="capability-technical-details">
-            <summary>Technical Details</summary>
+            <summary><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" />Technical Details</summary>
             <div className="capability-technical-body">
               <dl className="capability-review-facts">
                 {item.included ? <><div><dt>Extension</dt><dd>{statusLabel(item.status)}</dd></div><div><dt>Enabled</dt><dd>{item.enabled ? "Yes" : "No"}</dd></div></> : null}
@@ -1081,7 +1149,7 @@ export function CapabilityDetailsDialog({ item, connectedFolderId, busy, onClose
               {item.kind === "extension" ? <div className="capability-extension-details"><CapabilityStringList title="Tools" items={item.tools} /><CapabilityStringList title="Commands" items={item.commands} /><CapabilityStringList title="Flags" items={item.flags} /></div> : null}
             </div>
           </details>
-          {item.kind === "skill" && item.content ? <details className="capability-technical-details"><summary>Instructions</summary><div className="markdown-preview capability-skill-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{stripSkillFrontmatter(item.content)}</ReactMarkdown></div></details> : null}
+          {item.kind === "skill" && item.content ? <details className="capability-technical-details"><summary><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" />Instructions</summary><div className="markdown-preview capability-skill-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{stripSkillFrontmatter(item.content)}</ReactMarkdown></div></details> : null}
         </div>
         <div className="capability-dialog-footer">
           {onToggle ? <button className="ui-control" type="button" disabled={busy} onClick={onToggle}>{item.enabled ? "Turn Off" : "Turn On"}</button> : null}
@@ -1117,8 +1185,22 @@ function GitHubMark() {
   );
 }
 
-function CapabilityEmpty({ title }: { title: string }) {
-  return <div className="professional-empty-state capabilities-empty-state"><span className="professional-empty-icon" aria-hidden="true"><BookToolbox20Regular /></span><div><h2>{title}</h2></div></div>;
+function CapabilityEmpty({ title, detail }: { title: string; detail?: string }) {
+  return <div className="professional-empty-state capabilities-empty-state"><span className="professional-empty-icon" aria-hidden="true"><BookToolbox20Regular /></span><div><h2>{title}</h2>{detail ? <p>{detail}</p> : null}</div></div>;
+}
+
+function CapabilityLoading({ label }: { label: string }) {
+  return <div className="capabilities-state-card" role="status"><ArrowSync16Regular className="spin" aria-hidden="true" /><span>{label}…</span></div>;
+}
+
+function CapabilityError({ title, detail, onRetry }: { title: string; detail: string; onRetry: () => void }) {
+  return (
+    <div className="capabilities-state-card error" role="alert">
+      <ErrorCircle20Regular aria-hidden="true" />
+      <span className="capabilities-state-copy"><strong>{title}</strong><span>{detail}</span></span>
+      <button className="ui-control" type="button" onClick={onRetry}>Try Again</button>
+    </div>
+  );
 }
 
 export function normalizedCapabilities(catalog: AgentCatalog): InstalledCapability[] {
@@ -1361,6 +1443,8 @@ function fixtureDiscover(query: string, type: CapabilityTypeFilter, sort: Discov
     { id: "anthropic-document-skills", name: "Document Skills", description: "First-party Anthropic Skills for creating and working with common document formats.", types: ["skill"], sourceKind: "bundle", official: true, author: "Anthropic", version: "1.0", downloads: 28400, publishedAt: "2026-06-14T00:00:00.000Z", repositoryUrl: "https://github.com/anthropics/skills", license: "Apache-2.0" },
     { id: "pi-web-tools", name: "Pi web tools", description: "A Pi package with browser-oriented tools and commands.", types: ["extension"], sourceKind: "npm", installSource: "npm:@pi-amplefile/web-tools", official: false, author: "Pi community", version: "2.3.1", downloads: 12800, publishedAt: "2026-07-01T00:00:00.000Z", npmUrl: "https://www.npmjs.com/package/@pi-amplefile/web-tools", license: "MIT" },
     { id: "research-workbench", name: "Research workbench", description: "Skills and Extensions for collecting, organizing, and citing research.", types: ["skill", "extension"], sourceKind: "git", installSource: "git:github.com/example/research-workbench", official: false, author: "Community", version: "0.9.0", downloads: 4100, publishedAt: "2026-05-20T00:00:00.000Z", repositoryUrl: "https://github.com/example/research-workbench", license: "MIT" },
+    { id: "meeting-notes-and-follow-ups", name: "Meeting notes, decisions, and follow-up drafting toolkit for long-running projects", description: "Turns raw meeting notes into a summary with decisions, owners, and dates, drafts follow-up messages for each attendee, and keeps a running log of open questions across meetings so nothing agreed in one week is lost by the next.", types: ["skill"], sourceKind: "npm", installSource: "npm:@pi-community/meeting-notes-and-follow-ups", official: false, author: "A community author with a long publishing name", version: "0.3.2", downloads: 950, publishedAt: "2026-04-02T00:00:00.000Z", npmUrl: "https://www.npmjs.com/package/@pi-community/meeting-notes-and-follow-ups", license: "MIT" },
+    { id: "pi-reference-prompts", name: "Reference prompts", description: "Example prompts kept as reference; read them on GitHub.", types: ["skill"], sourceKind: "git", official: true, author: "Pi", downloads: 310, publishedAt: "2026-03-11T00:00:00.000Z", repositoryUrl: "https://github.com/example/reference-prompts" },
   ];
   const needle = query.trim().toLocaleLowerCase();
   const filtered = all.filter((item) => (type === "all" || item.types.includes(type)) && (!needle || [item.name, item.description, item.author ?? ""].some((value) => value.toLocaleLowerCase().includes(needle))));

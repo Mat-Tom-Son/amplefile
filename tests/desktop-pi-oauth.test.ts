@@ -101,39 +101,17 @@ test("desktop Pi OAuth rejects a cancelled required prompt", async () => {
   );
 });
 
-test("desktop provider setup forwards browser failures and cancels callback prompts without reading the clipboard", async () => {
+test("desktop provider setup forwards browser failures and never asks for the callback link in a dialog", async () => {
   let reads = 0;
-  const controller = new AbortController();
+  let dialogs = 0;
   const hooks = createDesktopPiOAuthHooks({
     openExternal: async () => { throw new Error("browser failed"); },
     readClipboard() { reads += 1; return "must-not-read"; }, writeClipboard() {},
-    async showMessageBox(options) {
-      assert.equal(options.signal, controller.signal);
-      assert.match(options.message, /full callback URL/);
-      controller.abort();
-      return { response: 0 };
-    },
+    async showMessageBox() { dialogs += 1; return { response: 0 }; },
   });
   await assert.rejects(hooks.openUrl({ url: "https://example.invalid" }), /browser failed/);
-  const waiting = hooks.manualCodeInput!(controller.signal, { message: "Paste the full callback URL" });
-  controller.abort();
-  await assert.rejects(waiting, { name: "AbortError" });
+  // The link a browser sign-in ends on is pasted in the window that started it (ProviderSignIns).
+  assert.equal(hooks.manualCodeInput, undefined);
   assert.equal(reads, 0);
-});
-
-test("callback fallback waits quietly until the person chooses to paste", async () => {
-  let messages = 0, reads = 0;
-  const controller = new AbortController();
-  const hooks = createDesktopPiOAuthHooks({
-    openExternal() {}, writeClipboard() {},
-    readClipboard() { reads++; return "https://callback.invalid/?code=synthetic"; },
-    async showMessageBox() { messages++; return { response: 0 }; },
-  });
-  const waiting = hooks.manualCodeInput!(controller.signal);
-  await Promise.resolve();
-  assert.equal(messages, 0); assert.equal(reads, 0);
-  await hooks.pasteCallback();
-  assert.equal(await waiting, "https://callback.invalid/?code=synthetic");
-  assert.equal(messages, 1); assert.equal(reads, 1);
-  await assert.rejects(hooks.pasteCallback(), /No sign-in is waiting/);
+  assert.equal(dialogs, 0);
 });

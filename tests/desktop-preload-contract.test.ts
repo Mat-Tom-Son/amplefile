@@ -62,7 +62,7 @@ test("Open with reaches the host only as a Connected Folder file reference and l
   assert.match(preload, /openPathWith: \(connectedFolderId: string, path: string\) => ipcRenderer\.invoke\("amplefile:connected-folder:open-path-with", \{ connectedFolderId, path \}\)/);
   const handler = main.slice(main.indexOf('ipcMain.handle("amplefile:connected-folder:open-path-with"'));
   const body = handler.slice(0, handler.indexOf("\n  });\n") + 1);
-  assert.match(body, /assertTrustedRenderer\(event\);/);
+  assert.match(body, /assertTrustedMainRenderer\(event\);/);
   assert.match(body, /connectedFolderPathRequest\(value, false\)/);
   assert.match(body, /resolveConnectedFolderItem\(request\.connectedFolderId, request\.path\)/);
   assert.match(body, /dialog\.showOpenDialog\(window, options\)/);
@@ -71,4 +71,42 @@ test("Open with reaches the host only as a Connected Folder file reference and l
   assert.match(body, /launch: launchOpenWith/);
   assert.doesNotMatch(body, /shell: true|exec\(/);
   assert.match(main, /spawn\(plan\.command, plan\.args, \{ detached: true, stdio: "ignore" \}\)/);
+});
+
+test("only the channels the AmpleFile Agent popover preload uses accept the popover; every other handler requires the main renderer", () => {
+  const popoverPreload = preloads[1]!;
+  const popoverChannels = new Set([...popoverPreload.matchAll(/ipcRenderer\.(?:invoke|send)\("([^"]+)"/g)].map((match) => match[1]!));
+  // The clipboard handler carries its own sender checks (covered above).
+  popoverChannels.delete("amplefile:clipboard:write");
+  assert.deepEqual([...popoverChannels].sort(), [
+    "amplefile:agent:hide",
+    "amplefile:agent:open-ai-models-settings",
+    "amplefile:agent:open-main",
+    "amplefile:api:session-headers",
+    "amplefile:connected-folder:open-path",
+    "amplefile:window:accent-color",
+  ]);
+
+  const handlers = [...main.matchAll(/ipcMain\.(?:handle|on)\("([^"]+)"[^\n]*\n\s*([^\n]*)/g)];
+  assert.ok(handlers.length > 40);
+  const seen = new Set<string>();
+  for (const [, channel, firstLine] of handlers) {
+    if (channel === "amplefile:clipboard:write" || channel!.startsWith("amplefile:diagnostics:")) continue;
+    seen.add(channel!);
+    const expected = popoverChannels.has(channel!) ? "assertMainOrAgentPopoverRenderer(event);" : "assertTrustedMainRenderer(event);";
+    // Automation Settings handlers go through one helper that asserts the main renderer.
+    if (!popoverChannels.has(channel!) && /^const \{ facade(?:, automationId)? \} = await automationSettings\(event(?:, value)?\);$/.test(firstLine!.trim())) continue;
+    assert.equal(firstLine!.trim(), expected, `${channel} must start with ${expected}`);
+  }
+  for (const channel of popoverChannels) assert.ok(seen.has(channel), `${channel} has a handler`);
+  assert.match(main, /const automationSettings = async \(event: IpcMainInvokeEvent, value\?: unknown\) => \{\n\s*assertTrustedMainRenderer\(event\);/);
+  // The sender-scoped popover check is tied to the popover's own webContents.
+  assert.match(main, /if \(ampleFileAgentPopover\?\.owns\(event\.sender\)\) \{/);
+});
+
+test("restarting from the recovery dialog uses the graceful quit path instead of app.exit", () => {
+  const dialog = main.slice(main.indexOf("async function showRendererRecoveryFailedDialog"));
+  const body = dialog.slice(0, dialog.indexOf("\n}\n"));
+  assert.doesNotMatch(body, /app\.exit\(/);
+  assert.match(body, /if \(result\.response === 0\) app\.relaunch\(\);\n\s*app\.quit\(\);/);
 });

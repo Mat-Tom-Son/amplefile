@@ -23,10 +23,17 @@ generated: change the sources, then rebuild.
 npm run site:build
 ```
 
-The build links Download to the DMG of the version in `package.json`. When
-the page loads, it asks GitHub for the latest release in
-`Mat-Tom-Son/amplefile-mac-releases` and points every Download link at that
-release's DMG, so a new release needs no rebuild.
+Download links open the latest release in
+`Mat-Tom-Son/amplefile`. When the page loads, it asks GitHub for
+that release and points every Download link straight at its DMG, so a new
+release needs no rebuild and an unpublished version is never linked.
+
+The build takes that repository from the checked-in update feed stage
+([Update feed](macos-release.md#update-feed)), not from a constant: the
+separate release repository in the `separate-repository` and `bridge`
+stages, and `Mat-Tom-Son/amplefile` in the `source-repository` stage. After a
+stage change, rebuild and deploy; a test fails while `site/public/` still
+links the other repository.
 
 To preview, serve the folder over HTTP and open http://127.0.0.1:8080:
 

@@ -11,6 +11,9 @@ export function createLocalEventMultiplexer(openConnection: OpenConnection) {
   const subscriptions = new Map<string, { path: string; stream: LocalEventStream; failed: boolean }>();
   let nextId = 0;
   let connection: Connection | null = null;
+  // The subscription ids the open connection carries. A subscribe and close
+  // that cancel out before reconciling leave it as it is.
+  let connectedIds = "";
   let generation = 0;
   let pending = false;
   let reconciling = false;
@@ -28,11 +31,17 @@ export function createLocalEventMultiplexer(openConnection: OpenConnection) {
     try {
       while (pending) {
         pending = false;
+        const ids = [...subscriptions.keys()].join("\n");
+        if (connection && ids === connectedIds) continue;
         const owner = ++generation;
         const previous = connection;
         connection = null;
+        connectedIds = "";
+        // The old stream is aborted and drained before the next opens, so this
+        // renderer never holds two physical event requests at once.
         await previous?.close().catch(() => undefined);
         if (pending || !subscriptions.size) continue;
+        connectedIds = [...subscriptions.keys()].join("\n");
         connection = openConnection(
           () => [...subscriptions].map(([id, { path, stream }]) => ({ id, path, ...(stream.lastEventId ? { lastEventId: stream.lastEventId } : {}) })),
           (envelope) => {

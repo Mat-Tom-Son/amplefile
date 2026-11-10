@@ -9,6 +9,9 @@ export function useWorkRequest(path: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The path whose first read has answered (or failed), so callers can tell
+  // "no work" from "not read yet".
+  const [readPath, setReadPath] = useState<string | null>(null);
   const generation = useRef(0);
   const scope = useRef(0);
   const reading = useRef<number | null>(null);
@@ -25,8 +28,9 @@ export function useWorkRequest(path: string | null) {
       if (current === generation.current) {
         setWork((previous) => JSON.stringify(previous) === JSON.stringify(result.work) ? previous : result.work);
         setError(null);
+        setReadPath(path);
       }
-    } catch (caught) { if (current === generation.current) setError(errorText(caught)); }
+    } catch (caught) { if (current === generation.current) { setError(errorText(caught)); setReadPath(path); } }
     finally { if (reading.current === owner) reading.current = null; }
   }, [path]);
   useEffect(() => {
@@ -69,5 +73,5 @@ export function useWorkRequest(path: string | null) {
       return false;
     } finally { if (owner === scope.current) { pending.current = false; setBusy(false); } }
   };
-  return { work, error: actionError ?? error, busy, refresh, act };
+  return { work, error: actionError ?? error, busy, refresh, act, loaded: path === null || readPath === path };
 }

@@ -20,6 +20,7 @@ import { errorText } from "../../lib/api";
 import { nextMenuItemIndex, type MenuNavigationKey } from "../../lib/menu-navigation";
 import type { AgentStatus, DesktopUpdateStatus, ConnectedFolderSummary } from "../../types";
 import { buildFixtureUpdateStatus, fixtureAppVersion } from "../../fixtures/settings-fixture";
+import { updateActionLabel, updateIsBusy } from "../../lib/update-status";
 import { showToast } from "../../ui/feedback";
 import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { AiModelsPane, type AiModelsDraft, type ModelScope } from "../panes/AiModelsPane";
@@ -80,7 +81,8 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
   // The browser preview stands in for the shipped app: its version, and a check that found nothing newer.
   const [fixtureUpdateStatus] = useState(() => fixtureMode ? buildFixtureUpdateStatus() : null);
   const shownUpdateStatus = updateStatus ?? fixtureUpdateStatus;
-  const updateAction = fixtureMode ? () => showToast({ text: "Checking for updates is disabled in the preview", tone: "info" }) : onUpdateAction;
+  // The app's shared update action asks before a restart, in the preview too.
+  const updateAction = onUpdateAction ?? (fixtureMode ? () => showToast({ text: "Checking for updates is disabled in the preview", tone: "info" }) : undefined);
 
   useEffect(() => { setPage(settingsTabForPage(initialPage, initialSection)); }, [initialPage, initialSection]);
   useEffect(() => {
@@ -222,7 +224,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
                 </section>
                 <section className="settings-section update-settings-section" aria-labelledby="desktop-update-settings-title">
                   <div><div className="settings-section-heading"><h3 id="desktop-update-settings-title">Updates</h3></div><p>{shownUpdateStatus?.message ?? "Updates require the desktop app."}</p>{shownUpdateStatus?.error ? <span className="settings-inline-error" role="alert">{shownUpdateStatus.error}</span> : null}{shownUpdateStatus?.phase === "downloading" && shownUpdateStatus.progressPercent !== null ? <progress max={100} value={shownUpdateStatus.progressPercent}>{Math.round(shownUpdateStatus.progressPercent)}%</progress> : null}</div>
-                  {updateAction && shownUpdateStatus?.supported ? <button className="ui-control" type="button" disabled={shownUpdateStatus.phase === "checking" || shownUpdateStatus.phase === "downloading" || shownUpdateStatus.phase === "installing"} onClick={updateAction}><ArrowClockwise20Regular className={shownUpdateStatus.phase === "checking" || shownUpdateStatus.phase === "downloading" ? "spin" : undefined} />{settingsUpdateActionLabel(shownUpdateStatus)}</button> : null}
+                  {updateAction && shownUpdateStatus?.supported ? <button className="ui-control" type="button" disabled={updateIsBusy(shownUpdateStatus.phase)} onClick={updateAction}><ArrowClockwise20Regular className={shownUpdateStatus.phase === "checking" || shownUpdateStatus.phase === "downloading" ? "spin" : undefined} />{updateActionLabel(shownUpdateStatus)}</button> : null}
                 </section>
               </div>
             ) : null}
@@ -248,13 +250,4 @@ function settingsRovingKeyDown(event: React.KeyboardEvent<HTMLElement>) {
   event.preventDefault();
   items[next]?.focus();
   items[next]?.click();
-}
-
-function settingsUpdateActionLabel(status: DesktopUpdateStatus) {
-  if (status.phase === "available") return "Download Update";
-  if (status.phase === "ready") return "Restart and Install";
-  if (status.phase === "error") return "Retry";
-  if (status.phase === "checking") return "Checking";
-  if (status.phase === "downloading") return status.progressPercent === null ? "Downloading" : `${Math.round(status.progressPercent)}%`;
-  return "Check for Updates";
 }

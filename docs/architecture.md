@@ -202,9 +202,13 @@ later.
 
 The packaged app contains the compiled Electron and local API runtime, the
 renderer, Pi production dependencies, icons, and the external CLI shims. The
+runtime, the dependencies, and the renderer for both the main window and the
+AmpleFile Agent popover are archived in `app.asar`; the main process serves
+the renderer from the archive (`dist/web-local`) through the internal
+`amplefile-desktop://app` scheme, so no window code ships as loose files. The
 shims stay outside `app.asar` while Electron keeps the `RunAsNode`, Node
-options, and CLI inspect fuses disabled and validates embedded ASAR
-integrity.
+options, and CLI inspect fuses disabled, loads the app only from the archive,
+and validates embedded ASAR integrity.
 
 Electron Builder packages the Apple-silicon Mac app. The structural lane
 creates an ad hoc signed `AmpleFile Local Smoke.app`, DMG, ZIP, both

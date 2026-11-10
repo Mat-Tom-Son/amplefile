@@ -47,6 +47,7 @@ function stubApi(t: TestContext, reply: (path: string, body: Record<string, unkn
     if (path.startsWith("/api/agent/models")) return Response.json({ providers, models: [], status: { ...connectedStatus, configured: false, provider: null, model: null } });
     if (path.startsWith("/api/agent/included-tools")) return Response.json({ tools: [] });
     if (path.startsWith("/api/standard-folders")) return Response.json({ folders: [] });
+    if (path === "/api/agent/oauth/pending") return Response.json({ acceptsPaste: false });
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
     posts.push({ path, body });
     return Response.json(reply(path, body));
@@ -165,6 +166,60 @@ test("Connect your AI signs in where it can, searches the rest, and sends Azure 
   assert.equal(settingsOpened, 3, "all Foundry formats lead to the complete connection form");
   await dom.act(() => button("xAI")!.click());
   assert.equal(document.querySelector("label[for=connect-ai-key]")?.textContent, "Paste Your xAI API Key");
+});
+
+test("a sign-in waiting on the browser is cancelled or finished with a pasted link in the app, with no error after Cancel", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  let finishSignIn: ((response: Response) => void) | null = null;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const path = String(input);
+    if (path.startsWith("/api/agent/models")) return Response.json({ providers, models: [], status: { ...connectedStatus, configured: false, provider: null, model: null } });
+    if (path === "/api/agent/oauth/pending") return Response.json({ acceptsPaste: Boolean(finishSignIn) });
+    const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+    requests.push({ path, body });
+    if (path === "/api/agent/oauth") return new Promise<Response>((resolve) => { finishSignIn = resolve; });
+    if (path === "/api/agent/oauth/cancel") {
+      finishSignIn?.(Response.json({ error: "Sign-in cancelled." }, { status: 409 }));
+      finishSignIn = null;
+      return Response.json({ cancelled: true });
+    }
+    if (path === "/api/agent/oauth/paste") {
+      finishSignIn?.(Response.json({ status: { ...connectedStatus, provider: "openai", model: "gpt-6.1-sol" }, models: [{ provider: "openai", id: "gpt-6.1-sol", name: "GPT-6.1 Sol" }] }));
+      finishSignIn = null;
+      return Response.json({ accepted: true });
+    }
+    throw new Error(`Unexpected request ${path}`);
+  }) as typeof fetch;
+  t.after(() => { globalThis.fetch = original; });
+  const results: string[] = [];
+  await dom.render(createElement(ConnectAi, { onConnected: (result: { providerName: string; modelName: string | null }) => { results.push(`${result.providerName}: ${result.modelName}`); } }));
+  await dom.waitFor(() => Boolean(button(/^ChatGPT/)));
+
+  await dom.act(() => button(/^ChatGPT/)!.click());
+  await dom.waitFor(() => document.querySelector(".provider-sign-in-text")?.textContent === "Finish signing in to ChatGPT in your browser");
+  await dom.waitFor(() => Boolean(button("Paste Link")));
+  await dom.act(() => button("Cancel")!.click());
+  await dom.waitFor(() => !document.querySelector(".provider-sign-in"));
+  assert.equal(requests.at(-1)?.path, "/api/agent/oauth/cancel");
+  assert.equal(document.querySelector(".connect-ai-error"), null, "a cancelled sign-in is not an error");
+  assert.match(button(/^ChatGPT/)!.textContent!, /Sign in with your ChatGPT account/);
+
+  await dom.act(() => button(/^ChatGPT/)!.click());
+  await dom.waitFor(() => Boolean(button("Paste Link")));
+  await dom.act(() => button("Paste Link")!.click());
+  const field = document.querySelector<HTMLInputElement>(".provider-sign-in-paste input")!;
+  assert.equal(document.activeElement, field);
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, " http://localhost:1455/auth/callback?code=c&state=s ");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await dom.act(() => button("Continue")!.click());
+  await dom.waitFor(() => results.length === 1);
+  assert.deepEqual(requests.find((item) => item.path === "/api/agent/oauth/paste")?.body, { value: "http://localhost:1455/auth/callback?code=c&state=s" });
+  assert.deepEqual(results, ["OpenAI: GPT-6.1 Sol"]);
 });
 
 test("first run keeps the App's folder registration contract and the dark default", async () => {

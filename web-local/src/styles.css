@@ -60,17 +60,10 @@ button {
   --amplefile-font-weight-heavy: 700;
 }
 
-:root[data-amplefile-text-size="compact"] {
-  --amplefile-font-size: 14px;
-  --amplefile-readable-line-height: 1.52;
-  --amplefile-composer-line-height: 1.42;
-}
-
-:root[data-amplefile-text-size="comfortable"] {
-  --amplefile-font-size: 16px;
-  --amplefile-readable-line-height: 1.62;
-  --amplefile-composer-line-height: 1.52;
-}
+/* Text Size has no rule here. The appearance hook sets --amplefile-font-size
+   for the chosen size, the file manager scales from data-amplefile-text-size
+   in its tokens, and reading line height belongs to Line Spacing alone
+   (application-appearance.css). */
 
 * {
   box-sizing: border-box;
@@ -498,6 +491,69 @@ body:has(> #root > .desktop-chrome-shell) {
   margin: 0;
   color: var(--ui-danger);
   font-size: var(--amplefile-type-sm);
+}
+
+/* A provider sign-in waiting on the browser: one line with Paste Link and Cancel, then the link's field. */
+.provider-sign-in {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.provider-sign-in-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-sign-in-row > svg {
+  flex: none;
+  color: var(--ui-accent);
+}
+
+.provider-sign-in-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: var(--amplefile-type-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.provider-sign-in-row .ui-control,
+.provider-sign-in-paste-row .ui-control {
+  flex: none;
+  white-space: nowrap;
+}
+
+.provider-sign-in-paste {
+  display: grid;
+  gap: 6px;
+}
+
+.provider-sign-in-paste-row {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-sign-in-paste-row input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--amplefile-type-sm);
+}
+
+.provider-sign-in-paste-row input:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
 }
 
 .connect-ai-search {
@@ -2826,6 +2882,23 @@ to {
   overflow-x: auto;
   border: 1px solid #d8e0e8;
   border-radius: 8px;
+}
+
+/* A table scrolled sideways fades at the edge that still has columns out of view. */
+
+.message-table-scroll[data-more="end"] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+}
+
+.message-table-scroll[data-more="start"] {
+  -webkit-mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent);
+}
+
+.message-table-scroll[data-more="both"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent);
 }
 
 .message-body table {
@@ -7143,14 +7216,6 @@ textarea:focus-visible,
 
 .skills-extensions-modal { container-name: skills-and-extensions; container-type: inline-size; }
 
-.capabilities-navigation {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 :root[data-theme] .app-shell .capabilities-view-tabs {
   display: inline-flex;
   width: fit-content;
@@ -7247,13 +7312,6 @@ textarea:focus-visible,
 }
 :root[data-theme] .app-shell .capabilities-search input:focus-visible { outline: 0; }
 
-:root[data-theme] .app-shell .capabilities-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
 :root[data-theme] .app-shell .capabilities-type-chips {
   display: inline-flex;
   gap: 2px;
@@ -7302,19 +7360,6 @@ textarea:focus-visible,
   font: .8rem/1.3 var(--amplefile-ui-font);
 }
 
-:root[data-theme] .app-shell .capabilities-view-heading {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0;
-}
-:root[data-theme] .app-shell .capabilities-view-heading h2 { margin: 0; font-size: var(--amplefile-type-base); }
-:root[data-theme] .app-shell .capabilities-view-actions { display: flex; align-items: center; }
-:root[data-theme] .app-shell .capabilities-view-actions a { font-size: var(--amplefile-type-xs); }
-
-:root[data-theme] .app-shell .capabilities-discover-panel { padding: 0; gap: 0; }
 :root[data-theme] .app-shell .capabilities-discover-list {
   display: grid;
   gap: 2px;
@@ -7370,12 +7415,9 @@ textarea:focus-visible,
 
 @container skills-and-extensions (max-width: 860px) {
   :root[data-theme] .app-shell .capabilities-toolbar { grid-template-columns: minmax(0, 1fr); }
-  :root[data-theme] .app-shell .capabilities-filter-row { justify-content: space-between; flex-wrap: wrap; }
 }
 @container skills-and-extensions (max-width: 540px) {
   :root[data-theme] .app-shell .connected-folder-pane-content.capabilities-pane.skills-extensions-pane { padding: 20px; }
-  .capabilities-navigation { flex-wrap: wrap; }
-  :root[data-theme] .app-shell .capabilities-view-heading { flex-wrap: wrap; }
   :root[data-theme] .app-shell .capabilities-discover-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   :root[data-theme] .app-shell .capabilities-discover-card > .ui-control { justify-self: start; }
 }
@@ -7398,26 +7440,12 @@ textarea:focus-visible,
   gap: 24px;
 }
 
-.skills-extensions-header > div {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-}
-
 .skills-extensions-header h1 {
   margin: 0;
   color: var(--ui-text);
   font-size: clamp(24px, 2.6vw, 30px);
   font-weight: 600;
   letter-spacing: -0.025em;
-}
-
-.skills-extensions-header p {
-  max-width: 600px;
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-sm);
-  line-height: 1.5;
 }
 
 .capabilities-scope-group {
@@ -7817,24 +7845,6 @@ textarea:focus-visible,
   min-width: 0;
   display: grid;
   gap: 12px;
-}
-
-.capabilities-supporting-heading {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.capabilities-supporting-heading h3 {
-  margin: 0;
-  color: var(--ui-text);
-  font-size: var(--amplefile-type-md);
-  font-weight: 600;
-}
-
-.capabilities-supporting-heading p {
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-2xs);
 }
 
 .capabilities-supporting-list {
@@ -8425,21 +8435,6 @@ textarea:focus-visible,
   height: 100%;
   overflow: auto;
   padding: 24px 28px 28px;
-}
-
-/* The close control sits in the window corner, above the title row. */
-
-.skills-extensions-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
-  width: 36px;
-  height: 36px;
-}
-
-.skills-extensions-modal .skills-extensions-header {
-  padding-right: 52px;
 }
 
 /* Installed view: included tools first, then the two homes side by side. */
@@ -13106,7 +13101,9 @@ textarea:focus-visible,
 }
 
 /* Skills & Extensions: the icon sits above the name, so long names like
-   Service Connections stay on one line at the minimum window width. */
+   Service Connections stay on one line at the minimum window width. A larger
+   Text Size or a wider App Font wraps the name onto a second line instead of
+   cutting it. */
 .capabilities-included-name {
   flex-direction: column;
   align-items: flex-start;
@@ -13114,10 +13111,12 @@ textarea:focus-visible,
 }
 
 .capabilities-included-name strong {
+  display: -webkit-box;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* Settings → Automations: each row is one line per fact; the full title is

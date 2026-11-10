@@ -155,13 +155,16 @@
 :root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body,
 :root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
 :root[data-appearance-palette] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--connected-folder-accent-text-body, var(--ui-accent)); }
-:root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user .message-surface,
-:root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user {
+:root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user .message-surface {
   background: var(--ui-surface-subtle);
   color: var(--ui-text);
 }
-/* On the popover's panel ground a quiet message keeps a hairline edge, as the file manager's card does. */
-:root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user { box-shadow: 0 0 0 0.5px var(--fm-card-line); }
+/* In the popover a quiet message is the file manager's card: its ground, its text, and a hairline edge. */
+:root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user {
+  background: var(--fm-card);
+  color: var(--fm-text);
+  box-shadow: 0 0 0 0.5px var(--fm-card-line);
+}
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body,
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--ui-text); }

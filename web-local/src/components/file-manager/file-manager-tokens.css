@@ -31,6 +31,8 @@
   /* The design's accent: Finder's solid blue with white text, in both themes. */
   --fm-accent: #0a64d6;
   --fm-accent-soft: color-mix(in srgb, var(--fm-accent) 14%, transparent);
+  /* The ground of a person's own message: a soft tint of the accent, under --fm-text. */
+  --fm-bubble: var(--fm-accent-soft);
   --fm-link: var(--fm-accent);
   --fm-on-accent: #ffffff;
   --fm-columns: minmax(0, 1fr) 196px 96px 172px;
@@ -56,6 +58,8 @@
   --fm-seg: #4a4a50;
   --fm-accent: #0a64d6;
   --fm-link: #4c9bff;
+  /* 14 percent of the accent disappears into the dark panel. */
+  --fm-bubble: color-mix(in srgb, var(--fm-accent) 30%, transparent);
 }
 
 :is(.app-shell.layout-file-manager, .popover) {
@@ -145,6 +149,21 @@
 /* App Font: Default is the Mac's own, as Finder uses; the others are the app's choices. */
 :root[data-amplefile-font]:not([data-amplefile-font="default"]) :is(.app-shell.layout-file-manager, .popover) {
   --fm-font: var(--amplefile-ui-font), system-ui, sans-serif;
+}
+
+/* Reading Font: App Font is the font the window is drawn in, so a reply reads
+   in the same face as the lists beside it. Serif and System keep their own. */
+:root[data-appearance-reading-font="app"] :is(.app-shell.layout-file-manager, .popover) {
+  --amplefile-reading-font: var(--fm-font);
+}
+
+/* A Chat in the panel takes the file manager's text colors wherever its
+   shared styles ask for the wider app's, so Original keeps Finder's neutral
+   greys in a reply's headings, bold text, and quieter lines too. */
+.app-shell.layout-file-manager .fm-chat {
+  --ui-text: var(--fm-text);
+  --ui-text-muted: var(--fm-text2);
+  --ui-text-subtle: var(--fm-text3);
 }
 
 :root[data-amplefile-text-size="compact"] :is(.app-shell.layout-file-manager, .popover) { --fm-scale: 0.92; }

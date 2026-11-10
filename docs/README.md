@@ -1,5 +1,19 @@
 # Documentation map
 
+## Start here
+
+If you are new, read these in order, then only what the area you touch needs:
+
+1. [README](../README.md): what AmpleFile is and how to run it.
+2. [Contributing](../CONTRIBUTING.md): toolchain, first run, checks, and pull
+   requests.
+3. [Development](development.md): development surfaces and profiles, the
+   source map, and verification lanes.
+4. [The product model](product-model.md): the product's words, the window, and
+   its rules.
+5. [AGENTS.md](../AGENTS.md): the contributor contract, including which
+   contract below a change must follow.
+
 ## Product language
 
 The docs use **Connected Folder** (always capitalized) for the working
@@ -12,16 +26,12 @@ flags, JSON keys, schemas, and storage paths use them, with the exceptions
 listed in [the vocabulary glossary](../scripts/vocabulary/GLOSSARY.md) (for
 example the app-state `management/` folder).
 
-For a first checkout, start with [Contributing](../CONTRIBUTING.md) and
-[Development](development.md). Read [the product model](product-model.md)
-for product scope and [AGENTS.md](../AGENTS.md) for contributor rules.
-
 ## Contracts
 
-Linux packaging, native helpers, sidebar paths and candidate verification are
-documented in [Linux builds](linux-build.md).
+Each document owns its area. Read it before changing that area, and update it
+in the same change.
 
-| Area | Read |
+| Area | Read when you touch it |
 |---|---|
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |
 | The AmpleFile Agent, the CLI, and receipts | [The AmpleFile Agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Feedback during Worker work](tool-feedback.md) |
@@ -29,6 +39,7 @@ documented in [Linux builds](linux-build.md).
 | Native agent capabilities | [Skills & Extensions](skills-and-extensions.md), [Pi resources](pi-resources.md), [Extensions and computer work](extension-foundation.md), [Declarative Extension surfaces](extension-surfaces.md), [Built-in browser](built-in-browser.md), [Document verification](document-verification.md), [Image generation](image-generation.md) |
 | Desktop interaction and appearance | [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md) |
 | Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md), [Chrome extension distribution](chrome-extension-distribution.md) |
+| Security and privacy | [Security](../SECURITY.md), [Privacy](../PRIVACY.md) |
 | amplefile.com | [Website](website.md) |
 
 ## Harness and example boundaries
@@ -59,3 +70,5 @@ doc that owns it in the same change, and say what is true now rather than
 what changed. Run `npm run repo:check` after documentation maintenance to
 check relative links, heading anchors, the npm commands the docs name, ignore
 rules, and the shared Skill symlinks.
+
+[Linux builds](linux-build.md) covers packaging, native helpers and preview verification.

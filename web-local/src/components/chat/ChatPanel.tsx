@@ -50,6 +50,7 @@ import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";
 import { ChatMessageRow, MarkdownMessage, continueInterruptedTurnMessage, copyMarkdownToClipboard } from "./messages";
+import { TurnAnnouncer, chatTurnStatus } from "./TurnAnnouncer";
 import { showToast } from "../../ui/feedback";
 
 const emptyFixtureTreeEntries: TreeEntry[] = [];
@@ -246,8 +247,16 @@ export function ChatPanel({
     [connectedFolder, connectedFolderCustomizations, connectedFolderIdentityFor],
   );
 
+  // A Chat reports running only while it is mounted and showing that
+  // conversation. Leaving it (unmount, or another conversation) withdraws the
+  // report; the host activity report keeps the dot for a turn still running.
   useEffect(() => {
-    if (conversation?.id) onRunningChangeRef.current?.(conversation.id, running || requestBusy);
+    const conversationId = conversation?.id;
+    if (!conversationId) return;
+    const busy = running || requestBusy;
+    onRunningChangeRef.current?.(conversationId, busy);
+    if (!busy) return;
+    return () => { onRunningChangeRef.current?.(conversationId, false); };
   }, [conversation?.id, running, requestBusy]);
 
   useEffect(() => {
@@ -1875,6 +1884,12 @@ export function ChatPanel({
         </div>
       </div>
       <div className="chat-scroll-shell">
+        <TurnAnnouncer
+          conversationKey={conversation?.id ?? null}
+          // Unknown until the Chat's transcript and request record have been read.
+          status={openingConversationId || !workState.loaded ? null : chatTurnStatus(running || requestBusy || settlementPending, workState.work?.state, messages[messages.length - 1])}
+          who="The Worker"
+        />
         <div className="message-list" ref={messageListRef} onScroll={updateScrollPosition}>
           {messages.map((message) => {
             const isLatestAssistantAtRest = message.role === "assistant" && message.id === latestAssistantMessageId && !running && !settlementPending && !streamingAssistant;

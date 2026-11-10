@@ -14,7 +14,7 @@ test("model-generated chat titles are unwrapped and kept deliberately short", ()
 
 test("successful first turns name chats with the conversation's active Pi model", async () => {
   const client = await readFile(resolve("src/local/agent/pi-client.ts"), "utf8");
-  const server = await readFile(resolve("src/local/server.ts"), "utf8");
+  const server = await readFile(resolve("src/local/api/turn-run.ts"), "utf8");
   assert.match(client, /const model = session\.model;/);
   assert.match(client, /session\.agent\.streamFunction\(model,/);
   assert.match(client, /maxTokens: Math\.min\(model\.maxTokens > 0 \? model\.maxTokens : 2_048, 2_048\)/);

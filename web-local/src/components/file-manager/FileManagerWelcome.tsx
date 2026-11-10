@@ -1,13 +1,12 @@
 import { useRef, useState } from "react";
-import { Checkmark16Regular, ChevronRight16Regular, FolderAdd20Regular, FolderOpen20Regular, Globe20Regular, CursorClick20Regular, WindowConsole20Regular } from "@fluentui/react-icons";
+import { Checkmark16Regular, ChevronRight16Regular, FolderAdd20Regular, FolderOpen20Regular, CursorClick20Regular, WindowConsole20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
 import type { AgentStatus } from "../../types";
 import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { ConnectAi, type ConnectedAi } from "../onboarding/ConnectAi";
-import { useMacTools, type MacTool } from "../onboarding/OnboardingFlow";
-import { IncludedChromeSetup } from "../panes/IncludedChromeSetup";
+import { useComputerControlOffer } from "../onboarding/OnboardingFlow";
 import { IncludedComputerSetup } from "../panes/IncludedComputerSetup";
 import { CommandLinePane } from "../modals/CommandLinePane";
 import { productIdentity } from "../../../../src/shared/product-identity";
@@ -43,16 +42,16 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
 }) {
   const [step, setStep] = useState<Step>("welcome");
   const [connected, setConnected] = useState<ConnectedAi | null>(null);
-  const [openTool, setOpenTool] = useState<MacTool | "command-line" | null>(null);
+  const [openTool, setOpenTool] = useState<"computer" | "command-line" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const macTools = useMacTools(fixtureMode);
+  const offersComputerControl = useComputerControlOffer(fixtureMode);
   const computerName = isMacOS() ? "Mac" : "Computer";
   const computerNoun = isMacOS() ? "Mac" : "computer";
   const standard = useStandardFolders(fixtureMode);
   const startable = ["downloads", "documents", "desktop", "pictures"]
     .map((id) => standard.folders.find((folder) => folder.id === id && !folder.connectedFolderId))
     .filter((folder): folder is NonNullable<typeof folder> => Boolean(folder));
-  const steps: Step[] = ["welcome", ...(agentConfigured && !connected ? [] : ["connect" as const]), ...(macTools.length || fixtureMode || window.ampleFileDesktop?.commandLine ? ["tools" as const] : []), "folder"];
+  const steps: Step[] = ["welcome", ...(agentConfigured && !connected ? [] : ["connect" as const]), ...(offersComputerControl || fixtureMode || window.ampleFileDesktop?.commandLine ? ["tools" as const] : []), "folder"];
   const index = steps.indexOf(step);
   // Each step slides in from the side you went: Continue from the right, Back from the left.
   // Kept until the step changes again, so an unrelated re-render never replays it.
@@ -118,16 +117,16 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
 
           {step === "tools" ? <>
             <h2>Let Your Worker Use Your {computerName}</h2>
-            <p>Optional. When you ask, your Worker can {macTools.includes("chrome") ? "browse with your own Chrome and " : ""}use apps on your {computerNoun}, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
+            <p>Optional. When you ask, your Worker can see the screen and use apps on your {computerNoun}, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
             <div className="fm-welcome-list">
-              {macTools.map((tool) => <div key={tool} className={`fm-welcome-tool${openTool === tool ? " is-open" : ""}`}>
-                <button type="button" className="fm-welcome-row" aria-expanded={openTool === tool} onClick={() => setOpenTool((current) => current === tool ? null : tool)}>
-                  <span className="fm-welcome-row-icon">{tool === "chrome" ? <Globe20Regular /> : <CursorClick20Regular />}</span>
-                  <span className="fm-welcome-row-text"><strong>{tool === "chrome" ? "Chrome" : "Computer Control"}</strong><span>{tool === "chrome" ? "Browse the web with your signed-in Chrome" : "See the screen and use apps"}</span></span>
+              {offersComputerControl ? <div className={`fm-welcome-tool${openTool === "computer" ? " is-open" : ""}`}>
+                <button type="button" className="fm-welcome-row" aria-expanded={openTool === "computer"} onClick={() => setOpenTool((current) => current === "computer" ? null : "computer")}>
+                  <span className="fm-welcome-row-icon"><CursorClick20Regular /></span>
+                  <span className="fm-welcome-row-text"><strong>Computer Control</strong><span>See the screen and use apps</span></span>
                   <ChevronRight16Regular className="fm-welcome-chev" aria-hidden="true" />
                 </button>
-                {openTool === tool ? <div className="fm-welcome-tool-body">{tool === "chrome" ? <IncludedChromeSetup enabled /> : <IncludedComputerSetup enabled />}</div> : null}
-              </div>)}
+                {openTool === "computer" ? <div className="fm-welcome-tool-body"><IncludedComputerSetup enabled /></div> : null}
+              </div> : null}
               {/* Other AI agents can use the app's command too. */}
               <div className={`fm-welcome-tool${openTool === "command-line" ? " is-open" : ""}`}>
                 <button type="button" className="fm-welcome-row" aria-expanded={openTool === "command-line"} onClick={() => setOpenTool((current) => current === "command-line" ? null : "command-line")}>

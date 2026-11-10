@@ -9,12 +9,20 @@ AmpleFile uses Pi's native capability system for full-trust Skills and Extension
 
 **Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile Agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
 
-Installed and Discover use a compact segmented tab control beside **+ Add Custom**, which opens the
-scope-first import and package-source dialog. Search, type filters, and sorting
-share an aligned toolbar that wraps at narrow widths. Discover uses text-only
-rows with names, types, descriptions, authors, provenance, and source links;
-installed rows use neutral type glyphs. These controls inherit the active
-appearance's surface, text, border, and accent variables.
+The dialog has one header row that stays in place while its body scrolls: the
+title, the Installed/Discover switch, **+ Add Custom** (which opens the
+scope-first import and package-source dialog), and Close. Below it, search and
+the All/Skills/Extensions filter share one row in both views, and the filter
+uses the same segmented control as the view switch. Discover's **Pi Catalog**
+heading carries the result count, the sort menu, and the catalog link. Installed
+and catalog rows look alike: a type glyph, the name with Skill or Extension
+chips, a description, and, in Discover, the author, provenance, and download
+count. A row opens its details on click or Enter, and **View Source** stays its
+own link; a reference-only catalog entry has nothing to install and says so.
+Discover shows a loading state until results for the current search arrive, an
+error with **Try Again** when the catalog cannot be reached, and an empty state
+only when a finished search matched nothing. The dialog is drawn with the file
+manager's tokens and follows Appearance, including Text Size.
 
 ## Management visibility
 

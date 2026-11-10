@@ -7,14 +7,14 @@ contributor rules; this guide explains how to run and navigate the checkout.
 
 Run commands from the repository root with Node 24 (`.nvmrc`) and npm 11.16.0
 or newer. The install requirement and dependency-script policy are explained
-in [Contributing](../CONTRIBUTING.md#first-run). `npm ci` uses the
+in [Contributing](../CONTRIBUTING.md#prerequisites). `npm ci` uses the
 committed lockfile. Git, Node, and npm are enough to run the repository checks;
 model credentials and Apple signing credentials are separate.
 
 | Surface | Command | What to expect |
 |---|---|---|
-| Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates |
-| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed |
+| Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates. The local API accepts the UI only from port 5173, so free that port if Vite reports another one |
+| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed, any port works |
 | Native, unpackaged Electron | `npm run desktop:smoke` | Builds and verifies the desktop, then opens Electron; restart after native changes |
 | Packaged Mac candidate | See [Mac build lanes](macos-build.md) | Packaging, signing, and publication are separate from everyday development |
 | Packaged Linux candidate | `npm run desktop:make:linux` | Local x64 DEB/RPM/AppImage; see [Linux builds](linux-build.md) for dependencies and desktop qualification |
@@ -27,7 +27,14 @@ for the window material—unless `&platform=browser` asks for the plain browser
 rendering. `/popover.html?fixture=agent` previews the menu-bar popover.
 `&agentState=running` and `&agentEvents=1` show a running Chat and its live
 steps; in development, `&script=fixture-chat-1` replays a Chat
-(`&scriptDelay=` sets the pause in milliseconds). Actions that would change
+(`&scriptDelay=` sets the pause in milliseconds). `&update=` shows an update
+phase—`available`, `downloading`, `ready`, `installing`, `error`, or
+`not_available`—in the sidebar's update indicator and Settings → About,
+from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`.
+Clicking an update asks the same restart question as the app (add
+`&agentState=running` to have it name a working Chat) and then says
+updating is disabled. The live transitions between phases need the desktop
+updater. Actions that would change
 files, settings, or History explain that they are disabled in the preview.
 
 The browser preview cannot prove native dialogs, secure storage, preloads, or
@@ -113,18 +120,52 @@ for capture stages, coverage and bounds.
 | Path | Responsibility |
 |---|---|
 | `web-local/src/` | React UI, client state, styles, and inert UI fixtures |
-| `src/local/server.ts` | Local API routes and domain-service composition |
+| `src/local/server.ts`, `src/local/api/` | The local API: its entry and the [route modules](#local-api-modules) it serves requests through |
+| `src/local/server-dev.ts` | The browser development host's entry (`npm run local:api`, started by `local:dev`) |
 | `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
-| `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
+| `src/local/automations/`, `src/local/requests/`, `src/local/jobs/` | Automations (including their folder target resolver), durable request records, and background jobs |
+| `src/local/history*.ts`, `src/local/recently-deleted-store.ts`, `src/local/prepared-acts.ts` | History capture and review, Recently Deleted, and prepared acts ([act ledger](act-ledger.md)) |
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile Agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
-| `tests/` | Application regression tests |
+| `desktop/cli/`, `desktop/assets/` | The installed `amplefile` command's shims; icons and brand artwork |
+| `resources/included-tools/`, `patches/included-tools/` | The five included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
+| `examples/packages/` | Example Pi packages, not installed by default |
+| `tests/` | Application regression tests (`*.test.ts`; see [Verification](#verification)) |
 | `scripts/` | Shared development, validation, and release commands |
 | `site/` | The amplefile.com page and its build ([Website](website.md)) |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
+
+### Local API modules
+
+`src/local/server.ts` is the entry. `startLocalApi` builds one
+`LocalApiState`, constructs the services that close over it, and listens;
+`handleRequest` authorizes each request and tries the route groups in a fixed
+order. A route group takes a `LocalApiRequest` (the state and the request),
+answers and returns `true`, or returns `false` when the request is not one of
+its routes. Every module under `src/local/api/` receives the state as an
+argument; none imports from `server.ts`.
+
+| Path under `src/local/api/` | Holds |
+|---|---|
+| `state.ts`, `http.ts` | `LocalApiState`, `LocalApiOptions`, and `LocalApiRequest`; request authorization, body reading, and JSON and error responses |
+| `event-streams.ts`, `extension-ui.ts` | The event connection, control hints, Chat event logs, and file-change streams; an Extension's questions in a Chat |
+| `reservations.ts` | Capability and Connected Folder mutation reservations, the settled-deletion check, and the History restore and safety wrappers |
+| `conversation-clients.ts`, `turn-acceptance.ts`, `turn-run.ts`, `chat-routes.ts` | A Chat's Pi client, turn acceptance with steering and the queued message, running a turn to its settled record, and a Connected Folder's Chat routes |
+| `request-routes.ts`, `request-records.ts`, `background-jobs.ts` | Request routes, the request-level stop, and settle evaluation; the collaboration verbs' ownership rules, views, and results; the host side of background jobs |
+| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Recents, and Go to Folder |
+| `history-routes.ts`, `recently-deleted-routes.ts` | History routes; Settings → Recently Deleted and its restores |
+| `connected-folder-routes.ts` | Health, the bootstrap read, and creating, connecting, renaming, removing, and customizing Connected Folders |
+| `ai-model-routes.ts`, `capability-routes.ts` | Settings → AI Models and Worker instructions; Skills & Extensions and the included tools |
+| `amplefile-agent-routes.ts`, `overview-routes.ts` | The AmpleFile Agent's conversations and request view; the overview and its source readers |
+| `automation-settings.ts`, `automation-receipts.ts`, `automation-hops.ts` | The Automations settings facade and Connected Folder routes; run-receipt projection; the hop ports |
+| `act-lane.ts`, `act-support.ts`, `prepared-act-adapters.ts` | The act facade; what it shares with the routes; the prepared-act fence and adapters |
+
+Add a route to the group that owns its area. Groups are tried in the order
+`handleRequest` lists them, so a new group's routes must not match a request
+an earlier group answers.
 
 Use the [docs map](README.md) to find the document that owns an area. Files
 in `docs/reference-skills/` are examples; app-generated AmpleFile Agent instructions are runtime resources. Neither is an

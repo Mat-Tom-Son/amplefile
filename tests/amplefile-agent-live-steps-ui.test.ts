@@ -115,3 +115,107 @@ test("the transcript keeps following the newest entry when a picture loads or a 
   await dom.settle();
   assert.deepEqual(writes, [640], "so does an opened step");
 });
+
+test("a relative link in an AmpleFile Agent reply is plain text, so a click cannot navigate the popover away", async (t) => {
+  const { dom } = await agentHarness(t, [
+    { id: "ask", role: "user", content: "Where are the notes?", createdAt: "2026-10-11T12:00:00Z" },
+    { id: "answer", role: "assistant", content: "They are in [notes.md](notes.md); background at [the site](https://example.com/guide).", createdAt: "2026-10-11T12:00:01Z" },
+  ], null);
+  await dom.waitFor(() => /They are in/.test(dom.container.textContent ?? ""));
+  const anchors = [...dom.container.querySelectorAll<HTMLAnchorElement>(".popover-message a")];
+  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/guide"]);
+  assert.equal(anchors[0]!.target, "_blank");
+  assert.match(dom.container.querySelector(".popover-message.assistant")?.textContent ?? "", /notes\.md/);
+});
+
+test("the popover announces a turn's start and end, not every streamed frame or timer tick", async (t) => {
+  const { dom, emit } = await agentHarness(t);
+  await emit({ type: "turn_state", running: true, turnId: "turn-1" });
+  await emit({ type: "assistant_delta", turnId: "turn-1", text: "Streaming text", order: 0 });
+  const transcript = dom.container.querySelector(".popover-transcript")!;
+  assert.equal(transcript.getAttribute("aria-live"), null, "the transcript is not re-read as it streams");
+  for (const line of dom.container.querySelectorAll(".working-line")) {
+    if (line.querySelector(".working-elapsed")) assert.notEqual(line.getAttribute("role"), "status", "the elapsed timer is not a live region");
+  }
+  const live = [...dom.container.querySelectorAll('[aria-live="polite"], [role="status"]')].filter((node) => !node.closest("[hidden]"));
+  assert.ok(live.every((node) => !node.textContent?.includes("Streaming text")));
+
+  const { TurnAnnouncer, chatTurnStatus } = await import("../web-local/src/components/chat/TurnAnnouncer.js");
+  const host = document.createElement("div"); document.body.append(host);
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(host);
+  const say = async (conversationKey: string, status: Parameters<typeof TurnAnnouncer>[0]["status"]) => {
+    await dom.act(() => root.render(createElement(TurnAnnouncer, { conversationKey, status, who: "The AmpleFile Agent" })));
+    return host.textContent;
+  };
+  assert.equal(await say("one", "replied"), "", "what a conversation shows when it opens is not news");
+  assert.equal(await say("one", "question"), "", "an ending is spoken only when it follows work");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("one", "handed_off"), "The AmpleFile Agent handed work to Connected Folders and is waiting on it.");
+  assert.equal(await say("one", "question"), "The AmpleFile Agent has a question for you.");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("one", "failed"), "The AmpleFile Agent could not finish.");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("two", null), "", "opening another conversation resets without speaking");
+  assert.equal(await say("two", "failed"), "", "the first status read after opening is a silent baseline");
+  assert.equal(await say("two", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("two", "stopped"), "The AmpleFile Agent stopped.");
+  // A Worker Chat reads its outcome from the durable request, then the last reply.
+  assert.equal(chatTurnStatus(true, "done", undefined), "working");
+  assert.equal(chatTurnStatus(false, "waiting", undefined), "question");
+  assert.equal(chatTurnStatus(false, "partial", undefined), "partial");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "", createdAt: "", interruption: { reason: "cancelled", message: "", retryAttempts: 0, provider: null, model: null, activities: [] } }), "stopped");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "", createdAt: "", interruption: { reason: "provider_error", message: "", retryAttempts: 0, provider: null, model: null, activities: [] } }), "failed");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "Done", createdAt: "" }), "replied");
+  await dom.act(() => root.unmount());
+});
+
+test("AmpleFile Agent replies render GitHub tables and one line per hard break, like Worker replies", async (t) => {
+  const { dom } = await agentHarness(t, [
+    { id: "ask", role: "user", content: "Compare them", createdAt: "2026-10-11T12:00:00Z" },
+    { id: "answer", role: "assistant", content: "| Quote | Total |\n|---|---|\n| North | 4,200 |\n\nFirst line  \nSecond line", createdAt: "2026-10-11T12:00:01Z" },
+  ], null);
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".popover-message.assistant table")));
+  assert.equal(dom.container.querySelector(".popover-message.assistant td")?.textContent, "North");
+  const paragraph = [...dom.container.querySelectorAll(".popover-message.assistant p")].find((item) => item.querySelector("br"))!;
+  assert.ok(paragraph, "a hard break is a <br>");
+  assert.equal(paragraph.innerHTML, "First line<br>Second line", "no newline is left after the break to draw a blank line");
+});
+
+for (const phase of ["done", "needs_you", "failed", "stopped", "handed_off"] as const) {
+  test(`choosing a saved AmpleFile Agent chat whose last request is ${phase} announces nothing`, async (t) => {
+    const dom = await createDomHarness();
+    const realApi = await import("../web-local/src/lib/api.js");
+    const stamp = "2026-10-11T12:00:00Z";
+    const ended = { ...request, conversationId: "second", phase, endedAt: phase === "handed_off" ? null : stamp };
+    const api = async (path: string) => {
+      if (path === "/api/amplefile-agent/summary") return { available: true, conversation: { id: "first", title: "First chat" }, state: "idle", latestRequest: null };
+      if (path === "/api/amplefile-agent/summary?conversationId=first") return { available: true, conversation: { id: "first", title: "First chat" }, state: "idle", latestRequest: null };
+      if (path === "/api/amplefile-agent/summary?conversationId=second") return { available: true, conversation: { id: "second", title: "Second chat" }, state: "idle", latestRequest: ended };
+      if (path === "/api/amplefile-agent/conversations") return { conversations: [
+        { id: "first", title: "First chat", updatedAt: stamp, requestState: null },
+        { id: "second", title: "Second chat", updatedAt: stamp, requestState: phase },
+      ] };
+      if (path === "/api/amplefile-agent/conversations/first") return { messages: [{ id: "a1", role: "assistant", content: "First reply", createdAt: stamp }] };
+      if (path === "/api/amplefile-agent/conversations/second") return { messages: [{ id: "b1", role: "assistant", content: "Second reply", createdAt: stamp }] };
+      if (path.endsWith("/runtime")) return { runtime: null };
+      if (path.endsWith("/work")) return { work: null };
+      if (path.startsWith("/api/agent/composer")) return { composer: null };
+      if (path === "/api/connected-folders/outline") return { connectedFolders: [] };
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const scope = globalThis as unknown as Record<string, unknown>;
+    scope.__agentChatApi = { ...realApi, api, createEventSource: () => ({ onmessage: null, onopen: null, onerror: null, lastEventId: "", close() {} }) };
+    t.after(async () => { await dom.cleanup(); delete scope.__agentChatApi; });
+    const controls = document.createElement("div"); document.body.append(controls);
+    const { AmpleFileAgentChat } = await import("../web-local/src/popover/PopoverApp.js");
+    await dom.render(createElement(AmpleFileAgentChat, { host: "panel", controlsTarget: controls, visible: true }));
+    await dom.waitFor(() => /First reply/.test(dom.container.textContent ?? ""));
+    await dom.act(() => (document.querySelector<HTMLButtonElement>('[aria-controls="agent-chat-history"]'))!.click());
+    await dom.waitFor(() => [...document.querySelectorAll<HTMLButtonElement>(".agent-chat-row")].some((row) => row.textContent?.includes("Second chat")));
+    await dom.act(() => [...document.querySelectorAll<HTMLButtonElement>(".agent-chat-row")].find((row) => row.textContent?.includes("Second chat"))!.click());
+    await dom.waitFor(() => /Second reply/.test(dom.container.textContent ?? ""));
+    await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    assert.equal(dom.container.querySelector(".turn-announcer")?.textContent, "");
+  });
+}

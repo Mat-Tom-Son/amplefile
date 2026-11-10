@@ -20,7 +20,6 @@ const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vi
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
-  oauth: { pasteCallback: () => ipcRenderer.invoke("amplefile:oauth:paste-callback") },
   clipboard: {
     write: (content: { text: string; html?: string }) => ipcRenderer.invoke("amplefile:clipboard:write", content),
   },
