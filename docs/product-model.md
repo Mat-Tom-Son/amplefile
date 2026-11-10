@@ -41,15 +41,18 @@ Finder. It uses the same local API, file events, and desktop bridge as every
 other surface.
 
 - **Window:** a sidebar, a toolbar (Back and Forward, the folder's name,
-  Icons or List, **Organize** at a Connected Folder's top level, Action, the
-  **Browser** button, Search), the folder's contents, and Finder's path bar
-  (the disk down to the selected item) with an item count, then the Browser
-  pane while a browser tab is open, and the right panel. Organize opens a
-  Chat in the panel asking the Worker to organize the folder. The toolbar's **Action**
-  button (⋯) and right-clicking a Connected Folder in the sidebar offer
-  **Customize Connected Folder**, **Set Up for Me**, **Just the Look**,
-  **Skills & Extensions…**, **Disconnect…** (or **Delete Connected Folder…**
-  for a managed one), and **Settings…**. Dragging the edge beside the
+  Icons or List, Action, the **Browser** button, Search, and the panel
+  button), the folder's contents, and Finder's path bar (the disk down to
+  the selected item) with an item count, then the Browser pane while a
+  browser tab is open, and the right panel. The panel button is the
+  toolbar's last control, to the right of Search and nearest the panel: it
+  hides the panel (**Hide Panel**) and shows it again (**Show Panel**). The
+  toolbar's **Action** button (⋯) and right-clicking a Connected Folder in
+  the sidebar offer **Customize Connected Folder**, **Organize**, **Show in
+  Finder**, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
+  Folder…** for a managed one), and **Settings…**. **Organize** opens the
+  panel and starts a Chat asking that Connected Folder's Worker to organize
+  it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
   list keeps 360px.
@@ -175,8 +178,7 @@ other surface.
   opens that Chat. A site's question shows in a bar above the page with
   **Block** and **Allow**, and only the person answers it; with the page out
   of view, a notice offers **Show Page**.
-- **Right panel:** **Hide Panel** sits at the panel's top corner, and the
-  toolbar shows **Show Panel** while the panel is hidden. **Info** shows the selection (a picture shows itself;
+- **Right panel:** **Info** shows the selection (a picture shows itself;
   files show Where, Modified, and Size) or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
   ready-made ones it has not turned on ([Automations](automations.md)).
@@ -210,6 +212,12 @@ other surface.
   opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
   changed") listing the first few, with **Undo** (History's restore) and
   **Done**.
+- **Set Up for Me:** right after a folder is connected, Info opens with a
+  card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
+  Thanks**. Either answer closes the card for good; the card is the only
+  place the window offers it ([Set Up for Me](#set-up-for-me)). A folder
+  connected while the window is open brings the panel to Info, so the card
+  is in view.
 - **A message needs AI:** with no AI connected, sending from the message box,
   a suggestion, Organize, or Set Up for Me opens Set Up AI first and then
   sends.
@@ -261,19 +269,23 @@ first model), so every Worker without its own choice and the status agree on
 the model in use. ChatGPT sign-in defaults to the direct OpenAI connection.
 The included tools' setup works with or without a Connected Folder.
 
-### Set Up for Me and Just the Look
+### Set Up for Me
 
-Both start a new Chat in the panel with one message, and the included
-`set-up-connected-folder` Skill does the rest. **Set Up for Me** looks the
-folder over, organizes it when that helps (moves and renames only, never
-deletes, each through a restore-pointed `amplefile files` verb that refuses
-to overwrite; a deliberate structure stays; projects, app-managed folders,
-and hidden files are left as they are), writes the Connected Folder's Worker
-instructions, and sets an icon and a color. **Just the Look** reads the
-folder and sets only the look; it never touches a file. The Chat's own reply
-says what changed and how to undo it. The Skill is listed under
-**Everywhere** as Included with AmpleFile; it can be turned off but not
-removed, and a request such as "set up this folder" in any Chat uses it too.
+**Set Up for Me** is offered once for each Connected Folder, on the card
+Info shows right after the folder is connected, whichever way it was
+connected: New Connected Folder, Connect Folder, Connect This Folder, or
+first run. It starts a new Chat in the panel with one message, and the
+included `set-up-connected-folder` Skill does the rest: it looks the folder
+over, organizes it when that helps (moves and renames only, never deletes,
+each through a restore-pointed `amplefile files` verb that refuses to
+overwrite; a deliberate structure stays; projects, app-managed folders, and
+hidden files are left as they are), writes the Connected Folder's Worker
+instructions, and sets an icon and a color. The Chat's own reply says what
+changed and how to undo it. The Skill is listed under **Everywhere** as
+Included with AmpleFile; it can be turned off but not removed. A request in
+any Chat uses it too: "set up this folder" for the whole pass, or asking
+only for a look, which sets the banner, icon, and color and never touches a
+file.
 
 ## Chats
 

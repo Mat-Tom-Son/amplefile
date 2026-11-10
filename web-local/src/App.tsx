@@ -45,7 +45,7 @@ export function App() {
   const [connectAiOpen, setConnectAiOpen] = useState(false);
   const afterConnectAi = useRef<(() => void) | undefined>(undefined);
   useEffect(() => onConnectAiRequested((then) => { afterConnectAi.current = then; setConnectAiOpen(true); }), []);
-  // Connected Folders just added that still show the Set up for me card.
+  // Connected Folders just added that still show the Set Up for Me card.
   const [setUpOffers, setSetUpOffers] = useState<string[]>(() => readConnectedFolderSetUpOffers());
   useEffect(() => {
     if (!boot) return;
@@ -59,6 +59,10 @@ export function App() {
       return next;
     });
   }, []);
+  const offerSetUp = useCallback((connectedFolderId: string) => changeSetUpOffers((current) => [...current.filter((id) => id !== connectedFolderId), connectedFolderId]), [changeSetUpOffers]);
+  const closeSetUpOffer = useCallback((connectedFolderId: string) => changeSetUpOffers((current) => current.filter((id) => id !== connectedFolderId)), [changeSetUpOffers]);
+  // `&setUp=offer` previews the card on the sample Connected Folder shown first.
+  const [fixtureSetUpOffer, setFixtureSetUpOffer] = useState(() => fixtureRequested && new URLSearchParams(window.location.search).get("setUp") === "offer");
   const [settingsOpen, setSettingsOpen] = useState(false);
   // A draft headed for the agent panel should not land behind Settings.
   useEffect(() => {
@@ -226,7 +230,7 @@ export function App() {
     if (fixtureRequested) { setCreateConnectedFolderOpen(false); showToast({ text: "Connected Folder creation is disabled in the preview", tone: "info" }); return; }
     const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders", { method: "POST", body: { name } });
     await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id); setCreateConnectedFolderOpen(false);
-    changeSetUpOffers((current) => [...current.filter((id) => id !== result.connectedFolder.id), result.connectedFolder.id]);
+    offerSetUp(result.connectedFolder.id);
   }
 
   async function openFolder() {
@@ -236,7 +240,7 @@ export function App() {
       const selected = await picker.chooseFolder(); if (!selected) return;
       const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: selected.path, folderGrantId: selected.folderGrantId } });
       await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id);
-      changeSetUpOffers((current) => [...current.filter((id) => id !== result.connectedFolder.id), result.connectedFolder.id]);
+      offerSetUp(result.connectedFolder.id);
     } catch (caught) { setError(errorText(caught)); }
   }
 
@@ -252,6 +256,7 @@ export function App() {
       const { connectedFolder } = await api<{ connectedFolder: ConnectedFolderSummary }>(`/api/standard-folders/${encodeURIComponent(standardFolderId)}/connected-folders`, { method: "POST", body: { path: "" } });
       await refreshBootstrap();
       setActiveConnectedFolderId(connectedFolder.id);
+      offerSetUp(connectedFolder.id);
     } catch (caught) {
       setError(errorText(caught));
     }
@@ -294,7 +299,7 @@ export function App() {
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}
-    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onError={setError} /></ConnectedFolderAppearanceProvider>
+    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} setUpOffers={fixture ? (fixtureSetUpOffer ? [fixture.activeConnectedFolderId] : []) : setUpOffers} onOfferSetUp={offerSetUp} onCloseSetUpOffer={fixture ? () => setFixtureSetUpOffer(false) : closeSetUpOffer} onError={setError} /></ConnectedFolderAppearanceProvider>
     : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
     {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}

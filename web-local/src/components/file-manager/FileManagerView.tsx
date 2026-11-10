@@ -9,7 +9,7 @@ import { TextInputModal } from "../modals/TextInputModal";
 import { NewFolderModal, type NewFolderTarget } from "../modals/NewFolderModal";
 import { FileVersionHistoryModal } from "../modals/FileVersionHistoryModal";
 import { SkillsExtensionsModal } from "../modals/SkillsExtensionsModal";
-import { connectedFolderSetUpMessage, type ConnectedFolderSetUpMode } from "../../lib/connected-folder-setup";
+import { connectedFolderSetUpMessage } from "../../lib/connected-folder-setup";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { queueHistoryRequest } from "../../lib/history-queue";
 import type { SettingsPage } from "../modals/DesktopSettingsModal";
@@ -99,6 +99,7 @@ const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
 /** The Browser pane's share of the main area when the folder and the browser are both shown. */
 const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
 const typeSelectResetMs = 900;
+const noSetUpOffers: readonly string[] = [];
 
 /** The desktop calls for one place's files. */
 interface PlaceFileBridge {
@@ -113,7 +114,7 @@ interface PlaceFileBridge {
  * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -133,6 +134,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** The + beside Connected Folders: New Connected Folder and Connect Folder, as in the File menu. */
   onCreateConnectedFolder: () => void;
   onOpenFolder: () => void;
+  /** Connected Folders just connected whose Set Up for Me card is still showing. */
+  setUpOffers?: readonly string[];
+  /** A folder was connected from this window: offer to set it up. */
+  onOfferSetUp?: (connectedFolderId: string) => void;
+  /** The card was answered, either way: it does not come back. */
+  onCloseSetUpOffer?: (connectedFolderId: string) => void;
   onError: (message: string | null) => void;
 }) {
   const fixtureMode = Boolean(fixture);
@@ -214,6 +221,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const panelArriving = panelOpen && Date.now() < panelArrivalRef.current;
   useEffect(() => { panelSeenOpenRef.current = panelOpen; }, [panelOpen]);
   const setPanelOpen = (next: boolean) => { setPanelOpenState(next); writeStoredJsonValue(panelStorageKey, next); };
+  // A folder connected while the window is open brings its Set Up for Me card into view: the panel opens on Info.
+  const seenSetUpOffersRef = useRef(new Set(setUpOffers));
+  const [infoRequest, setInfoRequest] = useState(0);
+  useEffect(() => {
+    const fresh = setUpOffers.filter((id) => !seenSetUpOffersRef.current.has(id));
+    if (!fresh.length) return;
+    for (const id of fresh) seenSetUpOffersRef.current.add(id);
+    setPanelOpen(true);
+    setInfoRequest((value) => value + 1);
+  }, [setUpOffers]); // eslint-disable-line react-hooks/exhaustive-deps
   const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder.id, fixtureMode);
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<FileManagerSearchScope>("here");
@@ -891,6 +908,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         : `/api/standard-folders/${encodeURIComponent(target.id)}/connected-folders`;
       const { connectedFolder: created } = await api<{ connectedFolder: ConnectedFolderSummary }>(url, { method: "POST", body: { path } });
       await Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+      onOfferSetUp?.(created.id);
       const open = () => navigate({ place: { kind: "connected-folder", id: created.id }, path: "" }, "push", created);
       if (target.kind === "standard" && !path) {
         // The folder itself is a Connected Folder now, and the sidebar lists it there.
@@ -1072,7 +1090,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       : { x: Math.round(anchor.left), y: Math.round(anchor.bottom + 4) };
     const popup = window.ampleFileDesktop?.connectedFolder.popupHeaderMenu;
     if (mac && popup) {
-      try { run(await popup({ actions: { newChat: false, customize: false, setUp: false, reveal: false, manage: false, ...actions }, point })); }
+      try { run(await popup({ actions: { newChat: false, customize: false, organize: false, reveal: false, manage: false, ...actions }, point })); }
       catch (caught) { onError(errorText(caught)); }
       return;
     }
@@ -1140,7 +1158,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (mac && popup) {
       try {
         const command = await popup({
-          actions: { newChat: false, customize: Boolean(target), setUp: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
+          actions: { newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
           point,
         });
         runActionCommand(command, target);
@@ -1155,24 +1173,30 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (command === "customize" && target) setCustomizing({ connectedFolderId: target.id, section: "banner" });
     else if (command === "remove-connected-folder" && target) void removeConnectedFolder(target);
     else if (command === "skills" && target) setSkillsFor(target);
-    else if ((command === "set-up" || command === "look") && target) setUp(target, command === "set-up" ? "full" : "look");
+    else if (command === "organize" && target) organize(target);
     else if (command === "reveal") {
       if (target) void window.ampleFileDesktop?.connectedFolder.revealFolder(target.id).catch((caught) => onError(errorText(caught)));
       else void openLocal("", "reveal");
     }
   }
 
-  /** Set Up for Me or Just the Look: a Chat in the panel whose first message the set-up Skill answers. */
-  function setUp(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode) {
-    withAi(() => sendSetUp(target, mode));
+  /** Organize, from the Action menu or a Connected Folder's right-click menu: a Chat in the panel asking its Worker to organize it. */
+  function organize(target: ConnectedFolderSummary) {
+    withAi(() => sendToWorker(target, "Organize this folder.", "Organize this folder."));
   }
 
-  function sendSetUp(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode) {
+  /** Set Up for Me, from the card shown after a folder is connected: a Chat in the panel whose first message the set-up Skill answers. */
+  function setUp(target: ConnectedFolderSummary) {
+    onCloseSetUpOffer?.(target.id);
+    withAi(() => sendToWorker(target, connectedFolderSetUpMessage, "Set Up for Me"));
+  }
+
+  /** A new Chat with one message for a Connected Folder's Worker, going to that Connected Folder first if it is not the one shown. */
+  function sendToWorker(target: ConnectedFolderSummary, text: string, title: string) {
     if (target.id !== connectedFolder?.id) navigate({ place: { kind: "connected-folder", id: target.id }, path: "" }, "push", target);
     setPanelOpen(true);
     const id = Date.now();
-    const text = connectedFolderSetUpMessage(mode);
-    setPanelChat({ key: id, connectedFolderId: target.id, conversationId: null, activeId: null, title: mode === "full" ? "Set Up for Me" : "Just the Look", sendRequest: { id, text, paths: [] }, open: true });
+    setPanelChat({ key: id, connectedFolderId: target.id, conversationId: null, activeId: null, title, sendRequest: { id, text, paths: [] }, open: true });
   }
 
   /** A file a Chat names: show it here, selected, the way the design does. */
@@ -1557,6 +1581,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     ? `Work on this ${references[0]!.kind === "folder" ? "folder" : "file"}`
     : references.length > 1 ? `Work on these ${references.length} items` : `Work in ${folderName}`;
   const chatConnectedFolder = panelChat ? connectedFolders.find((item) => item.id === panelChat.connectedFolderId) ?? null : null;
+  // Set Up for Me is offered once, at the top of a Connected Folder just connected, until it is answered.
+  const setUpOffered = Boolean(connectedFolder && setUpOffers.includes(connectedFolder.id)) && !location.path && !searchMode && !recentsOpen && !selection.length;
   const panelChatId = panelChat ? panelChat.activeId ?? panelChat.conversationId : null;
   const chatKey = (conversationId: string) => panelChat ? chatActivityKey(panelChat.connectedFolderId, conversationId) : "";
 
@@ -1642,10 +1668,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <button type="button" className={`fm-tool${view === "icons" ? " is-on" : ""}`} aria-pressed={view === "icons"} aria-label="Icons" title="Icons" onClick={() => setView("icons")}><Grid20Regular /></button>
           <button type="button" className={`fm-tool${view === "list" ? " is-on" : ""}`} aria-pressed={view === "list"} aria-label="List" title="List" onClick={() => setView("list")}><TextBulletListLtr20Regular /></button>
         </div>
-        {connectedFolder && !location.path && !query.trim() && !recentsOpen ? <button type="button" className="fm-tool fm-tool-wide" title="Organize" onClick={() => { setPanelOpen(true); startChat("Organize this folder.", []); }}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 9.5h3l1 1.5h3l1-1.5h3" /><path d="M2.5 9.5v3.25h11V9.5" /><path d="M4.5 6.5h7M5.75 3.75h4.5" /></svg>
-          <span className="fm-tool-wide-t">Organize</span>
-        </button> : null}
         <div className="fm-capsule">
           <button type="button" className="fm-tool" aria-label="Action" title="Action" aria-haspopup="menu" onClick={(event) => void openActionMenu(connectedFolder, event)}><MoreHorizontal20Regular /></button>
         </div>
@@ -1657,10 +1679,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <input ref={searchFieldRef} type="search" value={query} placeholder="Search names and contents" aria-label={`Search ${folderName}`} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); contentRef.current?.focus(); } }} />
           {query ? <button type="button" className="fm-search-clear" aria-label="Clear search" onClick={() => { setQuery(""); contentRef.current?.focus(); }}><X size={12} /></button> : null}
         </label>
-        {/* The panel hides from its own corner; hidden, it is shown again from here. */}
-        {panelOpen ? null : <div className="fm-capsule">
-          <button type="button" className="fm-tool" aria-label="Show Panel" title="Show Panel" onClick={() => setPanelOpen(true)}><PanelRight20Regular /></button>
-        </div>}
+        {/* The last control, nearest the panel it shows and hides. */}
+        <div className="fm-capsule">
+          <button type="button" className={`fm-tool${panelOpen ? " is-on" : ""}`} aria-pressed={panelOpen} aria-label="Show or hide the panel" title={panelOpen ? "Hide Panel" : "Show Panel"} onClick={() => setPanelOpen(!panelOpen)}><PanelRight20Regular /></button>
+        </div>
       </header>
       {/* The folder's half of the main area. With the browser given the whole area it folds away, still mounted. */}
       <div className="fm-files" inert={browserLayout === "full"}>
@@ -1852,7 +1874,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     {panelOpen ? <PaneResizer spec={panelWidthSpec} side="right" width={panelWidth} label="Resize the panel" shellRef={shellRef} otherPaneWidth={sidebarWidth} onCommit={setPanelWidth} /> : null}
     {panelOpen ? <FileManagerPanel
       arriving={panelArriving}
-      onHide={() => setPanelOpen(false)}
+      infoRequest={infoRequest}
       place={place}
       connectedFolder={connectedFolder}
       placeName={placeName}
@@ -1861,7 +1883,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       folderName={folderName}
       folderColor={!location.path && placeIdentity ? placeIdentity.color : null}
       folderSymbol={!location.path && connectedFolder ? folderLook(connectedFolder).symbol : null}
-      receipt={workerChanges && connectedFolder && !searchMode && !recentsOpen && !selection.length ? <WorkerReceipt
+      receipt={setUpOffered && connectedFolder ? <SetUpOffer
+        name={connectedFolder.name}
+        onSetUp={() => setUp(connectedFolder)}
+        onDismiss={() => onCloseSetUpOffer?.(connectedFolder.id)}
+      /> : workerChanges && connectedFolder && !searchMode && !recentsOpen && !selection.length ? <WorkerReceipt
         changes={workerChanges}
         onShow={(path) => { const folder = parentPath(path); if (folder !== location.path) navigate({ place: { kind: "connected-folder", id: connectedFolder.id }, path: folder }); window.setTimeout(() => select([path]), folder !== location.path ? 300 : 0); }}
         onUndo={() => void undoWorkerChanges()}
@@ -1904,7 +1930,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           onSettled={(conversationId, needsAttention) => { activity.setAttention(chatKey(conversationId), needsAttention && !(panelChat.open && conversationId === panelChatId)); setTurnsSettled((value) => value + 1); }}
           onViewed={(conversationId) => activity.setAttention(chatKey(conversationId), false)}
           // A reply can change more than files: a look the Worker applied
-          // (Just the Look, Set Up for Me) arrives with the bootstrap read.
+          // (Set Up for Me, or a look asked for in words) arrives with the bootstrap read.
           onAgentFinished={() => Promise.all([listing.refresh(), onRefreshBootstrap()]).then(() => undefined)}
         />,
       } : null}
@@ -1946,8 +1972,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       <div className="fm-menu" role="menu" style={{ left: actionMenu.x, top: actionMenu.y }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setActionMenu(null); } }}>
         {actionMenu.target ? <>
           <button type="button" className="fm-menu-i" role="menuitem" autoFocus onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("customize", target); }}>Customize Connected Folder</button>
-          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("set-up", target); }}>Set Up for Me</button>
-          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("look", target); }}>Just the Look</button>
+          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("organize", target); }}>Organize</button>
           <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("skills", target); }}>Skills &amp; Extensions…</button>
           <div className="fm-menu-sep" />
           <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("remove-connected-folder", target); }}>{actionMenu.target.location.storage === "linked" ? "Disconnect…" : "Delete Connected Folder…"}</button>
@@ -2049,6 +2074,20 @@ function WorkerReceipt({ changes, onShow, onUndo, onDone }: {
     <div className="fm-receipt-actions">
       <button type="button" className="fm-btn is-small" onClick={onUndo}>Undo</button>
       <button type="button" className="fm-btn is-small" onClick={onDone}>Done</button>
+    </div>
+  </section>;
+}
+
+/** The one place Set Up for Me is offered: a card at the top of Info, right after a folder is connected. Either button closes it for good. */
+function SetUpOffer({ name, onSetUp, onDismiss }: { name: string; onSetUp: () => void; onDismiss: () => void }) {
+  return <section className="fm-receipt fm-setup-offer" data-exit-motion="collapse" aria-label={`Set up ${name}`}>
+    <div className="fm-receipt-head">
+      <span className="fm-receipt-title">Set Up This Folder</span>
+    </div>
+    <p className="fm-setup-offer-s">Your Worker can look this folder over, organize it, and give it a look that fits.</p>
+    <div className="fm-receipt-actions">
+      <button type="button" className="fm-btn is-small is-primary" onClick={onSetUp}>Set Up for Me</button>
+      <button type="button" className="fm-btn is-small" onClick={onDismiss}>No Thanks</button>
     </div>
   </section>;
 }

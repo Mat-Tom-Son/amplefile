@@ -30,7 +30,8 @@ steps; in development, `&script=fixture-chat-1` replays a Chat
 phase—`available`, `downloading`, `ready`, `installing`, `error`, or
 `not_available`—in the sidebar's update indicator and Settings → About,
 from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`.
-The toolbar's Browser button opens the Browser pane over the sample pages in
+`&setUp=offer` shows the Set Up for Me card on the Connected Folder shown
+first. The toolbar's Browser button opens the Browser pane over the sample pages in
 `web-local/src/fixtures/browser-fixture.ts`; no page is drawn, and two of the
 recent pages show a Worker's marker and a site's question.
 Clicking an update asks the same restart question as the app (add

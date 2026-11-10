@@ -294,17 +294,24 @@ test("the slider keeps the browser's share of the area, and going somewhere brin
   assert.equal(view.layout(), "split", "choosing a place in the sidebar shows the folder again");
 });
 
-test("the panel hides from its own corner and is shown again from the toolbar", async (t) => {
+test("the panel button is the toolbar's last control, after Search, and the Browser button sits before Search", async (t) => {
   const view = await mountWindow(t, createBridge());
   const toolbar = view.container.querySelector<HTMLElement>(".fm-toolbar")!;
+  const toggle = () => toolbar.querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!;
+  const controls = [...toolbar.querySelectorAll<HTMLElement>("button, input")];
+  assert.equal(controls.at(-1), toggle(), "nearest the panel it shows and hides");
+  const search = toolbar.querySelector<HTMLElement>(".fm-search")!;
+  assert.ok(search.compareDocumentPosition(toggle()) & Node.DOCUMENT_POSITION_FOLLOWING, "to the right of the search field");
+  assert.ok(view.button("Browser")!.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(toggle().getAttribute("aria-pressed"), "true");
+  assert.equal(toggle().getAttribute("title"), "Hide Panel");
   const panel = view.container.querySelector<HTMLElement>("aside.fm-panel")!;
-  assert.ok(panel.contains(view.button("Hide Panel")), "Hide Panel is in the panel");
-  assert.equal(toolbar.querySelector('[aria-label="Show Panel"]'), null);
-  assert.equal(toolbar.querySelector('[aria-label="Hide Panel"]'), null);
-  await view.press("Hide Panel");
+  assert.equal(panel.querySelector('[aria-label="Hide Panel"], [aria-label="Show or hide the panel"]'), null, "one control, and it is not in the panel");
+
+  await view.dom.act(() => toggle().click());
   assert.equal(view.container.querySelector("aside.fm-panel"), null);
-  assert.ok(toolbar.contains(view.button("Show Panel")), "Show Panel takes its place in the toolbar");
-  await view.press("Show Panel");
+  assert.equal(toggle().getAttribute("aria-pressed"), "false");
+  assert.equal(toggle().getAttribute("title"), "Show Panel");
+  await view.dom.act(() => toggle().click());
   assert.ok(view.container.querySelector("aside.fm-panel"));
-  assert.equal(toolbar.querySelector('[aria-label="Show Panel"]'), null);
 });

@@ -199,7 +199,7 @@ has no browser and no browser tools.
 `tests/file-manager-browser-pane.test.ts` mounts the file manager window over
 a stand-in for the desktop bridge: opening the pane, a Worker's tab arriving,
 the three sizes, the slider, a site's question and its answer, closing tabs,
-and the panel's own Hide Panel button. `tests/browser-pages.test.ts` covers
+and where the Browser and panel buttons sit in the toolbar. `tests/browser-pages.test.ts` covers
 the tab list, `tests/native-view.test.ts` the page's placement and the
 overlays it steps aside for, and `tests/tab-chrome-motion.test.ts` the tab
 strip's layout and motion in Chromium.

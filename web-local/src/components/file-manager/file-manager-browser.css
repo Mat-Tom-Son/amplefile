@@ -778,27 +778,6 @@
   color: var(--fm-text3);
 }
 
-/* The panel's own Hide Panel button, at its top corner whatever the panel shows. */
-.fm-panel {
-  position: relative;
-}
-
-.fm-panel-hide {
-  position: absolute;
-  z-index: 3;
-  top: calc((var(--fm-toolbar-height) - 26px) / 2);
-  right: 10px;
-}
-
-.fm-panel .fm-tabs,
-.fm-panel .fm-ph {
-  padding-right: 44px;
-}
-
-.fm-panel .fm-tabs {
-  padding-left: 12px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .fm-browser-spinner,
   .fm-browser-address.is-loading::after { animation: none; }

@@ -2,18 +2,19 @@
  * The native right-click menu for the Connected Folder header (macOS), with the
  * same actions as the in-app menu other platforms show.
  */
-export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "set-up" | "look" | "reveal" | "manage" | "skills" | "settings"
+export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
   | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
 
 export interface NativeConnectedFolderMenuRequest {
   /**
-   * Which of the header's actions this Connected Folder offers. Manage Connected Folders
+   * Which of the header's actions this Connected Folder offers. Organize asks
+   * the Connected Folder's Worker to organize it. Manage Connected Folders
    * is there unless `manage` is false. The file manager's Action menu
    * adds Skills & Extensions and Settings and leaves out Manage,
    * since its sidebar lists the Connected Folders; older renderers omit all three.
    */
   actions: {
-    newChat: boolean; customize: boolean; setUp: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
+    newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
     /** The file manager's Standard Folders: register the folder, or take an added one off the sidebar. */
     putToWork?: boolean; removeFromSidebar?: boolean;
     /** The file manager's + beside Connected Folders. */
@@ -33,7 +34,7 @@ export type NativeConnectedFolderMenuItem =
   | { type: "item"; label: string; command: NativeConnectedFolderMenuCommand };
 
 const requestKeys = new Set(["actions", "point"]);
-const actionKeys = new Set(["newChat", "customize", "setUp", "reveal"]);
+const actionKeys = new Set(["newChat", "customize", "organize", "reveal"]);
 const optionalActionKeys = new Set(["skills", "settings", "manage", "putToWork", "removeFromSidebar", "createConnectedFolder", "useExistingFolder", "remove", "removeDeletes"]);
 const pointKeys = new Set(["x", "y"]);
 
@@ -52,7 +53,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
     actions: {
       newChat: actions.newChat as boolean,
       customize: actions.customize as boolean,
-      setUp: actions.setUp as boolean,
+      organize: actions.organize as boolean,
       reveal: actions.reveal as boolean,
       ...(actions.skills === true ? { skills: true } : {}),
       ...(actions.settings === true ? { settings: true } : {}),
@@ -78,12 +79,7 @@ export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMen
   if (actions.useExistingFolder) items.push({ type: "item", label: "Connect Folder…", command: "use-existing-folder" });
   if (actions.newChat) items.push({ type: "item", label: "New Chat", command: "new-chat" });
   if (actions.customize) items.push({ type: "item", label: "Customize Connected Folder", command: "customize" });
-  if (actions.setUp) {
-    items.push(
-      { type: "item", label: "Set Up for Me", command: "set-up" },
-      { type: "item", label: "Just the Look", command: "look" },
-    );
-  }
+  if (actions.organize) items.push({ type: "item", label: "Organize", command: "organize" });
   if (actions.reveal) items.push({ type: "item", label: "Show in Finder", command: "reveal" });
   if (actions.putToWork) items.push({ type: "item", label: "Connect This Folder", command: "put-to-work" });
   if (actions.skills) items.push({ type: "item", label: "Skills & Extensions…", command: "skills" });

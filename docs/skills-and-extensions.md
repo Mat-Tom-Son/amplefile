@@ -174,7 +174,7 @@ pinned versions and reviewed compatibility patches live in
 with AmpleFile” describes maintenance, not a different Extension runtime.
 AmpleFile also ships one Skill of its own outside the five tools:
 `set-up-connected-folder` (`resources/included-tools/skills/`), which **Set Up for
-Me** and **Just the Look** use (see [the product model](product-model.md)). It
+Me** uses (see [the product model](product-model.md#set-up-for-me)). It
 is listed under **Everywhere** as Included with AmpleFile, and it can be turned
 off through the same Pi path filter as any other resource, but never removed.
 The Documents tool's own Skill is likewise turned off rather than removed.
