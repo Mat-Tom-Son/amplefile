@@ -38,7 +38,7 @@ function percentText(status: DesktopUpdateStatus): string | null {
 /** The label of Settings → About's update button. */
 export function updateActionLabel(status: DesktopUpdateStatus): string {
   switch (status.phase) {
-    case "available": return "Download Update";
+    case "available": return "Update and Restart";
     case "ready": return "Restart and Install";
     case "error": return "Retry";
     case "checking": return "Checking";
@@ -78,7 +78,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       detail: version,
       progressPercent: null,
       accessibleName: version ? `Update Available: AmpleFile ${version}` : "Update Available",
-      tooltip: `Download and install ${version ? `AmpleFile ${version}` : "the update"}. AmpleFile restarts when the download finishes.`,
+      tooltip: `Download ${version ? `AmpleFile ${version}` : "the update"} and restart to install it. AmpleFile asks first and names any work the restart would stop.`,
       click: "update",
     };
     case "downloading": {
@@ -99,7 +99,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       detail: version,
       progressPercent: null,
       accessibleName: version ? `Restart to Update: AmpleFile ${version}` : "Restart to Update",
-      tooltip: `${named} is ready. AmpleFile quits and opens again to install it.`,
+      tooltip: `${named} is ready. AmpleFile asks, then quits and opens again to install it.`,
       click: "update",
     };
     case "installing": return {

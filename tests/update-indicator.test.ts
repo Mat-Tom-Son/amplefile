@@ -37,7 +37,7 @@ test("each update phase maps to one updater call, Settings label, and indicator"
     idle: { call: "check", settings: "Check for Updates", indicator: null, click: null },
     checking: { call: null, settings: "Checking", indicator: null, click: null },
     not_available: { call: "check", settings: "Check for Updates", indicator: null, click: null },
-    available: { call: "updateNow", settings: "Download Update", indicator: "Update Available", click: "update" },
+    available: { call: "updateNow", settings: "Update and Restart", indicator: "Update Available", click: "update" },
     downloading: { call: null, settings: "Downloading", indicator: "Downloading", click: "open-about" },
     ready: { call: "install", settings: "Restart and Install", indicator: "Restart to Update", click: "update" },
     installing: { call: null, settings: "Restarting", indicator: "Restarting to Update", click: null },
@@ -63,7 +63,8 @@ test("the indicator names the version and progress the status carries, and hides
   assert.equal(available.detail, "0.1.5");
   assert.match(available.accessibleName, /^Update Available/);
   assert.match(available.accessibleName, /0\.1\.5/);
-  assert.match(available.tooltip, /restarts/, "the tooltip says the app restarts after the download");
+  assert.match(available.tooltip, /restart to install/, "the tooltip says the app restarts to install");
+  assert.match(available.tooltip, /asks first/, "and that it asks before restarting");
   assert.equal(updateIndicatorFor(status("available", { availableVersion: null }))!.detail, null);
   assert.equal(updateIndicatorFor(status("available", { availableVersion: null }))!.accessibleName, "Update Available");
   const downloading = updateIndicatorFor(status("downloading", { progressPercent: 41.6 }))!;

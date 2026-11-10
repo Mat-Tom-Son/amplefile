@@ -21,9 +21,9 @@ import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from 
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
 import { isMacOS } from "./lib/platform";
 import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
-import { ConfirmDialogHost, showToast, ToastHost } from "./ui/feedback";
+import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
-import { updateCallForPhase } from "./lib/update-status";
+import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
 
@@ -262,15 +262,24 @@ export function App() {
     modelConfigurationChanged();
   }
 
-  /** Settings → About's update button and the sidebar's update indicator both click through here. */
+  /**
+   * Settings → About's update button and the sidebar's update indicator both
+   * click through here. A download or install ends in a restart, so it asks
+   * first and names the work the restart would stop. The preview asks the same
+   * question, with `&agentState=running` standing in for a working Chat, and
+   * then only says updating is disabled.
+   */
   async function runUpdateAction() {
-    if (fixtureRequested) { showToast({ text: "Updating is disabled in the preview", tone: "info" }); return; }
-    const updates = window.ampleFileDesktop?.updates;
-    if (!updates) return;
-    const call = updateCallForPhase(updateStatus?.phase ?? "idle");
-    if (!call) return;
+    const desktopUpdates = window.ampleFileDesktop?.updates;
+    if (!fixtureRequested && !desktopUpdates) return;
+    const previewOnly = async () => { showToast({ text: "Updating is disabled in the preview", tone: "info" }); return null; };
+    const updates: DesktopUpdateCalls = desktopUpdates ?? { check: previewOnly, updateNow: previewOnly, install: previewOnly };
+    const readWork = fixtureRequested
+      ? async () => ({ chats: new URLSearchParams(window.location.search).get("agentState") === "running" && activeConnectedFolder ? [{ connectedFolderId: activeConnectedFolder.id, conversationId: "preview" }] : [], ampleFileAgentWorking: false })
+      : () => readRunningWork(api);
     try {
-      setUpdateStatus(await updates[call]());
+      const next = await runDesktopUpdateAction({ status: updateStatus, updates, confirm: requestConfirm, readWork, connectedFolders: boot?.connectedFolders ?? [] });
+      if (next) setUpdateStatus(next);
     } catch (caught) { setError(errorText(caught)); }
   }
 
