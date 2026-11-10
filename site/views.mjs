@@ -47,6 +47,13 @@ export const glyph = {
   caret: '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3.5 3-3.5 3z" fill="currentColor"/></svg>',
   ring: '<svg class="mw-ring" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-opacity=".28" stroke-width="1.5"/><path d="M8 1.75A6.25 6.25 0 0 1 12.4 3.6L8 8z" fill="var(--fm-accent)"/></svg>',
   stop: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.75" y="4.75" width="6.5" height="6.5" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  globe: sv('<circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5"/><path d="M8 1.75c1.9 1.8 2.75 3.9 2.75 6.25S9.9 12.45 8 14.25C6.1 12.45 5.25 10.35 5.25 8S6.1 3.55 8 1.75z"/>', 1.2),
+  pages: sv('<path d="M4 1.75h5l3.25 3.25v9.25H4z"/><path d="M9 1.75V5h3.25"/><path d="M6.25 8.25h4M6.25 10.75h4"/>', 1.2),
+  connect: sv('<circle cx="4" cy="8" r="1.9"/><circle cx="12" cy="3.9" r="1.9"/><circle cx="12" cy="12.1" r="1.9"/><path d="M5.7 7.15 10.3 4.8M5.7 8.85l4.6 2.35"/>', 1.2),
+  skill: sv('<path d="M3.25 2.5h7.5a1.5 1.5 0 0 1 1.5 1.5v9.5h-7.5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M3.25 12a1.5 1.5 0 0 1 1.5-1.5h7.5"/><path d="M6 5.25h3.5"/>', 1.2),
+  plug: sv('<path d="M6 2.25v3M10 2.25v3"/><path d="M4.25 5.25h7.5V8a3.75 3.75 0 0 1-7.5 0z"/><path d="M8 11.75v2"/>', 1.2),
+  code: sv('<path d="m5.25 5-3 3 3 3M10.75 5l3 3-3 3M9 3.5l-2 9"/>', 1.2),
+  box: sv('<path d="M2.5 5 8 2.25 13.5 5v6L8 13.75 2.5 11z"/><path d="M2.5 5 8 7.75 13.5 5M8 7.75v6"/>', 1.2),
 };
 
 const CURSOR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 2.8v16.6l4-3.9 2.7 6.2 2.9-1.25-2.7-6.1h5.6z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
@@ -107,12 +114,12 @@ function sidebar({ std, con }) {
 }
 
 /** The toolbar. title: name; icon: HTML (or swap parts); organize: true, false, or {in, press}. */
-function toolbar({ title, icon, organize = true }) {
+function toolbar({ title, icon, organize = true, more, menu = "" }) {
   const org = organize ? `<span class="mw-wide${organize.in != null ? " a-fade" : ""}"${organize === true ? "" : at(organize)}>${glyph.organize}<span>Organize</span></span>` : "";
   return `<header class="mw-tb"><span class="mw-cap"><span class="mw-tool dis">${glyph.chevL}</span><span class="mw-tool dis">${glyph.chevR}</span></span>
 <span class="mw-title">${icon}<span class="tt">${title}</span></span><span class="mw-space"></span>
 <span class="mw-cap"><span class="mw-tool">${glyph.grid}</span><span class="mw-tool on">${glyph.list}</span></span>${org}
-<span class="mw-cap"><span class="mw-tool">${glyph.more}</span></span><span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span>
+<span class="mw-cap${menu ? " mw-anchor" : ""}"><span class="mw-tool"${at(more)}>${glyph.more}</span>${menu}</span><span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span>
 <span class="mw-search">${glyph.search}<span>Search names and contents</span></span></header>`;
 }
 
@@ -134,8 +141,8 @@ function pathbar(parts, count) {
   return `<footer class="mw-path"><span class="mw-goto">${glyph.goto}</span><span class="mw-crumbs">${parts.map((p) => `<span class="cr">${p}</span>`).join(`<span class="sep">${glyph.chevR}</span>`)}</span><span class="ct">${count}</span></footer>`;
 }
 
-function main({ title, icon, organize, lists, path, count }) {
-  return `<section class="mw-main">${toolbar({ title, icon, organize })}${head}<div class="mw-rows">${lists}</div>${pathbar(path, count)}</section>`;
+function main({ title, icon, organize, more, menu, lists, path, count }) {
+  return `<section class="mw-main">${toolbar({ title, icon, organize, more, menu })}${head}<div class="mw-rows">${lists}</div>${pathbar(path, count)}</section>`;
 }
 
 const folderTitle = (name) => fi("folder", COLORS[name]);
@@ -319,6 +326,44 @@ export function viewAsk({ h = 620 } = {}) {
   const chat = chatPane({ title: "Compare quotes", a: { in: 5 }, msgs, comp: chatComp(9) });
   const body = `${side}${main({ title: "Home Renovation", icon: folderTitle("Home Renovation"), lists: rows(list, { focus: true, focusOut: 4 }), path: HR_PATH, count: swap([["8 items", { out: 1 }], ["1 of 8 selected", { in: 1, out: 2 }], ["2 of 8 selected", { in: 2, out: 3 }], ["3 of 8 selected", { in: 3, out: 8 }], ["3 of 9 selected", { in: 8 }]]) })}<aside class="mw-panel">${info}${chat}</aside>`;
   return win({ label: "Three quotes selected in Home Renovation and a request to compare them; the Worker answers in the Chat and writes Quote Comparison.docx", h, steps, start: "30,96", body });
+}
+
+// ---------- Home Renovation: Skills & Extensions ----------
+
+const ACTIONS = ["Customize Connected Folder", "Set Up for Me", "Just the Look", "Skills & Extensions…", null, "Disconnect…", "Settings…"];
+
+/** The Action menu opens Skills & Extensions: the tools every Worker has, then what's installed everywhere and for this Connected Folder. */
+export function viewSkills({ h = 680 } = {}) {
+  // 1 press Action, and its menu opens; 2 choose Skills & Extensions…, and the dialog rises over the dimmed window.
+  const steps = [1100, 1000];
+  const list = [
+    { n: "budget.xlsx", k: "xlsx", d: "Yesterday at 7:02 PM", s: "30 KB" },
+    { n: "kitchen-plan.pdf", k: "pdf", d: "Oct 28, 2026 at 9:40 AM", s: "1.1 MB" },
+    { n: "Permits", k: "folder", d: "Nov 3, 2026 at 4:12 PM", s: "--" },
+    { n: "Photos", k: "folder", d: "Today at 8:15 AM", s: "--" },
+    { n: "Quote Comparison.docx", k: "docx", d: "Today at 9:44 AM", s: "18 KB" },
+    { n: "quote-barrow-tile.pdf", k: "pdf", d: "Oct 30, 2026 at 2:16 PM", s: "207 KB" },
+    { n: "quote-north-co.pdf", k: "pdf", d: "Oct 31, 2026 at 10:05 AM", s: "184 KB" },
+    { n: "quote-ridgeline.pdf", k: "pdf", d: "Nov 2, 2026 at 5:50 PM", s: "234 KB" },
+    { n: "tile-sample.png", k: "img", d: "Oct 27, 2026 at 6:33 PM", s: "2.3 MB" },
+  ];
+  const side = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Home Renovation" })) });
+  const menu = `<div class="mw-menu a-menu"${at({ in: 1, out: 2 })}>${ACTIONS.map((t) => (t == null ? '<i class="sep"></i>' : `<span class="mi"${t.startsWith("Skills") ? at({ press: 2 }) : ""}>${t.replace("&", "&amp;")}</span>`)).join("")}</div>`;
+  const info = `<div class="mw-pane info">${tabs("Info")}<div class="mw-pscroll">${pv("Home Renovation", "9 items", "--cf-2")}${automations()}</div>${infoComp({ placeholder: "Work in Home Renovation" })}</div>`;
+  const seg = (items, on) => `<span class="se-seg">${items.map((t) => `<span${t === on ? ' class="on"' : ""}>${t}</span>`).join("")}</span>`;
+  const tile = (icon, name, status, tone, setup = false) => `<div class="se-tile"><span class="ic">${glyph[icon]}</span><b>${name}</b><span class="se-st ${tone}"><i></i>${status}</span>${setup ? `<span class="se-set">Set Up${glyph.chevR}</span>` : ""}</div>`;
+  const heading = (title, sub, count) => `<div class="se-hd"><span><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span>${count ? `<i class="se-ct">${count}</i>` : ""}</div>`;
+  const item = (icon, name, kind, detail) => `<div class="se-row"><span class="ki">${glyph[icon]}</span><span class="cp"><span class="tl"><b>${name}</b><span class="se-kind">${kind}</span></span><span class="dt">${detail}</span></span><span class="chev">${glyph.chevR}</span></div>`;
+  const more = (icon, name, count) => `<div class="se-sum">${glyph.chevR}${glyph[icon]}<span>${name}</span><small>${count}</small></div>`;
+  const dialog = `<div class="mw-dim a-fade"${at({ in: 2 })}></div>
+<div class="se a-dlg"${at({ in: 2 })}><header class="se-h"><span class="se-t">Skills &amp; Extensions</span>${seg(["Installed", "Discover"], "Installed")}<span class="se-sp"></span><span class="mw-btn se-add">${glyph.plus}<span>Add Custom</span></span><span class="se-x">${glyph.x}</span></header>
+<div class="se-b"><div class="se-tools"><span class="se-search">${glyph.search}<span>Search installed tools</span></span>${seg(["All", "Skills", "Extensions"], "All")}</div>
+${heading("Included with AmpleFile")}<div class="se-grid">${tile("desktop", "Computer Control", "Ready", "ok")}${tile("globe", "Web", "Ready", "ok")}${tile("pages", "Documents", "Ready", "ok")}${tile("connect", "Service Connections", "No Connections", "warn", true)}</div>
+<div class="se-cols"><section>${heading("Everywhere", "AmpleFile Agent and all Workers", 2)}<div class="se-card">${item("skill", "Meeting Notes", "Skill", "Turns rough notes into decisions, owners, and next steps.")}${item("plug", "Calendar helper", "Extension", "1 tool · 1 command")}</div></section>
+<section>${heading("This Connected Folder only", "Home Renovation", 1)}<div class="se-card">${item("skill", "Quote Check", "Skill", "Compares contractor quotes line by line and flags what’s missing.")}</div></section></div>
+${heading("Tools and Packages", "Pi’s built-in tools and the Pi packages installed through it")}<div class="se-card">${more("code", "Built-In Tools", 7)}${more("box", "Packages", 1)}</div></div></div>`;
+  const body = `${side}${main({ title: "Home Renovation", icon: folderTitle("Home Renovation"), more: { press: 1 }, menu, lists: rows(list), path: HR_PATH, count: "9 items" })}<aside class="mw-panel">${info}</aside>`;
+  return win({ label: "Skills & Extensions for Home Renovation: Computer Control, Web, Documents, and Service Connections are included with AmpleFile, with a Skill and an Extension installed everywhere and one Skill for this Connected Folder", h, steps, start: "40,46", body, extra: dialog });
 }
 
 // ---------- Taxes 2026: Undo in History ----------
@@ -657,6 +702,63 @@ export const WINDOW_CSS_PX = `
 .mw-pill svg { width:13px; height:13px; color:#8792a3; }
 .mw-pill svg:last-child { width:11px; height:11px; color:#9aa4b2; }
 
+/* The Action menu, and Skills & Extensions over the dimmed window (styles.css, file-manager-dialogs.css) */
+.mw-anchor { position:relative; }
+.mw-menu { position:absolute; z-index:5; top:calc(100% + 4px); left:3px; box-sizing:border-box; width:228px; padding:5px; border-radius:10px; background:rgba(252,252,253,.96); box-shadow:0 12px 34px rgba(0,0,0,.22), 0 0 0 .5px rgba(0,0,0,.08); font-weight:400; transform-origin:0 0; }
+.mw-menu .mi { display:flex; align-items:center; height:24px; padding:0 10px; border-radius:5px; white-space:nowrap; }
+.mw-menu .sep { display:block; height:1px; margin:5px 8px; background:rgba(0,0,0,.08); }
+.mw .mw-menu .mi.is-press { scale:1; background:var(--fm-accent); color:var(--fm-on); }
+.mw-dim { position:absolute; z-index:5; inset:0; background:rgba(0,0,0,.18); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); }
+.se { position:absolute; z-index:5; inset:24px 100px; display:flex; flex-direction:column; border-radius:12px; overflow:hidden; background:#f5f5f7; box-shadow:0 24px 70px rgba(0,0,0,.26), 0 0 0 .5px rgba(0,0,0,.14); }
+.se svg { display:block; flex:none; }
+.se-h { box-sizing:border-box; flex:none; height:53px; display:flex; align-items:center; gap:10px; padding:0 14px 0 24px; border-bottom:.5px solid rgba(0,0,0,.08); }
+.se-t { margin-right:6px; font-size:15px; font-weight:600; white-space:nowrap; }
+.se-seg { display:inline-flex; flex:none; padding:2px; border-radius:8px; background:var(--fm-cap); }
+.se-seg span { display:inline-flex; align-items:center; height:24px; padding:0 12px; border-radius:6px; font-weight:500; white-space:nowrap; }
+.se-seg .on { background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.14); }
+.se-sp { flex:1; }
+.mw-btn.se-add { height:28px; padding:0 12px 0 9px; border-radius:6px; gap:6px; }
+.se-add svg { width:14px; height:14px; }
+.se-x { width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:var(--fm-cap); color:var(--fm-text2); }
+.se-x svg { width:12px; height:12px; }
+.se-b { flex:1; min-height:0; overflow:hidden; padding:18px 24px; }
+.se-tools { display:flex; gap:12px; }
+.se-search { box-sizing:border-box; flex:1; min-width:0; display:flex; align-items:center; gap:8px; height:28px; padding:0 10px; border:.5px solid rgba(0,0,0,.14); border-radius:7px; background:#fff; color:var(--fm-text3); white-space:nowrap; }
+.se-search svg { width:14px; height:14px; color:var(--fm-text2); }
+.se-hd { display:flex; align-items:center; margin:20px 2px 7px; }
+.se-hd > span { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.se-hd b { white-space:nowrap; }
+.se-hd small { color:var(--fm-text2); font-size:11px; white-space:nowrap; }
+.se-ct { box-sizing:border-box; flex:none; min-width:19px; height:18px; display:grid; place-items:center; padding:0 6px; border-radius:4px; background:var(--fm-cap); color:var(--fm-text2); font-size:11px; font-style:normal; font-weight:500; }
+.se-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
+.se-tile { box-sizing:border-box; height:127px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:12px; border:.5px solid var(--fm-card-line); border-radius:10px; background:#fff; }
+.se-tile .ic { width:32px; height:32px; margin-bottom:2px; display:grid; place-items:center; border-radius:8px; background:#f5f5f7; }
+.se-tile .ic svg { width:18px; height:18px; }
+.se-tile b { white-space:nowrap; }
+.se-st { display:flex; align-items:center; gap:6px; color:var(--fm-text2); font-size:12px; white-space:nowrap; }
+.se-st i { width:8px; height:8px; border-radius:50%; background:#66666c; }
+.se-st.ok i { background:var(--fm-green); }
+.se-st.warn i { background:#c26a00; }
+.se-set { display:inline-flex; align-items:center; gap:3px; color:var(--fm-accent); font-size:12px; font-weight:500; }
+.se-set svg { width:10px; height:10px; }
+.se-cols { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); align-items:start; gap:0 20px; }
+.se-card { overflow:hidden; border:.5px solid var(--fm-card-line); border-radius:10px; background:#fff; }
+.se-row { box-sizing:border-box; display:flex; align-items:flex-start; gap:10px; min-height:59px; margin-bottom:-.5px; padding:10px 12px; border-bottom:.5px solid var(--fm-card-line); }
+.se-row .ki { flex:none; width:20px; height:20px; display:grid; place-items:center; color:var(--fm-text2); }
+.se-row .ki svg { width:17px; height:17px; }
+.se-row .cp { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.se-row .tl { display:flex; align-items:center; gap:6px; }
+.se-row .tl b { white-space:nowrap; }
+.se-kind { display:inline-flex; align-items:center; height:18px; padding:0 6px; border-radius:4px; background:var(--fm-cap); color:var(--fm-text2); font-size:11px; font-weight:500; }
+.se-row .dt { overflow:hidden; color:var(--fm-text2); font-size:12px; white-space:nowrap; text-overflow:ellipsis; }
+.se-row .chev { flex:none; align-self:center; color:var(--fm-text3); }
+.se-row .chev svg { width:12px; height:12px; }
+.se-sum { box-sizing:border-box; display:flex; align-items:center; gap:8px; height:40px; margin-bottom:-.5px; padding:0 12px; border-bottom:.5px solid var(--fm-card-line); }
+.se-sum svg { width:12px; height:12px; color:var(--fm-text2); }
+.se-sum svg + svg { width:15px; height:15px; }
+.se-sum span { flex:1; }
+.se-sum small { color:var(--fm-text2); font-size:12px; font-weight:500; }
+
 /* Notices rise from the bottom center of the folder list */
 .mw-toast { position:absolute; z-index:4; bottom:40px; left:594px; translate:-50% 0; display:flex; align-items:center; gap:10px; min-height:42px; padding:10px 10px 10px 14px; border:1px solid #d8e0e8; border-left:4px solid #0b6fd6; border-radius:8px; background:rgba(255,255,255,.96); box-shadow:0 8px 16px rgba(0,0,0,.14); color:#253044; font-weight:600; white-space:nowrap; transition:opacity 220ms ease-out, transform 220ms ease-out; }
 .mw-toast.ok { border-left-color:#1f9e55; }
@@ -690,6 +792,10 @@ export const WINDOW_CSS_PX = `
 @keyframes mw-name { from { opacity:0; translate:0 7px; filter:blur(2px); } }
 @keyframes mw-flash { 0%, 60% { background-color:rgba(10,100,214,.2); } 100% { background-color:transparent; } }
 @keyframes mw-sendpress { 40% { scale:.82; } }
+@keyframes mw-menu { from { opacity:0; scale:.96; translate:0 -4px; } }
+@keyframes mw-dlg { from { opacity:0; scale:.97; translate:0 8px; } }
+.mw .a-menu { animation:mw-menu 150ms var(--es) both; }
+.mw .a-dlg { animation:mw-dlg 260ms var(--es) both; }
 .mw .a-rise { animation:mw-rise 240ms var(--es) var(--d, 0ms) both; }
 .mw .a-fade { animation:mw-fade 180ms ease-out var(--d, 0ms) both; }
 .mw .a-list { animation:mw-fade 1ms both; }
@@ -704,8 +810,8 @@ export const WINDOW_CSS_PX = `
 .mw .a-send { animation:mw-send 420ms var(--es) 40ms both; transform-origin:100% 100%; }
 .mw .nm-swap[data-in] { display:inline-block; animation:mw-name 340ms var(--es) both; }
 .mw .mw-send.is-press { scale:.84; }
-.mw-main, .mw-panel, .mw-side { transition:opacity 280ms ease-out; }
-.mw.is-cut .mw-main, .mw.is-cut .mw-panel, .mw.is-cut .mw-side { opacity:0; transition-duration:220ms; }
+.mw-main, .mw-panel, .mw-side, .se, .mw-dim { transition:opacity 280ms ease-out; }
+.mw.is-cut .mw-main, .mw.is-cut .mw-panel, .mw.is-cut .mw-side, .mw.is-cut .se, .mw.is-cut .mw-dim { opacity:0; transition-duration:220ms; }
 .mw.is-cut .mw-toast { display:none; }
 .mw.no-anim, .mw.no-anim * { animation:none !important; transition:none !important; }
 @media (prefers-reduced-motion: reduce) { .mw *, .mw-cursor { animation:none !important; transition:none !important; } .mw .shim { color:#5b6b80 !important; background:none; } }

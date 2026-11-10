@@ -24,12 +24,19 @@ const RELEASES = feedModule.resolveMacReleaseFeed(
 // Download opens the latest release, which is always published. When the page loads, a script
 // asks GitHub for that release and points every Download link straight at its DMG.
 const DL = `https://github.com/${RELEASES}/releases/latest`;
-const SRC = "https://github.com/Mat-Tom-Son/amplefile";
+const SOURCE = "Mat-Tom-Son/amplefile";
+const SRC = `https://github.com/${SOURCE}`;
 const REL = `https://github.com/${RELEASES}/releases`;
+// Linux previews are prereleases in the source repository, so no "latest" address reaches one.
+// Linux links open the list of releases; the same script points them at the newest preview's page.
+const LINUX_REL = `${SRC}/releases`;
 const PRIV = `${SRC}/blob/main/PRIVACY.md`;
+const DOCS = `${SRC}/blob/main/docs/README.md`;
+const CONTRIB = `${SRC}/blob/main/CONTRIBUTING.md`;
+const LICENSE = `${SRC}/blob/main/LICENSE`;
 const ext = 'target="_blank" rel="noopener"';
 const TITLE = "AmpleFile · A Smart File Explorer for Mac";
-const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source, for Apple silicon Macs.";
+const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source, for Apple silicon Macs, with a Linux preview.";
 
 const MARK = (cls = "mark") => `<svg class="${cls}" viewBox="60 192 904 640" aria-hidden="true"><path class="mk-b" d="M140 192H366C403 192 416 206 434 232L454 260C466 276 480 284 502 284H884C928.183 284 964 319.817 964 364V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V272C60 227.817 95.817 192 140 192Z"/><path class="mk-f" d="M140 336H884C928.183 336 964 371.817 964 416V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V416C60 371.817 95.817 336 140 336Z"/><circle class="mk-d" cx="760" cy="656" r="80"/></svg>`;
 const APPLE = `<svg class="apple" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>`;
@@ -38,7 +45,8 @@ const GITHUB = `<svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fil
 const WORDMARK = readFileSync(join(brand, "amplefile-wordmark.svg"), "utf8")
   .replace(/<\?xml[^>]*>/, "").replace(/ id="[^"]*"/g, "").replace(/ role="img" aria-label="[^"]*"/, ' aria-hidden="true" class="wm"')
   .replace(/ width="[^"]*" height="[^"]*"/, "").replace(/fill="#16202B"/g, 'fill="currentColor"').replace(/<circle fill="#1F63D6"[^>]*>/, '<circle class="wm-dot" fill="#1F63D6" cx="1031.93557" cy="38.8" r="27"/>').trim();
-const ARROW = `<svg class="dl" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8.5M4.25 7.5 8 11.25l3.75-3.75M3 13.5h10"/></svg>`;
+// A penguin drawn for this page at the Apple mark's weight: the belly, eyes, and beak are cut out of one shape.
+const LINUX = `<svg class="tux" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 1.5C14.6 1.5 16.2 3.4 16.2 6C16.2 7.7 16.8 8.9 17.8 10.3C19.5 12.7 20.8 14.7 20.8 16.6C20.8 17.5 20.4 18.1 19.8 18.5C21.2 18.9 22 19.8 22 20.8C22 21.8 21.1 22.4 19.6 22.4L15.8 22.4C14.8 22.4 14.1 21.9 14 21.1L10 21.1C9.9 21.9 9.2 22.4 8.2 22.4L4.4 22.4C2.9 22.4 2 21.8 2 20.8C2 19.8 2.8 18.9 4.2 18.5C3.6 18.1 3.2 17.5 3.2 16.6C3.2 14.7 4.5 12.7 6.2 10.3C7.2 8.9 7.8 7.7 7.8 6C7.8 3.4 9.4 1.5 12 1.5ZM12 10C13.6 10 14.6 11.6 15.3 13.4C16 15.2 16.3 17.2 15.7 18.3C15.1 19.3 13.6 19.4 12 19.4C10.4 19.4 8.9 19.3 8.3 18.3C7.7 17.2 8 15.2 8.7 13.4C9.4 11.6 10.4 10 12 10ZM9.7 5.2a.8 1.05 0 1 0 1.6 0a.8 1.05 0 1 0 -1.6 0ZM12.7 5.2a.8 1.05 0 1 0 1.6 0a.8 1.05 0 1 0 -1.6 0ZM12 6.8C13.2 6.8 14.2 7.4 14.2 7.9C14.2 8.5 13.2 9 12 9C10.8 9 9.8 8.5 9.8 7.9C9.8 7.4 10.8 6.8 12 6.8Z"/></svg>`;
 
 // ---------- CSS ----------
 
@@ -72,6 +80,9 @@ html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:cl
   .shot.p-panel { --cx:960; --cy:0; --cw:320; --ch:620; }
   .shot.p-chat { --cx:960; --cy:0; --cw:320; --ch:540; }
   .shot.p-chat, .shot.p-panel { max-width:320px; }
+  /* The dialog's near half at a readable size: its header, two included tools, and what's installed everywhere. */
+  .shot.p-tools { --cx:88; --cy:12; --cw:552; --ch:480 !important; }
+  .shot.p-tools :is(.mw-cursor, .mw-menu) { display:none !important; }
   /* The whole window, so a phone sees what the app is before the close-ups. */
   .shot.p-live, .shot.p-full { overflow:visible; border-radius:0; }
 }
@@ -80,8 +91,10 @@ html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:cl
 // ---------- Markup ----------
 
 const shot = (_name, cls, inner, extra = "") => `<div class="shot ${cls}${/\bnofx\b/.test(cls) ? "" : " fx"}"${extra}>${inner}</div>`;
-const dlBtn = (cls, label = "Download for Mac") => `<a class="${cls}" href="${DL}" ${ext}>${ARROW}<span>${label}</span></a>`;
-const PAGE = mnMarkup({ shot, dlBtn, MENUBAR_ICON, SRC, DL, REL, PRIV, ext, ARROW, GITHUB, APPLE, WORDMARK, MARK, views: VIEWS });
+// data-dl names what a link downloads, "mac" or "linux", so the script can point it at the newest build.
+const macBtn = (cls) => `<a class="${cls}" href="${DL}" ${ext} data-dl="mac">${APPLE}<span>Download for Mac</span></a>`;
+const linuxBtn = (cls) => `<a class="${cls}" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}<span>Linux Preview</span></a>`;
+const PAGE = mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WORDMARK, MARK, views: VIEWS });
 
 // ---------- Script ----------
 
@@ -250,6 +263,24 @@ const SCRIPT = `
   const mnBar = page.querySelector(".mn-mb"), mnFront = page.querySelector(".mn-front");
   const mnIcon = page.querySelector(".mn-mbi"), mnPop = page.querySelector("#mn-pop");
   const setMnPop = (open) => { mnPop.hidden = !open; mnIcon.setAttribute("aria-expanded", String(open)); };
+  // The bar's menus: one open at a time, sliding between them once one is open, with the arrow keys inside.
+  const menus = [...mnBar.querySelectorAll("[data-menu]")].map((btn) => ({ btn, menu: mnBar.querySelector("#" + btn.getAttribute("aria-controls")) }));
+  const setMenu = (m, open) => { m.menu.hidden = !open; m.btn.setAttribute("aria-expanded", String(open)); };
+  const closeMenus = (except) => menus.forEach((m) => { if (m !== except) setMenu(m, false); });
+  menus.forEach((m) => {
+    const items = () => [...m.menu.querySelectorAll('[role="menuitem"]')];
+    const open = () => { closeMenus(m); setMnPop(false); setMenu(m, true); };
+    m.btn.addEventListener("click", () => { if (m.menu.hidden) open(); else setMenu(m, false); });
+    m.btn.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse" && menus.some((o) => o !== m && !o.menu.hidden)) open(); });
+    m.btn.addEventListener("keydown", (e) => { if (e.key === "ArrowDown") { e.preventDefault(); open(); items()[0].focus(); } });
+    m.menu.addEventListener("keydown", (e) => {
+      const list = items(), i = list.indexOf(document.activeElement), to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: list.length - 1 }[e.key];
+      if (to == null) return;
+      e.preventDefault();
+      list[(to + list.length) % list.length].focus();
+    });
+    m.menu.addEventListener("click", (e) => { if (e.target.closest('[role="menuitem"]')) setMenu(m, false); });
+  });
   addHook((pr) => {
     // In when the top edge of the folder's front reaches the bar; out a little below it, so it never flickers at the line.
     const edge = mnFront.getBoundingClientRect().top - pr.top, h = mnBar.offsetHeight;
@@ -257,30 +288,42 @@ const SCRIPT = `
     mnBar.classList.toggle("is-shown", shown);
     mnBar.inert = !shown;
     if (!shown && !mnPop.hidden) setMnPop(false);
+    if (!shown) closeMenus();
   });
   const mnNote = page.querySelector(".mn-note"), mnCard = page.querySelector(".mn-card"), mnNest = page.querySelector("[data-note]");
-  // The note pops up once the stacking section comes up, then stays wherever you scroll.
-  // Back at the top it goes away (and comes back next time); clicking it, or the icon it points to, puts it away for the visit.
-  let mnNoteDone = false, mnNoteUp = false;
-  const putNoteAway = () => {
-    if (mnNoteDone) return;
-    mnNoteDone = true;
-    if (!mnNote.classList.contains("is-on") || reduce) { mnNote.classList.remove("is-on"); return; }
+  // The note pops up once the views before the stacking section have cleared the corner it sits in, and tucks away
+  // again when one scrolls back under it, so it never covers them. Clicking it, or the icon it points to, puts it away for the visit.
+  let mnNoteDone = false, mnNoteUp = false, mnNoteOut = 0;
+  const showNote = (on) => {
+    if (on === (mnNote.classList.contains("is-on") && !mnNote.classList.contains("is-gone"))) return;
+    clearTimeout(mnNoteOut);
+    if (on) { mnNote.classList.remove("is-gone"); mnNote.classList.add("is-on"); return; }
+    if (reduce) { mnNote.classList.remove("is-on"); return; }
     mnNote.classList.add("is-gone");
-    setTimeout(() => mnNote.classList.remove("is-on", "is-gone"), 260);
+    mnNoteOut = setTimeout(() => mnNote.classList.remove("is-on", "is-gone"), 260);
   };
+  const putNoteAway = () => { if (mnNoteDone) return; mnNoteDone = true; showNote(false); };
   addHook((pr) => {
     const ir = mnIcon.getBoundingClientRect(), br = mnBar.getBoundingClientRect();
     if (ir.width) mnNote.style.setProperty("--note-r", Math.max(4, br.right - (ir.left + ir.width / 2) - 10) + "px");
-    if (!mnBar.classList.contains("is-shown")) mnNoteUp = false;
-    else if (!mnNoteUp && pr.width >= 600 && mnNest.getBoundingClientRect().top < pr.top + pr.height * 0.7) mnNoteUp = true;
-    if (!mnNoteDone) mnNote.classList.toggle("is-on", mnNoteUp && mnPop.hidden);
+    // Where the view before the stacking section ends, against the bottom of the note's corner; a little slack either way keeps it from flickering at the line.
+    const clear = mnNest.getBoundingClientRect().top - parseFloat(getComputedStyle(mnNest).marginTop) - mnNote.getBoundingClientRect().bottom;
+    mnNoteUp = mnBar.classList.contains("is-shown") && pr.width >= 600 && clear < (mnNoteUp ? 48 : 8);
+    if (!mnNoteDone) showNote(mnNoteUp && mnPop.hidden);
   });
   mnCard.addEventListener("click", putNoteAway);
-  mnIcon.addEventListener("click", () => { putNoteAway(); setMnPop(mnPop.hidden); });
+  mnIcon.addEventListener("click", () => { putNoteAway(); closeMenus(); setMnPop(mnPop.hidden); });
   page.querySelectorAll("[data-top]").forEach((el) => el.addEventListener("click", (e) => { e.preventDefault(); page.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }); }));
-  page.addEventListener("keydown", (e) => { if (e.key === "Escape" && !mnPop.hidden) { setMnPop(false); mnIcon.focus(); } });
-  page.addEventListener("click", (e) => { if (!mnPop.hidden && !mnPop.contains(e.target) && !mnIcon.contains(e.target)) setMnPop(false); });
+  page.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!mnPop.hidden) { setMnPop(false); mnIcon.focus(); }
+    const m = menus.find((o) => !o.menu.hidden);
+    if (m) { setMenu(m, false); m.btn.focus(); }
+  });
+  page.addEventListener("click", (e) => {
+    if (!mnPop.hidden && !mnPop.contains(e.target) && !mnIcon.contains(e.target)) setMnPop(false);
+    if (!e.target.closest(".mn-mw")) closeMenus();
+  });
   mnBar.inert = true;
   setupScenes();
   // The page scrolls itself, so it takes focus: the keyboard scrolls it from the first key press.
@@ -289,16 +332,24 @@ const SCRIPT = `
   update();
   requestAnimationFrame(update);
 
-  // Download links go straight to the latest release's DMG; without an answer they open that release's page.
-  (async () => {
-    try {
-      const r = await fetch("https://api.github.com/repos/${RELEASES}/releases/latest", { headers: { Accept: "application/vnd.github+json" } });
-      if (!r.ok) return;
-      const asset = ((await r.json()).assets || []).find((x) => /-mac-arm64\\.dmg$/.test(x.name));
-      if (!asset) return;
-      document.querySelectorAll('a[href="${DL}"]').forEach((el) => { el.href = asset.browser_download_url; });
-    } catch {}
-  })();
+  // Downloads. On Linux the Download menu lists the Linux preview first.
+  if (root.classList.contains("os-linux")) mnBar.querySelectorAll('.mn-menu [data-dl="linux"]').forEach((el) => el.parentElement.prepend(el));
+  const ask = (url) => fetch(url, { headers: { Accept: "application/vnd.github+json" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const point = (kind, url, direct) => {
+    if (typeof url !== "string" || !url.startsWith("https://github.com/")) return;
+    // A file downloads where it was clicked; a page still opens in a new tab.
+    page.querySelectorAll('a[data-dl="' + kind + '"]').forEach((el) => { el.href = url; if (direct) el.removeAttribute("target"); });
+  };
+  // Mac links go straight to the latest release's DMG; without an answer they open that release's page.
+  ask("https://api.github.com/repos/${RELEASES}/releases/latest").then((rel) => {
+    const asset = ((rel && rel.assets) || []).find((x) => /-mac-arm64\\.dmg$/.test(x.name));
+    if (asset) point("mac", asset.browser_download_url, true);
+  });
+  // Linux links open the newest Linux preview's page, which lists its packages; without an answer they open the list of releases.
+  ask("https://api.github.com/repos/${SOURCE}/releases?per_page=30").then((list) => {
+    const rel = (Array.isArray(list) ? list : []).find((x) => x.prerelease && !x.draft && /^linux-/.test(x.tag_name));
+    if (rel) point("linux", rel.html_url, false);
+  });
 })();
 `;
 
@@ -326,7 +377,7 @@ const html = `<!doctype html>
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="AmpleFile: a smart file explorer">
 <meta name="twitter:card" content="summary_large_image">
-<script>document.documentElement.classList.add("js");</script>
+<script>document.documentElement.classList.add("js");if(/Linux|X11/.test(navigator.platform||"")&&!/Android|CrOS/.test(navigator.userAgent))document.documentElement.classList.add("os-linux");</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
