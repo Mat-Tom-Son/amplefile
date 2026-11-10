@@ -75,11 +75,20 @@ process, so the ASAR integrity fuse covers the code both windows run. The
 internal scheme serves it from the archive; nothing is copied to
 `Contents/Resources/web-local`. Packaged-asset verification requires both
 pages and every script and stylesheet they load to be in the archive, and
-fails on an unpacked renderer file or a loose copy beside the archive. What
-stays outside is not window code: icons under `Contents/Resources/assets`, the
-document worker entrypoint and native canvas bindings under
-`app.asar.unpacked`, the Computer helper, the Chrome native host, and the CLI
-shims under `Contents/bin`.
+fails on an unpacked renderer file or a loose copy beside the archive.
+
+What stays outside the archive is not window code, but some of it is code.
+`app.asar.unpacked` holds the document worker entrypoint and, because
+Electron Builder unpacks any package that contains a binary or an executable
+as a whole, these packages with all their JavaScript: `@earendil-works/pi-tui`,
+`@injaneity/pi-computer-use`, `jszip`, `esbuild` with `@esbuild/darwin-arm64`,
+`quickjs-wasi`, and the `@napi-rs/canvas` native binding. Electron reads
+unpacked files straight from disk, so the ASAR integrity fuse does not cover
+them at run time; the build-time hash checks above and the bundle's code
+signature do. The same holds for the icons under `Contents/Resources/assets`,
+the Computer helper, the Chrome native host, and the CLI shims under
+`Contents/bin`. List `app.asar.unpacked` in a built candidate to see the
+current set.
 
 Before signing or contacting Apple, the macOS packager also runs a bounded
 native-tool smoke against an isolated clone of the complete built archive.

@@ -68,6 +68,9 @@ module.exports = {
   asar: true,
   // Node worker entrypoints and native canvas bindings must be real files.
   // PDF.js, its fonts and other JS libraries remain in the verified archive.
+  // Electron Builder also unpacks, whole, every package that contains a
+  // binary or an executable (docs/macos-build.md names them); unpacked files
+  // are outside ASAR integrity and covered by the code signature only.
   asarUnpack: ["resources/included-tools/documents/worker.mjs", "node_modules/@napi-rs/**/*.node"],
   compression: "normal",
   npmRebuild: false,
