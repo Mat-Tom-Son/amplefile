@@ -136,14 +136,24 @@ The feed moves in two releases, and only on the owner's instruction:
    from that feed, and only then run the same command again, which publishes
    to the separate repository. Publishing there cannot be taken back: copies
    that take the bridge check the source repository from then on.
+
+   Nothing may be merged or pushed to `main` from the bridge's tag until its
+   second publication has finished. Every publisher run requires
+   `origin/main` to be the tagged commit, so a merge in that pause makes the
+   second run impossible and costs a new bridge version, tag, build, and
+   notarization. Before tagging, tell the owner the freeze is starting and
+   confirm no other session is about to merge; while it holds, merge
+   nothing yourself and never relax or bypass that publisher check. Say when
+   the freeze ends: after both feeds are verified to offer the bridge.
 2. Every later release, in the `source-repository` stage, published to the
    source repository alone and attached to its existing annotated tag.
 
 Treat each publication step, and publishing the bridge to the separate
 repository above all, as a separate external action that needs explicit
 authorization. Use
-`npm run desktop:verify:feed:mac` to see what an installed copy would be
-offered from a feed. If the publisher refuses for feed continuity, report its
+`npm run desktop:verify:feed:mac -- --feed <owner>/<repo> --version <version>`
+after every publication to see what an installed copy would be offered from
+each feed; the runbook lists the exact commands for 0.1.5 and 0.1.6. If the publisher refuses for feed continuity, report its
 message; do not work around it with `gh`, and do not publish to the separate
 repository in the `separate-repository` stage after a bridge. Record both
 updater proofs the runbook asks for, or say which one is still open.

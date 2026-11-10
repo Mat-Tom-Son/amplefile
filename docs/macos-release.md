@@ -340,32 +340,76 @@ A stage change is part of the release commit for the version that ships it:
    [the website guide](website.md), and `AGENTS.md` say the current stage
    is, and add the release to the [Release record](#release-record).
 
-### The bridge release
+### The bridge release: 0.1.5
 
-1. Confirm the starting state. The separate feed offers the current version,
-   and the source repository's other releases are all prereleases:
+The owner has chosen 0.1.5 as the bridge and 0.1.6 as the first release in
+the source repository. Every feed check below names its feed, because the
+feed the plain command reads changes with the stage.
+
+1. Confirm the starting state. The separate feed offers 0.1.4, the source
+   repository has no latest release (the second command is expected to fail
+   with "has no latest release"), its other releases are all prereleases,
+   and the installed 0.1.4 checks the separate feed:
 
    ```bash
-   npm run desktop:verify:feed:mac
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.4
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile
    gh release list --repo Mat-Tom-Son/amplefile
+   npm run desktop:verify:installed:mac -- --version 0.1.4 --feed Mat-Tom-Son/amplefile-mac-releases
    ```
 
-2. Change the stage to `bridge` in the bridge's release commit, then follow
-   steps 1 to 4 of the [Release procedure](#release-procedure): merge, local
-   check, signed build, tag. The strict verifier fails the build unless the
+2. Make the 0.1.5 release commit: the version, the `bridge` stage, and what
+   [Changing the stage](#changing-the-stage) lists. Merge and push it to
+   `main`, then check and build:
+
+   ```bash
+   npm run check
+   npm test
+   npm run desktop:release:mac:check
+   npm run desktop:make:mac:release
+   npm run desktop:release:mac:status
+   ```
+
+   The status must name the `bridge` stage, `Mat-Tom-Son/amplefile` as the
+   feed the packaged app checks, and both repositories as publication
+   targets. The strict verifier has already failed the build unless the
    packaged `app-update.yml` names `Mat-Tom-Son/amplefile`.
-3. Publish. In the `bridge` stage the first run publishes to the source
-   repository only and stops. Nothing installed reads that feed yet, so this
-   step changes no installed copy:
+3. **Freeze `main`, then tag.** From here until step 7 has finished, nothing
+   may be merged or pushed to `main`, by anyone or any session; say so
+   before tagging. Every publisher run requires `origin/main` to be the
+   tagged release commit, and the bridge takes two runs with a manual check
+   between them. A merge in that pause cannot be worked around: the second
+   run is refused for good, the bridge stays public in the source
+   repository only, and finishing the move needs a higher bridge version
+   with a new tag, build, and notarization. No installed copy is harmed by
+   that, since copies stay on the separate feed at their version, but 0.1.5
+   is spent.
+
+   ```bash
+   git tag -a v0.1.5 -m "amplefile 0.1.5" &&
+     git push origin refs/tags/v0.1.5:refs/tags/v0.1.5
+   ```
+
+4. Publish, first run. In the `bridge` stage it publishes to the source
+   repository only and stops, printing the checks in steps 5 and 6. Nothing
+   installed reads that feed yet, so this changes no installed copy:
 
    ```bash
    npm run desktop:release:mac:resume
-   npm run desktop:verify:feed:mac -- --version <bridge version>
    ```
 
-4. Check the built bridge against that feed before any installed copy is
-   offered it. Quit the installed AmpleFile, open the signed candidate with
-   a disposable profile, and choose **AmpleFile > Check for Updates...**:
+5. Read both feeds as an installed copy does. The source repository offers
+   0.1.5; the separate repository still offers 0.1.4:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.5
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.4
+   ```
+
+6. Check the built bridge against the source repository before any
+   installed copy is offered it. Quit the installed AmpleFile, open a copy
+   of the signed candidate with a disposable profile, and choose
+   **AmpleFile > Check for Updates...**:
 
    ```bash
    ditto out/builder/mac-arm64/AmpleFile.app /tmp/amplefile-bridge-check/AmpleFile.app
@@ -373,42 +417,88 @@ A stage change is part of the release commit for the version that ships it:
      /tmp/amplefile-bridge-check/AmpleFile.app/Contents/MacOS/AmpleFile
    ```
 
-   It must report that the bridge version is up to date. "Update check
-   failed." means the bridge cannot read the source repository: stop, and
-   see [If the bridge is bad](#if-the-bridge-is-bad). The copy keeps the
+   It must report that 0.1.5 is up to date. "Update check failed." means
+   the bridge cannot read the source repository: stop, and see
+   [If the bridge is bad](#if-the-bridge-is-bad). The copy keeps the
    checkpointed candidate untouched; the profile override does not isolate
    Keychain.
-5. Publish to the separate repository by running the same command again. It
-   finds the release already served by the source repository and publishes
-   to the separate one. This is the step that cannot be taken back: running
+7. Publish, second run: the same command. It finds 0.1.5 already served by
+   the source repository, with identical assets, and publishes to the
+   separate repository. This is the step that cannot be taken back: running
    copies check within four hours, and each one that updates checks the
    source repository from then on.
 
    ```bash
    npm run desktop:release:mac:resume
-   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version <bridge version>
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.5
    ```
 
-6. Record the first proof in [Updater evidence](#updater-evidence): an
-   installed lower version updates to the bridge through the separate feed.
-
-### The first release in the source repository
-
-1. Change the stage to `source-repository` in that version's release commit,
-   and move the download links with it.
-2. Follow the whole [Release procedure](#release-procedure). The publisher
-   refuses unless the separate repository's latest release is the bridge and
-   the source repository already serves it.
-3. Confirm both feeds. The source repository offers the new version, and the
-   separate repository still offers the bridge:
+   The freeze on `main` ends when both feed checks pass.
+8. Record the first proof in [Updater evidence](#updater-evidence). The
+   installed 0.1.4 is offered 0.1.5 and installs it; then:
 
    ```bash
-   npm run desktop:verify:feed:mac -- --version <version>
-   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version <bridge version>
+   npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile
    ```
 
-4. Record the second proof: an installed bridge updates to this version
-   through the source repository.
+   and **Check for Updates...** in the installed 0.1.5 reports it is up to
+   date.
+
+If a run stops after it has uploaded a draft, the next run refuses that
+draft. Confirm it is still a draft, delete it, and run again. In the
+separate repository a draft has no tag yet; in the source repository never
+add `--cleanup-tag`:
+
+```bash
+gh release view v0.1.5 --repo <owner>/<repo> --json isDraft
+gh release delete v0.1.5 --repo <owner>/<repo> --yes
+```
+
+### The first release in the source repository: 0.1.6
+
+1. Make the 0.1.6 release commit: the version, the `source-repository`
+   stage, and what [Changing the stage](#changing-the-stage) lists,
+   including the README download links and `npm run site:build`. Merge and
+   push it to `main`, then check and build:
+
+   ```bash
+   npm run check
+   npm test
+   npm run desktop:release:mac:check
+   npm run desktop:make:mac:release
+   npm run desktop:release:mac:status
+   ```
+
+   The status must name the `source-repository` stage and
+   `Mat-Tom-Son/amplefile` as both the packaged feed and the only
+   publication target.
+2. Tag and publish. One run publishes to the source repository, attached to
+   the annotated tag. The publisher refuses unless the separate repository's
+   latest release is the bridge and the source repository already serves it:
+
+   ```bash
+   git tag -a v0.1.6 -m "amplefile 0.1.6" &&
+     git push origin refs/tags/v0.1.6:refs/tags/v0.1.6
+   npm run desktop:release:mac:resume
+   ```
+
+3. Read both feeds. The source repository offers 0.1.6, and the separate
+   repository still offers the bridge:
+
+   ```bash
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.6
+   npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5
+   ```
+
+4. Record the second proof: the installed 0.1.5 is offered 0.1.6 from the
+   source repository and installs it.
+
+   ```bash
+   npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile
+   npm run desktop:verify:installed:mac -- --version 0.1.6 --feed Mat-Tom-Son/amplefile
+   ```
+
 5. Deploy the website ([Website](website.md#deploy)) so its Download links
    use the source repository. Until then they download the bridge, which
    updates itself.
@@ -419,8 +509,8 @@ A stage change is part of the release commit for the version that ships it:
 | --- | --- |
 | Committing a stage | Nothing, until the commit is tagged. |
 | Pushing `v<version>` | The version and its tag. A failed candidate's tag is never moved, reused, or deleted. |
-| Publishing the bridge to the source repository | A public release there. No installed copy reads that feed yet. |
-| Publishing the bridge to the separate repository | The move itself. Copies that take the bridge check the source repository from then on and cannot be sent back. |
+| Publishing the bridge to the source repository (first run) | A public release there. No installed copy reads that feed yet. `main` must not move until the second run. |
+| Publishing the bridge to the separate repository (second run) | The move itself. Copies that take the bridge check the source repository from then on and cannot be sent back. |
 | The first `source-repository` release | Nothing further; the separate repository is already closed. |
 
 After the bridge is in the separate repository, three things must stay true
@@ -439,8 +529,9 @@ for as long as any copy could still be on an older version:
 ### If the bridge is bad
 
 - **Before it reaches the separate repository** (a failed build, a failed
-  check in step 4, a failed upload), no installed copy has changed. Fix the
-  cause and publish a higher version as the bridge. A bridge already public
+  check in step 5 or 6, a failed upload, a merge to `main` during the
+  freeze), no installed copy has changed. Fix the cause and publish a
+  higher version as the bridge. A bridge already public
   in the source repository stays there; the next bridge supersedes it as
   latest. The stage can go back to `separate-repository` only while no
   bridge is public in either repository: after that the publisher refuses a
@@ -458,8 +549,8 @@ for as long as any copy could still be on an older version:
   still on an older version skip the bad bridge, and copies on the bad
   bridge take it if their updater works at all. A copy whose updater cannot
   run is repaired by installing the replacement's DMG over it, which keeps
-  its profile; no arrangement of feeds can reach it. Steps 3 and 4 of the
-  bridge release exist to catch this before step 5.
+  its profile; no arrangement of feeds can reach it. Steps 5 and 6 of the
+  bridge release exist to catch this before step 7.
 - The stage never goes back to `separate-repository` once a bridge is
   public. The publisher refuses it, because bridged copies would never see
   the release.

@@ -112,7 +112,13 @@ function assertSourceState() {
   run("git", ["fetch", "--quiet", "origin", "main"], "Could not refresh origin/main before publishing");
   const head = run("git", ["rev-parse", "HEAD"], "Could not read local HEAD");
   const remoteHead = run("git", ["rev-parse", "origin/main"], "Could not read origin/main");
-  if (head !== remoteHead) throw new Error(`Local HEAD ${head} does not match origin/main ${remoteHead}. Push the release commit first.`);
+  if (head !== remoteHead) {
+    throw new Error(
+      `Local HEAD ${head} does not match origin/main ${remoteHead}. Push the release commit first. `
+      + "If main has moved past the tagged release commit, this version can no longer be published: a release is published only from main's head, "
+      + "and finishing needs a higher version.",
+    );
+  }
   return head;
 }
 
