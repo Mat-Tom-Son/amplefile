@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Checkmark20Regular, Copy20Regular, Sparkle20Regular } from "@fluentui/react-icons";
@@ -301,7 +301,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
     return (
       <section className="turn-interruption" role="status" aria-label="Failed Worker response">
         <strong>Request Stopped</strong>
-        <span>AmpleFile saved this result with your Chat. You can try again whenever you’re ready.</span>
+        <span>AmpleFile saved this result with your Chat.{onContinue ? " Continue whenever you’re ready." : ""}</span>
         <ContinueButton onContinue={onContinue} />
       </section>
     );
@@ -355,7 +355,7 @@ export function MarkdownMessage({
           li: ({ children, className }) => <li className={className}>{linkChildren(children)}</li>,
           td: ({ children }) => <td>{linkChildren(children)}</td>,
           th: ({ children }) => <th>{linkChildren(children)}</th>,
-          table: ({ children }) => <div className="message-table-scroll"><table>{children}</table></div>,
+          table: ({ children }) => <MessageTable>{children}</MessageTable>,
           pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
           code: ({ children, className }) => {
             const text = reactNodeText(children);
@@ -405,6 +405,35 @@ export function MarkdownMessage({
       </ReactMarkdown>
     </div>
   );
+}
+
+/**
+ * A table wider than the Chat scrolls sideways. `data-more` names the side
+ * that still has columns out of view, which the styles fade.
+ */
+function MessageTable({ children }: { children: ReactNode }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState<"start" | "end" | "both" | null>(null);
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const measure = () => {
+      const start = element.scrollLeft > 1;
+      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+      setMore(start && end ? "both" : start ? "start" : end ? "end" : null);
+    };
+    measure();
+    element.addEventListener("scroll", measure, { passive: true });
+    // The panel can be resized and a streamed table grows, so both are watched.
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    return () => {
+      element.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, []);
+  return <div className="message-table-scroll" data-more={more ?? undefined} ref={scroller}><table>{children}</table></div>;
 }
 
 function MarkdownCodeBlock({ children }: { children: ReactNode }) {

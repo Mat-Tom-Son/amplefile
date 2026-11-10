@@ -4,7 +4,9 @@ import remarkGfm from "remark-gfm";
 import {
   BookOpen20Regular,
   Chat20Regular,
+  Checkmark20Regular,
   ChevronRight20Regular,
+  Copy20Regular,
   DocumentAdd20Regular,
   DocumentEdit20Regular,
   Folder20Regular,
@@ -18,6 +20,7 @@ import {
 
 import { collectConnectedFolderPathCandidates, connectedFolderPathCandidate } from "../../lib/connected-folder-path-links";
 import { safeExternalHref } from "../../lib/api";
+import { copyToClipboard } from "../../lib/clipboard";
 import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
 import type { AgentActivityPhase, RuntimePreviewEntry } from "../../types";
 import { FluentGlyph } from "../chrome/common";
@@ -63,7 +66,7 @@ export function RuntimeContextPreview({
   const settled = !running || replyStarted;
   const working = running && !replyStarted;
   const [expanded, setExpanded] = useState(false);
-  const [openThoughts, setOpenThoughts] = useState<ReadonlySet<string>>(() => new Set());
+  const [openSteps, setOpenSteps] = useState<ReadonlySet<string>>(() => new Set());
   const steps = entries.filter(isVisibleStep);
   const timerRunning = working && steps.some((entry) => entry.kind === "thinking" && isActivePhase(entry.phase) && !entry.text.trim());
   const now = useClock(timerRunning);
@@ -72,7 +75,7 @@ export function RuntimeContextPreview({
   const summary = workStepsSummary(steps);
   const rows = working && runningView === "current-step" ? steps.slice(-1) : steps;
   const open = !settled || expanded;
-  const toggleThought = (id: string) => setOpenThoughts((current) => {
+  const toggleStep = (id: string) => setOpenSteps((current) => {
     const next = new Set(current);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -96,7 +99,15 @@ export function RuntimeContextPreview({
             </div>
           ) : null}
           {rows.map((entry) => (entry.kind === "tool" ? (
-            <ToolStep entry={entry} connectedFolderRoot={connectedFolderRoot} connectedFolderLinks={connectedFolderLinks} onOpenConnectedFolderFile={onOpenConnectedFolderFile} key={entry.id} />
+            <ToolStep
+              entry={entry}
+              open={openSteps.has(entry.id)}
+              onToggle={() => toggleStep(entry.id)}
+              connectedFolderRoot={connectedFolderRoot}
+              connectedFolderLinks={connectedFolderLinks}
+              onOpenConnectedFolderFile={onOpenConnectedFolderFile}
+              key={entry.id}
+            />
           ) : entry.kind === "progress" || entry.kind === "command" ? (
             <TextStep entry={entry} rendered={renderText?.(entry.text, connectedFolderLinks)} key={entry.id} />
           ) : (
@@ -104,8 +115,8 @@ export function RuntimeContextPreview({
               entry={entry}
               live={working && isActivePhase(entry.phase)}
               now={now}
-              open={openThoughts.has(entry.id)}
-              onToggle={() => toggleThought(entry.id)}
+              open={openSteps.has(entry.id)}
+              onToggle={() => toggleStep(entry.id)}
               key={entry.id}
             />
           )))}
@@ -117,11 +128,16 @@ export function RuntimeContextPreview({
 
 function ToolStep({
   entry,
+  open,
+  onToggle,
   connectedFolderRoot,
   connectedFolderLinks,
   onOpenConnectedFolderFile,
 }: {
   entry: RuntimePreviewEntry;
+  /** A command step opens to its whole command; other tool steps have nothing more to show. */
+  open: boolean;
+  onToggle: () => void;
   connectedFolderRoot?: string;
   connectedFolderLinks: Map<string, string> | null;
   onOpenConnectedFolderFile?: (path: string) => void;
@@ -136,21 +152,32 @@ function ToolStep({
   const display = stepTarget(key, target);
   const shimmer = active ? " work-step-shimmer" : "";
   const diffLines = entry.edit?.diff.split("\n") ?? [];
+  const canOpen = command && Boolean(display);
+  const showCommand = canOpen && open;
   return (
-    <div className={`work-step tool ${entry.phase ?? "running"}${active ? " active" : ""}`}>
+    <div className={`work-step tool ${entry.phase ?? "running"}${active ? " active" : ""}${showCommand ? " open" : ""}`}>
       <FluentGlyph icon={toolIcon(key)} size={16} filled={false} className="work-step-icon" />
       <div className="work-step-body">
-        <div className="work-step-line">
-          <span className={`work-step-verb${shimmer}`}>{display ? toolVerb(key, active, toolTitle(entry)) : bareToolVerb(key, active, toolTitle(entry))}</span>
-          {display ? (resolved && onOpenConnectedFolderFile ? (
-            <button type="button" className={`work-step-target file${shimmer}`} title={resolved} onClick={() => onOpenConnectedFolderFile(resolved)}>
-              {display}
-            </button>
-          ) : (
-            <span className={`work-step-target${command ? " command" : ""}${shimmer}`} title={target}>{display}</span>
-          )) : null}
-          {failed ? <span className="work-step-status">Failed</span> : null}
-        </div>
+        {canOpen ? (
+          <button type="button" className="work-step-line work-step-toggle" aria-expanded={open} onClick={onToggle}>
+            <span className={`work-step-verb${shimmer}`}>{toolVerb(key, active, toolTitle(entry))}</span>
+            {open ? null : <span className={`work-step-target command${shimmer}`} title={target}>{display}</span>}
+            {failed ? <span className="work-step-status">Failed</span> : null}
+          </button>
+        ) : (
+          <div className="work-step-line">
+            <span className={`work-step-verb${shimmer}`}>{display ? toolVerb(key, active, toolTitle(entry)) : bareToolVerb(key, active, toolTitle(entry))}</span>
+            {display ? (resolved && onOpenConnectedFolderFile ? (
+              <button type="button" className={`work-step-target file${shimmer}`} title={resolved} onClick={() => onOpenConnectedFolderFile(resolved)}>
+                {display}
+              </button>
+            ) : (
+              <span className={`work-step-target${shimmer}`} title={target}>{display}</span>
+            )) : null}
+            {failed ? <span className="work-step-status">Failed</span> : null}
+          </div>
+        )}
+        {showCommand ? <StepCommand command={target} /> : null}
         {entry.edit && entry.toolName === "edit" && entry.phase === "complete" ? (
           <details className="work-step-edit">
             <summary>View Edit{entry.edit.firstChangedLine ? ` at Line ${entry.edit.firstChangedLine}` : ""}</summary>
@@ -161,6 +188,34 @@ function ToolStep({
           </details>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** A command step's whole command, wrapped in the code font, with its own Copy. */
+function StepCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCommand() {
+    try {
+      await copyToClipboard({ text: command });
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="work-step-command">
+      <div className="work-step-command-bar">
+        <span>Command</span>
+        <button className={copied ? "work-step-copy is-copied" : "work-step-copy"} type="button" onClick={() => void copyCommand()} aria-label={copied ? "Copied Command" : "Copy Command"} title={copied ? "Copied" : "Copy Command"}>
+          <FluentGlyph icon={copied ? Checkmark20Regular : Copy20Regular} size={13} />
+          <span>{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <pre><code>{command}</code></pre>
     </div>
   );
 }
@@ -204,7 +259,7 @@ function ThoughtStep({
         {canOpen ? (
           <button type="button" className="work-step-line work-step-toggle" aria-expanded={open} onClick={onToggle}>
             <span className="work-step-verb">Thought</span>
-            <span className="work-step-target">{thoughtPreview(text)}</span>
+            {open ? null : <span className="work-step-target">{thoughtPreview(text)}</span>}
           </button>
         ) : (
           <div className="work-step-line">
@@ -326,20 +381,26 @@ function targetFileName(target: string): string {
   return name || target;
 }
 
-const toolVerbs: Record<string, { running: string; done: string; one: string; many: string }> = {
-  read: { running: "Reading", done: "Read", one: "Read a file", many: "Read files" },
-  write: { running: "Writing", done: "Wrote", one: "Wrote a file", many: "Wrote files" },
-  edit: { running: "Editing", done: "Edited", one: "Edited a file", many: "Edited files" },
-  bash: { running: "Running", done: "Ran", one: "Ran a command", many: "Ran commands" },
-  grep: { running: "Searching", done: "Searched", one: "Searched files", many: "Searched files" },
-  search: { running: "Searching", done: "Searched", one: "Searched", many: "Searched" },
-  find: { running: "Finding", done: "Found", one: "Found files", many: "Found files" },
-  ls: { running: "Listing", done: "Listed", one: "Listed files", many: "Listed files" },
-  browser_open: { running: "Opening", done: "Opened", one: "Opened a web page", many: "Opened web pages" },
-  browser_navigate: { running: "Going to", done: "Went to", one: "Went to a web page", many: "Went to web pages" },
-  browser_read: { running: "Reading", done: "Read", one: "Read a web page", many: "Read web pages" },
-  browser_screenshot: { running: "Looking at", done: "Looked at", one: "Looked at a web page", many: "Looked at web pages" },
-  browser: { running: "Using the browser", done: "Used the browser", one: "Used the browser", many: "Used the browser" },
+/**
+ * `many` takes how many distinct things the turn's steps of that kind named.
+ * It says the number only where a step names what it touched: a file, a
+ * command, a web address. A search names a pattern and a page read names
+ * nothing, so those stay uncounted.
+ */
+const toolVerbs: Record<string, { running: string; done: string; one: string; many: (count: number) => string }> = {
+  read: { running: "Reading", done: "Read", one: "Read a file", many: (count) => `Read ${count} files` },
+  write: { running: "Writing", done: "Wrote", one: "Wrote a file", many: (count) => `Wrote ${count} files` },
+  edit: { running: "Editing", done: "Edited", one: "Edited a file", many: (count) => `Edited ${count} files` },
+  bash: { running: "Running", done: "Ran", one: "Ran a command", many: (count) => `Ran ${count} commands` },
+  grep: { running: "Searching", done: "Searched", one: "Searched files", many: () => "Searched files" },
+  search: { running: "Searching", done: "Searched", one: "Searched", many: () => "Searched" },
+  find: { running: "Finding", done: "Found", one: "Found files", many: () => "Found files" },
+  ls: { running: "Listing", done: "Listed", one: "Listed files", many: () => "Listed files" },
+  browser_open: { running: "Opening", done: "Opened", one: "Opened a web page", many: (count) => `Opened ${count} web pages` },
+  browser_navigate: { running: "Going to", done: "Went to", one: "Went to a web page", many: (count) => `Went to ${count} web pages` },
+  browser_read: { running: "Reading", done: "Read", one: "Read a web page", many: () => "Read web pages" },
+  browser_screenshot: { running: "Looking at", done: "Looked at", one: "Looked at a web page", many: () => "Looked at web pages" },
+  browser: { running: "Using the browser", done: "Used the browser", one: "Used the browser", many: () => "Used the browser" },
 };
 const commandTools = new Set(["bash"]);
 /** Built-in browser steps whose detail is a web address, shown without its scheme. */
@@ -468,7 +529,7 @@ export function workStepsSummary(entries: RuntimePreviewEntry[]): string {
   return order.map((key, index) => {
     const verbs = toolVerbs[key];
     const count = touched.get(key)?.size ?? 1;
-    const phrase = verbs ? (count > 1 ? verbs.many : verbs.one) : `Used ${titles.get(key) ?? humanizeTool(key)}`;
+    const phrase = verbs ? (count > 1 ? verbs.many(count) : verbs.one) : `Used ${titles.get(key) ?? humanizeTool(key)}`;
     return index === 0 ? phrase : `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`;
   }).join(", ");
 }

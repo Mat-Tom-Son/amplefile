@@ -22,6 +22,7 @@
   font: inherit;
   font-weight: 600;
   color: #475569;
+  text-align: left;
   cursor: default;
 }
 
@@ -32,17 +33,23 @@
 
 .work-steps-summary:focus-visible,
 .work-step-toggle:focus-visible,
+.work-step-copy:focus-visible,
 .work-step-target.file:focus-visible {
   outline: 2px solid var(--connected-folder-custom-color, #356fa3);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
+/* The whole sentence, on two lines when one is too narrow for it. */
 .work-steps-label {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .work-steps-icon,
@@ -139,10 +146,12 @@
   color: #526072;
 }
 
+/* File names, commands, and thought previews take the panel's secondary text
+   color; the fallbacks serve a surface without the file manager's tokens. */
 .work-step-target {
   min-width: 0;
   overflow: hidden;
-  color: #8792a3;
+  color: var(--fm-text2, #566173);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -152,7 +161,7 @@
   border: 0;
   background: none;
   font: inherit;
-  color: #6d8db0;
+  color: var(--fm-link, #2f6497);
   text-align: left;
   cursor: default;
 }
@@ -169,8 +178,66 @@
 
 .work-step-timer {
   flex: 0 0 auto;
-  color: #8792a3;
+  color: var(--fm-text2, #566173);
   font-variant-numeric: tabular-nums;
+}
+
+/* An opened command step: the whole command, wrapped, under a bar with Copy. */
+.work-step-command {
+  min-width: 0;
+  margin: 5px 0 3px;
+  border-radius: 6px;
+  background: var(--fm-cap, rgba(37, 48, 68, 0.06));
+}
+
+.work-step-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px 0 10px;
+  color: var(--fm-text2, #566173);
+  font-size: var(--amplefile-type-xs);
+}
+
+.work-step-copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  color: var(--fm-text2, #475569);
+  cursor: default;
+}
+
+.work-step-copy:hover {
+  background: var(--fm-cap2, rgba(37, 48, 68, 0.1));
+  color: var(--fm-text, #253044);
+}
+
+.work-step-command pre {
+  margin: 0;
+  padding: 3px 10px 8px;
+  border: 0;
+  background: none;
+  color: var(--fm-text, #253044);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--amplefile-type-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.work-step-command code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
 }
 
 .work-step-status {
@@ -351,14 +418,35 @@ from {
 
 :root[data-theme="dark"] .work-steps-icon,
 :root[data-theme="dark"] .work-step-icon,
-:root[data-theme="dark"] .work-steps-chevron,
-:root[data-theme="dark"] .work-step-target,
-:root[data-theme="dark"] .work-step-timer {
+:root[data-theme="dark"] .work-steps-chevron {
   color: #7f8b9c;
 }
 
+:root[data-theme="dark"] .work-step-target,
+:root[data-theme="dark"] .work-step-timer,
+:root[data-theme="dark"] .work-step-command-bar {
+  color: var(--fm-text2, #a3aebd);
+}
+
 :root[data-theme="dark"] .work-step-target.file {
-  color: #8fb0d6;
+  color: var(--fm-link, #8fb0d6);
+}
+
+:root[data-theme="dark"] .work-step-command {
+  background: var(--fm-cap, rgba(226, 232, 240, 0.08));
+}
+
+:root[data-theme="dark"] .work-step-copy {
+  color: var(--fm-text2, #c4cedb);
+}
+
+:root[data-theme="dark"] .work-step-copy:hover {
+  background: var(--fm-cap2, rgba(226, 232, 240, 0.14));
+  color: var(--fm-text, #e2e8f0);
+}
+
+:root[data-theme="dark"] .work-step-command pre {
+  color: var(--fm-text, #e2e8f0);
 }
 
 :root[data-theme="dark"] .work-step-thought {

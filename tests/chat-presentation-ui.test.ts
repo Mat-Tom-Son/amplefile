@@ -101,6 +101,79 @@ test("saved rows expose captured edit text safely, and Copy retains progress plu
   assert.deepEqual(copies, [input.content]);
 });
 
+test("a command step opens to its whole command with Copy, and an opened thought drops its preview", async (t) => {
+  const dom = await createDomHarness(); t.after(dom.cleanup);
+  const copies: string[] = [];
+  window.ampleFileDesktop = { clipboard: { write: async (content) => { copies.push(content.text); } } } as NonNullable<Window["ampleFileDesktop"]>;
+  const command = "python3 -c \"import openpyxl; print(sum(c.value or 0 for c in openpyxl.load_workbook('budget.xlsx').active['C'][1:]))\"";
+  await dom.render(createElement(RuntimeContextPreview, { running: true, entries: [
+    { id: "t1", kind: "thinking", text: "Checking the budget. The cabinetry line is the whole difference.", phase: "complete" },
+    { id: "b1", kind: "tool", toolName: "bash", text: "Bash finished", detail: command, phase: "complete" },
+  ] }));
+  const [thought, ran] = [...dom.container.querySelectorAll<HTMLButtonElement>(".work-step-toggle")];
+  assert.equal(thought!.textContent, "ThoughtChecking the budget.");
+  assert.equal(ran!.querySelector(".work-step-target.command")!.textContent, command, "the closed row keeps the command on its one line");
+  assert.equal(dom.container.querySelector(".work-step-command"), null);
+
+  await dom.act(() => thought!.click());
+  assert.equal(thought!.getAttribute("aria-expanded"), "true");
+  assert.equal(thought!.textContent, "Thought", "the preview does not repeat beside the open thought");
+  assert.match(dom.container.querySelector(".work-step-thought")!.textContent!, /The cabinetry line is the whole difference\./);
+
+  await dom.act(() => ran!.click());
+  assert.equal(ran!.getAttribute("aria-expanded"), "true");
+  assert.equal(ran!.textContent, "Ran");
+  assert.equal(dom.container.querySelector(".work-step-command pre")!.textContent, command);
+  const copy = dom.container.querySelector<HTMLButtonElement>('[aria-label="Copy Command"]')!;
+  await dom.act(() => copy.click());
+  assert.deepEqual(copies, [command]);
+  assert.equal(copy.getAttribute("aria-label"), "Copied Command");
+  assert.equal(copy.textContent, "Copied");
+
+  await dom.act(() => ran!.click());
+  assert.equal(dom.container.querySelector(".work-step-command"), null);
+  assert.equal(ran!.querySelector(".work-step-target.command")!.textContent, command);
+});
+
+test("a person's own message has the footer a reply has, and a failed reply's notice names its button", () => {
+  const row = (message: ChatMessage, onContinue?: () => void) => renderToStaticMarkup(createElement(ChatMessageRow, { message, copied: false, showLanding: false,
+    suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [], connectedFolderId: "folder", connectedFolderRoot: "/folder",
+    onCopyMessage: () => undefined, onContinue }));
+  const own = row({ id: "u", role: "user", createdAt: "2026-10-11T12:00:00Z", content: "Compare the quotes." });
+  assert.match(own, /<footer class="message-footer">[\s\S]*?aria-label="Copy Message"[\s\S]*?<time class="message-time" dateTime="2026-10-11T12:00:00Z"/);
+
+  const failed: ChatMessage = { id: "a", role: "assistant", createdAt: "2026-10-11T12:00:00Z", content: "Partial.",
+    interruption: { reason: "assistant_error", message: "Failed.", retryAttempts: 0, provider: null, model: null, activities: [] } };
+  const last = row(failed, () => undefined);
+  assert.match(last, /Continue whenever you’re ready\.<\/span><button[^>]*>Continue<\/button>/);
+  assert.doesNotMatch(last, /try again/i);
+  const earlier = row(failed);
+  assert.match(earlier, /AmpleFile saved this result with your Chat\.<\/span>/);
+  assert.doesNotMatch(earlier, /Continue/, "without the button the notice does not point at one");
+});
+
+test("a table sits in its sideways scroller, which marks a side only while columns are out of view", async (t) => {
+  const dom = await createDomHarness(); t.after(dom.cleanup);
+  await dom.render(createElement(MarkdownMessage, { content: "| Option | Best for |\n| --- | --- |\n| Fixed-price quote | Cost certainty |" }));
+  const scroller = dom.container.querySelector<HTMLElement>(".message-table-scroll")!;
+  assert.equal(scroller.firstElementChild?.tagName, "TABLE");
+  assert.equal(scroller.hasAttribute("data-more"), false, "a table that fits has no faded edge");
+
+  // jsdom lays nothing out, so the scroller's measurements are supplied.
+  const measure = (scrollLeft: number) => {
+    for (const [key, value] of Object.entries({ scrollLeft, clientWidth: 250, scrollWidth: 426 })) Object.defineProperty(scroller, key, { value, configurable: true });
+  };
+  measure(0);
+  await dom.act(() => { scroller.dispatchEvent(new window.Event("scroll")); });
+  assert.equal(scroller.getAttribute("data-more"), "end");
+  measure(60);
+  await dom.act(() => { scroller.dispatchEvent(new window.Event("scroll")); });
+  assert.equal(scroller.getAttribute("data-more"), "both");
+  measure(176);
+  await dom.act(() => { scroller.dispatchEvent(new window.Event("scroll")); });
+  assert.equal(scroller.getAttribute("data-more"), "start");
+});
+
 test("a request a removed app made in an older Chat renders as an ordinary message", () => {
   const row = (message: ChatMessage) => renderToStaticMarkup(createElement(ChatMessageRow, { message, copied: false, showLanding: false,
     suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [], connectedFolderId: "folder", connectedFolderRoot: "/folder",

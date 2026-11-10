@@ -22,6 +22,7 @@ const [app, fileManager, chatPanel, messages, workTrail, activity, panes, settin
   read("src/local/agent/pi-client.ts"),
   read("web-local/src/components/chrome/ActivityDot.tsx"),
 ]);
+const [panelStyles, popoverStyles] = await Promise.all([read("web-local/src/components/file-manager/file-manager.css"), read("web-local/src/popover/popover.css")]);
 
 test("mid-turn Enter steers the running turn; ⌘Enter queues one visible, cancellable draft the app sends on settle", () => {
   // Plain Enter while a turn runs delivers the text through Pi's steering
@@ -273,6 +274,41 @@ test("reasoning and real tool calls form one chronological steps strip", () => {
   assert.match(styles, /\.work-step-thought pre \{[^}]*white-space: pre-wrap;/);
   assert.match(styles, /\.work-steps\.settled:not\(\.open\) \.work-steps-rows \{[^}]*grid-template-rows: 0fr;/);
   assert.doesNotMatch(styles, /\.runtime-preview|\.runtime-tool-|\.runtime-thinking|\.typing-line/);
+});
+
+test("step rows read at the panel's text contrast, the summary shows its whole sentence, and a command opens wrapped", () => {
+  // File names, commands, thought previews, and the timer take the panel's
+  // text tokens (4.5:1 or better on the panel), with a fallback for a surface
+  // that has no file-manager tokens.
+  assert.match(styles, /\.work-step-target \{[^}]*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  assert.match(styles, /\.work-step-target\.file \{[^}]*color: var\(--fm-link, #[0-9a-f]{6}\);/);
+  assert.match(styles, /\.work-step-timer \{[^}]*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  assert.match(styles, /:root\[data-theme="dark"\] \.work-step-target,\s*:root\[data-theme="dark"\] \.work-step-timer,[^{]*\{\s*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  assert.doesNotMatch(styles, /\.work-step-(?:target|timer)[^{]*\{[^}]*color: #/);
+  assert.match(styles, /\.work-steps-label \{[^}]*-webkit-line-clamp: 2;/);
+  assert.doesNotMatch(styles, /\.work-steps-label \{[^}]*white-space: nowrap/);
+  for (const sheet of [panelStyles, popoverStyles]) {
+    assert.doesNotMatch(sheet, /\.work-steps-label \{[^}]*white-space: nowrap/, "no surface cuts the summary to one line");
+    assert.match(sheet, /\.work-steps-summary \{[^}]*min-height: 24px;/);
+    assert.doesNotMatch(sheet, /\.work-steps-summary \{[^}]*[^-]height: 24px;/);
+  }
+  assert.match(styles, /\.work-step-command pre \{[^}]*white-space: pre-wrap;[^}]*overflow-wrap: anywhere;/);
+  assert.match(activity, /aria-expanded=\{open\} onClick=\{onToggle\}>\s*<span className=\{`work-step-verb\$\{shimmer\}`\}>/);
+});
+
+test("the panel lays a task's words out as inline text, shows a message's time with Copy, and keeps the toolbar off the panel", () => {
+  const rule = (selector: string) => panelStyles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{[^}]*\\}`))?.[0] ?? "";
+  const panel = ":root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel";
+  // A flex task item turns a file link into its own flex item and drops it to a new line.
+  assert.match(rule(`${panel} .message-body .task-list-item`), /position: relative;\s*padding-left: 22px;/);
+  assert.doesNotMatch(rule(`${panel} .message-body .task-list-item`), /display: flex/);
+  assert.match(rule(`${panel} .message-body .task-list-item input[type="checkbox"]`), /position: absolute;/);
+  assert.doesNotMatch(rule(`${panel} .message-time`), /display: none/);
+  assert.doesNotMatch(rule(`${panel} .message.user .message-footer`), /display: none/);
+  assert.match(styles, /\.message-table-scroll\[data-more="end"\] \{[^}]*mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent\);/);
+  assert.match(styles, /\.message-table-scroll\[data-more="both"\] \{/);
+  // Below 620px of list the search narrows first, then the folder's name.
+  assert.match(panelStyles, /@container fm-main \(max-width: 620px\) \{[\s\S]*?\.fm-search \{\s*flex: 1 1000 236px;\s*\}\s*\.fm-title \{\s*flex-shrink: 1;\s*\}/);
 });
 
 test("manual restore points distinguish a new snapshot from already-covered files", () => {
