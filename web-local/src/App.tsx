@@ -59,7 +59,12 @@ export function App() {
       return next;
     });
   }, []);
-  const offerSetUp = useCallback((connectedFolderId: string) => changeSetUpOffers((current) => [...current.filter((id) => id !== connectedFolderId), connectedFolderId]), [changeSetUpOffers]);
+  // Offers made since AmpleFile was opened, so the window brings their card into view; not kept between launches.
+  const [newSetUpOffers, setNewSetUpOffers] = useState<string[]>([]);
+  const offerSetUp = useCallback((connectedFolderId: string) => {
+    changeSetUpOffers((current) => [...current.filter((id) => id !== connectedFolderId), connectedFolderId]);
+    setNewSetUpOffers((current) => current.includes(connectedFolderId) ? current : [...current, connectedFolderId]);
+  }, [changeSetUpOffers]);
   const closeSetUpOffer = useCallback((connectedFolderId: string) => changeSetUpOffers((current) => current.filter((id) => id !== connectedFolderId)), [changeSetUpOffers]);
   // `&setUp=offer` previews the card on the sample Connected Folder shown first.
   const [fixtureSetUpOffer, setFixtureSetUpOffer] = useState(() => fixtureRequested && new URLSearchParams(window.location.search).get("setUp") === "offer");
@@ -299,7 +304,7 @@ export function App() {
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}
-    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} setUpOffers={fixture ? (fixtureSetUpOffer ? [fixture.activeConnectedFolderId] : []) : setUpOffers} onOfferSetUp={offerSetUp} onCloseSetUpOffer={fixture ? () => setFixtureSetUpOffer(false) : closeSetUpOffer} onError={setError} /></ConnectedFolderAppearanceProvider>
+    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} setUpOffers={fixture ? (fixtureSetUpOffer ? [fixture.activeConnectedFolderId] : []) : setUpOffers} newSetUpOffers={newSetUpOffers} onOfferSetUp={offerSetUp} onCloseSetUpOffer={fixture ? () => setFixtureSetUpOffer(false) : closeSetUpOffer} onError={setError} /></ConnectedFolderAppearanceProvider>
     : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
     {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}

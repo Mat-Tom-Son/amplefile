@@ -287,6 +287,22 @@
   height: 10px;
 }
 
+/* A tab too narrow for both shows its icon, not its close button over the icon; the tab in front always has room. */
+.fm-browser-tab {
+  container-type: inline-size;
+  container-name: fm-browser-tab;
+}
+
+@container fm-browser-tab (max-width: 72px) {
+  .fm-browser-tab-close {
+    display: none;
+  }
+
+  .fm-browser-tab-main {
+    padding-right: 9px;
+  }
+}
+
 .fm-browser-spinner {
   width: 11px;
   height: 11px;

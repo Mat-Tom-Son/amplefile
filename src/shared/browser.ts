@@ -152,7 +152,12 @@ export interface BrowserFindResult {
   final: boolean;
 }
 
-/** A browser key the renderer handles while the page has keyboard focus. */
+/**
+ * A browser key the renderer handles while the page has keyboard focus. `key`
+ * is `KeyboardReturned`, with nothing pressed, when a page that had the
+ * keyboard was taken out of the window: the window then puts the keyboard
+ * somewhere that takes no typing.
+ */
 export interface BrowserShortcut {
   pageId: string;
   key: string;
@@ -237,7 +242,7 @@ export interface BrowserToolHost {
   evaluate(input: BrowserCaller & { tab: string; script: string; signal?: AbortSignal }): Promise<{ tab: BrowserTabSummary; result: string }>;
   wait(input: BrowserCaller & { tab: string; text?: string; seconds: number; signal?: AbortSignal }): Promise<{ tab: BrowserTabSummary; found: boolean | null }>;
   console(input: BrowserCaller & { tab: string }): Promise<{ tab: BrowserTabSummary; entries: string[] }>;
-  close(input: BrowserCaller & { tab: string }): Promise<void>;
+  close(input: BrowserCaller & { tab: string }): Promise<{ leftUnconfirmed?: boolean }>;
 }
 
 const pageIdPattern = /^[a-z0-9]{6,32}$/;

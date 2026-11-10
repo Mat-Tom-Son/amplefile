@@ -122,7 +122,7 @@ interface PlaceFileBridge {
  * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -144,6 +144,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   onOpenFolder: () => void;
   /** Connected Folders just connected whose Set Up for Me card is still showing. */
   setUpOffers?: readonly string[];
+  /** Those of them connected since AmpleFile was opened: their card is brought into view, even when this window is only now appearing. */
+  newSetUpOffers?: readonly string[];
   /** A folder was connected from this window: offer to set it up. */
   onOfferSetUp?: (connectedFolderId: string) => void;
   /** The card was answered, either way: it does not come back. */
@@ -230,15 +232,18 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   useEffect(() => { panelSeenOpenRef.current = panelOpen; }, [panelOpen]);
   const setPanelOpen = (next: boolean) => { setPanelOpenState(next); writeStoredJsonValue(panelStorageKey, next); };
   // A folder connected while the window is open brings its Set Up for Me card into view: the panel opens on Info.
-  const seenSetUpOffersRef = useRef(new Set(setUpOffers));
+  // An offer left from an earlier day waits quietly where it is. One made just now is shown, including the first
+  // folder connected from the welcome, when this window appears with the offer already made.
+  const seenSetUpOffersRef = useRef(new Set(setUpOffers.filter((id) => !newSetUpOffers.includes(id))));
   const [infoRequest, setInfoRequest] = useState(0);
   useEffect(() => {
-    const fresh = setUpOffers.filter((id) => !seenSetUpOffersRef.current.has(id));
-    if (!fresh.length) return;
-    for (const id of fresh) seenSetUpOffersRef.current.add(id);
+    // The card is at the top of the Connected Folder it is for, so it is brought into view when that one is shown.
+    const shown = connectedFolder?.id;
+    if (!shown || !setUpOffers.includes(shown) || seenSetUpOffersRef.current.has(shown)) return;
+    seenSetUpOffersRef.current.add(shown);
     setPanelOpen(true);
     setInfoRequest((value) => value + 1);
-  }, [setUpOffers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setUpOffers, connectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder.id, fixtureMode);
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<FileManagerSearchScope>("here");
@@ -338,8 +343,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (!browser.ready || browserRestoredRef.current) return;
     browserRestoredRef.current = true;
     const stored = readStoredJsonValue(browserPaneStorageKey, readStoredBrowserPane, null);
-    if (!stored || !browser.tabs.length) return;
-    if (stored.activePageId && browser.tabs.some((tab) => tab.pageId === stored.activePageId)) browser.select(stored.activePageId);
+    // Pages do not outlive a quit, so the tab that was in front still being here is what says this is the same
+    // launch. A size saved in an earlier launch is not applied: a page the person never opened arrives as the strip.
+    if (!stored?.activePageId || !browser.tabs.some((tab) => tab.pageId === stored.activePageId)) return;
+    browser.select(stored.activePageId);
     setBrowserLayout(stored.layout);
   }, [browser.ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -348,16 +355,34 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }, [browserLayout, browser.activeId, browser.tabs.length]);
   // A page asked to be confirmed before it is left (a form half filled in), and the person started the leaving:
   // the window asks, and tells the desktop the answer. Nothing leaves until they say.
-  const browserLeaveAskedRef = useRef(new Set<string>());
+  const browserLeaveAskedRef = useRef(new Map<string, AbortController | null>());
   useEffect(() => {
+    const asked = browserLeaveAskedRef.current;
+    const standing = new Set<string>();
     for (const page of Object.values(browser.pages)) {
       const question = page.leaveQuestion;
-      if (!question || browserLeaveAskedRef.current.has(question.requestId)) continue;
-      browserLeaveAskedRef.current.add(question.requestId);
+      if (!question) continue;
+      standing.add(question.requestId);
+      if (asked.has(question.requestId)) continue;
+      const withdraw = new AbortController();
+      asked.set(question.requestId, withdraw);
       const site = browserHost(page.url);
-      void requestConfirm({ title: "Leave This Page?", body: `Changes you made${site ? ` on ${site}` : ""} may not be saved.`, confirmLabel: "Leave" })
-        .then((leave) => browser.bridge?.command(page.pageId, { type: leave ? "leave-page" : "stay-on-page" }))
+      // The keyboard starts on Cancel: the Return that asked for the address must not also answer Leave.
+      void requestConfirm({ title: "Leave This Page?", body: `Changes you made${site ? ` on ${site}` : ""} may not be saved.`, confirmLabel: "Leave", tone: "danger", signal: withdraw.signal })
+        .then((leave) => {
+          // Withdrawn: the page has already gone, or stayed, without the person. There is nothing left to answer.
+          if (withdraw.signal.aborted) return;
+          asked.set(question.requestId, null);
+          return browser.bridge?.command(page.pageId, { type: leave ? "leave-page" : "stay-on-page" });
+        })
         .catch((caught) => onError(errorText(caught)));
+    }
+    // The question went away on the desktop (a Worker moved the page on, it redirected itself, its tab closed):
+    // the dialog goes with it.
+    for (const [requestId, withdraw] of asked) {
+      if (standing.has(requestId)) continue;
+      withdraw?.abort();
+      asked.delete(requestId);
     }
   }, [browser.pages]); // eslint-disable-line react-hooks/exhaustive-deps
   function toggleBrowser() {

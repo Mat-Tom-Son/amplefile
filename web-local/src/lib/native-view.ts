@@ -26,9 +26,11 @@ function pixels(value: string): number {
 /**
  * What the window draws over other content: every dialog and sheet with the
  * backdrop behind it (a dimmed backdrop must dim the page too, and a click on
- * it must close the dialog, not land in the page), the in-window menus,
- * notices, and anything that names itself with `data-native-view-occluder`
- * (the address bar's suggestions, a site's menu).
+ * it must close the dialog, not land in the page), the in-window menus, and
+ * anything that names itself with `data-native-view-occluder` (the address
+ * bar's suggestions, a site's menu). Notices are not here: they rise from
+ * the bottom of the window, and the page gives them its bottom edge instead
+ * (`nativeViewNoticeTop`).
  */
 const occluderSelector = [
   "[data-native-view-occluder='true']",
@@ -38,7 +40,6 @@ const occluderSelector = [
   ".fm-goto-back",
   ".fm-menu-back",
   ".context-menu",
-  ".toast",
   ".fm-goto",
   "[role='menu']",
   "[role='dialog']",
@@ -56,4 +57,21 @@ export function nativeViewOccluded(element: HTMLElement, box: DOMRect = element.
     if (other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom) return true;
   }
   return false;
+}
+
+/**
+ * Where the window's notices begin, when they stand over the placeholder: the
+ * top of the highest one, less a margin. The page is drawn only down to
+ * there, so a notice is never under the page and never hides it whole. Null
+ * when no notice crosses the placeholder.
+ */
+export function nativeViewNoticeTop(element: HTMLElement, box: DOMRect = element.getBoundingClientRect()): number | null {
+  let top: number | null = null;
+  for (const notice of element.ownerDocument.querySelectorAll<HTMLElement>(".toast")) {
+    const other = notice.getBoundingClientRect();
+    if (other.width <= 0 || other.height <= 0) continue;
+    if (!(other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom)) continue;
+    top = Math.min(top ?? Number.POSITIVE_INFINITY, other.top - 8);
+  }
+  return top;
 }

@@ -21,8 +21,13 @@ const answer = (path: string) => {
   return undefined;
 };
 
-async function mountWindow(t: Parameters<typeof createFileManagerHarness>[0], extra: Record<string, unknown> = {}, desktop?: unknown) {
+async function mountWindow(t: Parameters<typeof createFileManagerHarness>[0], extra: Record<string, unknown> = {}, desktop?: unknown, storage?: Record<string, string>) {
   const harness = await createFileManagerHarness(t, answer);
+  if (storage) {
+    // What the window remembers between launches: here, that the panel was hidden or left on History.
+    const kept = new Map(Object.entries(storage));
+    Object.defineProperty(window, "localStorage", { configurable: true, value: { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value); }, removeItem: (key: string) => { kept.delete(key); } } });
+  }
   if (desktop) {
     const scope = window as unknown as { ampleFileDesktop?: unknown };
     scope.ampleFileDesktop = desktop;
@@ -136,4 +141,20 @@ test("No Thanks closes the offer, and a folder connected while the window is ope
   await view.render({ setUpOffers: [], onCloseSetUpOffer });
   assert.equal(view.container.querySelector(".fm-setup-offer"), null);
   assert.equal(view.container.querySelector(".fm-panel.is-chat"), null, "declining sends nothing to the Worker");
+});
+
+test("the first folder connected from the welcome shows its card even when the panel was hidden or left on History", async (t) => {
+  // The window appears with the offer already made, moments after the folder was connected.
+  const hidden = await mountWindow(t, { setUpOffers: ["lab"], newSetUpOffers: ["lab"] }, undefined, { "amplefile.file-manager.panel.v1": "false", "amplefile.file-manager.panel-tab.v1": '"history"' });
+  await hidden.dom.waitFor(() => Boolean(hidden.container.querySelector("aside.fm-panel .fm-setup-offer")));
+  assert.equal(hidden.container.querySelector('aside.fm-panel [role="tab"][aria-selected="true"]')?.textContent, "Info");
+});
+
+test("an offer left from an earlier day waits where it is: the panel stays as the person left it", async (t) => {
+  const view = await mountWindow(t, { setUpOffers: ["lab"], newSetUpOffers: [] }, undefined, { "amplefile.file-manager.panel.v1": "false" });
+  await view.dom.settle();
+  assert.equal(view.container.querySelector("aside.fm-panel"), null);
+  // Shown again, the card is there.
+  await view.dom.act(() => view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!.click());
+  assert.ok(view.container.querySelector("aside.fm-panel .fm-setup-offer"));
 });

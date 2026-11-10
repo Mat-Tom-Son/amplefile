@@ -7,6 +7,22 @@ import { showToast } from "../ui/feedback";
 
 export type BrowserBridge = NonNullable<NonNullable<Window["ampleFileDesktop"]>["browser"]>;
 
+/**
+ * The keyboard is coming back to the window from a page. The window would
+ * give it to whatever last had it, and if that is a field the person typed
+ * in earlier (a Chat's message box), what they type next, meant for the
+ * site, would land there. So a field outside a dialog gives the keyboard up
+ * before it arrives: the tab in front takes it, and with no tab, nothing does.
+ */
+export function keepKeyboardOutOfFields(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || active.closest('[role="dialog"]')) return;
+  if (!(active.isContentEditable || active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return;
+  const front = document.querySelector<HTMLElement>('.fm-browser-tab [role="tab"][tabindex="0"]');
+  if (front) front.focus();
+  else active.blur();
+}
+
 export interface BrowserPages {
   /** False where there is no browser: a development API without the desktop app. */
   available: boolean;
@@ -53,6 +69,8 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
       if (command.show) onShowRef.current();
     });
     const offClose = bridge.onCloseTab(({ pageId }) => dispatch({ type: "host-close", pageId }));
+    // A page that had the keyboard was taken out of the window, and the window is about to be given the keyboard.
+    const offKeyboard = bridge.onShortcut((shortcut) => { if (shortcut.key === "KeyboardReturned") keepKeyboardOutOfFields(); });
     const offDownload = bridge.onDownload((download) => {
       if (download.state === "completed") {
         showToast({
@@ -69,7 +87,7 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
     });
     // Pages outlive a window reload, and a Worker may have opened some before the window existed.
     void bridge.states().then((pages) => { for (const page of pages) dispatch({ type: "page-state", state: page }); }).catch(() => undefined).then(() => setReady(true));
-    return () => { offState(); offOpen(); offClose(); offDownload(); };
+    return () => { offState(); offOpen(); offClose(); offKeyboard(); offDownload(); };
   }, [bridge]);
 
   // Workers list the same tabs, in the same order, and learn which one the person has in front.

@@ -73,7 +73,7 @@ test("closing a tab shows its neighbour, remembers it for Reopen Closed Tab, and
   assert.deepEqual(ids(state), ["aaaaaa", "cccccc"]);
   assert.equal(state.activeId, "cccccc", "the tab to its right");
   assert.equal(state.pages.bbbbbb, undefined);
-  assert.deepEqual(state.closed, [{ url: "https://bbbbbb.example.com/", title: "bbbbbb" }]);
+  assert.deepEqual(state.closed, [{ url: "https://bbbbbb.example.com/", title: "bbbbbb", pageId: "bbbbbb" }]);
 
   // The host sent this before it heard the tab was closed.
   state = run([{ type: "page-state", state: page("bbbbbb") }], state);
@@ -168,4 +168,18 @@ test("a download is named as it was saved", () => {
   assert.equal(savedFileName("/Users/me/Downloads/same (1).bin", "same.bin"), "same (1).bin");
   assert.equal(savedFileName("C:\\Users\\me\\Downloads\\report (2).txt", "report.txt"), "report (2).txt");
   assert.equal(savedFileName("", "same.bin"), "same.bin");
+});
+
+test("a closed tab the desktop offers back never closed, so Reopen Closed Tab does not offer it", () => {
+  let state = run([{ type: "page-state", state: page("aaaaaa") }, { type: "page-state", state: page("bbbbbb") }]);
+  state = run([{ type: "close", pageId: "bbbbbb" }], state);
+  assert.equal(state.closed.length, 1);
+  // Its page asked to be confirmed, the person stayed, and the desktop put the tab back.
+  state = run([{ type: "host-open", command: { pageId: "bbbbbb", url: "https://bbbbbb.example.com/", title: "bbbbbb", show: true } }], state);
+  assert.deepEqual(ids(state), ["aaaaaa", "bbbbbb"]);
+  assert.deepEqual(state.closed, []);
+  assert.equal(run([{ type: "reopen", pageId: "cccccc" }], state), state, "nothing to reopen");
+  // A tab closed for good is still offered.
+  state = run([{ type: "close", pageId: "aaaaaa" }], state);
+  assert.deepEqual(state.closed.map((entry) => entry.url), ["https://aaaaaa.example.com/"]);
 });

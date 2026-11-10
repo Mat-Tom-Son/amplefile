@@ -36,10 +36,10 @@ import {
   type BrowserPermissionRequest,
   type BrowserViewRequest,
 } from "../../../../src/shared/browser";
-import type { BrowserPages } from "../../hooks/useBrowserPages";
+import { keepKeyboardOutOfFields, type BrowserPages } from "../../hooks/useBrowserPages";
 import { browserAddressToOpen, browserErrorText, browserHost, browserLoadErrorText, browserQuestionGuardMs, browserSplitLimits, browserTabTitle, clampBrowserFraction, type BrowserPaneLayout, type BrowserTab } from "../../lib/browser-pages";
 import { requestConfirm } from "../../ui/feedback";
-import { nativeViewBounds, nativeViewOccluded } from "../../lib/native-view";
+import { nativeViewBounds, nativeViewNoticeTop, nativeViewOccluded } from "../../lib/native-view";
 import { isMacOS } from "../../lib/platform";
 import { createTabChromeMotion, settleTabStrip } from "../../lib/tab-chrome-motion";
 
@@ -92,6 +92,9 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
   /** A tab chosen with a key pressed in a page: the page that comes forward takes the keyboard, as the one that had it did. */
   const focusNextPageRef = useRef(false);
   useEffect(() => { if (collapsed) onViewing(null); }, [collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Only a page can take the keyboard: a new tab with no page, or the folded strip, leaves the request unanswered,
+  // and it must not wait for whichever page shows next.
+  useEffect(() => { if (collapsed || !active || !(pages[active.pageId] || active.url)) focusNextPageRef.current = false; }, [collapsed, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onViewing(null), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The frame behind the tab in front slides to the tab you choose.
@@ -133,10 +136,12 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
     const pane = paneRef.current;
     if (!pane) return;
     const root = document.documentElement.style;
-    // Above the pane's top edge in every size: over the folder's list beside the folder, and over the toolbar with
-    // the folder folded away, never over the address row or a site's question.
+    // Beside the folder, or folded to its strip, notices sit above the pane's top edge, over the folder's list.
+    // With the folder folded away there is nothing above the page but the window's own controls, so notices keep
+    // their place at the foot of the window and the page gives them its last rows (nativeViewNoticeTop).
     const place = () => {
-      root.setProperty("--fm-notice-bottom", `${Math.max(40, Math.round(window.innerHeight - pane.getBoundingClientRect().top + 10))}px`);
+      if (layout === "full") root.removeProperty("--fm-notice-bottom");
+      else root.setProperty("--fm-notice-bottom", `${Math.max(40, Math.round(window.innerHeight - pane.getBoundingClientRect().top + 10))}px`);
     };
     place();
     const observer = typeof window.ResizeObserver === "function" ? new window.ResizeObserver(place) : null;
@@ -152,6 +157,10 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
   // The page had the keyboard, so the browser's own keys arrive from the host, which hands the keyboard back to the window.
   const keysRef = useRef<(shortcut: { pageId: string; key: string; shiftKey: boolean; ctrlKey: boolean }) => void>(() => undefined);
   keysRef.current = (shortcut) => {
+    // The keyboard is coming back to the window. Before it arrives, a field the person was typing in earlier gives
+    // it up, so nothing meant for the site lands there; the key's own target, below, then takes it.
+    keepKeyboardOutOfFields();
+    if (shortcut.key === "KeyboardReturned") return;
     const key = shortcut.key.toLowerCase();
     // Close Tab closes the tab the key was pressed in, and the tab that comes forward takes the keyboard, so the
     // next ⌘W closes that one.
@@ -400,8 +409,10 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
     const mutationObserver = typeof window.MutationObserver === "function" ? new window.MutationObserver(schedule) : null;
     resizeObserver?.observe(element);
     mutationObserver?.observe(document.body, { attributes: true, childList: true, subtree: true });
+    // A hidden or minimized window stops drawing frames, so the next frame cannot be what says nobody is looking.
+    const visibility = () => { if (document.visibilityState !== "visible") onShownRef.current(false); schedule(); };
     window.addEventListener("resize", schedule);
-    document.addEventListener("visibilitychange", schedule);
+    document.addEventListener("visibilitychange", visibility);
     void bridge.mount(request()).then(() => {
       if (disposed) return;
       mounted = true;
@@ -418,7 +429,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
       window.removeEventListener("resize", schedule);
-      document.removeEventListener("visibilitychange", schedule);
+      document.removeEventListener("visibilitychange", visibility);
       void bridge.unmount(tab.pageId).catch(() => undefined);
     };
   }, [bridge, hasPage, tab.pageId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -781,18 +792,24 @@ function SiteQuestion({ request, onAnswer }: { request: BrowserPermissionRequest
   </div>;
 }
 
+/** Less of a page than this is not worth drawing: it steps aside instead. */
+const minimumPageHeight = 48;
+
 function browserViewRequest(element: HTMLElement, sequence: number, latest: { pageId: string; url: string; blocked: boolean }): BrowserViewRequest {
   const box = element.getBoundingClientRect();
   const bounds = nativeViewBounds(element, box);
   const active = !element.closest("[hidden], [inert]") && document.visibilityState === "visible";
+  // Notices standing over the page take its last rows; the page is drawn down to where they begin.
+  const noticeTop = nativeViewNoticeTop(element, box);
+  if (noticeTop !== null) bounds.height = Math.max(0, Math.min(bounds.height, noticeTop - bounds.y));
   return {
     pageId: latest.pageId,
     url: latest.url,
     sequence,
     bounds,
     active,
-    // An error or a stopped page shows its message here instead of the page.
-    occluded: !active || latest.blocked || bounds.width < 1 || bounds.height < 1 || nativeViewOccluded(element, box),
+    // An error or a stopped page shows its message here instead of the page; so does a page with no room left.
+    occluded: !active || latest.blocked || bounds.width < 1 || bounds.height < minimumPageHeight || nativeViewOccluded(element, box),
   };
 }
 

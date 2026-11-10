@@ -514,9 +514,12 @@ export function createBrowserTools(input: BrowserToolsInput): ToolDefinition<any
       const value = params as { tab?: unknown };
       const tabId = optionalString(value.tab, "tab");
       if (!tabId) throw new Error("browser_close needs a tab id.");
-      await host.close({ tab: tabId, ...by });
+      const closed = await host.close({ tab: tabId, ...by });
       if (lastTab === tabId) lastTab = null;
-      return text(`Closed tab ${tabId}.`, { tab: tabId });
+      // The action ran as called; the receipt says what it cost.
+      return text(closed?.leftUnconfirmed
+        ? `Closed tab ${tabId}. The page had asked to be confirmed before closing, as a page with unsaved changes does; anything unsaved there is gone.`
+        : `Closed tab ${tabId}.`, { tab: tabId });
     },
   };
 
