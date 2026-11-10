@@ -162,26 +162,30 @@ export interface AmpleFileRequestResultRef {
   fileCount: number;
 }
 
-export type AmpleFileRequestLimitName =
-  | "childTasks"
-  | "depth"
-  | "concurrentChildren"
-  | "continuations"
-  | "providerBudget"
-  | "questionLifetime"
-  | "questionText"
-  | "questionOptions"
-  | "questionOptionText"
-  | "answerText"
-  | "checklistItems"
-  | "checklistItemText"
-  | "resultSummary"
-  | "resultData"
-  | "resultFiles"
-  | "questionsPerRequest"
-  | "resultsPerRequest"
-  | "turnsPerRequest"
-  | "actionsPerRequest";
+/** Every bound a request refusal or a recorded limit hit can name; the parser reads exactly these. */
+export const ampleFileRequestLimitNames = [
+  "childTasks",
+  "depth",
+  "concurrentChildren",
+  "continuations",
+  "providerBudget",
+  "questionLifetime",
+  "questionText",
+  "questionOptions",
+  "questionOptionText",
+  "answerText",
+  "checklistItems",
+  "checklistItemText",
+  "resultSummary",
+  "resultData",
+  "resultFiles",
+  "questionsPerRequest",
+  "resultsPerRequest",
+  "turnsPerRequest",
+  "actionsPerRequest",
+] as const;
+
+export type AmpleFileRequestLimitName = (typeof ampleFileRequestLimitNames)[number];
 
 export type AmpleFileChecklistItemStatus = "todo" | "doing" | "done";
 
@@ -295,6 +299,10 @@ export interface AmpleFileRequestAction {
   sources?: string[];
   /** Connected Folder–relative destinations reported by files.add. */
   copied?: string[];
+  /** How many `sources` the trail left out to stay inside its bound; absent when none. */
+  sourcesOmitted?: number;
+  /** How many `copied` destinations the trail left out to stay inside its bound; absent when none. */
+  copiedOmitted?: number;
   checkpointId?: string | null;
   /** Registered or created Connected Folder root. */
   connectedFolderRoot?: string;
@@ -638,6 +646,66 @@ function boundedText(value: unknown, label: string, maxBytes: number, limit?: Am
   return value;
 }
 
+/**
+ * Makes free text safe to store in a record that `boundedText` will re-read:
+ * a vertical tab, form feed, or NEL (Word's soft line break among them)
+ * becomes a line break, and every other C0/C1 or bidi control becomes U+FFFD,
+ * the replacement act receipts use. The result is then cut to `maxBytes` on
+ * a character boundary. Message text arrives from a person, so the store
+ * scrubs it rather than refusing the turn that carries it.
+ */
+export function scrubAmpleFileRequestText(value: string, maxBytes: number): string {
+  const scrubbed = scrubAmpleFileRequestControls(value);
+  const bytes = Buffer.from(scrubbed, "utf8");
+  if (bytes.length <= maxBytes) return scrubbed;
+  // Step back over UTF-8 continuation bytes so the cut never splits a
+  // character, rather than storing a replacement glyph the person never wrote.
+  let end = maxBytes;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end).toString("utf8");
+}
+
+/**
+ * The canonical cleaner for free text a request record stores: the
+ * control-character half of `scrubAmpleFileRequestText`, without a length
+ * cut. Every free-text field (message, question, answer, choice, checklist
+ * item, result summary, turn error) is stored in this form, and an answer is
+ * stored exactly as `scrubAmpleFileRequestControls(<the text handed to
+ * AmpleFileRequestStore.answer>)` — answers are not cut; past their bound
+ * they are refused.
+ *
+ * A caller that compares text it received with stored text must clean its
+ * side first, or a pasted Word soft line break makes equal text look
+ * different. For a recorded answer, use `ampleFileAnswerMatchesRecorded`.
+ */
+export function scrubAmpleFileRequestControls(value: string): string {
+  return value
+    .replace(/[\u000b\u000c\u0085]/gu, "\n")
+    .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f\u202a-\u202e\u2066-\u2069]/gu, "\uFFFD");
+}
+
+/**
+ * True when `answer` is the answer this question already recorded: the same
+ * text after the store's cleaning. Pass the answer exactly as it would be
+ * handed to `AmpleFileRequestStore.answer` (after any trimming the caller
+ * applies before answering). A question with no recorded answer matches
+ * nothing.
+ */
+export function ampleFileAnswerMatchesRecorded(question: Pick<AmpleFileQuestionRecord, "answer">, answer: string): boolean {
+  return question.answer !== null && question.answer === scrubAmpleFileRequestControls(answer);
+}
+
+/**
+ * Free text a person or an agent wrote — a message, a question, an answer, a
+ * choice, a checklist item, a result summary, a turn's error — is scrubbed
+ * of control characters rather than refused, so pasted text never makes a
+ * write fail and a stored record always reloads. Its size bound still
+ * refuses. Paths, names, and identifiers keep refusing control characters.
+ */
+function freeText(value: unknown, label: string, maxBytes: number, limit?: AmpleFileRequestLimitName): string {
+  return boundedText(typeof value === "string" ? scrubAmpleFileRequestControls(value) : value, label, maxBytes, limit);
+}
+
 function enumValue<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
   if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) throw new Error(`${label} is invalid.`);
   return value as T;
@@ -669,11 +737,22 @@ export function parseAmpleFileAttachmentRef(value: unknown, label: string): Ampl
   };
 }
 
+/** The most `sources` or `copied` entries one action keeps; the rest are counted, not listed. */
+export const ampleFileRequestActionListMaxEntries = 256;
+
+/** The longest path one `sources` or `copied` entry keeps. */
+export const ampleFileRequestActionPathMaxLength = maximumResultFilePathLength;
+
+function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw new Error(`${label} is invalid.`);
+  return value;
+}
+
 export function parseAmpleFileRequestAction(value: unknown, label = "Request action"): AmpleFileRequestAction {
   const record = objectValue(value, label);
   assertClosedShape(
     record,
-    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "checkpointId", "connectedFolderRoot", "conversationId", "taskId"],
+    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "sourcesOmitted", "copiedOmitted", "checkpointId", "connectedFolderRoot", "conversationId", "taskId"],
     label,
   );
   const action: AmpleFileRequestAction = {
@@ -682,8 +761,10 @@ export function parseAmpleFileRequestAction(value: unknown, label = "Request act
   };
   if (record.connectedFolderId !== undefined) action.connectedFolderId = stableId(record.connectedFolderId, `${label} Connected Folder id`);
   if (record.connectedFolderName !== undefined) action.connectedFolderName = boundedText(record.connectedFolderName, `${label} Connected Folder name`, 1_024);
-  if (record.sources !== undefined) action.sources = stringArray(record.sources, `${label} sources`, 256);
-  if (record.copied !== undefined) action.copied = stringArray(record.copied, `${label} destinations`, 256);
+  if (record.sources !== undefined) action.sources = stringArray(record.sources, `${label} sources`, ampleFileRequestActionListMaxEntries);
+  if (record.copied !== undefined) action.copied = stringArray(record.copied, `${label} destinations`, ampleFileRequestActionListMaxEntries);
+  if (record.sourcesOmitted !== undefined) action.sourcesOmitted = positiveInteger(record.sourcesOmitted, `${label} omitted sources`);
+  if (record.copiedOmitted !== undefined) action.copiedOmitted = positiveInteger(record.copiedOmitted, `${label} omitted destinations`);
   if (record.checkpointId !== undefined) {
     action.checkpointId = record.checkpointId === null ? null : stableId(record.checkpointId, `${label} restore point`);
   }
@@ -712,7 +793,7 @@ function parseTurnRef(value: unknown, index: number): AmpleFileRequestTurnRef {
       : stableId(record.messageId, `${label} reply id`),
     error: record.error === null || record.error === undefined
       ? null
-      : boundedText(record.error, `${label} error`, maximumErrorLength),
+      : freeText(record.error, `${label} error`, maximumErrorLength),
   };
 }
 
@@ -854,8 +935,8 @@ export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRec
     limitHit: record.limitHit === null || record.limitHit === undefined ? null : parseLimitHit(record.limitHit, label),
     reconciledAt: nullableIsoDate(record.reconciledAt, `${label} recovery time`),
     remote: nullField(record.remote, `${label} remote reference`),
-    content: boundedText(record.content, `${label} message`, ampleFileRequestLimits.maxRequestContentBytes),
-    assignment: boundedText(record.assignment ?? record.content, `${label} assignment`, ampleFileRequestLimits.maxRequestContentBytes),
+    content: freeText(record.content, `${label} message`, ampleFileRequestLimits.maxRequestContentBytes),
+    assignment: freeText(record.assignment ?? record.content, `${label} assignment`, ampleFileRequestLimits.maxRequestContentBytes),
     attachments: Array.isArray(record.attachments) && record.attachments.length <= maxAmpleFileAgentAttachments
       ? record.attachments.map((item, index) => parseAmpleFileAttachmentRef(item, `${label} attachment ${index + 1}`))
       : (() => { throw new Error(`${label} attachments are invalid.`); })(),
@@ -899,15 +980,7 @@ function parseLimitHit(value: unknown, label: string): AmpleFileRequestLimitHit 
   const record = objectValue(value, `${label} limit`);
   assertClosedShape(record, ["limit", "at"], `${label} limit`);
   return {
-    limit: enumValue(
-      record.limit,
-      [
-        "childTasks", "depth", "concurrentChildren", "continuations", "providerBudget", "questionLifetime",
-        "questionText", "answerText", "resultSummary", "resultData", "resultFiles", "questionsPerRequest",
-        "resultsPerRequest", "turnsPerRequest", "actionsPerRequest",
-      ] as const,
-      `${label} limit name`,
-    ),
+    limit: enumValue(record.limit, ampleFileRequestLimitNames, `${label} limit name`),
     at: isoDate(record.at, `${label} limit time`),
   };
 }
@@ -943,7 +1016,7 @@ export function parseAmpleFileQuestionRecord(value: unknown): AmpleFileQuestionR
     rootId,
     taskId: stableId(record.taskId, `${label} task id`),
     respondent: enumValue(record.respondent, ["person", "parent"] as const, `${label} respondent`),
-    text: boundedText(record.text, `${label} text`, ampleFileRequestLimits.maxQuestionTextBytes, "questionText"),
+    text: freeText(record.text, `${label} text`, ampleFileRequestLimits.maxQuestionTextBytes, "questionText"),
     ...(record.options === undefined || record.options === null ? {} : { options: parseAmpleFileQuestionOptions(record.options) }),
     ...(record.asynchronous === undefined ? {} : { asynchronous: record.asynchronous as boolean }),
     askedAt: isoDate(record.askedAt, `${label} time`),
@@ -952,7 +1025,7 @@ export function parseAmpleFileQuestionRecord(value: unknown): AmpleFileQuestionR
     state: enumValue(record.state, ["open", "answered", "expired", "cancelled"] as const, `${label} state`),
     answer: record.answer === null || record.answer === undefined
       ? null
-      : boundedText(record.answer, `${label} answer`, ampleFileRequestLimits.maxAnswerTextBytes, "answerText"),
+      : freeText(record.answer, `${label} answer`, ampleFileRequestLimits.maxAnswerTextBytes, "answerText"),
     answeredAt: nullableIsoDate(record.answeredAt, `${label} answer time`),
     continuationTaskId: record.continuationTaskId === null || record.continuationTaskId === undefined
       ? null
@@ -970,7 +1043,7 @@ export function parseAmpleFileChecklistItems(value: unknown): AmpleFileChecklist
   return value.map((raw) => {
     const item = objectValue(raw, "A checklist item");
     assertClosedShape(item, ["text", "status"], "A checklist item");
-    const text = boundedText(item.text, "A checklist item", ampleFileRequestLimits.maxChecklistItemBytes, "checklistItemText").replace(/\s+/g, " ").trim();
+    const text = freeText(item.text, "A checklist item", ampleFileRequestLimits.maxChecklistItemBytes, "checklistItemText").replace(/\s+/g, " ").trim();
     if (!text) throw new Error("A checklist item cannot be empty.");
     return { text, status: enumValue(item.status, ["todo", "doing", "done"] as const, "A checklist item's status") };
   });
@@ -994,7 +1067,7 @@ export function parseAmpleFileQuestionOptions(value: unknown): string[] {
   if (!Array.isArray(value)) throw new Error("Question choices must be a list of text.");
   if (value.length > ampleFileRequestLimits.maxQuestionOptions) throw ampleFileRequestLimitError("questionOptions", ampleFileRequestLimits.maxQuestionOptions);
   const options = value.map((item) => {
-    const text = boundedText(item, "A question choice", ampleFileRequestLimits.maxQuestionOptionBytes, "questionOptionText").trim();
+    const text = freeText(item, "A question choice", ampleFileRequestLimits.maxQuestionOptionBytes, "questionOptionText").trim();
     if (!text) throw new Error("A question choice cannot be empty.");
     if (/[\n\r]/.test(text)) throw new Error("A question choice must be one line.");
     return text;
@@ -1012,7 +1085,7 @@ export function parseAmpleFileResultEnvelope(value: unknown): AmpleFileResultEnv
   const label = "Result";
   const record = objectValue(value, label);
   assertClosedShape(record, ["summary", "data", "files", "outcome"], label);
-  const summary = boundedText(record.summary, `${label} summary`, ampleFileRequestLimits.maxResultSummaryBytes, "resultSummary");
+  const summary = freeText(record.summary, `${label} summary`, ampleFileRequestLimits.maxResultSummaryBytes, "resultSummary");
   if (!summary.trim()) throw new Error(`${label} summary cannot be empty.`);
   const envelope: AmpleFileResultEnvelope = {
     summary,

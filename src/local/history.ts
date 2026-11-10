@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { access, copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -83,6 +83,35 @@ const checkpointIdPattern = /^cp-[A-Za-z0-9-]{10,80}$/;
 const captureHashConcurrency = 8;
 /** Files at or above this size are hashed from a stream instead of being read whole. */
 const captureStreamHashBytes = 8 * 1024 * 1024;
+/**
+ * How many new blobs one capture, or restored files one restore, flushes to
+ * disk one by one. On macOS a flush is a full device flush (F_FULLFSYNC), about
+ * 4 ms per small file, so flushing all 10,000 files of a first capture would
+ * add some 40 s while the folder's History is held. Writes past this budget
+ * are renamed into place unflushed; the manifest, which is the commit point,
+ * is always flushed with its directory. The trade-off: after a power loss a
+ * bulk capture's newest blobs may be cut short or lost. A blob of the wrong
+ * size is rewritten by the next capture of the same content, a blob whose
+ * bytes fail their hash is deleted at restore time so the next capture
+ * rewrites it, and a restore never uses content that fails its hash. A bulk
+ * restore's later files may likewise be cut short by a power loss; its
+ * "Before restoring" restore point still holds what was there.
+ */
+const individuallyFlushedWritesPerOperation = 200;
+
+/** The flushes one capture or restore may still spend; absent for a single write, which always flushes. */
+interface FlushBudget { remaining: number }
+
+function newFlushBudget(): FlushBudget {
+  return { remaining: individuallyFlushedWritesPerOperation };
+}
+
+function spendFlush(budget: FlushBudget | undefined): boolean {
+  if (!budget) return true;
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+}
 
 export async function storeConnectedFolderBlob(connectedFolderRoot: string, bytes: Buffer): Promise<StoredBlobRef> {
   const root = ensureHistoryRoot(connectedFolderRoot);
@@ -92,21 +121,58 @@ export async function storeConnectedFolderBlob(connectedFolderRoot: string, byte
 }
 
 /** Stores bytes by hash; the caller ensures the History metadata once. */
-async function writeConnectedFolderBlob(root: string, bytes: Buffer): Promise<StoredBlobRef> {
+async function writeConnectedFolderBlob(root: string, bytes: Buffer, budget?: FlushBudget): Promise<StoredBlobRef> {
   const hashSha256 = sha256(bytes);
   const blobPath = connectedFolderBlobPath(root, hashSha256);
-  if (!await pathExists(blobPath)) {
+  if (!await storedBlobIntact(blobPath, bytes.byteLength)) {
     await mkdir(dirname(blobPath), { recursive: true });
     const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
-    await writeFile(stagingPath, bytes);
     try {
+      await writeNewFile(stagingPath, bytes, spendFlush(budget));
       await rename(stagingPath, blobPath);
     } catch (error) {
       await rm(stagingPath, { force: true }).catch(() => undefined);
-      if (!await pathExists(blobPath)) throw error;
+      if (!await storedBlobIntact(blobPath, bytes.byteLength)) throw error;
     }
   }
   return { hashSha256, sizeBytes: bytes.byteLength };
+}
+
+/**
+ * A stored blob is trusted to hold its hash's content only when its size also
+ * matches. A blob cut short by a crash or power loss fails that check, so the
+ * next capture of the same content replaces it instead of every restore
+ * point that names it staying unrestorable.
+ */
+async function storedBlobIntact(blobPath: string, sizeBytes: number): Promise<boolean> {
+  const info = await stat(blobPath).catch(() => null);
+  return Boolean(info?.isFile() && info.size === sizeBytes);
+}
+
+/** Writes a new file and, when asked, flushes it to disk before anyone can rename it into place. */
+async function writeNewFile(path: string, bytes: Buffer | string, flush: boolean): Promise<void> {
+  const handle = await open(path, "wx");
+  try {
+    await handle.writeFile(bytes);
+    if (flush) await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncFile(path: string): Promise<void> {
+  const handle = await open(path, "r+");
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
+async function syncDirectoryBestEffort(path: string): Promise<void> {
+  try {
+    const directory = await open(path, "r");
+    try { await directory.sync(); } finally { await directory.close(); }
+  } catch {
+    // Not every platform allows directory handles; the fsynced file and
+    // atomic rename remain the commit.
+  }
 }
 
 /**
@@ -116,21 +182,22 @@ async function writeConnectedFolderBlob(root: string, bytes: Buffer): Promise<St
  * hashed again from that copy, so the stored bytes always match the recorded
  * hash even if the source file changes mid-capture.
  */
-async function storeConnectedFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number): Promise<StoredBlobRef> {
+async function storeConnectedFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number, budget?: FlushBudget): Promise<StoredBlobRef> {
   if (sizeBytes < captureStreamHashBytes) {
-    return writeConnectedFolderBlob(root, await readFile(absolutePath));
+    return writeConnectedFolderBlob(root, await readFile(absolutePath), budget);
   }
   const hashSha256 = await sha256File(absolutePath);
   const blobPath = connectedFolderBlobPath(root, hashSha256);
-  if (await pathExists(blobPath)) return { hashSha256, sizeBytes };
+  if (await storedBlobIntact(blobPath, sizeBytes)) return { hashSha256, sizeBytes };
   await mkdir(dirname(blobPath), { recursive: true });
   const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
   try {
     await copyFile(absolutePath, stagingPath);
+    if (spendFlush(budget)) await syncFile(stagingPath);
     const stagedHash = await sha256File(stagingPath);
     const stagedInfo = await stat(stagingPath);
     const finalPath = connectedFolderBlobPath(root, stagedHash);
-    if (await pathExists(finalPath)) {
+    if (await storedBlobIntact(finalPath, stagedInfo.size)) {
       await rm(stagingPath, { force: true });
     } else {
       await mkdir(dirname(finalPath), { recursive: true });
@@ -138,7 +205,7 @@ async function storeConnectedFolderBlobFromFile(root: string, absolutePath: stri
         await rename(stagingPath, finalPath);
       } catch (error) {
         await rm(stagingPath, { force: true }).catch(() => undefined);
-        if (!await pathExists(finalPath)) throw error;
+        if (!await storedBlobIntact(finalPath, stagedInfo.size)) throw error;
       }
     }
     return { hashSha256: stagedHash, sizeBytes: stagedInfo.size };
@@ -160,9 +227,26 @@ function sha256File(path: string): Promise<string> {
 export async function readConnectedFolderBlob(connectedFolderRoot: string, hashSha256: string): Promise<Buffer | null> {
   const root = ensureHistoryRoot(connectedFolderRoot);
   const normalized = normalizeHash(hashSha256);
-  const bytes = await readFile(connectedFolderBlobPath(root, normalized)).catch(() => null);
-  if (!bytes || sha256(bytes) !== normalized) return null;
-  return bytes;
+  const blobPath = connectedFolderBlobPath(root, normalized);
+  const before = await stat(blobPath).catch(() => null);
+  const bytes = await readFile(blobPath).catch(() => null);
+  if (!bytes) return null;
+  if (sha256(bytes) === normalized) return bytes;
+  await discardDamagedBlob(blobPath, before);
+  return null;
+}
+
+/**
+ * Deletes a blob whose bytes do not match its hash, so the next capture of the
+ * same content writes it again instead of skipping an existing path of the
+ * right size. Only the exact file that was read is deleted: if a capture has
+ * already replaced it, the replacement stays.
+ */
+async function discardDamagedBlob(blobPath: string, read: Awaited<ReturnType<typeof stat>> | null): Promise<void> {
+  const current = await stat(blobPath).catch(() => null);
+  if (!read || !current || current.ino !== read.ino || current.dev !== read.dev
+    || current.size !== read.size || current.mtimeMs !== read.mtimeMs) return;
+  await rm(blobPath, { force: true }).catch(() => undefined);
 }
 
 async function createConnectedFolderCheckpointUnlocked(
@@ -251,7 +335,8 @@ async function discardConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
   if (!checkpointIdPattern.test(checkpointId)) return;
   const root = ensureHistoryRoot(connectedFolderRoot);
   await rm(join(checkpointsDir(root), `${checkpointId}.json`), { force: true });
-  await garbageCollectObjects(root, await readCheckpointManifests(root));
+  const { checkpoints, damaged } = await readCheckpointLedger(root);
+  await garbageCollectObjects(root, checkpoints, damaged);
 }
 
 async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: string, checkpointId: string): Promise<ConnectedFolderRestoreResult> {
@@ -295,6 +380,7 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
       ? new Map(safety.files.map((file) => [file.path, file]))
       : new Map<string, CheckpointFileEntry>();
     const restoredFiles: string[] = [];
+    const flushBudget = newFlushBudget();
     let unchangedFiles = 0;
     for (const file of checkpoint.files) {
       if (current.get(file.path)?.hashSha256 === file.hashSha256) {
@@ -304,7 +390,7 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
       const bytes = await readFile(staged.pathsByHash.get(file.hashSha256)!);
       const target = canonicalPath(root, file.path, true).absolutePath;
       await mkdir(dirname(target), { recursive: true });
-      await atomicRestoreFile(root, file.path, bytes);
+      await atomicRestoreFile(root, file.path, bytes, flushBudget);
       restoredFiles.push(file.path);
     }
 
@@ -398,6 +484,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
   const skipped = new Map<string, CheckpointSkippedFile>();
   const nestedPaths = await nestedRegisteredConnectedFolderPaths(root);
   const pendingFiles: Array<{ path: string; absolutePath: string; sizeBytes: number; modifiedAt: string }> = [];
+  const flushBudget = newFlushBudget();
 
   const visit = async (absolutePath: string): Promise<void> => {
     const path = toPosix(relative(root, absolutePath));
@@ -456,7 +543,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
       const file = pendingFiles[next]!;
       next += 1;
       try {
-        const blob = persistBlobs ? await storeConnectedFolderBlobFromFile(root, file.absolutePath, file.sizeBytes)
+        const blob = persistBlobs ? await storeConnectedFolderBlobFromFile(root, file.absolutePath, file.sizeBytes, flushBudget)
           : { hashSha256: await sha256File(file.absolutePath), sizeBytes: file.sizeBytes };
         files.set(file.path, { path: file.path, hashSha256: blob.hashSha256, sizeBytes: blob.sizeBytes, modifiedAt: file.modifiedAt });
       } catch {
@@ -496,7 +583,7 @@ async function persistCheckpoint(root: string, input: {
     skippedFiles: input.skippedFiles,
   };
   const manifestHash = sha256(Buffer.from(stableJson(material), "utf8"));
-  const [latest] = await listConnectedFolderCheckpoints(root, 1);
+  const latest = input.scope === "full" ? await readLatestCheckpoint(root) : null;
   if (input.scope === "full" && latest?.scope === "full" && latest.manifestHash === manifestHash) return latest;
 
   const createdAt = new Date().toISOString();
@@ -547,12 +634,12 @@ async function assertRestoreOwnership(root: string, checkpoint: ConnectedFolderC
   }
 }
 
-async function atomicRestoreFile(root: string, path: string, bytes: Buffer): Promise<void> {
+async function atomicRestoreFile(root: string, path: string, bytes: Buffer, budget?: FlushBudget): Promise<void> {
   const target = canonicalPath(root, path, true).absolutePath;
   await mkdir(dirname(target), { recursive: true });
   const temporary = `${target}.amplefile-restore-${randomUUID()}`;
   try {
-    await writeFile(temporary, bytes, { flag: "wx" });
+    await writeNewFile(temporary, bytes, spendFlush(budget));
     canonicalPath(root, path, true);
     await rename(temporary, target);
   } finally { await rm(temporary, { force: true }); }
@@ -602,17 +689,67 @@ function validateCheckpointPaths(root: string, checkpoint: ConnectedFolderCheckp
   }
 }
 
-async function pruneHistory(root: string): Promise<void> {
-  const checkpoints = await readCheckpointManifests(root);
-  const retained = checkpoints.slice(0, maxRetainedCheckpoints());
-  const removed = checkpoints.slice(retained.length);
-  if (!removed.length) return;
-  for (const checkpoint of removed) await rm(join(checkpointsDir(root), `${checkpoint.checkpointId}.json`), { force: true });
-  await garbageCollectObjects(root, retained);
+/**
+ * The newest checkpoint without parsing the whole ledger. A checkpoint id
+ * starts with its creation time to the second, so only the newest second's
+ * manifests (and any id without that stamp) need reading; an older second is
+ * read only when every newer manifest is damaged.
+ */
+async function readLatestCheckpoint(root: string): Promise<ConnectedFolderCheckpoint | null> {
+  const names = (await readdir(checkpointsDir(root)).catch(() => [] as string[])).filter((name) => name.endsWith(".json"));
+  const bySecond = new Map<string, string[]>();
+  const unstamped: string[] = [];
+  for (const name of names) {
+    const stamp = /^cp-(\d{14})-/.exec(name)?.[1];
+    if (stamp) bySecond.set(stamp, [...(bySecond.get(stamp) ?? []), name]);
+    else unstamped.push(name);
+  }
+  const read = async (group: string[]): Promise<ConnectedFolderCheckpoint[]> =>
+    (await Promise.all(group.map((name) => readCheckpointManifest(join(checkpointsDir(root), name)))))
+      .filter((checkpoint): checkpoint is ConnectedFolderCheckpoint => checkpoint !== null);
+  const unstampedCheckpoints = await read(unstamped);
+  for (const stamp of [...bySecond.keys()].sort().reverse()) {
+    const group = await read(bySecond.get(stamp)!);
+    if (group.length) return sortCheckpoints([...group, ...unstampedCheckpoints])[0]!;
+  }
+  return sortCheckpoints(unstampedCheckpoints)[0] ?? null;
 }
 
-async function garbageCollectObjects(root: string, retained: ConnectedFolderCheckpoint[]): Promise<void> {
+/** Reads the ledger only once it holds more manifests than History keeps. */
+async function pruneHistory(root: string): Promise<void> {
+  const names = await readdir(checkpointsDir(root)).catch(() => [] as string[]);
+  if (names.filter((name) => name.endsWith(".json")).length <= maxRetainedCheckpoints()) return;
+  const { checkpoints, damaged } = await readCheckpointLedger(root);
+  // A damaged manifest takes a place in the retention window by the time in
+  // its id (or its file's time), so its content is kept while it would have
+  // been and is let go when it would have aged out.
+  const ledger = [
+    ...checkpoints.map((checkpoint) => ({ createdAt: checkpoint.createdAt, name: `${checkpoint.checkpointId}.json`, checkpoint, damaged: null })),
+    ...damaged.map((manifest) => ({ createdAt: manifest.createdAt, name: manifest.name, checkpoint: null, damaged: manifest })),
+  ].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.name.localeCompare(left.name));
+  const retained = ledger.slice(0, maxRetainedCheckpoints());
+  const removed = ledger.slice(retained.length);
+  if (!removed.length) return;
+  for (const entry of removed) {
+    await rm(join(checkpointsDir(root), entry.name), { force: true, recursive: entry.damaged !== null }).catch(() => undefined);
+  }
+  await garbageCollectObjects(root,
+    retained.flatMap((entry) => entry.checkpoint ? [entry.checkpoint] : []),
+    retained.flatMap((entry) => entry.damaged ? [entry.damaged] : []));
+}
+
+/**
+ * Deletes blobs no retained checkpoint names. A manifest that failed to parse
+ * still protects every hash its text names, and one that could not be read at
+ * all stops collection, so content is never deleted on the strength of a
+ * manifest AmpleFile merely could not understand.
+ */
+async function garbageCollectObjects(root: string, retained: ConnectedFolderCheckpoint[], damaged: DamagedCheckpointManifest[]): Promise<void> {
+  if (damaged.some((manifest) => manifest.text === null)) return;
   const referenced = new Set(retained.flatMap((checkpoint) => checkpoint.files.map((file) => file.hashSha256)));
+  for (const manifest of damaged) {
+    for (const hash of manifest.text!.toLowerCase().match(/[a-f0-9]{64}/g) ?? []) referenced.add(hash);
+  }
   const objectsRoot = join(connectedFolderHistoryRoot(root), "objects");
   for (const prefix of await readdir(objectsRoot, { withFileTypes: true }).catch(() => [])) {
     if (!prefix.isDirectory()) continue;
@@ -656,24 +793,88 @@ async function stageCheckpointContent(
   }
 }
 
-async function readCheckpointManifests(root: string): Promise<ConnectedFolderCheckpoint[]> {
+/**
+ * A manifest that exists but cannot be read as a current checkpoint: cut short
+ * by a crash, written by a newer AmpleFile, or unreadable. `text` is null when
+ * the file could not be read at all.
+ */
+interface DamagedCheckpointManifest {
+  name: string;
+  text: string | null;
+  /** From the time stamped in its id, else the file's modification time. */
+  createdAt: string;
+}
+
+const reportedDamagedManifests = new Set<string>();
+
+/** Says once per manifest and run that History is setting a manifest aside, so the
+ * condition reaches the app's log instead of passing silently. */
+function reportDamagedManifest(root: string, manifest: DamagedCheckpointManifest): void {
+  const key = `${root}\u0000${manifest.name}`;
+  if (reportedDamagedManifests.has(key)) return;
+  reportedDamagedManifests.add(key);
+  console.warn(manifest.text === null
+    ? `History for ${root} could not read restore point ${manifest.name}; unused saved content is not cleaned up until retention drops it.`
+    : `History for ${root} could not use restore point ${manifest.name}; the content it names is kept until retention drops it.`);
+}
+
+function damagedManifestTime(name: string, modifiedAt: Date | null): string {
+  const stamp = /^cp-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})-/.exec(name);
+  if (stamp) {
+    const iso = `${stamp[1]}-${stamp[2]}-${stamp[3]}T${stamp[4]}:${stamp[5]}:${stamp[6]}.000Z`;
+    if (Number.isFinite(Date.parse(iso))) return iso;
+  }
+  return (modifiedAt ?? new Date(0)).toISOString();
+}
+
+async function readCheckpointLedger(root: string): Promise<{ checkpoints: ConnectedFolderCheckpoint[]; damaged: DamagedCheckpointManifest[] }> {
   const entries = await readdir(checkpointsDir(root)).catch(() => [] as string[]);
   const checkpoints: ConnectedFolderCheckpoint[] = [];
+  const damaged: DamagedCheckpointManifest[] = [];
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
-    const checkpoint = await readCheckpointManifest(join(checkpointsDir(root), name));
-    if (checkpoint) checkpoints.push(checkpoint);
+    const read = await readCheckpointManifestFile(join(checkpointsDir(root), name));
+    if (read.checkpoint) checkpoints.push(read.checkpoint);
+    else if (read.exists) {
+      const modifiedAt = (await lstat(join(checkpointsDir(root), name)).catch(() => null))?.mtime ?? null;
+      const manifest = { name, text: read.text, createdAt: damagedManifestTime(name, modifiedAt) };
+      damaged.push(manifest);
+      reportDamagedManifest(root, manifest);
+    }
   }
+  return { checkpoints: sortCheckpoints(checkpoints), damaged };
+}
+
+function sortCheckpoints(checkpoints: ConnectedFolderCheckpoint[]): ConnectedFolderCheckpoint[] {
   return checkpoints.sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.checkpointId.localeCompare(left.checkpointId));
 }
 
+async function readCheckpointManifests(root: string): Promise<ConnectedFolderCheckpoint[]> {
+  return (await readCheckpointLedger(root)).checkpoints;
+}
+
 async function readCheckpointManifest(path: string): Promise<ConnectedFolderCheckpoint | null> {
+  return (await readCheckpointManifestFile(path)).checkpoint;
+}
+
+async function readCheckpointManifestFile(path: string): Promise<
+  { checkpoint: ConnectedFolderCheckpoint; exists: true; text: string }
+  | { checkpoint: null; exists: boolean; text: string | null }
+> {
+  let text: string;
   try {
-    const value = JSON.parse(await readFile(path, "utf8")) as Partial<ConnectedFolderCheckpoint>;
-    if (value.schemaVersion !== "0.2.0" || !checkpointIdPattern.test(value.checkpointId ?? "") || !Array.isArray(value.files)) return null;
-    return { ...value, directories: Array.isArray(value.directories) ? value.directories : [] } as ConnectedFolderCheckpoint;
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    return { checkpoint: null, exists: (error as NodeJS.ErrnoException)?.code !== "ENOENT", text: null };
+  }
+  try {
+    const value = JSON.parse(text) as Partial<ConnectedFolderCheckpoint>;
+    if (value.schemaVersion !== "0.2.0" || !checkpointIdPattern.test(value.checkpointId ?? "") || !Array.isArray(value.files)) {
+      return { checkpoint: null, exists: true, text };
+    }
+    return { checkpoint: { ...value, directories: Array.isArray(value.directories) ? value.directories : [] } as ConnectedFolderCheckpoint, exists: true, text };
   } catch {
-    return null;
+    return { checkpoint: null, exists: true, text };
   }
 }
 
@@ -713,10 +914,6 @@ function checkpointsDir(root: string): string {
   return join(connectedFolderHistoryRoot(root), "checkpoints");
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  return access(path).then(() => true, () => false);
-}
-
 async function ensureHistoryMeta(root: string): Promise<void> {
   const path = join(connectedFolderHistoryRoot(root), "meta.json");
   if (existsSync(path)) return;
@@ -726,8 +923,14 @@ async function ensureHistoryMeta(root: string): Promise<void> {
 async function atomicJsonWrite(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await rename(temporary, path);
+  try {
+    await writeNewFile(temporary, `${JSON.stringify(value, null, 2)}\n`, true);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  await syncDirectoryBestEffort(dirname(path));
 }
 
 function maxVersionedFileBytes(): number {

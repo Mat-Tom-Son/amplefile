@@ -64,7 +64,10 @@ record only per-verb additions.
 1. **Who journals it.** The act executor
    (`src/local/cli/act-commands.ts`) appends an `accepted` line to
    `cli/receipts/act.jsonl` (`src/local/cli/act-receipts.ts`) **before** the
-   mutation runs; an unwritable journal refuses the command. The owning
+   mutation runs; an unwritable journal refuses the command. Reads of
+   AmpleFile's own recorded state (status, lists, shows, the overview) write
+   the same lines to `cli/receipts/act-reads.jsonl`, so polling never crowds
+   real acts out of the journal. The owning
    domain service keeps its own durable records exactly as it does for the
    desktop (History checkpoints, transcript lifecycle events, Automation run
    receipts).
@@ -92,8 +95,10 @@ record only per-verb additions.
 5. **How replay is prevented.** The broker's freshness window and pending
    response dedup, then the journal's `accepted` records as the durable
    at-most-once ledger: a duplicated request id is refused outright, and a
-   damaged journal fails closed rather than risk re-execution. Journal
-   rotation holds entries at least as long as the freshness window.
+   damaged journal fails closed rather than risk re-execution — an
+   unreadable file always, an unreadable line until the freshness window
+   and clock-skew allowance have passed since the line written after it.
+   Journal rotation holds entries at least as long as the freshness window.
 
 Act-protocol conventions: the versioned act envelope
 (`src/local/cli/act-protocol.ts`), the per-launch act token, explicit
@@ -185,7 +190,7 @@ a restart.
 | Start a background job | — (`job_start` in a Chat) | direct verb | `jobs start --connected-folder <id> --task <own-task-id> (--command <cmd> \| --command-file <path>) [--name <label>] [--cwd <folder>] [--timeout <s>]` | job id, state, starting task, never the command text | `jobs stop`, or Stop on its request; History captures what it wrote when it ends | `--task` must be the caller's own running turn of a request that can continue; refused past the running-jobs bound; journaled before the process starts and never re-run |
 | List background jobs | the Chat's work line | direct verb (act read) | `jobs list --connected-folder <id> [--conversation <id>] [--running]` | — | n/a | only that Connected Folder's jobs |
 | Show a background job | the Chat's work line | direct verb (content-bearing act read) | `jobs show --connected-folder <id> --job <id>` | — | n/a | carries the command, state, exit, History coverage, and delivery |
-| Read a job's output | — (`job_output` in a Chat) | direct verb (content-bearing act read) | `jobs output --connected-folder <id> --job <id> [--offset <line>] [--limit <lines>] [--wait <s>] [--until <pattern>] [--task <own-task-id>]` | — | n/a | at most 2,000 lines or 50 KB per read; `--task` naming a running turn in the job's own Chat delivers a finished job |
+| Read a job's output | — (`job_output` in a Chat) | direct verb (content-bearing act read) | `jobs output --connected-folder <id> --job <id> [--offset <line>] [--limit <lines>] [--wait <s>] [--until <pattern>] [--task <own-task-id>]` | — | n/a | at most 2,000 lines or 50 KB per read; `--wait` capped at 600 seconds, run beside the CLI host's serial queue; `--task` naming a running turn in the job's own Chat delivers a finished job |
 | Send input to a job | — (`job_input` in a Chat) | direct verb | `jobs input …` ([Worker tools](worker-tools.md)) | job id | n/a | only an interactive job of the caller's own request |
 | Stop a background job | **Stop** on the request | direct verb | `jobs stop --connected-folder <id> --job <id>` | job id, final state | none; a stopped job is never re-run | SIGTERM to the process group, SIGKILL after 5 seconds; a stopped job still wakes its Chat once |
 
@@ -396,7 +401,8 @@ optional fields beyond the baseline:
 
 The journal is append-only and journal-first, rotation never drops an entry
 younger than the broker freshness window, and duplicate detection fails
-closed. Renaming a CLI command, flag, or JSON key is a compatibility change:
+closed. The host keeps accepted ids in memory, reading only what was appended
+since it last looked, and cuts an unfinished final line at startup. Renaming a CLI command, flag, or JSON key is a compatibility change:
 update the implementation, help, tests, and these docs together.
 
 ## Where it lives
@@ -405,7 +411,7 @@ update the implementation, help, tests, and these docs together.
 |---|---|---|
 | Receipt schema | `src/local/cli/act-receipts.ts` | `tests/amplefile-cli-act-receipts.test.ts` |
 | Act argv, command table, setup-only refusal | `src/local/cli/act-commands.ts` | `tests/amplefile-cli-act-protocol.test.ts` |
-| Facade over the route internals | `src/local/cli/act-facade.ts`, `src/local/server.ts` | `tests/amplefile-act-facade.test.ts` and the owning domain suites |
+| Facade over the route internals | `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts` | `tests/amplefile-act-facade.test.ts` and the owning domain suites |
 | History-restore fencing and `chat compact` | `src/local/amplefile-kernel.ts` | `tests/amplefile-kernel.test.ts` |
 | Prepared verbs | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts` |
 | Recently Deleted | `src/local/recently-deleted-store.ts` | `tests/amplefile-recently-deleted-store.test.ts`, `tests/amplefile-cli-recently-deleted-verbs.test.ts`, `tests/recently-deleted-settings.test.ts` |

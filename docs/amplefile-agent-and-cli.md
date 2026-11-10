@@ -367,11 +367,12 @@ re-run; the job joins that turn's request, which reads `working` while it
 runs. Every verb names the job's Connected Folder, so a Worker reaches only
 its own Connected Folder's jobs; the AmpleFile Agent's own jobs are reached
 through its tools and listed by `requests show`. `jobs output` reads the end
-of the output or a page from `--offset`, can `--wait` for the end or
-`--until` a line matches, and with `--task` naming a running turn in the
-job's own Chat counts as the job's delivery. When a job ends, the host
-captures History for its Connected Folder and brings the exit status, that
-coverage, and the end of the output back to its Chat once: through a read,
+of the output or a page from `--offset`, can `--wait` for the job to end or
+for `--until` to match a line (one call waits at most 600 seconds; read again
+to keep waiting), and with `--task` naming a running turn in the job's own
+Chat counts as the job's delivery. When a job ends, the host captures History
+for its Connected Folder and brings the exit status, that coverage, and the
+end of the output back to its Chat once: through a read,
 the next turn's context, or one follow-up turn. Stop on the request and
 quitting AmpleFile stop jobs; a restart records a running job `interrupted`
 and wakes nothing. Output lives under the state root's `jobs/` directory and
@@ -827,9 +828,15 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 2. It starts or contacts the exact installed app executable with that request
    id. Electron's single-instance handoff routes the request to the running
    desktop host when the app is already open.
-3. The desktop host claims and serializes the request, executes it through
-   `AmpleFileCliKernelAdapter`, and atomically writes stdout, stderr,
-   structured result, and exit code under `responses`.
+3. The desktop host claims the request on arrival, executes it through
+   `AmpleFileCliKernelAdapter` or the act executor in one serial queue, and
+   atomically writes stdout, stderr, structured result, and exit code under
+   `responses`. `jobs output` and `chat compact`, which can take minutes and
+   are fenced by their own services, run beside that queue so they never
+   stall other commands. An act that reaches the front of the queue more
+   than five minutes after the shim created it is refused without running
+   and journaled as `rejected`, so a caller that gave up never sees it land
+   late.
 4. The shim returns that output and removes its request and response files.
    The broker also removes stale bounded files during initialization.
 
@@ -868,14 +875,19 @@ that is honest for a personal, local product:
   `accepted` records refuse a duplicated id outright. The broker refuses
   requests older than its freshness window, and journal rotation holds
   entries at least that long, so the two compose into a durable at-most-once
-  guarantee.
+  guarantee. The host reads the journal once, keeps the accepted ids in
+  memory, cuts an unfinished final line at startup, and refuses acts while
+  an unreadable line could still name a request the broker would accept.
 - **Explicit scope.** Every act command names its Connected Folder; writes
   never resolve from the working directory. Chat commands also name their
   conversation or task.
 - **Journal-first receipts.** Every authorized act command appends an
   `accepted` line to `cli/receipts/act.jsonl` **before** its mutation runs
   (an unwritable journal refuses the command) and a terminal `ok` or `error`
-  line after. Receipts record the initiating surface (`cli`, `popover`,
+  line after. Status, list, show, and overview reads journal the same pair
+  in `cli/receipts/act-reads.jsonl` instead, so a `chat wait` poll never
+  crowds real acts out of the journal or the overview. Receipts record the
+  initiating surface (`cli`, `popover`,
   `main-window`) and typed undo references, including Recently Deleted entry
   ids: identifiers and digests only, never content. A crash can separate the
   pair, but an applied action can never be missing its `accepted` trace; a
@@ -951,7 +963,7 @@ of reaching around it.
 | Per-launch act token file | `src/local/cli/act-token.ts` | `tests/amplefile-cli-act-token.test.ts` |
 | Act receipts | `src/local/cli/act-receipts.ts` | `tests/amplefile-cli-act-receipts.test.ts` |
 | Act argv parsing and executor | `src/local/cli/act-commands.ts` | `tests/amplefile-cli-act-protocol.test.ts`, `tests/desktop-amplefile-cli-host.test.ts` |
-| Act facade over route internals | `src/local/server.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
+| Act facade over route internals | `src/local/api/act-lane.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
 | Atomic bounded file broker | `src/local/cli/broker.ts` | `tests/amplefile-cli-broker.test.ts` |
 | Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
 | CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
@@ -962,7 +974,7 @@ of reaching around it.
 | Durable requests | `src/local/requests/request-records.ts`, `src/local/requests/request-store.ts` | `tests/amplefile-request-store.test.ts`, `tests/agent-requests.test.ts`, `tests/amplefile-request-integration.test.ts` |
 | Connected Folder turn context and operations guide | `src/local/agent/connected-folder-turn-context.ts`, `src/local/agent/connected-folder-operations-guide.ts` | `tests/connected-folder-turn-context.test.ts`, `tests/connected-folder-operations-guide-prompt.test.ts`, `tests/amplefile-agent-turn-context.test.ts` |
 | Turn environment line and role preamble | `src/local/agent/turn-environment.ts`, `src/local/agent/role-preamble.ts` | `tests/turn-environment.test.ts`, `tests/role-preamble-prompt.test.ts` |
-| Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/server.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
+| Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts`, `src/local/api/request-records.ts`, `src/local/api/request-routes.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
 | Bounded inference | `src/local/agent/bounded-inference.ts` | `tests/bounded-inference.test.ts` |
 | Automation declarations, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
 | Overview composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |

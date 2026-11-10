@@ -39,3 +39,32 @@ test("Connected Folder act mutations invalidate the visible registry without car
     assert.deepEqual(bootstrap.connectedFolders.map(({ id, name }) => ({ id, name })), [{ id: created.connectedFolder.id, name: "Purchasing renamed" }]);
   } finally { clearTimeout(timeout); abort.abort(); await api.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test("an appearance applied, reset, or undone through the act lane tells open windows to re-read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-appearance-events-"));
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "connected-folders"), loadEnv: false });
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 15_000);
+  try {
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Looks" });
+    const response = await fetch(`${api.origin}/api/amplefile-agent/control-events`, { signal: abort.signal });
+    const reader = response.body!.getReader();
+    assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: {"type":"reset"}\n\n');
+    const nextConnectedFolderHint = async () => {
+      let text = "";
+      while (!text.includes('data: {"type":"connected-folders"}\n\n')) {
+        const chunk = await reader.read();
+        assert.equal(chunk.done, false);
+        text += new TextDecoder().decode(chunk.value);
+      }
+    };
+    await api.actFacade.connectedFoldersAppearanceApply({ connectedFolder: connectedFolder.id, parts: { color: "#7a4cc2" }, cwd: connectedFolder.connectedFolderRoot });
+    await nextConnectedFolderHint();
+    await api.actFacade.connectedFoldersAppearanceReset({ connectedFolder: connectedFolder.id });
+    await nextConnectedFolderHint();
+    await api.actFacade.connectedFoldersAppearanceUndo({ connectedFolder: connectedFolder.id });
+    await nextConnectedFolderHint();
+    const bootstrap = await (await fetch(`${api.origin}/api/bootstrap`)).json() as { appearance: { customizations: Record<string, unknown> } };
+    assert.ok(bootstrap.appearance.customizations[connectedFolder.id], "the undone reset brought the look back");
+  } finally { clearTimeout(timeout); abort.abort(); await api.close(); await rm(root, { recursive: true, force: true }); }
+});

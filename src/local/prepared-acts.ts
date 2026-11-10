@@ -12,7 +12,8 @@ import type {
  * fence, and one internal kernel task around the execution. There is no
  * store, no pending state, and no decision: the calling verb prepares the act
  * from live state, the act executor journals the request first
- * (src/local/cli/act-commands.ts, `runDesktopSettingsAct` in server.ts), and
+ * (src/local/cli/act-commands.ts, `runDesktopSettingsAct` in
+ * src/local/api/prepared-act-adapters.ts), and
  * this executor runs it at once. Journaling stays with those callers so the
  * accepted line always precedes the effect and a replayed request id is
  * refused before anything here runs.
@@ -185,7 +186,7 @@ export type PreparedActFenceScope =
 /**
  * Injectable seam over the local API's capability-mutation reservation
  * (`runCapabilityMutation` / `runConnectedFolderMutation` in
- * src/local/server.ts): reserves the scope for the operation and releases it
+ * src/local/api/reservations.ts): reserves the scope for the operation and releases it
  * on every outcome, exactly as the equivalent desktop route would. A busy
  * scope refuses with the routes' own conflict.
  */

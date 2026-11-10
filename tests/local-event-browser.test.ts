@@ -14,7 +14,7 @@ import { createLocalEventSink, createLocalEventChannel, parseLocalEventSubscript
 test("Chromium can start, answer and Stop with twelve mounted Chat streams plus file/control subscriptions", { skip: process.platform !== "darwin", timeout: 30_000 }, async (t) => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-event-browser-"));
   const output = await build({ stdin: { contents: `import {api,createEventSource} from ${JSON.stringify(resolve("web-local/src/lib/api.ts"))}; window.fixture={api,createEventSource};`, resolveDir: process.cwd() }, bundle: true, format: "iife", platform: "browser", write: false });
-  let activeStreams = 0; let maximumStreams = 0;
+  let activeStreams = 0;
   const mutations: string[] = [];
   const batches: Array<ReturnType<typeof parseLocalEventSubscriptions>> = [];
   const server = createServer(async (req, res) => {
@@ -25,7 +25,7 @@ test("Chromium can start, answer and Stop with twelve mounted Chat streams plus 
         let body = ""; for await (const chunk of req) body += String(chunk);
         const subscriptions = parseLocalEventSubscriptions(JSON.parse(body)); batches.push(subscriptions);
         const parent = createLocalEventSink(res);
-        activeStreams++; maximumStreams = Math.max(maximumStreams, activeStreams);
+        activeStreams++;
         parent.onClose(() => { activeStreams--; });
         for (const item of subscriptions) {
           const channel = createLocalEventChannel(parent, item.id);
@@ -48,6 +48,8 @@ app.setPath('userData',${JSON.stringify(join(root, "profile"))}); app.disableHar
 app.whenReady().then(async()=>{ const window=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
 try { await window.loadURL(${JSON.stringify(origin)}); const result=await window.webContents.executeJavaScript(\`(async()=>{
  const {api,createEventSource}=window.fixture; const streams=[]; let ready=0; let frames=0;
+ let open=0; let maximumOpen=0; const realFetch=window.fetch.bind(window);
+ window.fetch=(input,init)=>{ if(String(input).endsWith('/api/events')){ open++; maximumOpen=Math.max(maximumOpen,open); let counted=true; init?.signal?.addEventListener('abort',()=>{ if(counted){counted=false;open--;} },{once:true}); } return realFetch(input,init); };
  const paths=Array.from({length:12},(_,i)=>'/api/connected-folders/lab/conversations/chat-'+i+'/events'); paths.push('/api/connected-folders/lab/file-events','/api/amplefile-agent/control-events');
  for(const path of paths){const stream=createEventSource(path);stream.onopen=()=>ready++;stream.onmessage=()=>frames++;streams.push(stream);}
  const wait=async(predicate)=>{const end=Date.now()+5000;while(!predicate()){if(Date.now()>end)throw Error('Stream pool admission stalled');await new Promise(r=>setTimeout(r,10));}};
@@ -55,7 +57,8 @@ try { await window.loadURL(${JSON.stringify(origin)}); const result=await window
  const accepted=await Promise.race([Promise.all(['start','answer','stop'].map(name=>api('/fixture/'+name,{method:'POST',body:{synthetic:true}}))),new Promise((_,reject)=>setTimeout(()=>reject(Error('Start/answer/Stop starved behind SSE')),1500))]);
  const elapsed=performance.now()-before; const added=createEventSource('/api/connected-folders/lab/conversations/new/events'); added.onopen=()=>ready++;streams.push(added);
  await wait(()=>ready===29); const cursors=streams.slice(0,14).map(stream=>stream.lastEventId);for(const stream of streams)stream.close();
- return {accepted:accepted.length,elapsed,frames,cursors}; })()\`);console.log('RESULT '+JSON.stringify(result));window.destroy();app.exit(0);}
+ await wait(()=>open===0);
+ return {accepted:accepted.length,elapsed,frames,cursors,maximumOpen,open}; })()\`);console.log('RESULT '+JSON.stringify(result));window.destroy();app.exit(0);}
 catch(error){console.error(error.stack);window.destroy();app.exit(1);}});`);
   const electron = createRequire(import.meta.url)("electron") as string;
   const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((done, reject) => {
@@ -70,9 +73,16 @@ catch(error){console.error(error.stack);window.destroy();app.exit(1);}});`);
   assert.equal(evidence.accepted, 3);
   assert.ok(evidence.elapsed < 1500);
   assert.deepEqual(mutations.sort(), ["/fixture/answer", "/fixture/start", "/fixture/stop"]);
-  assert.equal(maximumStreams, 1, "all chat/file/control subscriptions share one physical connection, including reconnect");
-  assert.equal(batches.length, 2);
-  assert.ok(batches[1]!.slice(0, 14).every((item) => item.lastEventId === "17"));
+  // The renderer aborts and drains the old physical request before it opens
+  // the next, so it never holds two. (The server notices a client abort
+  // asynchronously, so its own count can briefly overlap; that is not asserted.)
+  assert.equal(evidence.maximumOpen, 1, "all chat/file/control subscriptions share one physical connection, including reconnect");
+  assert.equal(batches.length, 2, "adding a subscription rebuilds the connection exactly once");
+  assert.ok(batches.every((batch, index) => batch.length === [14, 15][index]));
+  assert.ok(batches[1]!.slice(0, 14).every((item) => item.lastEventId === "17"), "existing subscriptions resume from their cursors");
   assert.ok(evidence.cursors.every((cursor: string) => cursor === "18"));
-  assert.equal(activeStreams, 0, "renderer disposal closes the physical connection");
+  assert.equal(evidence.open, 0, "renderer disposal aborts the physical connection");
+  const closedBy = Date.now() + 2_000;
+  while (activeStreams !== 0 && Date.now() < closedBy) await new Promise((done) => setTimeout(done, 10));
+  assert.equal(activeStreams, 0, "renderer disposal closes the physical connection on the server");
 });

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api";
 
+/** How long a folder must stay shown before its suggestions are asked for. */
+export const suggestionsDelayMs = 600;
+
 /** Suggestions already written this session, by Connected Folder and folder; the host keeps them longer. */
 const written = new Map<string, string[]>();
 
@@ -17,16 +20,20 @@ export function useFolderSuggestions(connectedFolderId: string | null, path: str
   useEffect(() => {
     setSuggestions(written.get(key) ?? []);
     if (!enabled || !connectedFolderId || written.has(key)) return;
-    let cancelled = false;
+    // Each request is a model call: wait until the person settles on a folder,
+    // and abandon the request when they move on or the suggestions hide.
+    const controller = new AbortController();
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
-    void api<{ suggestions: string[] }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/suggestions${query}`)
-      .then((body) => {
-        const list = body.suggestions.filter(Boolean).slice(0, 4);
-        written.set(key, list);
-        if (!cancelled) setSuggestions(list);
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
+    const timer = window.setTimeout(() => {
+      void api<{ suggestions: string[] }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/suggestions${query}`, { signal: controller.signal })
+        .then((body) => {
+          const list = body.suggestions.filter(Boolean).slice(0, 4);
+          written.set(key, list);
+          if (!controller.signal.aborted) setSuggestions(list);
+        })
+        .catch(() => undefined);
+    }, suggestionsDelayMs);
+    return () => { window.clearTimeout(timer); controller.abort(); };
   }, [key, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
   return suggestions;
 }

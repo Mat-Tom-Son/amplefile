@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
@@ -18,7 +18,7 @@ const [app, fileManager, chatPanel, messages, workTrail, activity, panes, settin
   read("web-local/src/lib/connected-folder-identity.ts"),
   read("web-local/src/lib/model-display.ts"),
   read("desktop/src/main.ts"),
-  read("src/local/server.ts"),
+  readLocalApi(),
   read("src/local/agent/pi-client.ts"),
   read("web-local/src/components/chrome/ActivityDot.tsx"),
 ]);
@@ -368,4 +368,10 @@ test("audited desktop and pane controls have working destinations", () => {
 
 async function read(relativePath: string): Promise<string> {
   return readFile(join(root, relativePath), "utf8");
+}
+
+/** The local API's source: its entry and the route modules beside it. */
+async function readLocalApi(): Promise<string> {
+  const modules = (await readdir(join(root, "src/local/api"))).filter((name) => name.endsWith(".ts")).sort();
+  return (await Promise.all([read("src/local/server.ts"), ...modules.map((name) => read(`src/local/api/${name}`))])).join("\n");
 }

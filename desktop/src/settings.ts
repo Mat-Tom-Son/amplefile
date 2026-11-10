@@ -1,12 +1,34 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { safeStorage } from "electron";
+import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { basename, dirname, join } from "node:path";
 import type { PiAuthStorageData, PiAuthStorageHost } from "../../src/local/agent/auth-storage.js";
+
+const require = createRequire(import.meta.url);
 
 export interface SecureSettingsStatus {
   encryptionAvailable: boolean;
   configuredProviders: string[];
+  /**
+   * Saved provider credentials could not be decrypted (for example after the
+   * Safe Storage key was reset). They were set aside next to the settings file,
+   * never deleted, and the person needs to re-enter their credentials. Derived
+   * from the set-aside files, so it survives a restart; it clears once
+   * credentials are saved again.
+   */
+  credentialsNeedReentry: boolean;
+}
+
+/** The slice of Electron's `safeStorage` this store uses; injectable for tests. */
+export interface SafeStorageLike {
+  isEncryptionAvailable(): boolean;
+  encryptString(plainText: string): Buffer;
+  decryptString(encrypted: Buffer): string;
+}
+
+export interface SecureSettingsStoreOptions {
+  safeStorage?: SafeStorageLike;
+  now?: () => Date;
 }
 
 interface SecureSettingsFile {
@@ -23,17 +45,24 @@ const emptySettings = (): SecureSettingsFile => ({
 export class SecureSettingsStore implements PiAuthStorageHost {
   private queue: Promise<void> = Promise.resolve();
   private cache: SecureSettingsFile | undefined;
+  private pendingRead: Promise<SecureSettingsFile> | null = null;
+  private readonly safeStorage: SafeStorageLike;
+  private readonly now: () => Date;
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, options: SecureSettingsStoreOptions = {}) {
+    this.safeStorage = options.safeStorage ?? (require("electron") as typeof import("electron")).safeStorage;
+    this.now = options.now ?? (() => new Date());
+  }
 
   async status(): Promise<SecureSettingsStatus> {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { encryptionAvailable: false, configuredProviders: [] };
+    if (!this.safeStorage.isEncryptionAvailable()) {
+      return { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: (await this.setAsideFiles()).length > 0 };
     }
     const data = await this.read();
     return {
       encryptionAvailable: true,
       configuredProviders: Object.keys(data.credentials).sort(),
+      credentialsNeedReentry: (await this.setAsideFiles()).length > 0,
     };
   }
 
@@ -79,32 +108,92 @@ export class SecureSettingsStore implements PiAuthStorageHost {
     await operation;
   }
 
+  /**
+   * status(), load(), and key reads run outside the save queue; at startup
+   * the Pi credential load and the Settings status read arrive together.
+   * They share one uncached read, so only one of them can set files aside.
+   */
   private async read(): Promise<SecureSettingsFile> {
+    if (this.cache) return structuredClone(this.cache);
+    this.pendingRead ??= this.readUncached().finally(() => { this.pendingRead = null; });
+    return structuredClone(await this.pendingRead);
+  }
+
+  private async readUncached(): Promise<SecureSettingsFile> {
     if (this.cache) return structuredClone(this.cache);
     if (!existsSync(this.filePath) && !existsSync(this.backupPath())) {
       this.cache = emptySettings();
       return structuredClone(this.cache);
     }
+    // Unavailable secure storage (for example a denied Keychain prompt) is
+    // transient: throw without caching so a later read can try again.
     this.assertEncryptionAvailable();
-    let firstError: unknown;
+    let undecryptable: unknown;
+    let anyRead = false;
     for (const candidate of [this.filePath, this.backupPath()]) {
-      if (!existsSync(candidate)) continue;
+      let bytes: Buffer;
       try {
-        const decrypted = safeStorage.decryptString(await readFile(candidate));
+        bytes = await readFile(candidate);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        // An I/O failure (EMFILE, EIO, EACCES, …) says nothing about the
+        // bytes: never set credentials aside for it, and never cache it.
+        throw new Error(`AmpleFile could not read secure settings: ${errorMessage(error)}`);
+      }
+      anyRead = true;
+      let decrypted: string;
+      try {
+        decrypted = this.safeStorage.decryptString(bytes);
+      } catch (error) {
+        if (isTransientDecryptionError(error) || !this.safeStorage.isEncryptionAvailable()) {
+          throw new Error(`Operating-system secure storage could not decrypt settings right now: ${errorMessage(error)}`);
+        }
+        undecryptable ??= error;
+        continue;
+      }
+      try {
         this.cache = normalizeSettings(JSON.parse(decrypted));
         return structuredClone(this.cache);
       } catch (error) {
-        firstError ??= error;
+        undecryptable ??= error;
       }
     }
-    throw new Error(`AmpleFile could not read secure settings: ${errorMessage(firstError)}`);
+    if (!anyRead) {
+      // Both files vanished between the check and the read: nothing is saved.
+      this.cache = emptySettings();
+      return structuredClone(this.cache);
+    }
+    // Every copy that exists was read in full, secure storage works, and
+    // none decrypts to settings: these bytes will never be readable with this
+    // key, and every save would fail on them. Set them aside (never delete)
+    // and start empty so the person can re-enter keys.
+    await this.setAsideUnreadableFiles(undecryptable);
+    this.cache = emptySettings();
+    return structuredClone(this.cache);
+  }
+
+  private async setAsideUnreadableFiles(cause: unknown): Promise<void> {
+    const stamp = this.now().toISOString().replace(/[:.]/g, "-");
+    for (const candidate of [this.filePath, this.backupPath()]) {
+      if (!existsSync(candidate)) continue;
+      let target = `${candidate}.unreadable-${stamp}`;
+      for (let suffix = 1; existsSync(target); suffix += 1) target = `${candidate}.unreadable-${stamp}-${suffix}`;
+      try {
+        await rename(candidate, target);
+      } catch (error) {
+        // Already moved (or removed) by someone else: nothing left to set aside.
+        if (errorCode(error) === "ENOENT") continue;
+        throw new Error(`AmpleFile could not read secure settings (${errorMessage(cause)}) or set them aside: ${errorMessage(error)}`);
+      }
+    }
+    console.warn(`AmpleFile could not decrypt saved provider credentials and set them aside; re-enter them in Settings → AI Models. (${errorMessage(cause)})`);
   }
 
   private async write(data: SecureSettingsFile): Promise<void> {
     this.assertEncryptionAvailable();
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, safeStorage.encryptString(JSON.stringify(data)));
+    await writeFile(temporaryPath, this.safeStorage.encryptString(JSON.stringify(data)));
     try {
       if (existsSync(this.filePath)) await copyFile(this.filePath, this.backupPath());
       await rename(temporaryPath, this.filePath);
@@ -113,6 +202,36 @@ export class SecureSettingsStore implements PiAuthStorageHost {
       await unlink(temporaryPath).catch(() => undefined);
       throw error;
     }
+    await this.supersedeSetAsideFiles();
+  }
+
+  /** Copies set aside as unreadable that still ask the person to re-enter credentials. */
+  private async setAsideFiles(): Promise<string[]> {
+    const directory = dirname(this.filePath);
+    const pattern = new RegExp(`^${escapeRegExp(basename(this.filePath))}(?:\\.bak)?\\.unreadable-[0-9A-Za-z-]+$`);
+    try {
+      return (await readdir(directory)).filter((name) => pattern.test(name)).map((name) => join(directory, name));
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  /**
+   * Credentials were saved again, so the re-entry request is answered. The
+   * set-aside copies stay on disk, renamed `*.superseded`, for anyone who can
+   * still decrypt them; nothing is deleted.
+   */
+  private async supersedeSetAsideFiles(): Promise<void> {
+    try {
+      for (const path of await this.setAsideFiles()) {
+        await rename(path, `${path}.superseded`).catch((error: unknown) => {
+          if (errorCode(error) !== "ENOENT") throw error;
+        });
+      }
+    } catch (error) {
+      console.warn(`AmpleFile saved credentials but could not mark the set-aside copies as superseded: ${errorMessage(error)}`);
+    }
   }
 
   private backupPath(): string {
@@ -120,7 +239,7 @@ export class SecureSettingsStore implements PiAuthStorageHost {
   }
 
   private assertEncryptionAvailable(): void {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.safeStorage.isEncryptionAvailable()) {
       throw new Error("Operating-system secure storage is not available for this session.");
     }
   }
@@ -149,6 +268,23 @@ function normalizeProvider(value: string): string {
   const provider = value.trim().toLocaleLowerCase();
   if (!provider || !/^[a-z0-9._-]+$/.test(provider)) throw new Error("Invalid provider name.");
   return provider;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
+}
+
+/**
+ * Electron reports a missing Safe Storage key as "Decryption is not
+ * available", which says the key could not be fetched now, not that the bytes
+ * are corrupt.
+ */
+function isTransientDecryptionError(error: unknown): boolean {
+  return /decryption is not available|encryption is not available|keychain/i.test(errorMessage(error));
 }
 
 function errorMessage(error: unknown): string {

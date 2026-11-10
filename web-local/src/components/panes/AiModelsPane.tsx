@@ -57,6 +57,7 @@ export function AiModelsPane(props: AiModelsProps & {
   /** Unsaved edits per scope; a host that outlives this pane passes one so closing it keeps them. */
   drafts?: Map<string, AiModelsDraft>;
 }) {
+  const credentialsNeedReentry = useCredentialsNeedReentry();
   const { connectedFolder, embedded = false, initialScope, active = true, focusModelOnOpen = false, focusInstructionsOnOpen = false } = props;
   const identity = JSON.stringify([connectedFolder?.id ?? null, initialScope ?? null]);
   const defaultScope = initialScope === "agent" || !connectedFolder ? "agent" : "connected-folder";
@@ -127,6 +128,9 @@ export function AiModelsPane(props: AiModelsProps & {
 
   return (
     <div className={embedded ? "assistant-settings-panel professional-setup" : "connected-folder-pane-content ai-models-pane professional-surface professional-setup"}>
+      {credentialsNeedReentry ? <p className="professional-field-hint ai-models-credentials-notice" role="status">
+        AmpleFile could not read the provider keys and sign-ins saved on this computer, so it set them aside. Connect your AI provider again to keep using it.
+      </p> : null}
       {connectedFolder ? <fieldset className="ai-models-scope-control">
         <legend>Model Defaults</legend>
         <label className={scope === "connected-folder" ? "active" : ""}>
@@ -716,4 +720,24 @@ function modelScopeBody(scope: ModelScope, connectedFolder: ConnectedFolderSumma
 }
 function formatCatalogDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * True while the desktop app reports that saved provider credentials could
+ * not be decrypted and were set aside. Re-read on model changes and when the
+ * window regains focus, so it clears once the person connects again.
+ */
+function useCredentialsNeedReentry(): boolean {
+  const [needed, setNeeded] = useState(false);
+  useEffect(() => {
+    const getStatus = window.ampleFileDesktop?.settings?.getStatus;
+    if (!getStatus) return;
+    let disposed = false;
+    const read = () => { void getStatus().then((status) => { if (!disposed) setNeeded(status?.credentialsNeedReentry === true); }).catch(() => undefined); };
+    read();
+    const unsubscribe = subscribeControlEvents((hint) => { if (hint === "models" || hint === "reset") read(); });
+    window.addEventListener("focus", read);
+    return () => { disposed = true; unsubscribe(); window.removeEventListener("focus", read); };
+  }, []);
+  return needed;
 }
