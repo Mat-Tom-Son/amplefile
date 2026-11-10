@@ -81,7 +81,8 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
   // The browser preview stands in for the shipped app: its version, and a check that found nothing newer.
   const [fixtureUpdateStatus] = useState(() => fixtureMode ? buildFixtureUpdateStatus() : null);
   const shownUpdateStatus = updateStatus ?? fixtureUpdateStatus;
-  const updateAction = fixtureMode ? () => showToast({ text: "Checking for updates is disabled in the preview", tone: "info" }) : onUpdateAction;
+  // The app's shared update action asks before a restart, in the preview too.
+  const updateAction = onUpdateAction ?? (fixtureMode ? () => showToast({ text: "Checking for updates is disabled in the preview", tone: "info" }) : undefined);
 
   useEffect(() => { setPage(settingsTabForPage(initialPage, initialSection)); }, [initialPage, initialSection]);
   useEffect(() => {
