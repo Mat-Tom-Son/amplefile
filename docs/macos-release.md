@@ -1,8 +1,8 @@
 # macOS release runbook
 
-This runbook publishes the Apple-silicon AmpleFile desktop release. Releases are published to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases), which is also the feed every installed copy checks. Source and release tags live in [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile).
+This runbook publishes the Apple-silicon AmpleFile desktop release. From 0.1.5 on, the packaged app checks GitHub Releases in the source repository, [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile), which also holds the source and the release tags. Versions 0.1.0 through 0.1.4 check the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases).
 
-The release tooling can also move the feed to GitHub Releases in the source repository. That move has not started; [Update feed](#update-feed) describes the stages and [Moving the feed to the source repository](#moving-the-feed-to-the-source-repository) is the procedure.
+The feed is moving from the separate repository to the source repository. 0.1.5 is the bridge release, published to both; [Update feed](#update-feed) describes the stages and [Moving the feed to the source repository](#moving-the-feed-to-the-source-repository) is the procedure.
 
 ## One-time workstation setup
 
@@ -34,9 +34,10 @@ configuration and every release script, from the feed stage:
 | `bridge` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile`, then `Mat-Tom-Son/amplefile-mac-releases` |
 | `source-repository` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile` |
 
-**The checked-in stage is `separate-repository`.** Every published version,
-0.1.0 through 0.1.4, checks `Mat-Tom-Son/amplefile-mac-releases`, and a
-release cut from this source is published there alone.
+**The checked-in stage is `bridge`.** A release cut from this source, 0.1.5,
+checks `Mat-Tom-Son/amplefile` and is published there and then to
+`Mat-Tom-Son/amplefile-mac-releases`. Versions 0.1.0 through 0.1.4 check
+`Mat-Tom-Son/amplefile-mac-releases`.
 
 `AMPLEFILE_MAC_RELEASE_OWNER` and `AMPLEFILE_MAC_RELEASE_REPO` name the
 separate release repository in every stage; they never select the source
@@ -315,7 +316,7 @@ publisher invocation has the same checks.
 
 ## Moving the feed to the source repository
 
-Every copy installed so far carries an `app-update.yml` that names
+Every copy of 0.1.0 through 0.1.4 carries an `app-update.yml` that names
 `Mat-Tom-Son/amplefile-mac-releases`, and that cannot be changed from
 outside. Those copies reach the source repository only by updating, through
 the separate repository, to a version that names it. The move is therefore
@@ -718,9 +719,9 @@ app named, the feed the higher app names, and the output of
 
 ## Release ownership
 
-The source repository owns code, exact release tags, issues, and documentation. `amplefile-mac-releases` is the active desktop artifact feed only. Do not develop or hand-edit release metadata in the feed repository, and do not add a competing tag publisher.
+The source repository owns code, exact release tags, issues, and documentation, and from the bridge release, 0.1.5, its GitHub Releases are the Mac update feed. `amplefile-mac-releases` receives the bridge as its last release and stays public for copies that have not updated yet. Do not develop or hand-edit release metadata in either repository's releases, and do not add a competing tag publisher.
 
-The source repository's GitHub Releases hold `linux-test-*` prereleases and no Mac release. Once the feed moves there, its latest release is what every installed Mac copy is offered, so two rules hold for anything else published in it:
+The source repository's GitHub Releases also hold `linux-test-*` prereleases. Its latest release is what every installed Mac copy from 0.1.5 on is offered, so two rules hold for anything else published in it:
 
 - A Linux preview is published as a prerelease and never as the latest release. `gh release create` marks a release latest unless it is given `--prerelease` or `--latest=false`. If one does take latest, every Mac copy's update check fails until it is undone: mark the last Mac release latest again with `gh release edit v<version> --repo Mat-Tom-Son/amplefile --latest`, or make the other release a prerelease with `gh release edit <tag> --repo Mat-Tom-Son/amplefile --prerelease`. Then confirm with `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile`. The Mac publisher refuses to publish while a release that is not a Mac release is latest there, and checks after publishing that its own release is.
 - The updater reads only the latest release. If Linux ever gets an updater feed of its own in this repository, both platforms have to ship in the same release for each version, with `latest-mac.yml` and the Linux update metadata as assets of that one release.

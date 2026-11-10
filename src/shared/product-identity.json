@@ -13,5 +13,5 @@
   "sourceRepositoryOwner": "Mat-Tom-Son",
   "sourceRepositoryName": "amplefile",
   "macReleaseRepositoryName": "amplefile-mac-releases",
-  "macUpdateFeedStage": "separate-repository"
+  "macUpdateFeedStage": "bridge"
 }
