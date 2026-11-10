@@ -299,6 +299,12 @@
   box-shadow: none;
 }
 
+/* Each group is its own layer, so the one holding an open model dropdown
+   rises above the groups after it and the dropdown lies over their cards. */
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section:has(.model-catalog-popover) {
+  z-index: 1;
+}
+
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(h3, h4, h5, legend),
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is([class$="-heading"], [class*="-heading "]) > :is(h3, h4, h5) {
   margin: 0;

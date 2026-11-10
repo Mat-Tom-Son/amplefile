@@ -6,9 +6,7 @@ import remarkGfm from "remark-gfm";
 import {
   BookOpen16Regular,
   Chat16Regular,
-  Checkmark16Regular,
   ChevronRight16Regular,
-  Copy16Regular,
   DocumentAdd16Regular,
   DocumentEdit16Regular,
   Folder16Regular,
@@ -22,7 +20,6 @@ import {
 
 import { collectConnectedFolderPathCandidates, connectedFolderPathCandidate } from "../../lib/connected-folder-path-links";
 import { safeExternalHref } from "../../lib/api";
-import { copyToClipboard } from "../../lib/clipboard";
 import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
 import type { AgentActivityPhase, RuntimePreviewEntry } from "../../types";
 import { FluentGlyph } from "../chrome/common";
@@ -137,7 +134,7 @@ function ToolStep({
   onOpenConnectedFolderFile,
 }: {
   entry: RuntimePreviewEntry;
-  /** A command step opens to its whole command; other tool steps have nothing more to show. */
+  /** A command step opens to its recorded command; other tool steps have nothing more to show. */
   open: boolean;
   onToggle: () => void;
   connectedFolderRoot?: string;
@@ -194,29 +191,15 @@ function ToolStep({
   );
 }
 
-/** A command step's whole command, wrapped in the code font, with its own Copy. */
+/**
+ * An opened command step: the step's record of its command, wrapped in the
+ * code font. The record is one line, has secrets redacted, and is cut short
+ * when long, so it is shown to read and is never offered to copy and run.
+ */
 function StepCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyCommand() {
-    try {
-      await copyToClipboard({ text: command });
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
     <div className="work-step-command">
-      <div className="work-step-command-bar">
-        <span>Command</span>
-        <button className={copied ? "work-step-copy is-copied" : "work-step-copy"} type="button" onClick={() => void copyCommand()} aria-label={copied ? "Copied Command" : "Copy Command"} title={copied ? "Copied" : "Copy Command"}>
-          <FluentGlyph icon={copied ? Checkmark16Regular : Copy16Regular} size={13} />
-          <span>{copied ? "Copied" : "Copy"}</span>
-        </button>
-      </div>
+      <div className="work-step-command-bar">Recorded Command</div>
       <pre><code>{command}</code></pre>
     </div>
   );
