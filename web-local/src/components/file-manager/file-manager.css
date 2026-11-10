@@ -186,6 +186,108 @@
   flex-direction: column;
 }
 
+/* The update indicator: the sidebar's foot, below the scrolling lists, and
+   only while an update needs the person. Lined up with the rows above it. */
+.fm-update {
+  flex: none;
+  margin: 0 -10px -6px;
+  padding: 6px 10px 0;
+  border-top: 0.5px solid var(--fm-line);
+  /* Measured in the label's own size, so the narrow rule follows Text Size. */
+  container-type: inline-size;
+  font-size: calc(13px * var(--fm-scale));
+}
+
+.fm-update-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: calc(28px * var(--fm-scale) * var(--fm-density));
+  padding: 0 8px 0 var(--fm-sidebar-gutter, 21px);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fm-text);
+  font-size: calc(13px * var(--fm-scale));
+  text-align: left;
+}
+
+.fm-update-button:hover:not([aria-disabled="true"]) {
+  background: var(--fm-hover);
+}
+
+.fm-update-button[aria-disabled="true"],
+.fm-update-button.is-error {
+  color: var(--fm-text2);
+}
+
+.fm-update-button[aria-disabled="true"] {
+  cursor: default;
+}
+
+.fm-update-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+}
+
+.fm-update-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fm-accent);
+}
+
+/* Ready: the same dot, ringed, because one click now restarts the app. */
+.fm-update-button.is-ready .fm-update-dot {
+  box-shadow: 0 0 0 3px var(--fm-accent-soft);
+}
+
+/* Downloading: a ring that fills with the download; still, never spinning. */
+.fm-update-button.is-downloading .fm-update-dot {
+  width: 12px;
+  height: 12px;
+  background: conic-gradient(var(--fm-accent) var(--fm-update-progress, 0%), color-mix(in srgb, var(--fm-text) 16%, transparent) 0);
+  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+}
+
+.fm-update-button.is-installing .fm-update-dot {
+  opacity: 0.55;
+}
+
+/* Failed: quiet, a hollow ring in the sidebar's secondary ink. */
+.fm-update-button.is-error .fm-update-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fm-text3);
+}
+
+.fm-update-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The version or progress: quiet, and gone rather than cut when the sidebar
+   is too narrow for it and the label both. The label and tooltip still name it. */
+.fm-update-detail {
+  flex: none;
+  color: var(--fm-text3);
+  font-size: calc(12px * var(--fm-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@container (max-width: 15.75em) {
+  .fm-update-detail {
+    display: none;
+  }
+}
+
 
 /* Main column */
 

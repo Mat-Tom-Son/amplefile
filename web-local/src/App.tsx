@@ -22,6 +22,8 @@ import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
 import { isMacOS } from "./lib/platform";
 import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
 import { ConfirmDialogHost, showToast, ToastHost } from "./ui/feedback";
+import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
+import { updateCallForPhase } from "./lib/update-status";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
 
@@ -173,6 +175,12 @@ export function App() {
     setPendingConnectedFolderOpen(null);
   }, [pendingConnectedFolderOpen, boot?.connectedFolders]);
   useEffect(() => {
+    // `&update=<phase>` previews an update phase in Settings → About and the sidebar.
+    if (fixtureRequested) {
+      const phase = fixtureUpdatePhaseFromQuery(window.location.search);
+      if (phase) setUpdateStatus(buildFixtureUpdateStatus(phase));
+      return;
+    }
     const updates = window.ampleFileDesktop?.updates;
     if (!updates) return;
     let cancelled = false;
@@ -254,16 +262,15 @@ export function App() {
     modelConfigurationChanged();
   }
 
+  /** Settings → About's update button and the sidebar's update indicator both click through here. */
   async function runUpdateAction() {
+    if (fixtureRequested) { showToast({ text: "Updating is disabled in the preview", tone: "info" }); return; }
     const updates = window.ampleFileDesktop?.updates;
     if (!updates) return;
+    const call = updateCallForPhase(updateStatus?.phase ?? "idle");
+    if (!call) return;
     try {
-      const status = updateStatus?.phase === "ready"
-        ? await updates.install()
-        : updateStatus?.phase === "available" || updateStatus?.phase === "error"
-          ? await updates.updateNow()
-          : await updates.check();
-      setUpdateStatus(status);
+      setUpdateStatus(await updates[call]());
     } catch (caught) { setError(errorText(caught)); }
   }
 
@@ -278,7 +285,7 @@ export function App() {
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}
-    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onError={setError} /></ConnectedFolderAppearanceProvider>
+    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onError={setError} /></ConnectedFolderAppearanceProvider>
     : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
     {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}

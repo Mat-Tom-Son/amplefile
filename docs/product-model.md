@@ -68,6 +68,17 @@ other surface.
   from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
+- **Update indicator:** while an update needs the person, the foot of the
+  sidebar, below its scrolling lists, holds one button with a dot in the
+  window's accent: **Update Available** with the version (a click downloads
+  it, and AmpleFile restarts into it when the download finishes),
+  **Downloading** with its progress (a click opens Settings → About),
+  **Restart to Update** (a click installs it now), **Restarting to Update**
+  while AmpleFile quits, or a quiet **Update Failed** that opens Settings →
+  About, where the detail and **Retry** are. Each click does what the same
+  phase's button in Settings → About does. While AmpleFile is up to date,
+  checking, or has no updater, the sidebar shows nothing there. **AmpleFile >
+  Check for Updates…** and Settings → About stay the places to check.
 - **Nested Connected Folders:** a Connected Folder registered inside another
   sits under it, indented, behind a caret in the left gutter. The caret (or
   the arrow keys) shows and hides the Connected Folders inside, the sidebar
