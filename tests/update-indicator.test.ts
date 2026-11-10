@@ -3,7 +3,7 @@ import { createRequire, registerHooks } from "node:module";
 import test from "node:test";
 import { createElement } from "react";
 import type { AgentStatus, ConnectedFolderSummary, DesktopUpdateStatus } from "../web-local/src/types.js";
-import { updateActionLabel, updateCallForPhase, updateIndicatorFor, updateIsBusy, type UpdatePhase } from "../web-local/src/lib/update-status.js";
+import { updateActionLabel, updateCallFor, updateIndicatorFor, updateIsBusy, type UpdatePhase } from "../web-local/src/lib/update-status.js";
 import { buildFixtureUpdateStatus, fixtureAvailableVersion, fixtureUpdatePhaseFromQuery, fixtureUpdatePhases } from "../web-local/src/fixtures/settings-fixture.js";
 import { createDomHarness } from "./support/dom.js";
 
@@ -32,7 +32,7 @@ const status = (phase: UpdatePhase, changes: Partial<DesktopUpdateStatus> = {}):
 });
 
 test("each update phase maps to one updater call, Settings label, and indicator", () => {
-  const expected: Record<UpdatePhase, { call: ReturnType<typeof updateCallForPhase>; settings: string; indicator: string | null; click: string | null }> = {
+  const expected: Record<UpdatePhase, { call: ReturnType<typeof updateCallFor>; settings: string; indicator: string | null; click: string | null }> = {
     unsupported: { call: "check", settings: "Check for Updates", indicator: null, click: null },
     idle: { call: "check", settings: "Check for Updates", indicator: null, click: null },
     checking: { call: null, settings: "Checking", indicator: null, click: null },
@@ -45,15 +45,27 @@ test("each update phase maps to one updater call, Settings label, and indicator"
   };
   for (const phase of allPhases) {
     const want = expected[phase];
-    assert.equal(updateCallForPhase(phase), want.call, `${phase} call`);
+    assert.equal(updateCallFor(status(phase)), want.call, `${phase} call`);
     assert.equal(updateIsBusy(phase), want.call === null, `${phase} busy`);
     assert.equal(updateActionLabel(status(phase)), want.settings, `${phase} Settings label`);
     const model = updateIndicatorFor(status(phase));
     assert.equal(model?.label ?? null, want.indicator, `${phase} indicator label`);
     assert.equal(model?.click ?? null, want.click, `${phase} indicator click`);
     // The indicator only offers the updater call where Settings' button is live.
-    if (model?.click === "update") assert.notEqual(updateCallForPhase(phase), null, `${phase} offers a call Settings would make`);
+    if (model?.click === "update") assert.notEqual(updateCallFor(status(phase)), null, `${phase} offers a call Settings would make`);
   }
+});
+
+test("a failed check draws nothing in the sidebar and retrying it only checks again", () => {
+  const failedCheck = status("error", { availableVersion: null, message: "Update check failed.", error: "No published versions." });
+  assert.equal(updateIndicatorFor(failedCheck), null, "no Update Failed in the sidebar when nothing was being updated");
+  assert.equal(updateCallFor(failedCheck), "check", "Retry after a failed check cannot end in a restart");
+  assert.equal(updateActionLabel(failedCheck), "Check Again");
+  const failedDownload = status("error", { message: "Update download failed.", error: "The network connection was lost." });
+  assert.equal(updateIndicatorFor(failedDownload)?.label, "Update Failed");
+  assert.equal(updateCallFor(failedDownload), "updateNow");
+  assert.equal(updateActionLabel(failedDownload), "Retry");
+  assert.equal(updateCallFor(null), "check");
 });
 
 test("the indicator names the version and progress the status carries, and hides off the desktop", () => {

@@ -11,12 +11,21 @@ export type UpdatePhase = DesktopUpdateStatus["phase"];
 /** The desktop updater call one click makes; null while the updater is already busy. */
 export type UpdateCall = "check" | "updateNow" | "install";
 
-export function updateCallForPhase(phase: UpdatePhase): UpdateCall | null {
-  switch (phase) {
+/**
+ * An error with a version is a download, staging, or install that failed;
+ * one without is a check that failed, with nothing being updated.
+ */
+export function updateFailedWithVersion(status: Pick<DesktopUpdateStatus, "phase" | "availableVersion">): boolean {
+  return status.phase === "error" && status.availableVersion !== null;
+}
+
+export function updateCallFor(status: Pick<DesktopUpdateStatus, "phase" | "availableVersion"> | null): UpdateCall | null {
+  switch (status?.phase ?? "idle") {
     case "ready": return "install";
-    // A download that failed is retried the same way it was started.
-    case "available":
-    case "error": return "updateNow";
+    case "available": return "updateNow";
+    // A failed download is retried the way it was started; a failed check only
+    // checks again, so retrying it never ends in a restart.
+    case "error": return updateFailedWithVersion(status!) ? "updateNow" : "check";
     case "checking":
     case "downloading":
     case "installing": return null;
@@ -28,7 +37,7 @@ export function updateCallForPhase(phase: UpdatePhase): UpdateCall | null {
 
 /** True while the updater is working and a click must not start anything. */
 export function updateIsBusy(phase: UpdatePhase): boolean {
-  return updateCallForPhase(phase) === null;
+  return updateCallFor({ phase, availableVersion: null }) === null;
 }
 
 function percentText(status: DesktopUpdateStatus): string | null {
@@ -40,7 +49,7 @@ export function updateActionLabel(status: DesktopUpdateStatus): string {
   switch (status.phase) {
     case "available": return "Update and Restart";
     case "ready": return "Restart and Install";
-    case "error": return "Retry";
+    case "error": return updateFailedWithVersion(status) ? "Retry" : "Check Again";
     case "checking": return "Checking";
     case "downloading": return percentText(status) ?? "Downloading";
     case "installing": return "Restarting";
@@ -111,7 +120,8 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       tooltip: `AmpleFile is restarting to install ${version ? `version ${version}` : "the update"}.`,
       click: null,
     };
-    case "error": return {
+    // A failed check is left to Settings → About: nothing was being updated.
+    case "error": return !updateFailedWithVersion(status) ? null : {
       tone: "error",
       label: "Update Failed",
       detail: null,

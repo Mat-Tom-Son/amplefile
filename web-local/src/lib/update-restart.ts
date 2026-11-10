@@ -1,6 +1,6 @@
 import type { ConfirmDialogOptions } from "../ui/feedback";
 import type { ConnectedFolderSummary, DesktopUpdateStatus } from "../types";
-import { updateCallForPhase, type UpdateCall } from "./update-status";
+import { updateCallFor, type UpdateCall } from "./update-status";
 
 /**
  * Downloading or installing an update ends in AmpleFile quitting and opening
@@ -76,7 +76,7 @@ export async function runDesktopUpdateAction({ status, updates, confirm, readWor
   readWork: () => Promise<RunningWork | null>;
   connectedFolders: readonly Pick<ConnectedFolderSummary, "id" | "name">[];
 }): Promise<DesktopUpdateStatus | null> {
-  const call = updateCallForPhase(status?.phase ?? "idle");
+  const call = updateCallFor(status);
   if (!call) return null;
   if (call !== "check") {
     const work = await readWork();
