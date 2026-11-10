@@ -5,8 +5,8 @@ AmpleFile is a local-first Mac app: a file manager around ordinary folders, with
 ## First visit
 
 - Start with [Contributing](CONTRIBUTING.md) and the [development guide](docs/development.md) for setup, a source map, development profiles, and the right verification lane.
-- Use Node 24 and npm 11.16.0 or newer (`.nvmrc`); npm must enforce the dependency-script policy described in [Contributing](CONTRIBUTING.md#first-run). Run `npm ci`, then `npm run repo:check`; the latter also works before installation and never needs credentials or a network connection.
-- `npm run local:dev` starts the browser UI and local API; `npm run desktop:smoke` starts unpackaged Electron after preparation. Use disposable folders for live work. The development app profile is separate, but Pi resources and Keychain need their own care; follow the development guide for explicit isolation.
+- Use Node 24 and npm 11.16.0 or newer (`.nvmrc`); npm must enforce the dependency-script policy described in [Contributing](CONTRIBUTING.md#prerequisites). With an older npm every npm command, `repo:check` included, fails with `EBADDEVENGINES`; upgrade npm rather than working around it. Run `npm ci`, then `npm run repo:check`; the latter also works before installation and never needs credentials or a network connection.
+- `npm run local:dev` starts the browser UI on port 5173 (the only origin the local API accepts) and the local API; `/?fixture=connected-folder` and `/popover.html?fixture=agent` preview the UI from sample data without the API. `npm run desktop:smoke` starts unpackaged Electron after preparation. Use disposable folders for live work. The development app profile is separate, but Pi resources and Keychain need their own care; follow the development guide for explicit isolation.
 - `npm run check` includes repository hygiene and TypeScript checks. Keep shared Skills, Claude symlinks, links, heading anchors, and documented npm commands valid; do not copy shared policy into a harness-specific file.
 
 ## Harness parity
