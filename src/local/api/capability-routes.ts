@@ -17,9 +17,10 @@ import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../state-paths.js";
 import { AmpleFileRecentlyDeletedError } from "../recently-deleted-store.js";
 import { AmpleFileCliError } from "../cli/protocol.js";
 import { getConnectedFolder, type ConnectedFolderSummary } from "../connected-folder.js";
-import { createAmpleFileActFacade, runDesktopSettingsAct } from "../server.js";
+import { createAmpleFileActFacade } from "./act-lane.js";
 import { invalidateAllClients, invalidateAmpleFileClients } from "./conversation-clients.js";
 import { badRequest, errorMessage, httpError, match, optionalBoundedInteger, readJsonBody, readMultipartBody, sendJson } from "./http.js";
+import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import { type CapabilityScope, runCapabilityMutation } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 

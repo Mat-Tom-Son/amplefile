@@ -32,7 +32,6 @@ import {
   writeUploadedFiles,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { runDesktopSettingsAct } from "../server.js";
 import { getClient } from "./conversation-clients.js";
 import { openConnectedFolderFileStream } from "./event-streams.js";
 import {
@@ -51,6 +50,7 @@ import {
   readMultipartBody,
   sendJson,
 } from "./http.js";
+import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import { checkpointAdditiveWritesOrUndo, runWithHistorySafety } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 

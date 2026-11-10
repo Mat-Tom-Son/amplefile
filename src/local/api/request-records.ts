@@ -35,7 +35,7 @@ import type {
   AmpleFileActTurnStatus,
 } from "../cli/act-facade.js";
 import { listConnectedFolders, resolveConnectedFolderPath, type ConnectedFolderSummary } from "../connected-folder.js";
-import { runActOperation } from "../server.js";
+import { runActOperation } from "./act-support.js";
 import { normalizeConnectedFolderRelativePath, pathContainsPath } from "./file-changes.js";
 import { errorMessage } from "./http.js";
 import { stopAmpleFileAgentRequest } from "./request-routes.js";

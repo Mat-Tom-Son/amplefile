@@ -29,11 +29,12 @@ import {
   touchConnectedFolderRoot,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { runActOperation, runDesktopSettingsAct, toActConnectedFolderRef } from "../server.js";
+import { runActOperation, toActConnectedFolderRef } from "./act-support.js";
 import { runConversationMutation } from "./chat-routes.js";
 import { publishControlHint } from "./event-streams.js";
 import { normalizeConnectedFolderRelativePath, pathContainsPath } from "./file-changes.js";
 import { badRequest, errorMessage, match, notFound, readJsonBody, sendJson } from "./http.js";
+import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import { runCapabilityMutation } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 

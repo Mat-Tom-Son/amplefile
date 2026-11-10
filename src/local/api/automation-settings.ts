@@ -39,13 +39,7 @@ import type { AmpleFileCliActSurface } from "../cli/act-receipts.js";
 import { AmpleFileCliError } from "../cli/protocol.js";
 import type { AmpleFileActAutomationReceipt, AmpleFileActAutomationTriggerRef } from "../cli/act-facade.js";
 import { getConnectedFolder } from "../connected-folder.js";
-import {
-  type AutomationEnableContext,
-  preparedActAttribution,
-  runActOperation,
-  runDesktopSettingsAct,
-  runPreparedActOperation,
-} from "../server.js";
+import { runActOperation } from "./act-support.js";
 import {
   automationReceiptCatchUp,
   readAutomationReceiptProjection,
@@ -54,6 +48,12 @@ import {
   toActAutomationTriggerRef,
 } from "./automation-receipts.js";
 import { errorMessage, match, readJsonBody, sendJson } from "./http.js";
+import {
+  type AutomationEnableContext,
+  preparedActAttribution,
+  runDesktopSettingsAct,
+  runPreparedActOperation,
+} from "./prepared-act-adapters.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 
 export type AmpleFileAutomationSettingsOutcome =

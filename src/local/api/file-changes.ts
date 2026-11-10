@@ -29,8 +29,8 @@ import {
   type ConnectedFolderMovedEntry,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { runDesktopSettingsAct } from "../server.js";
 import { badRequest, errorMessage } from "./http.js";
+import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import {
   checkpointAdditiveWritesOrUndo,
   reserveCapabilityMutation,

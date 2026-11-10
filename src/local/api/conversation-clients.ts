@@ -15,7 +15,7 @@ import { ampleFileAgentScopeId, ampleFileStateRoot } from "../state-paths.js";
 import { ManagedWorktrees } from "../managed-worktrees.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "../amplefile-cli-adapter.js";
 import { getConnectedFolder, listConnectedFolders } from "../connected-folder.js";
-import { createAmpleFileActFacade } from "../server.js";
+import { createAmpleFileActFacade } from "./act-lane.js";
 import { assertAmpleFileAgentInstructionsReady } from "./amplefile-agent-routes.js";
 import { createBackgroundJobToolHost } from "./background-jobs.js";
 import { broadcast, publishControlHint } from "./event-streams.js";

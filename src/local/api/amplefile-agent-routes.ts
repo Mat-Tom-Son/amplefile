@@ -28,7 +28,7 @@ import type { AmpleFileRecentlyDeletedEntry } from "../recently-deleted-store.js
 import { AmpleFileCliError } from "../cli/protocol.js";
 import type { AmpleFileActAgentRequest, AmpleFileActTurnState } from "../cli/act-facade.js";
 import { getConnectedFolder } from "../connected-folder.js";
-import { toActConversationRef } from "../server.js";
+import { toActConversationRef } from "./act-support.js";
 import { normalizeAddressedConnectedFolderIds } from "./chat-routes.js";
 import { getClient } from "./conversation-clients.js";
 import { openChatStream } from "./event-streams.js";

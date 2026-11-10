@@ -19,7 +19,7 @@ import { ampleFileRequestLimits, ampleFileAutomationDeclarationBounds } from "..
 import { ampleFileAgentScopeId } from "../state-paths.js";
 import { AmpleFileCliError } from "../cli/protocol.js";
 import { getConnectedFolder } from "../connected-folder.js";
-import { createAmpleFileActFacade } from "../server.js";
+import { createAmpleFileActFacade } from "./act-lane.js";
 import { ampleFileAgentScope } from "./amplefile-agent-routes.js";
 import { composeBackgroundJobLines, deliverBackgroundJobs, undeliveredSettledJobs } from "./background-jobs.js";
 import { publishControlHint } from "./event-streams.js";

@@ -30,11 +30,11 @@ import {
   type ConnectedFolderRemovalResult,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { runDesktopSettingsAct } from "../server.js";
 import { emptyAgentStatus, safeAgentStatus } from "./ai-model-routes.js";
 import { invalidateAmpleFileClients } from "./conversation-clients.js";
 import { closeConnectedFolderStreams, publishControlHint } from "./event-streams.js";
 import { badRequest, forbidden, match, readJsonBody, sendJson } from "./http.js";
+import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import { runConnectedFolderMutations, runSettledConnectedFolderDeletion } from "./reservations.js";
 import { connectedFolderRootKey, type LocalApiRequest, type LocalApiState } from "./state.js";
 
