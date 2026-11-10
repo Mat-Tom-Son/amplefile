@@ -386,7 +386,7 @@ test("a release GitHub does not serve as latest fails the run that published it"
   try {
     await assert.rejects(
       release.publish(github),
-      /Mat-Tom-Son\/amplefile serves no release as its latest release, not v0\.1\.5\. Installed copies will not be offered v0\.1\.5 until it is marked latest/,
+      /Mat-Tom-Son\/amplefile serves no release as its latest release, not v0\.1\.5\. Installed copies will not be offered v0\.1\.5 until it is marked latest \(gh release edit v0\.1\.5 --repo Mat-Tom-Son\/amplefile --latest\)/,
     );
   } finally {
     release.cleanup();

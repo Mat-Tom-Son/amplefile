@@ -223,7 +223,8 @@ test("the source feed refuses a release that skips the bridge", () => {
   );
   assert.throws(
     () => assertFeedContinuity({ feed, version: "0.1.6", latest: { separate: bridged.separate, source: { tag: "linux-test-0.1.5", feed: null } } }),
-    /serves linux-test-0\.1\.5 as its latest release.*make that release a prerelease, or publish it with --latest=false/,
+    /serves linux-test-0\.1\.5 as its latest release.*mark it latest again \(gh release edit v<version> --repo Mat-Tom-Son\/amplefile --latest\); otherwise make linux-test-0\.1\.5 a prerelease \(gh release edit linux-test-0\.1\.5 --repo Mat-Tom-Son\/amplefile --prerelease\)/,
+    "the remedy has to work on a release that is already published",
   );
   assert.throws(
     () => assertFeedContinuity({ feed, version: "0.1.6", latest: { separate: { tag: "v0.1.5", feed: null }, source: bridged.source } }),

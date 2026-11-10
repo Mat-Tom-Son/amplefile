@@ -86,7 +86,10 @@ export async function publishMacRelease({
   // Installed copies are offered the release GitHub marks latest, so it must be this one.
   const latest = github.latestTag(target);
   if (latest !== tag) {
-    throw new Error(`${target.slug} serves ${latest || "no release"} as its latest release, not ${tag}. Installed copies will not be offered ${tag} until it is marked latest.`);
+    throw new Error(
+      `${target.slug} serves ${latest || "no release"} as its latest release, not ${tag}. Installed copies will not be offered ${tag} `
+      + `until it is marked latest (gh release edit ${tag} --repo ${target.slug} --latest).`,
+    );
   }
   // In the source repository the release attached to the annotated tag; it must not have replaced it.
   if (sameRepository(target, feed.source)) await afterSourcePublication();
@@ -472,7 +475,9 @@ function assertSourceFeedRelease(source, release) {
   if (!release.feed || !sameRepository(release.feed, source)) {
     throw new Error(
       `${source.slug} serves ${release.tag} as its latest release, and it is not an AmpleFile Mac release that checks ${source.slug}. `
-      + "Installed copies are offered whatever is marked latest there: make that release a prerelease, or publish it with --latest=false.",
+      + "Installed copies are offered whatever is marked latest there. If a Mac release is already published there, mark it latest again "
+      + `(gh release edit v<version> --repo ${source.slug} --latest); otherwise make ${release.tag} a prerelease `
+      + `(gh release edit ${release.tag} --repo ${source.slug} --prerelease).`,
     );
   }
 }
