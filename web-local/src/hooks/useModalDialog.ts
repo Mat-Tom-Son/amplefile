@@ -66,6 +66,12 @@ export function useModalDialog({ onClose, blocked = false, initialFocusRef, rest
     function handleKeyDown(event: KeyboardEvent): void {
       if (!isTopmostDialog()) return;
       if (event.key === "Escape") {
+        // Like a Mac search field, the first Escape clears the search; the next one closes the dialog.
+        if (clearSearchField(dialog, event.target)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (blockedRef.current) return;
         event.preventDefault();
         event.stopPropagation();
@@ -112,6 +118,19 @@ export function nextDialogTabIndex(currentIndex: number, itemCount: number, back
   if (backwards && currentIndex === 0) return itemCount - 1;
   if (!backwards && currentIndex === itemCount - 1) return 0;
   return null;
+}
+
+/**
+ * Empties a non-empty search field inside the dialog and tells its owner, the
+ * way typing would, so a controlled React field follows. Returns whether it did.
+ */
+function clearSearchField(dialog: HTMLElement, target: EventTarget | null): boolean {
+  const view = dialog.ownerDocument.defaultView;
+  if (!view || !(target instanceof view.HTMLInputElement) || target.type !== "search") return false;
+  if (!target.value || target.disabled || target.readOnly || !dialog.contains(target)) return false;
+  Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, "value")?.set?.call(target, "");
+  target.dispatchEvent(new view.Event("input", { bubbles: true }));
+  return true;
 }
 
 function focusDialogEntry(dialog: HTMLElement, initialFocusRef?: RefObject<HTMLElement | null>): void {
