@@ -46,7 +46,7 @@ export function UpdateIndicator({ status, onUpdateAction, onOpenAbout }: {
       }}
     >
       <span className="fm-update-mark" aria-hidden="true"><span className="fm-update-dot" style={style} /></span>
-      <span className="fm-update-label">{model.label}</span>
+      <span className="fm-update-label"><span className="fm-update-label-full">{model.label}</span><span className="fm-update-label-short">{model.shortLabel}</span></span>
       {model.detail ? <span className="fm-update-detail" aria-hidden="true">{model.detail}</span> : null}
     </button>
   </div></>;

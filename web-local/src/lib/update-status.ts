@@ -78,6 +78,8 @@ export function updateActionLabel(status: DesktopUpdateStatus): string {
 export interface UpdateIndicatorModel {
   tone: "available" | "downloading" | "ready" | "installing" | "error";
   label: string;
+  /** The label when the sidebar is too narrow for `label`; the accessible name keeps the whole one. */
+  shortLabel: string;
   /** Quiet trailing text: the version, or the download's progress. */
   detail: string | null;
   progressPercent: number | null;
@@ -96,6 +98,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     case "available": return {
       tone: "available",
       label: "Update Available",
+      shortLabel: "Update",
       detail: version,
       progressPercent: null,
       accessibleName: version ? `Update Available: AmpleFile ${version}` : "Update Available",
@@ -108,6 +111,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       return {
         tone: "downloading",
         label: "Downloading",
+      shortLabel: "Downloading",
         detail: percent,
         progressPercent: progressOf(status),
         accessibleName: percent ? `Downloading Update, ${percent}` : "Downloading Update",
@@ -119,6 +123,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     case "ready": return {
       tone: "ready",
       label: "Restart to Update",
+      shortLabel: "Restart",
       detail: version,
       progressPercent: null,
       accessibleName: version ? `Restart to Update: AmpleFile ${version}` : "Restart to Update",
@@ -129,6 +134,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     case "installing": return {
       tone: "installing",
       label: "Restarting to Update",
+      shortLabel: "Restarting",
       detail: null,
       progressPercent: null,
       accessibleName: "Restarting to Update",
@@ -140,6 +146,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     case "error": return !updateFailedWithVersion(status) ? null : {
       tone: "error",
       label: "Update Failed",
+      shortLabel: "Failed",
       detail: null,
       progressPercent: null,
       accessibleName: "Update Failed: Show Details in Settings",

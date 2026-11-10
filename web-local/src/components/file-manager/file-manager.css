@@ -288,6 +288,33 @@
   }
 }
 
+/* At the sidebar's narrowest the label shortens rather than cut off:
+   Update, Restart, Restarting, Failed. The button's name keeps the whole label. */
+.fm-update-label-short {
+  display: none;
+}
+
+@container (max-width: 12.25em) {
+  .fm-update-label-full {
+    display: none;
+  }
+
+  .fm-update-label-short {
+    display: inline;
+  }
+}
+
+/* Restarting to Update is the longest label and shortens a little sooner. */
+@container (max-width: 14em) {
+  .fm-update-button.is-installing .fm-update-label-full {
+    display: none;
+  }
+
+  .fm-update-button.is-installing .fm-update-label-short {
+    display: inline;
+  }
+}
+
 
 /* Main column */
 

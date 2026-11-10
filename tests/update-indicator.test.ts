@@ -94,6 +94,7 @@ test("the indicator names the version and progress the status carries, and hides
   assert.match(available.tooltip, /asks first/, "and that it asks before restarting");
   assert.equal(updateIndicatorFor(status("available", { availableVersion: null }))!.detail, null);
   assert.equal(updateIndicatorFor(status("available", { availableVersion: null }))!.accessibleName, "Update Available");
+  assert.deepEqual(["available", "downloading", "ready", "installing", "error"].map((phase) => updateIndicatorFor(status(phase as UpdatePhase))!.shortLabel), ["Update", "Downloading", "Restart", "Restarting", "Failed"]);
   const downloading = updateIndicatorFor(status("downloading", { progressPercent: 41.6 }))!;
   assert.equal(downloading.detail, "42%");
   assert.equal(downloading.progressPercent, 41.6);
@@ -142,7 +143,7 @@ test("the indicator shows, hides, and runs the right action in each phase", asyn
   assert.equal(button()!.getAttribute("aria-label"), "Update Available: AmpleFile 0.1.5");
   assert.ok(button()!.title);
   assert.equal(button()!.hasAttribute("aria-disabled"), false);
-  assert.equal(button()!.querySelector(".fm-update-label")!.textContent, "Update Available");
+  assert.equal(button()!.querySelector(".fm-update-label-full")!.textContent, "Update Available");
   assert.equal(button()!.querySelector(".fm-update-detail")!.textContent, "0.1.5");
   await click();
   assert.deepEqual({ updates, abouts }, { updates: 1, abouts: 0 });
@@ -154,7 +155,7 @@ test("the indicator shows, hides, and runs the right action in each phase", asyn
   assert.deepEqual({ updates, abouts }, { updates: 1, abouts: 1 }, "a click while downloading opens About and never restarts the download");
 
   await render(status("ready"));
-  assert.equal(button()!.querySelector(".fm-update-label")!.textContent, "Restart to Update");
+  assert.equal(button()!.querySelector(".fm-update-label-full")!.textContent, "Restart to Update");
   await click();
   assert.deepEqual({ updates, abouts }, { updates: 2, abouts: 1 }, "ready installs through the shared update action");
 
@@ -165,7 +166,7 @@ test("the indicator shows, hides, and runs the right action in each phase", asyn
 
   await render(status("available"));
   await render(status("checking"));
-  assert.equal(button()!.querySelector(".fm-update-label")!.textContent, "Update Available", "a check does not make the indicator vanish");
+  assert.equal(button()!.querySelector(".fm-update-label-full")!.textContent, "Update Available", "a check does not make the indicator vanish");
   assert.equal(button()!.getAttribute("aria-disabled"), "true", "its update waits for the check");
   await click();
   assert.deepEqual({ updates, abouts }, { updates: 2, abouts: 1 });
