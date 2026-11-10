@@ -81,6 +81,10 @@ export async function publishMacRelease({
 
   // Uploads take time. Recheck authority and bytes at the public effect boundary.
   await beforePublic();
+  // And, for the bridge's second run, that the source repository still offers the bridge.
+  if (alreadyPublished.some((held) => sameRepository(held, feed.source)) && !sameRepository(target, feed.source)) {
+    assertBridgeServed({ feed, version, sourceLatest: github.latestRelease(feed.source) });
+  }
   github.publishDraft(target, tag, `Could not publish ${productName} macOS release ${tag} in ${target.slug}`);
   const release = remote(target, false);
   // Installed copies are offered the release GitHub marks latest, so it must be this one.
@@ -333,6 +337,10 @@ export function assertFeedContinuity({ feed, version, latest, separateReleases =
       }
     }
     if (sourceLatest) assertSourceFeedRelease(source, sourceLatest);
+    // The second run publishes to the feed installed copies read. Each copy
+    // that takes the bridge checks the source repository from then on, so it
+    // must still be offered the bridge there, not merely find it published.
+    if (held(source)) assertBridgeServed({ feed, version, sourceLatest: latest.source });
   } else {
     if (latest.separate) {
       assertMacRelease(separate, latest.separate);
@@ -360,6 +368,25 @@ export function assertFeedContinuity({ feed, version, latest, separateReleases =
       throw new Error(`${tag} is not higher than ${current.tag}, the latest release in ${repository.slug}. Installed copies would not be offered it.`);
     }
   }
+}
+
+/**
+ * The source repository must serve the bridge as its latest release, or a
+ * later Mac release that checks the source repository. A release that took
+ * "latest" since the bridge's first run would fail the update check of every
+ * copy that takes the bridge.
+ */
+export function assertBridgeServed({ feed, version, sourceLatest }) {
+  const { source, separate } = feed;
+  const tag = `v${version}`;
+  if (sourceLatest?.tag === tag) return;
+  if (sourceLatest?.feed && sameRepository(sourceLatest.feed, source) && isReleaseVersion(sourceLatest.tag)
+    && compareReleaseVersions(sourceLatest.tag, version) > 0) return;
+  throw new Error(
+    `${source.slug} serves ${sourceLatest ? sourceLatest.tag : "no release"} as its latest release, not ${tag}. `
+    + `Copies that take ${tag} from ${separate.slug} check ${source.slug} and would fail their update check. `
+    + `Mark ${tag} latest again in ${source.slug} (gh release edit ${tag} --repo ${source.slug} --latest), then run the publisher again.`,
+  );
 }
 
 /**
@@ -454,6 +481,10 @@ export function compareReleaseVersions(left, right) {
   if (!a.prerelease) return 1;
   if (!b.prerelease) return -1;
   return a.prerelease < b.prerelease ? -1 : 1;
+}
+
+function isReleaseVersion(value) {
+  return /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(String(value ?? "").trim());
 }
 
 function parseReleaseVersion(value) {

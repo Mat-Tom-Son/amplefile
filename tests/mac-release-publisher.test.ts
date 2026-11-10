@@ -290,6 +290,63 @@ test("the bridge's first run publishes to the source repository and stops; the s
   }
 });
 
+test("the second run refuses unless the source repository still serves the bridge as latest", async () => {
+  const github = new FakeGitHub();
+  github.repository(sourceSlug).tags.add("v0.1.5");
+  const release = candidate("bridge", "0.1.5");
+  const remedy = /Mark v0\.1\.5 latest again in Mat-Tom-Son\/amplefile \(gh release edit v0\.1\.5 --repo Mat-Tom-Son\/amplefile --latest\), then run the publisher again/;
+  try {
+    await release.publish(github);
+    const afterFirstRun = github.changes().length;
+
+    // Another release took "latest" during the pause.
+    github.seedMacRelease(sourceSlug, "linux-1.0.0", null);
+    await assert.rejects(
+      release.publish(github),
+      /Mat-Tom-Son\/amplefile serves linux-1\.0\.0 as its latest release, not v0\.1\.5\. Copies that take v0\.1\.5 from Mat-Tom-Son\/amplefile-mac-releases check Mat-Tom-Son\/amplefile and would fail their update check/,
+    );
+    await assert.rejects(release.publish(github), remedy);
+
+    // No release is latest at all: the bridge was unmarked, or made a prerelease and back.
+    github.repository(sourceSlug).latest = null;
+    await assert.rejects(release.publish(github), /Mat-Tom-Son\/amplefile serves no release as its latest release, not v0\.1\.5/);
+
+    // An older Mac release marked latest again is no better.
+    github.seedMacRelease(sourceSlug, "v0.1.3", sourceSlug);
+    await assert.rejects(release.publish(github), /serves v0\.1\.3 as its latest release, not v0\.1\.5/);
+
+    assert.equal(github.changes().length, afterFirstRun, "nothing was drafted or published in the separate repository");
+    assert.equal(github.release(separateSlug, "v0.1.5"), undefined);
+    assert.equal(github.repository(separateSlug).latest, "v0.1.4");
+
+    // Marked latest again, the second run goes through.
+    github.repository(sourceSlug).latest = "v0.1.5";
+    assert.equal((await release.publish(github)).published.slug, separateSlug);
+  } finally {
+    release.cleanup();
+  }
+});
+
+test("the bridge is not made public in the separate repository if latest moved during the upload", async () => {
+  const github = new FakeGitHub();
+  github.repository(sourceSlug).tags.add("v0.1.5");
+  const release = candidate("bridge", "0.1.5");
+  try {
+    await release.publish(github);
+    // The stand-in loses "latest" in the source repository while the separate repository's draft uploads.
+    github.failure = (args) => {
+      if (args[1] === "create" && option(args, "--repo") === separateSlug) github.repository(sourceSlug).latest = null;
+      return null;
+    };
+    await assert.rejects(release.publish(github), /Mat-Tom-Son\/amplefile serves no release as its latest release, not v0\.1\.5/);
+    assert.equal(github.release(separateSlug, "v0.1.5")!.isDraft, true, "the upload stays a draft");
+    assert.equal(github.repository(separateSlug).latest, "v0.1.4");
+    assert.ok(!github.changes().includes(`edit v0.1.5 ${separateSlug}`));
+  } finally {
+    release.cleanup();
+  }
+});
+
 test("a run stopped between drafting and publishing leaves a draft the rerun refuses until it is deleted", async () => {
   const github = new FakeGitHub();
   github.repository(sourceSlug).tags.add("v0.1.5");

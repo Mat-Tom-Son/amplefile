@@ -206,6 +206,16 @@ test("an interrupted bridge publication finishes the feed that is still missing"
   const latest = { separate: { tag: "v0.1.4", feed: separate }, source: { tag: "v0.1.5", feed: source } };
   assert.throws(() => assertFeedContinuity({ feed, version: "0.1.5", latest }), /v0\.1\.5 is not higher than v0\.1\.5, the latest release in Mat-Tom-Son\/amplefile\./);
   assertFeedContinuity({ feed, version: "0.1.5", latest, alreadyPublished: [feed.source] });
+
+  // Holding the release is not enough: the source repository must offer it.
+  const held = (sourceLatest: { tag: string; feed: unknown } | null) => () => assertFeedContinuity({
+    feed, version: "0.1.5", latest: { separate: latest.separate, source: sourceLatest }, alreadyPublished: [feed.source],
+  });
+  assert.throws(held(null), /serves no release as its latest release, not v0\.1\.5.*Mark v0\.1\.5 latest again in Mat-Tom-Son\/amplefile/);
+  assert.throws(held({ tag: "linux-test-0.1.5", feed: null }), /serves linux-test-0\.1\.5 as its latest release, not v0\.1\.5/);
+  assert.throws(held({ tag: "v0.1.4", feed: source }), /serves v0\.1\.4 as its latest release, not v0\.1\.5/);
+  assert.throws(held({ tag: "v0.1.6", feed: separate }), /serves v0\.1\.6 as its latest release/, "a later release that checks another feed");
+  held({ tag: "v0.1.6", feed: source })();
 });
 
 test("the source feed refuses a release that skips the bridge", () => {

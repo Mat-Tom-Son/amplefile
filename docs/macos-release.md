@@ -91,7 +91,11 @@ manifest, the feed its copies check.
   repository, which nothing reads until a bridged copy is installed, and
   stops, saying what to check. Only a later run, which finds the identical
   release already served there, publishes to the separate repository; until
-  then nothing, not even a draft, is created in it. A second bridge needs
+  then nothing, not even a draft, is created in it. That later run also
+  requires the source repository to serve the bridge as its latest release,
+  before the upload and again immediately before publication: if another
+  release took "latest" during the pause, it refuses and says to mark the
+  bridge latest again. A second bridge needs
   `AMPLEFILE_MAC_REPLACE_BRIDGE=v<bridge version>`, naming the bridge it
   replaces.
 - `source-repository`: the separate repository's latest release must already
