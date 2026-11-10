@@ -32,7 +32,17 @@ that proves the requested behavior.
    exact SHA, tree, build-input fingerprint, runtime, and completed stages.
    Use `-- --status` to validate it read-only. An older commit's receipt
    cannot carry across a merge.
-7. The full signed build requires a valid local receipt before it starts.
+7. Read the update feed stage before building.
+   `npm run desktop:release:mac:status` prints the stage, the feed the
+   packaged app checks, and where a release would be published. The
+   checked-in stage is `separate-repository`, so both are
+   `Mat-Tom-Son/amplefile-mac-releases`.
+   Changing `macUpdateFeedStage` moves the feed to the source repository's
+   GitHub Releases and is the owner's decision; do it only when asked, in a
+   release commit, following "Moving the feed to the source repository" in
+   the runbook. Never set a feed in a script or in the environment for a
+   public release.
+8. The full signed build requires a valid local receipt before it starts.
    Publication requires source-bound signed artifacts built after that receipt
    completed, under the same Node/npm and dependency state. The publisher
    requires canonical pushed `main` and its matching annotated source tag. GitHub
@@ -97,8 +107,14 @@ verify the offered version and leave installation and relaunch unclaimed.
 3. Resume through normal publication with
    `npm run desktop:release:mac:resume`.
 4. Start a fresh build when status reports changed source, package version,
-   architecture, Node runtime, signing identity, feed, or artifact bytes.
-   Changed source, Node/npm, or dependencies also requires fresh local checks.
+   architecture, Node runtime, signing identity, feed stage, or artifact
+   bytes. Changed source, Node/npm, or dependencies also requires fresh local
+   checks.
+5. A bridge release is published to two repositories. If publication stops
+   between them, run the same resume command again: a repository that
+   already serves the identical assets is verified and skipped. Delete a
+   leftover draft only after confirming it was never published, and never
+   with `--cleanup-tag` in the source repository.
 
 Never edit `out/builder/AmpleFile-mac-release-state.json`. A checkpoint is
 ignored recovery data, not proof by itself. Resume must validate the source
@@ -109,6 +125,29 @@ changes during the run fail. Publication checks the local receipt, canonical
 source identity, and signed artifact evidence before upload and immediately
 before publishing the draft, including when the publisher is invoked directly.
 The strict verifier still runs; GitHub Actions status is not required.
+
+## Move the feed only by the runbook
+
+The feed moves in two releases, and only on the owner's instruction:
+
+1. The bridge release, in the `bridge` stage. Publish it to the source
+   repository alone first
+   (`AMPLEFILE_MAC_PUBLISH_ONLY=Mat-Tom-Son/amplefile npm run desktop:release:mac:resume`),
+   check that the built candidate reports itself up to date from that feed,
+   and only then publish to the separate repository. Publishing there cannot
+   be taken back: copies that take the bridge check the source repository
+   from then on.
+2. Every later release, in the `source-repository` stage, published to the
+   source repository alone and attached to its existing annotated tag.
+
+Treat each publication step, and publishing the bridge to the separate
+repository above all, as a separate external action that needs explicit
+authorization. Use
+`npm run desktop:verify:feed:mac` to see what an installed copy would be
+offered from a feed. If the publisher refuses for feed continuity, report its
+message; do not work around it with `gh`, and do not publish to the separate
+repository in the `separate-repository` stage after a bridge. Record both
+updater proofs the runbook asks for, or say which one is still open.
 
 ## Verify and report
 
@@ -123,6 +162,8 @@ For a real distribution candidate, retain and report:
 - exact-commit local-check receipt, per-stage timings, and status/resume results;
 - Developer ID, hardened-runtime, notarization-staple, and Gatekeeper outcomes;
 - exact DMG, ZIP, blockmap, updater metadata, checksum, and manifest results;
+- the feed stage, the feed the packaged app checks, and each repository the
+  release was published to;
 - installed-app and updater evidence required by the runbook;
 - the public release URL only after publication actually succeeds.
 
