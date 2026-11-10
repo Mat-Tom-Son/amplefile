@@ -127,10 +127,16 @@ export function createGitHubReleases({ run, manifestName }) {
       }
     },
 
-    /** The release already published or drafted under this tag, or null. A bare tag is not a release. */
+    /**
+     * The release already published or drafted under this tag, or null. A
+     * bare tag is not a release. Only GitHub saying there is none counts as
+     * none: a failed lookup must not read as a free tag.
+     */
     existingRelease(repository, tag) {
       const result = attempt(["release", "view", tag, "--repo", repository.slug, "--json", "tagName,isDraft,url"]);
-      return result.ok ? JSON.parse(result.stdout) : null;
+      if (result.ok) return JSON.parse(result.stdout);
+      if (/release not found|HTTP 404/i.test(result.output)) return null;
+      throw new Error(`Could not tell whether ${repository.slug} already has a release for ${tag}: ${compactText(result.output)}`);
     },
 
     /** The release under this tag with its assets' names, sizes, and digests. */

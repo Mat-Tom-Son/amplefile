@@ -416,6 +416,19 @@ test("after the bridge, releases go to the source repository alone, and never be
   }
 });
 
+test("a failed lookup of the existing release stops the run before anything is uploaded", async () => {
+  const github = new FakeGitHub();
+  github.repository(sourceSlug).tags.add("v0.1.5");
+  github.failure = (args) => args[0] === "release" && args[1] === "view" ? "HTTP 503: Service Unavailable" : null;
+  const release = candidate("bridge", "0.1.5");
+  try {
+    await assert.rejects(release.publish(github), /Could not tell whether Mat-Tom-Son\/amplefile already has a release for v0\.1\.5: HTTP 503/);
+    assert.deepEqual(github.changes(), []);
+  } finally {
+    release.cleanup();
+  }
+});
+
 test("the latest release and its feed are read from GitHub, not assumed", () => {
   const github = new FakeGitHub();
   const client = createGitHubReleases({ run: github.run, manifestName });
@@ -433,6 +446,15 @@ test("the latest release and its feed are read from GitHub, not assumed", () => 
 
   github.failure = () => null;
   assert.equal(client.existingRelease(feed.source, "v0.1.4"), null, "a bare tag is not a release");
+  github.failure = (args) => args[0] === "release" && args[1] === "view" ? "gh: Not Found (HTTP 404)" : null;
+  assert.equal(client.existingRelease(feed.separate, "v0.1.4"), null);
+  github.failure = (args) => args[0] === "release" && args[1] === "view" ? "error connecting to api.github.com" : null;
+  assert.throws(
+    () => client.existingRelease(feed.separate, "v0.1.4"),
+    /Could not tell whether Mat-Tom-Son\/amplefile-mac-releases already has a release for v0\.1\.4: error connecting/,
+    "a failed lookup is not an unused tag",
+  );
+  github.failure = () => null;
   const existing = client.existingRelease(feed.separate, "v0.1.4");
   assert.deepEqual([existing.tagName, existing.isDraft], ["v0.1.4", false]);
 });
