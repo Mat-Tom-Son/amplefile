@@ -187,12 +187,18 @@
 }
 
 /* The update indicator: the sidebar's foot, below the scrolling lists, and
-   only while an update needs the person. Lined up with the rows above it. */
+   only while an update needs the person. It is the same band as the path bar
+   beside it (28px, flush with the window's bottom, one 1px rule on top), so
+   the two rules run as one line. Its dot and label line up with the rows above. */
 .fm-update {
   flex: none;
-  margin: 0 -10px -6px;
-  padding: 6px 10px 0;
-  border-top: 0.5px solid var(--fm-line);
+  display: flex;
+  align-items: center;
+  height: 28px;
+  margin: 0 -10px -12px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--fm-line);
   /* Measured in the label's own size, so the narrow rule follows Text Size. */
   container-type: inline-size;
   font-size: calc(13px * var(--fm-scale));
@@ -203,14 +209,21 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: calc(28px * var(--fm-scale) * var(--fm-density));
+  /* Leaves room inside the 28px band for the focus ring. */
+  height: 20px;
   padding: 0 8px 0 var(--fm-sidebar-gutter, 21px);
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--fm-text);
   font-size: calc(13px * var(--fm-scale));
   text-align: left;
+}
+
+/* The band is flush with the window's bottom; the ring hugs the button so it
+   is never cut off there. */
+:root[data-theme] .app-shell .fm-shell .fm-update-button:focus-visible {
+  outline-offset: 0;
 }
 
 .fm-update-button:hover:not([aria-disabled="true"]) {
