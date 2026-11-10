@@ -449,6 +449,21 @@ test("the page is placed over its placeholder, steps aside for the window's over
   assert.equal(layouts().at(-1)!.occluded, false, "and comes back when the dialog closes");
   await view.dom.waitFor(() => host.lastSync()?.viewingPageId === "first1");
 
+  // Two notices at the foot of the window, over the page: the page is drawn down to where they begin, and stays.
+  const notices = [0, 1].map((index) => {
+    const notice = document.createElement("div");
+    notice.className = `toast notice-${index}`;
+    view.boxes.set(`notice-${index}`, { left: 500, top: 800 - index * 52, width: 300, height: 44 });
+    return notice;
+  });
+  await view.dom.act(async () => { document.body.append(...notices); });
+  await view.frame();
+  assert.deepEqual({ bounds: layouts().at(-1)!.bounds, occluded: layouts().at(-1)!.occluded }, { bounds: { x: 228, y: 548, width: 892, height: 192 }, occluded: false }, "ending above the higher notice");
+  assert.equal(host.lastSync()?.viewingPageId, "first1", "the person can still see the page");
+  await view.dom.act(async () => { for (const notice of notices) notice.remove(); });
+  await view.frame();
+  assert.deepEqual(layouts().at(-1)!.bounds, { x: 228, y: 548, width: 892, height: 340 }, "and whole again when they go");
+
   // Nothing new to say sends nothing.
   const quiet = layouts().length;
   await view.dom.act(async () => { window.dispatchEvent(new window.Event("resize")); });
@@ -484,10 +499,10 @@ test("keys pressed in a page reach the window's own controls: the address field,
   await view.dom.act(async () => { host.shortcut("first1", "f"); });
   await view.frame();
   assert.ok(document.activeElement === pane.querySelector('input[aria-label="Find in Page"]'), "the keyboard is there");
-  // A key from a tab that is not in front is not this tab's to act on.
+  // A key from a tab that is not in front is not this tab's to act on: the address field does not take the keyboard.
   await view.dom.act(async () => { host.shortcut("second", "l"); });
   await view.frame();
-  assert.ok(document.activeElement === pane.querySelector('input[aria-label="Find in Page"]'), "the keyboard is there");
+  assert.ok(document.activeElement !== address(), "the address field of the tab in front is left alone");
 
   // ⌃Tab: the next tab comes forward and its page takes the keyboard, as the page it was pressed in had it.
   await view.dom.act(async () => { host.shortcut("first1", "Tab", { ctrlKey: true, metaKey: false }); });
@@ -767,7 +782,19 @@ test("a window closed and reopened, or reloaded, shows the pane as it was left, 
   assert.equal(view.tabs()[2]!.getAttribute("aria-selected"), "true", "the tab that was in front");
   await view.dom.waitFor(() => host.named("mount").some((call, index, all) => index === all.length - 1 && (call.args[0] as BrowserViewRequest).pageId === "third1"));
 
-  // After a quit there are no pages, so nothing is brought back, and the next tab a Worker opens arrives as the strip alone.
+  // After a quit, a page that exists before the window does (the AmpleFile Agent opened it) is not one the person
+  // was looking at: the size saved in the earlier launch is not applied to it.
+  await view.dom.render(null);
+  assert.match(stored.get("amplefile.file-manager.browser-pane.v1") ?? "", /"layout":"full"/);
+  const relaunched = createBridge([page("agent01")]);
+  (window as unknown as { ampleFileDesktop: { browser: unknown } }).ampleFileDesktop.browser = relaunched.bridge;
+  await view.render();
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.frame();
+  assert.equal(view.layout(), "collapsed", "it arrives as the strip alone");
+  assert.equal(relaunched.named("mount").length, 0);
+
+  // With no pages at all nothing is brought back, and the next tab a Worker opens arrives as the strip alone.
   await view.dom.render(null);
   const fresh = createBridge();
   (window as unknown as { ampleFileDesktop: { browser: unknown } }).ampleFileDesktop.browser = fresh.bridge;
@@ -776,4 +803,111 @@ test("a window closed and reopened, or reloaded, shows the pane as it was left, 
   assert.equal(view.pane(), null);
   await view.dom.act(() => { fresh.open({ pageId: "worker9", url: "https://worker9.example.com/", title: "Worker", show: false }); });
   assert.equal(view.layout(), "collapsed");
+});
+
+test("a page that had the keyboard and is taken away never leaves the keyboard in a field the person typed in earlier", async (t) => {
+  const host = createBridge([page("first1")]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.press("Show Browser");
+  const messageBox = view.container.querySelector<HTMLInputElement>('input[aria-label="Message the Worker"]')!;
+  const returned = () => view.dom.act(async () => { host.shortcut("first1", "KeyboardReturned", { metaKey: false }); });
+
+  // The person typed to the Worker, then clicked into the page; the page is taken away (its load failed, its tab
+  // closed, a Worker brought another tab forward). The window is about to be given the keyboard.
+  await view.dom.act(() => messageBox.focus());
+  await returned();
+  assert.ok(document.activeElement === view.tabs()[0], "the tab in front takes it, not the message box");
+
+  // The same for the pane's own address field.
+  const address = view.pane()!.querySelector<HTMLInputElement>('input[aria-label="Address"]')!;
+  await view.dom.act(() => address.focus());
+  await returned();
+  assert.ok(document.activeElement === view.tabs()[0]);
+
+  // A dialog that opened over the page keeps the keyboard it took.
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const field = document.createElement("input");
+  dialog.append(field);
+  document.body.append(dialog);
+  field.focus();
+  await returned();
+  assert.ok(document.activeElement === field);
+  dialog.remove();
+
+  // A control that takes no typing is left alone.
+  const listButton = view.button("List")!;
+  await view.dom.act(() => listButton.focus());
+  await returned();
+  assert.ok(document.activeElement === listButton);
+
+  // The last tab closes while its page had the keyboard: with no tab left, no field has it.
+  await view.dom.act(() => messageBox.focus());
+  await view.dom.act(async () => { host.shortcut("first1", "KeyboardReturned", { metaKey: false }); host.close("first1"); });
+  assert.equal(view.pane(), null);
+  assert.ok(document.activeElement !== messageBox, "typing meant for the site cannot land in the message to the Worker");
+});
+
+test("the Leave This Page? dialog starts on Cancel and closes itself when its question goes away", async (t) => {
+  const host = createBridge([page("first1")]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.press("Show Browser");
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const answers = () => host.named("command").filter((call) => ["leave-page", "stay-on-page"].includes((call.args[1] as { type: string }).type));
+
+  await view.dom.act(() => host.state(page("first1", { leaveQuestion: { requestId: "leave-1" } })));
+  await view.dom.waitFor(() => Boolean(dialog()));
+  await view.frame();
+  assert.equal(document.activeElement?.textContent?.trim(), "Cancel", "the Return that asked for the address cannot also answer Leave");
+
+  // A Worker moves the page on, or it redirects itself: the desktop has no question left.
+  await view.dom.act(() => host.state(page("first1", { url: "https://first1.example.com/elsewhere" })));
+  await view.dom.waitFor(() => !dialog());
+  assert.deepEqual(answers(), [], "and nothing is answered for the person");
+
+  // Its tab closing withdraws the question too.
+  await view.dom.act(() => host.state(page("first1", { leaveQuestion: { requestId: "leave-2" } })));
+  await view.dom.waitFor(() => Boolean(dialog()));
+  await view.dom.act(() => host.close("first1"));
+  await view.dom.waitFor(() => !dialog());
+  assert.deepEqual(answers(), []);
+});
+
+test("a tab chosen by a key from a page gives its page the keyboard once, and a hidden window says nobody is looking", async (t) => {
+  const host = createBridge([page("first1"), page("second")]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 2);
+  await view.press("Show Browser");
+  await view.dom.waitFor(() => host.named("mount").length === 1);
+  const focusCommands = () => host.named("command").filter((call) => (call.args[1] as { type: string }).type === "focus").map((call) => call.args[0]);
+
+  // ⌘W in the first tab's page, with a new tab (no page yet) coming forward: there is no page to take the keyboard.
+  await view.press("New Tab");
+  await view.dom.act(() => view.tabs()[0]!.click());
+  await view.dom.waitFor(() => host.named("mount").length === 2);
+  const before = focusCommands().length;
+  await view.dom.act(async () => { host.shortcut("first1", "w"); });
+  // The tab to its right came forward: "second", which has a page, takes the keyboard, as asked.
+  await view.dom.waitFor(() => focusCommands().length === before + 1);
+  assert.equal(focusCommands().at(-1), "second");
+  // ⌘W again: the new tab comes forward. It has no page, so the request ends there.
+  await view.dom.act(async () => { host.shortcut("second", "w"); });
+  assert.deepEqual(view.tabs().map((tab) => tab.getAttribute("aria-label")), ["New Tab"]);
+  const settled = focusCommands().length;
+  // A page shown later, by a click, does not take the keyboard on its own.
+  await view.dom.act(() => { host.open({ pageId: "third1", url: "https://third1.example.com/", title: "Third", show: false }); host.state(page("third1")); });
+  await view.dom.act(() => view.tabs()[1]!.click());
+  await view.dom.waitFor(() => host.named("mount").some((call) => (call.args[0] as BrowserViewRequest).pageId === "third1"));
+  await view.frame();
+  assert.equal(focusCommands().length, settled, "the keyboard stays where the person put it");
+
+  // The window is hidden or minimized: it stops drawing, so it says at once that nobody is looking.
+  await view.dom.waitFor(() => host.lastSync()?.viewingPageId === "third1");
+  const page1 = document;
+  Object.defineProperty(page1, "visibilityState", { configurable: true, value: "hidden" });
+  t.after(() => { delete (page1 as unknown as Record<string, unknown>).visibilityState; });
+  await view.dom.act(async () => { document.dispatchEvent(new window.Event("visibilitychange")); });
+  assert.equal(host.lastSync()?.viewingPageId, null, "without waiting for a frame that never comes");
 });

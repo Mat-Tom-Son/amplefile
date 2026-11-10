@@ -173,6 +173,8 @@ const isolatedWorldId = 1_001;
 const popupGestureMs = 5_000;
 /** How long a Worker's script waits on a site's unanswered question; the person may be about to answer. */
 const questionWaitMs = 30_000;
+/** How long the window has to move its own focus before the keyboard is handed to it. */
+const keyboardReturnMs = 40;
 /** A page asks to be confirmed within moments of what made it leave; later than this, it was something else. */
 const leaveIntentMs = 1_500;
 /** How long the person's Leave still counts when the page asks again as it is left. */
@@ -726,6 +728,9 @@ export class BuiltInBrowser {
     contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
     contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
     contents.on("will-attach-webview", (event) => event.preventDefault());
+    // A pop-up that asks to be confirmed before it closes has nowhere to ask, and would never close: its close
+    // button and its own window.close() go ahead, as a leaving a page starts itself does.
+    contents.on("will-prevent-unload", (event) => event.preventDefault());
   }
 
   #openTab(url: string, show: boolean, openedBy: BrowserPage["openedBy"], owner: string | null = null): BrowserPage {
@@ -801,8 +806,13 @@ export class BuiltInBrowser {
 
   #hide(page: BrowserPage): void {
     if (page.attachedTo) this.#bubble.hide();
-    // A page that leaves the window while it has the keyboard would take the keyboard with it.
-    if (page.attachedTo && !page.view.webContents.isDestroyed() && page.view.webContents.isFocused()) this.#focusWindow(page);
+    // A page that leaves the window while it has the keyboard would take the keyboard with it. The window is told,
+    // so it puts the keyboard on the tab in front and never in a field the person was typing in before.
+    if (page.attachedTo && !page.view.webContents.isDestroyed() && page.view.webContents.isFocused()) {
+      const returned: BrowserShortcut = { pageId: page.pageId, key: "KeyboardReturned", code: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };
+      this.#options.send(browserChannels.shortcut, returned);
+      this.#focusWindow(page);
+    }
     page.view.setVisible(false);
     if (page.attachedTo && !page.attachedTo.isDestroyed()) page.attachedTo.contentView.removeChildView(page.view);
     page.attachedTo = null;
@@ -1277,10 +1287,20 @@ export class BuiltInBrowser {
     return true;
   }
 
-  /** Hands the keyboard from a page back to the window that shows it. */
+  /**
+   * Hands the keyboard from a page back to the window that shows it. Only
+   * inside the window the person is working in: a window behind another app
+   * is never brought forward. The window is told first (the key, or
+   * `KeyboardReturned` when the page was taken away) and given a moment to
+   * move its own focus, because the window would otherwise give the keyboard
+   * to whatever field last had it, which can be a Chat's message box.
+   */
   #focusWindow(page: BrowserPage): void {
     const window = page.attachedTo ?? this.#options.window();
-    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.focus();
+    if (!window || window.isDestroyed() || BrowserWindow.getFocusedWindow() !== window) return;
+    setTimeout(() => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed() && BrowserWindow.getFocusedWindow() === window) window.webContents.focus();
+    }, keyboardReturnMs);
   }
 
   // ── Worker operations ─────────────────────────────────────────────────────
@@ -1585,7 +1605,18 @@ export class BuiltInBrowser {
         if (page.openedBy !== "agent") throw new Error("That tab is the person's. Close only tabs you opened.");
         if (!owner || page.owner !== owner) throw new Error("Another Chat opened that tab. Close only tabs this Chat opened.");
         this.#synced = { ...this.#synced, tabs: this.#synced.tabs.filter((item) => item.pageId !== page.pageId) };
+        // The action runs as called. The page is given the chance to say it wanted confirming first, so the result can say so.
+        const contents = page.view.webContents;
+        if (!contents.isDestroyed() && !page.crashed) {
+          page.leftUnconfirmed = false;
+          page.leaving = { by: "agent", redo: () => undefined, at: Date.now() };
+          contents.close({ waitForBeforeUnload: true });
+          const deadline = Date.now() + closeGraceMs;
+          while (!page.closed && !contents.isDestroyed() && Date.now() < deadline) await delay(25);
+        }
+        const leftUnconfirmed = page.leftUnconfirmed;
         this.#destroy(page);
+        return leftUnconfirmed ? { leftUnconfirmed: true } : {};
       },
     };
     // Every step a Chat's Worker takes in a page marks the page as in use by that Chat.

@@ -69,7 +69,11 @@ npm run local:dev
 Use `npm run desktop:smoke` in place of the last command for Electron. The
 variables apply to this shell and its children. Stop the host before removing
 its temporary profile; keep test folders you want to retain. A data-directory
-override does **not** isolate macOS Keychain. A signed Mac candidate uses the
+override does **not** isolate macOS Keychain. In an unpackaged build, opening
+**Settings → AI Models** can make macOS ask to let "Electron" use the
+installed app's **AmpleFile Safe Storage** Keychain item, and the build stops
+responding until the dialog is answered. Choose **Deny**: Always Allow would
+give a development build the installed app's storage key. A signed Mac candidate uses the
 production identity by default—follow the [candidate guidance](macos-build.md#interactive-packaged-smoke)
 before launching one.
 

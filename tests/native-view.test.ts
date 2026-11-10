@@ -21,7 +21,7 @@ test("the page's box is the placeholder inside its borders", async (t) => {
   assert.deepEqual(nativeViewBounds(placeholder), { x: 230, y: 510, width: 890, height: 378 });
 });
 
-test("a dialog, menu, sheet, or notice across the placeholder makes the page step aside; one beside it does not", async (t) => {
+test("a dialog, menu, or sheet across the placeholder makes the page step aside; one beside it does not", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const { nativeViewOccluded } = await import("../web-local/src/lib/native-view.js");
@@ -43,12 +43,9 @@ test("a dialog, menu, sheet, or notice across the placeholder makes the page ste
     place(element, ...box);
     return element;
   };
-  // Over the folder list, above the page: no overlap.
-  const notice = add((element) => { element.className = "toast"; }, [500, 440, 300, 44]);
+  // A notice is not one of them: it takes the page's last rows instead (below).
+  const notice = add((element) => { element.className = "toast"; }, [500, 800, 300, 44]);
   assert.equal(nativeViewOccluded(placeholder), false);
-  // The same notice lower down crosses the page.
-  place(notice, 500, 480, 300, 44);
-  assert.equal(nativeViewOccluded(placeholder), true);
   notice.remove();
 
   for (const [name, setup] of [
@@ -72,4 +69,34 @@ test("a dialog, menu, sheet, or notice across the placeholder makes the page ste
   pane.setAttribute("role", "dialog");
   place(pane, 0, 0, 1440, 900);
   assert.equal(nativeViewOccluded(placeholder), false);
+});
+
+test("notices standing over the page say where they begin, so the page is drawn only down to there", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  const { nativeViewNoticeTop } = await import("../web-local/src/lib/native-view.js");
+  const placeholder = document.createElement("div");
+  dom.container.append(placeholder);
+  place(placeholder, 228, 133, 892, 627);
+  assert.equal(nativeViewNoticeTop(placeholder), null, "no notice, nothing to give up");
+  const notice = (box: [number, number, number, number]) => {
+    const element = document.createElement("div");
+    element.className = "toast";
+    dom.container.append(element);
+    place(element, ...box);
+    return element;
+  };
+  // Over the folder's list, above the page: not the page's concern.
+  const above = notice([500, 60, 300, 44]);
+  assert.equal(nativeViewNoticeTop(placeholder), null);
+  above.remove();
+  // Two notices stacked at the foot of the window: the page ends above the higher one, with a margin.
+  const lower = notice([500, 676, 300, 44]);
+  const upper = notice([500, 624, 300, 44]);
+  assert.equal(nativeViewNoticeTop(placeholder), 616);
+  upper.remove();
+  assert.equal(nativeViewNoticeTop(placeholder), 668);
+  // A notice with no box (leaving, not laid out) asks for nothing.
+  place(lower, 500, 676, 0, 0);
+  assert.equal(nativeViewNoticeTop(placeholder), null);
 });

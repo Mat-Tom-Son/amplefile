@@ -368,17 +368,30 @@ async function run() {
     let windowAskedToFocus = 0;
     const focusWindow = window.webContents.focus.bind(window.webContents);
     window.webContents.focus = () => { windowAskedToFocus += 1; focusWindow(); };
+    // The keyboard is handed back only inside the window the person is working in. This one can never be that, so
+    // the test says which window is, as the system would.
+    const focusedWindow = BrowserWindow.getFocusedWindow;
+    BrowserWindow.getFocusedWindow = () => window;
     for (const [index, key] of ["l", "f", "t", "w"].entries()) {
       shownPage.sendInputEvent({ type: "keyDown", keyCode: key, modifiers: [command] });
       await until(() => forwarded(key).length === 1, `the window hears Command-${key.toUpperCase()}`);
       assert.equal(forwarded(key)[0].payload.pageId, restoredId, "with the page it was pressed in");
-      assert.equal(windowAskedToFocus, index + 1, `the window is given the keyboard with Command-${key.toUpperCase()}`);
+      // The window hears the key first and is given the keyboard a moment later, once it has moved its own focus.
+      await until(() => windowAskedToFocus === index + 1, `the window is given the keyboard with Command-${key.toUpperCase()}`);
     }
     // A key that is the page's own is not the window's business.
     shownPage.sendInputEvent({ type: "keyDown", keyCode: "a", modifiers: [command] });
     await new Promise((resolve) => setTimeout(resolve, 150));
     assert.equal(forwarded("a").length, 0);
     assert.equal(windowAskedToFocus, 4);
+    // With another app in front, AmpleFile's window is not the one the person is working in: it hears the key,
+    // and is not brought forward to take the keyboard.
+    BrowserWindow.getFocusedWindow = () => null;
+    shownPage.sendInputEvent({ type: "keyDown", keyCode: "l", modifiers: [command] });
+    await until(() => forwarded("l").length === 2, "the window hears the key");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(windowAskedToFocus, 4, "a window behind another app is not given the keyboard");
+    BrowserWindow.getFocusedWindow = focusedWindow;
     window.webContents.focus = focusWindow;
     browser.detachWindow(window);
     assert.equal(window.contentView.children.length, 0, "a closing window gives its pages back");
@@ -449,6 +462,14 @@ async function run() {
     assert.equal(followed.tab.leftUnconfirmed, true);
     assert.equal(pageState(workerLeaves.tab).leaveQuestion, null, "the person is not asked about a Worker's action");
     browser.close(workerLeaves.tab);
+    // A Worker's own Close Tab on such a page closes it, and says the page had asked.
+    const workerCloses = await host.open({ url: `${base}/leave`, owner: "smoke/chat-close" });
+    await pressIn(workerCloses.tab);
+    assert.deepEqual(await host.close({ tab: workerCloses.tab, owner: "smoke/chat-close" }), { leftUnconfirmed: true });
+    assert.equal(pageState(workerCloses.tab), undefined, "the tab is closed");
+    const plainClose = await host.open({ url: `${base}/two`, owner: "smoke/chat-close" });
+    assert.deepEqual(await host.close({ tab: plainClose.tab, owner: "smoke/chat-close" }), {}, "a page that did not ask closes without a note");
+
 
     // A load the person stops leaves the tab as it was: after a page that did not load, its message, not a blank page.
     const failing = browser.navigate("stop01", "http://127.0.0.1:1/");
@@ -592,8 +613,13 @@ async function run() {
       assert.equal(await popup.webContents.executeJavaScript(openTwo), "false:false", "forgetting the popup's allowance blocks it again");
       assert.equal(await tabCount(), afterAllowed);
       browser.command(popupTab.tab, { type: "dismiss-blocked-popup" });
+      // A pop-up window whose page asks to be confirmed has nowhere to ask, and can still be closed.
+      await popup.webContents.loadURL(`${popupOrigin}/leave`);
+      await until(async () => await popup.webContents.executeJavaScript("document.getElementById('press').click(); navigator.userActivation.hasBeenActive && window.pressed === true", true), "the pop-up is pressed in");
+      popup.close();
+      await until(() => popup.isDestroyed(), "its close button closes it");
     } finally {
-      popup.destroy();
+      if (!popup.isDestroyed()) popup.destroy();
     }
 
     // Mute and zoom show on the tab.

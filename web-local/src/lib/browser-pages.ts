@@ -19,8 +19,8 @@ export interface BrowserTabsState {
   activeId: string | null;
   /** Each page's latest state from the desktop host, by page id. */
   pages: Record<string, BrowserPageState>;
-  /** Tabs the person closed, newest last, for Reopen Closed Tab. */
-  closed: Array<{ url: string; title: string }>;
+  /** Tabs the person closed, newest last, for Reopen Closed Tab. `pageId` is the page that was closed, in case it comes back. */
+  closed: Array<{ url: string; title: string; pageId?: string }>;
   /** Pages closed here: a state the host sent before it heard must not bring the tab back. */
   dismissed: string[];
 }
@@ -60,6 +60,9 @@ export function browserTabsReducer(state: BrowserTabsState, action: BrowserTabsA
         ...state,
         tabs,
         dismissed: state.dismissed.filter((pageId) => pageId !== command.pageId),
+        // A tab the person closed that the desktop offers again (its page asked to be confirmed, and they stayed)
+        // never closed, so it is not one to reopen.
+        closed: state.closed.filter((entry) => entry.pageId !== command.pageId),
         // A Worker's tabs open behind the person's; a link the person followed comes to the front.
         activeId: command.show || !state.activeId ? command.pageId : state.activeId,
       };
@@ -101,7 +104,7 @@ function removeTab(state: BrowserTabsState, pageId: string, byPerson: boolean): 
     tabs,
     activeId,
     pages,
-    closed: byPerson && url ? [...state.closed, { url, title: state.pages[pageId]?.title || tab.title }].slice(-closedLimit) : state.closed,
+    closed: byPerson && url ? [...state.closed, { url, title: state.pages[pageId]?.title || tab.title, pageId }].slice(-closedLimit) : state.closed,
     dismissed: [...state.dismissed.filter((item) => item !== pageId), pageId].slice(-dismissedLimit),
   };
 }

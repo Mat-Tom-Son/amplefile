@@ -103,17 +103,26 @@ keeps the Connected Folder shown and its Chat.
   message box, the folder's list, or while a dialog is open. A key pressed
   in a page that the window acts on brings the keyboard back to the window,
   so what is typed next goes to the address or find field and not to the
-  page; a tab chosen from a page gives its page the keyboard.
+  page; a tab chosen from a page gives its page the keyboard. A page that
+  had the keyboard and is taken out of the window (its tab closed, its load
+  failed, a Worker brought another tab forward) gives the keyboard back only
+  when AmpleFile's window is the one the person is working in; a window
+  behind another app is not brought forward. The keyboard then goes to the
+  tab in front, never to a field the person typed in earlier, such as a
+  Chat's message box.
 - **What the desktop owns.** The tab list is the desktop's open pages: pages
   that outlived a window reload and tabs a Worker opened before the window
   existed come back as tabs. A window that is closed and reopened, or
   reloaded, shows the pane at the size it was left with the same tab in
   front. Nothing is restored after quitting except sign-ins and history. The page is drawn by the desktop above everything the
   window draws, over a placeholder in the pane, so it steps aside for as long
-  as a dialog (or the dimmed backdrop behind one), menu, sheet, or notice of
-  the window's crosses it. Notices sit above the pane's top edge for the same
-  reason: over the folder's list beside the folder, and over the toolbar with
-  the folder folded away. A page shown in the pane takes the pane's size;
+  as a dialog (or the dimmed backdrop behind one), menu, or sheet of the
+  window's crosses it. Notices never hide it: beside the folder, and folded
+  to its strip, they sit above the pane's top edge, over the folder's list.
+  With the folder folded away they keep their place at the foot of the
+  window, and the page is drawn only down to where they begin, so several
+  notices are all in view and none covers the toolbar, the tab strip, the
+  address row, or a site's question. A page shown in the pane takes the pane's size;
   folded away, it keeps its last size. Workers are told the person has a tab
   in front only while its page is drawn where the person can see it: not
   folded away, under a dialog, in a hidden or minimized window, or replaced
@@ -167,9 +176,16 @@ way**).
   changes does. When the person leaves it from the window (a typed address,
   Reload, Back, Forward, or closing its tab), the page stays and the window
   asks **Leave This Page?**; nothing leaves until they choose **Leave**. A
-  closed tab comes back into the strip with the question. A Worker's action
-  runs when called: the page is left, and the action's result says it had
-  asked. A link or form pressed inside such a page leaves it without a
+  closed tab comes back into the strip with the question, and is not offered
+  by Reopen Closed Tab. The dialog starts with the keyboard on Cancel, and
+  closes by itself if the page goes or stays without the person. A Worker's
+  action runs when called: the page is left or closed, and the action's
+  result says it had asked. Who is leaving is judged from what was
+  happening at that moment, so when the person and a Worker act on the same
+  page within a second or two of each other, the question or the note can
+  go to the other one; and the note is given with the first result that
+  follows, which another Chat reading the same tab can take. A pop-up
+  window that asks to be confirmed closes without a question. A link or form pressed inside such a page leaves it without a
   question, because the desktop cannot ask and wait there without stopping
   every Worker, and cannot do the leaving again afterward.
 - A page that leaves full screen is told so, so its own full-screen view
