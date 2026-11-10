@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { updateIndicatorDuringCheck, updateIndicatorFor, type UpdateIndicatorModel } from "../../lib/update-status";
 import type { DesktopUpdateStatus } from "../../types";
 
@@ -18,10 +18,22 @@ export function UpdateIndicator({ status, onUpdateAction, onOpenAbout }: {
   const fresh = updateIndicatorFor(status);
   const model = checking ? updateIndicatorDuringCheck(shown.current) : fresh;
   useEffect(() => { if (!checking) shown.current = fresh; });
-  if (!model) return null;
+  // A screen reader hears the moves into available, ready, and failed; never
+  // a progress tick, and never by taking focus.
+  const [announcement, setAnnouncement] = useState("");
+  const announcedTone = useRef<UpdateIndicatorModel["tone"] | null>(null);
+  const freshTone = fresh?.tone ?? null;
+  const freshAnnouncement = fresh?.announcement ?? null;
+  useEffect(() => {
+    if (checking || freshTone === announcedTone.current) return;
+    announcedTone.current = freshTone;
+    setAnnouncement(freshAnnouncement ?? "");
+  }, [checking, freshTone, freshAnnouncement]);
+  const live = <span className="sr-only" role="status">{announcement}</span>;
+  if (!model) return live;
   const inert = model.click === null;
   const style = model.progressPercent === null ? undefined : { "--fm-update-progress": `${model.progressPercent}%` } as CSSProperties;
-  return <div className="fm-update">
+  return <>{live}<div className="fm-update">
     <button
       type="button"
       className={`fm-update-button is-${model.tone}`}
@@ -37,5 +49,5 @@ export function UpdateIndicator({ status, onUpdateAction, onOpenAbout }: {
       <span className="fm-update-label">{model.label}</span>
       {model.detail ? <span className="fm-update-detail" aria-hidden="true">{model.detail}</span> : null}
     </button>
-  </div>;
+  </div></>;
 }

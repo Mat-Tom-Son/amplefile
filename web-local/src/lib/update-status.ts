@@ -84,6 +84,8 @@ export interface UpdateIndicatorModel {
   accessibleName: string;
   tooltip: string;
   click: "update" | "open-about" | null;
+  /** What a screen reader hears when the indicator moves into this state; null when it stays quiet. */
+  announcement: string | null;
 }
 
 export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIndicatorModel | null {
@@ -99,6 +101,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       accessibleName: version ? `Update Available: AmpleFile ${version}` : "Update Available",
       tooltip: `Download ${version ? `AmpleFile ${version}` : "the update"} and restart to install it. AmpleFile asks first and names any work the restart would stop.`,
       click: "update",
+      announcement: `${named} is available. Update Available is at the bottom of the sidebar.`,
     };
     case "downloading": {
       const percent = percentText(status);
@@ -110,6 +113,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
         accessibleName: percent ? `Downloading Update, ${percent}` : "Downloading Update",
         tooltip: `${named} is downloading. AmpleFile restarts when it finishes. Open Settings → About for details.`,
         click: "open-about",
+        announcement: null,
       };
     }
     case "ready": return {
@@ -120,6 +124,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       accessibleName: version ? `Restart to Update: AmpleFile ${version}` : "Restart to Update",
       tooltip: `${named} is ready. AmpleFile asks, then quits and opens again to install it.`,
       click: "update",
+      announcement: `${named} is ready to install. Restart to Update is at the bottom of the sidebar.`,
     };
     case "installing": return {
       tone: "installing",
@@ -129,6 +134,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       accessibleName: "Restarting to Update",
       tooltip: `AmpleFile is restarting to install ${version ? `version ${version}` : "the update"}.`,
       click: null,
+      announcement: null,
     };
     // A failed check is left to Settings → About: nothing was being updated.
     case "error": return !updateFailedWithVersion(status) ? null : {
@@ -139,6 +145,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       accessibleName: "Update Failed: Show Details in Settings",
       tooltip: "The update did not finish. Open Settings → About for the details and to try again.",
       click: "open-about",
+      announcement: "The update did not finish. Settings → About has the details.",
     };
     case "unsupported":
     case "idle":

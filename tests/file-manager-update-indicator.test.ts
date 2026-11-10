@@ -40,7 +40,9 @@ test("the update indicator sits at the foot of the sidebar, after its lists, and
 
   await dom.render(createElement(module.FileManagerView, { ...props, updateStatus: status("ready") }));
   const foot = sidebar().querySelector(".fm-update")!;
-  assert.equal(foot.previousElementSibling?.classList.contains("fm-sidebar-scroll"), true, "outside the scrolling lists, so it stays put");
+  const lists = sidebar().querySelector(".fm-sidebar-scroll")!;
+  assert.equal(lists.contains(foot), false, "outside the scrolling lists, so it stays put");
+  assert.ok(lists.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING, "after them");
   assert.equal(foot, sidebar().lastElementChild);
   const buttons = [...sidebar().querySelectorAll("button")];
   assert.equal(buttons.at(-1), indicator(), "the last stop in the sidebar's keyboard order");

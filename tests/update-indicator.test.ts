@@ -131,10 +131,11 @@ test("the indicator shows, hides, and runs the right action in each phase", asyn
 
   for (const phase of ["unsupported", "idle", "checking", "not_available"] as const) {
     await render(status(phase));
-    assert.equal(dom.container.childElementCount, 0, `${phase} takes no space`);
+    assert.equal(dom.container.querySelector(".fm-update"), null, `${phase} draws nothing`);
+    assert.equal(dom.container.querySelector('[role="status"]')!.textContent, "", `${phase} announces nothing`);
   }
   await render(null);
-  assert.equal(dom.container.childElementCount, 0);
+  assert.equal(dom.container.querySelector(".fm-update"), null);
 
   await render(status("available"));
   assert.equal(button()!.type, "button");
@@ -203,4 +204,23 @@ test("Settings → About's update button reads the same shared label and busy st
   await dom.waitFor(() => Boolean(updateButton()));
   assert.equal(updateButton()!.textContent, "42%");
   assert.equal(updateButton()!.disabled, true, "Settings disables its button in the same phases the indicator will not act");
+});
+
+test("a screen reader hears the moves into available, ready, and failed, and no progress ticks", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  const render = (value: DesktopUpdateStatus | null) => dom.render(createElement(UpdateIndicator, { status: value, onUpdateAction() {}, onOpenAbout() {} }));
+  const live = () => dom.container.querySelector('[role="status"]')!;
+  const said = async (value: DesktopUpdateStatus | null) => { await render(value); await dom.settle(); return live().textContent; };
+  assert.equal(await said(status("not_available", { availableVersion: null })), "");
+  assert.match(await said(status("available")), /^AmpleFile 0\.1\.5 is available\./);
+  assert.ok(!live().contains(dom.container.querySelector("button")), "the live region sits beside the button, not around it");
+  assert.equal(document.activeElement, document.body, "an announcement never takes focus");
+  assert.equal(await said(status("downloading", { progressPercent: 10 })), "");
+  assert.equal(await said(status("downloading", { progressPercent: 60 })), "", "progress is never announced");
+  assert.match(await said(status("ready")), /is ready to install/);
+  assert.match(await said(status("checking")), /is ready to install/, "a check neither clears nor repeats it");
+  assert.match(await said(status("ready")), /is ready to install/);
+  assert.equal(await said(status("installing")), "");
+  assert.match(await said(status("error")), /^The update did not finish/);
 });
