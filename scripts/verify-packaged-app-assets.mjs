@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { extractFile, listPackage } from "@electron/asar";
 import electronFuses from "@electron/fuses";
 import { verifyAsarFileIntegrity } from "./asar-integrity.mjs";
+import { verifyPackagedRenderer } from "./verify-packaged-renderer.mjs";
 
 const { FuseV1Options, getCurrentFuseWire } = electronFuses;
 
@@ -45,8 +46,6 @@ const executablePath = packagedPlatform === "darwin"
 
 assertPath(executablePath, `${identity.productName} executable`);
 assertPath(asarPath, "app.asar");
-assertPath(join(resourcesDir, "web-local", "index.html"), "renderer index");
-assertPath(join(resourcesDir, "web-local", "popover.html"), "AmpleFile Agent popover renderer");
 assertPath(join(resourcesDir, "assets", "icon.png"), "desktop icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate.png"), "menu-bar template icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate@2x.png"), "menu-bar template icon (2x)");
@@ -133,6 +132,11 @@ if (existsSync(executablePath) && packagedPlatform === "darwin") {
 if (existsSync(asarPath)) {
   try { verifyAsarFileIntegrity(asarPath); }
   catch (error) { failures.push(formatError(error)); }
+  // The renderer is code: it ships inside the archive the integrity fuse
+  // validates, never as loose files in Resources, and the archive holds
+  // exactly the renderer this tree built.
+  try { failures.push(...verifyPackagedRenderer({ asarPath, resourcesDir, rendererBuildDir: join(rootDir, "dist", "web-local") })); }
+  catch (error) { failures.push(`Could not verify the packaged renderer: ${formatError(error)}`); }
   const entries = new Set(listPackage(asarPath).map(normalizeAsarPath));
   for (const required of [
     "/package.json",
