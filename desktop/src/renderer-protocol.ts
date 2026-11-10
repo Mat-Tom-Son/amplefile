@@ -2,6 +2,21 @@ import { existsSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+/** The internal scheme has one host; every page and asset lives under it. */
+const rendererHost = "app";
+/** The route for the one image the windows show from the desktop assets. */
+const desktopAssetRoutePrefix = "/_desktop-assets/";
+const desktopAssetFile = "icon-32.png";
+
+export interface RendererRequestSources {
+  /** The renderer build: see `rendererBuildDirectory`. */
+  rendererRoot: string;
+  /** The desktop assets directory that holds the window icon. */
+  desktopAssets: string;
+  /** Electron's `net.fetch`, given a `file:` URL. */
+  fetchFile: (fileUrl: string) => Promise<Response>;
+}
+
 /**
  * The renderer build (the main window and the AmpleFile Agent popover) sits
  * at `dist/web-local` under the application root in every mode: the
@@ -13,12 +28,27 @@ export function rendererBuildDirectory(appRoot: string): string {
 }
 
 /**
- * Answer one internal-scheme request from `rootDir` and nothing outside it.
- * `fetchFile` is Electron's `net.fetch`; its file: loader and Node's `fs`
- * both read through `app.asar`, so a packaged renderer never leaves the
- * archive.
+ * Answer one request to the internal scheme: a file of the renderer build,
+ * or the one desktop icon, and nothing else.
  */
-export function serveProtocolFile(
+export function handleRendererRequest(request: { url: string; method: string }, sources: RendererRequestSources): Promise<Response> | Response {
+  const url = new URL(request.url);
+  if (url.hostname !== rendererHost) return new Response("Not found", { status: 404 });
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+  const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+  if (requestedPath.startsWith(desktopAssetRoutePrefix)) {
+    if (requestedPath !== `${desktopAssetRoutePrefix}${desktopAssetFile}`) return new Response("Not found", { status: 404 });
+    return serveProtocolFile(sources.desktopAssets, desktopAssetFile, request.method, sources.fetchFile);
+  }
+  return serveProtocolFile(sources.rendererRoot, requestedPath.replace(/^\/+/, ""), request.method, sources.fetchFile);
+}
+
+/**
+ * Answer with one file from `rootDir` and nothing outside it. Electron's
+ * file: loader and Node's `fs` both read through `app.asar`, so a packaged
+ * renderer never leaves the archive.
+ */
+function serveProtocolFile(
   rootDir: string,
   requestedPath: string,
   method: string,

@@ -116,7 +116,7 @@ import {
 } from "./command-line-install.js";
 import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
-import { rendererBuildDirectory, serveProtocolFile } from "./renderer-protocol.js";
+import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
 
 const productionProductName = productIdentity.productName;
 const localMacSmokeProductName = productIdentity.macSmokeProductName;
@@ -124,7 +124,6 @@ const localMacSmokeBuild = process.platform === "darwin" && app.isPackaged && pa
 const productName = localMacSmokeBuild ? localMacSmokeProductName : productionProductName;
 const appProtocol = productIdentity.internalProtocol;
 const appUserModelId = productIdentity.productionAppId;
-const desktopAssetRoutePrefix = "/_desktop-assets/";
 const desktopTitleBarHeight = 40;
 const desktopTitleBarOverlayPalettes = {
   light: { color: "#f2f4ef", symbolColor: "#1c2530" },
@@ -742,18 +741,11 @@ function registerRendererProtocol(): void {
   rendererProtocolRegistered = true;
   const rendererRoot = resolveRendererDir();
   const desktopAssets = resolveDesktopAssetsDir();
-  const fetchLocalFile = (fileUrl: string): Promise<Response> => net.fetch(fileUrl);
-  protocol.handle(appProtocol, (request) => {
-    const url = new URL(request.url);
-    if (url.hostname !== "app") return new Response("Not found", { status: 404 });
-    if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-    const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
-    if (requestedPath.startsWith(desktopAssetRoutePrefix)) {
-      if (requestedPath !== `${desktopAssetRoutePrefix}icon-32.png`) return new Response("Not found", { status: 404 });
-      return serveProtocolFile(desktopAssets, "icon-32.png", request.method, fetchLocalFile);
-    }
-    return serveProtocolFile(rendererRoot, requestedPath.replace(/^\/+/, ""), request.method, fetchLocalFile);
-  });
+  protocol.handle(appProtocol, (request) => handleRendererRequest(request, {
+    rendererRoot,
+    desktopAssets,
+    fetchFile: (fileUrl) => net.fetch(fileUrl),
+  }));
 }
 
 async function openModelContextWindow(): Promise<void> {

@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { createPackage, createPackageWithOptions } from "@electron/asar";
 import ts from "typescript";
-import { rendererBuildDirectory, serveProtocolFile } from "../desktop/src/renderer-protocol.ts";
+import { handleRendererRequest, rendererBuildDirectory } from "../desktop/src/renderer-protocol.ts";
 import { verifyPackagedRenderer } from "../scripts/verify-packaged-renderer.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -44,33 +44,48 @@ test("Electron Builder archives the renderer in app.asar and ships no loose copy
   for (const pattern of builder.asarUnpack) assert.doesNotMatch(pattern, /web-local/, "the renderer must not be unpacked");
 });
 
-test("the packaged main process reads the renderer from its application root", async () => {
+test("the internal scheme answers renderer files and the one desktop icon, and nothing else", async (t) => {
   assert.equal(rendererBuildDirectory("/Applications/AmpleFile.app/Contents/Resources/app.asar"), "/Applications/AmpleFile.app/Contents/Resources/app.asar/dist/web-local");
-  const main = await readFile(join(rootDir, "desktop", "src", "main.ts"), "utf8");
-  assert.match(main, /rendererBuildDirectory\(app\.isPackaged \? app\.getAppPath\(\) : repoRoot\)/);
-  assert.doesNotMatch(main, /resourcesPath, "web-local"/);
-});
 
-test("the internal scheme serves files under its root and nothing outside it", async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), "amplefile-renderer-protocol-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   await writeRendererBuild(temporary);
-  const root = rendererBuildDirectory(temporary);
+  const rendererRoot = rendererBuildDirectory(temporary);
+  const desktopAssets = join(temporary, "assets");
+  await mkdir(desktopAssets);
+  await writeFile(join(desktopAssets, "icon-32.png"), "icon");
+  await writeFile(join(desktopAssets, "icon.png"), "another icon");
   const fetched: string[] = [];
-  const fetchFile = async (fileUrl: string) => { fetched.push(fileUrl); return new Response("served"); };
+  const sources = { rendererRoot, desktopAssets, fetchFile: async (fileUrl: string) => { fetched.push(fileUrl); return new Response("served"); } };
+  const answer = (path: string, method = "GET", host = "app") => handleRendererRequest({ url: `amplefile-desktop://${host}${path}`, method }, sources);
+  const servedFile = async (path: string) => {
+    const response = await answer(path);
+    assert.equal(await response.text(), "served", path);
+    return fetched.pop();
+  };
 
-  const served = await serveProtocolFile(root, "assets/index-abc123.js", "GET", fetchFile);
-  assert.equal(await served.text(), "served");
-  assert.deepEqual(fetched, [pathToFileURL(join(root, "assets", "index-abc123.js")).href]);
+  assert.equal(await servedFile("/assets/index-abc123.js"), pathToFileURL(join(rendererRoot, "assets", "index-abc123.js")).href);
+  assert.equal(await servedFile("/"), pathToFileURL(join(rendererRoot, "index.html")).href);
+  assert.equal(await servedFile("/popover.html"), pathToFileURL(join(rendererRoot, "popover.html")).href);
+  assert.equal(await servedFile("/_desktop-assets/icon-32.png"), pathToFileURL(join(desktopAssets, "icon-32.png")).href);
 
-  const head = await serveProtocolFile(root, "popover.html", "HEAD", fetchFile);
+  const head = await answer("/popover.html", "HEAD");
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
 
-  for (const outside of ["../../package.json", "..", "assets/../../../package.json", join(temporary, "package.json"), "missing.js"]) {
-    assert.equal((await serveProtocolFile(root, outside, "GET", fetchFile)).status, 404, outside);
+  assert.equal((await answer("/index.html", "GET", "other")).status, 404, "only the app host answers");
+  for (const method of ["POST", "PUT", "DELETE"]) assert.equal((await answer("/index.html", method)).status, 405, method);
+  for (const outside of [
+    "/missing.js",
+    "/_desktop-assets/icon.png",
+    "/_desktop-assets/..%2ficon.png",
+    "/..%2f..%2fpackage.json",
+    "/assets/..%2f..%2f..%2fpackage.json",
+    `/${encodeURIComponent(join(temporary, "package.json"))}`,
+  ]) {
+    assert.equal((await answer(outside)).status, 404, outside);
   }
-  assert.equal(fetched.length, 1, "refused and HEAD requests never read a file");
+  assert.deepEqual(fetched, [], "refused and HEAD requests never read a file");
 });
 
 test("packaged renderer verification accepts an archived renderer and rejects every loose or missing form", async (t) => {
@@ -138,21 +153,26 @@ test("Electron loads the main window and the popover through the internal scheme
   await writeFile(join(stage, "renderer-protocol.mjs"), compiled.outputText);
   const identity = JSON.parse(await readFile(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
   const scheme: string = identity.internalProtocol;
+  // The window icon is the one file the scheme answers from outside the archive.
+  const desktopAssets = join(temporary, "Resources", "assets");
+  await mkdir(desktopAssets, { recursive: true });
+  await writeFile(join(desktopAssets, "icon-32.png"), "icon");
+  await writeFile(join(desktopAssets, "icon.png"), "another icon");
   await writeFile(join(stage, "main.mjs"), `
     import { app, BrowserWindow, net, protocol } from "electron";
-    import { rendererBuildDirectory, serveProtocolFile } from "./renderer-protocol.mjs";
+    import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.mjs";
     const scheme = ${JSON.stringify(scheme)};
     protocol.registerSchemesAsPrivileged([{ scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
     app.setPath("userData", ${JSON.stringify(join(temporary, "profile"))});
     app.on("window-all-closed", () => {});
     app.whenReady().then(async () => {
       try {
-        const root = rendererBuildDirectory(app.getAppPath());
-        protocol.handle(scheme, (request) => {
-          const url = new URL(request.url);
-          const path = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
-          return serveProtocolFile(root, path.replace(/^\\/+/, ""), request.method, (fileUrl) => net.fetch(fileUrl));
-        });
+        const rendererRoot = rendererBuildDirectory(app.getAppPath());
+        protocol.handle(scheme, (request) => handleRendererRequest(request, {
+          rendererRoot,
+          desktopAssets: ${JSON.stringify(desktopAssets)},
+          fetchFile: (fileUrl) => net.fetch(fileUrl),
+        }));
         const loaded = {};
         for (const page of ["index.html", "popover.html"]) {
           const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
@@ -160,13 +180,18 @@ test("Electron loads the main window and the popover through the internal scheme
           loaded[page] = await window.webContents.executeJavaScript("document.documentElement.dataset.loaded");
           window.destroy();
         }
-        const status = async (path, method = "GET") => (await net.fetch(scheme + "://app/" + path, { method })).status;
+        const status = async (path, method = "GET", host = "app") => (await net.fetch(scheme + "://" + host + "/" + path, { method })).status;
         const script = await net.fetch(scheme + "://app/assets/index-abc123.js");
         console.log(JSON.stringify({
-          root, loaded,
+          rendererRoot, loaded,
           scriptType: script.headers.get("content-type"),
           script: await script.text(),
+          root: await (await net.fetch(scheme + "://app/")).text(),
+          icon: await (await net.fetch(scheme + "://app/_desktop-assets/icon-32.png")).text(),
           head: await status("popover.html", "HEAD"),
+          post: await status("index.html", "POST"),
+          otherHost: await status("index.html", "GET", "other"),
+          otherAsset: await status("_desktop-assets/icon.png"),
           missing: await status("assets/missing.js"),
           escaped: await status("..%2f..%2fpackage.json"),
         }));
@@ -176,20 +201,24 @@ test("Electron loads the main window and the popover through the internal scheme
   `);
 
   const archive = join(temporary, "Resources", "app.asar");
-  await mkdir(dirname(archive));
   await createPackage(stage, archive);
   // Nothing loose remains for a load to fall back on.
   await rm(stage, { recursive: true });
   assert.deepEqual(verifyPackagedRenderer({ asarPath: archive, resourcesDir: dirname(archive) }), []);
 
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-  const { stdout } = await promisify(execFile)(require("electron"), [archive], { env, timeout: 30_000, maxBuffer: 512 * 1024 });
+  const { stdout } = await promisify(execFile)(require("electron"), [archive], { env, timeout: 30_000, killSignal: "SIGKILL", maxBuffer: 512 * 1024 });
   const result = JSON.parse(stdout.trim().split("\n").at(-1)!);
-  assert.equal(result.root, join(archive, "dist", "web-local"));
+  assert.equal(result.rendererRoot, join(archive, "dist", "web-local"));
   assert.deepEqual(result.loaded, { "index.html": "index", "popover.html": "popover" });
   assert.match(result.scriptType, /javascript/);
   assert.match(result.script, /dataset\.loaded = "index"/);
+  assert.match(result.root, /index-abc123\.js/, "the bare origin answers the main window's page");
+  assert.equal(result.icon, "icon");
   assert.equal(result.head, 200);
+  assert.equal(result.post, 405);
+  assert.equal(result.otherHost, 404);
+  assert.equal(result.otherAsset, 404);
   assert.equal(result.missing, 404);
   assert.equal(result.escaped, 404);
 });
