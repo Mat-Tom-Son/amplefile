@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createElement, StrictMode, useRef, type ReactElement } from "react";
+import { createElement, StrictMode, useRef, useState, type ReactElement } from "react";
 
 import { useModalDialog } from "../web-local/src/hooks/useModalDialog.js";
 import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "../web-local/src/ui/feedback.js";
@@ -80,6 +80,61 @@ test("Escape closes an idle dialog and is ignored while the dialog is blocked", 
   await dom.render(createElement(Screen, { open: true, blocked: true, onClose: () => { closes += 1; } }));
   await dom.press("Escape");
   assert.equal(closes, 1, "Escape cannot abandon a dialog that is mid-operation");
+});
+
+function SearchDialog({ onClose, blocked }: { onClose: () => void; blocked?: boolean }): ReactElement {
+  const [query, setQuery] = useState("");
+  const dialogRef = useModalDialog({ onClose, blocked });
+  return createElement(
+    "div",
+    { ref: dialogRef, tabIndex: -1, role: "dialog", "aria-modal": true },
+    createElement("input", { type: "search", id: "search", "aria-label": "Search", value: query, onChange: (event: { target: HTMLInputElement }) => setQuery(event.target.value) }),
+    createElement("input", { type: "text", id: "name", "aria-label": "Name", defaultValue: "kept" }),
+    createElement("output", { id: "query" }, query),
+  );
+}
+
+test("Escape in a search field clears it first, and only an empty field's Escape closes the dialog", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  let closes = 0;
+  await dom.render(createElement(SearchDialog, { onClose: () => { closes += 1; } }));
+  const search = document.getElementById("search") as HTMLInputElement;
+  search.focus();
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(search, "zzz");
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  assert.equal(document.getElementById("query")!.textContent, "zzz");
+
+  await dom.press("Escape");
+  assert.equal(closes, 0, "the first Escape clears the search instead of closing");
+  assert.equal(search.value, "");
+  assert.equal(document.getElementById("query")!.textContent, "", "the owner's state follows the cleared field");
+  assert.equal(document.activeElement, search, "focus stays in the field");
+
+  await dom.press("Escape");
+  assert.equal(closes, 1, "Escape in an empty search field closes the dialog");
+
+  // Other text fields keep their value and Escape closes as before.
+  (document.getElementById("name") as HTMLInputElement).focus();
+  await dom.press("Escape");
+  assert.equal(closes, 2);
+  assert.equal((document.getElementById("name") as HTMLInputElement).value, "kept");
+
+  // A blocked dialog still lets the search clear, and still refuses to close.
+  await dom.render(null);
+  await dom.render(createElement(SearchDialog, { blocked: true, onClose: () => { closes += 1; } }));
+  const blockedSearch = document.getElementById("search") as HTMLInputElement;
+  blockedSearch.focus();
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(blockedSearch, "abc");
+    blockedSearch.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await dom.press("Escape");
+  assert.equal(blockedSearch.value, "");
+  await dom.press("Escape");
+  assert.equal(closes, 2, "a blocked dialog is not closed by Escape");
 });
 
 test("focus wrap skips disabled radios with explicit tabIndex and inert descendants", async (t) => {

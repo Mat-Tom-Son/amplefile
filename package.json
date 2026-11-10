@@ -1,6 +1,6 @@
 {
   "name": "amplefile-desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "A local-first desktop app powered by Pi.",
@@ -55,6 +55,7 @@
     "desktop:manifest:release:mac": "node scripts/write-mac-release-manifest.mjs",
     "desktop:reset:mac-safe-storage": "node scripts/reset-mac-safe-storage.mjs",
     "desktop:verify:installed:mac": "node scripts/verify-installed-mac-app.mjs",
+    "desktop:verify:feed:mac": "node scripts/verify-mac-feed.mjs",
     "desktop:smoke": "npm run desktop:prepare && electron dist/desktop/desktop/src/main.js",
     "desktop:preflight": "node scripts/desktop-preflight.mjs",
     "desktop:preload:smoke": "electron scripts/desktop-preload-electron-smoke.mjs",

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { assertLocalReleaseVerification, assertVerifiedBuildOrder } from "./local-release-verification.mjs";
+import feedModule from "./mac-release-feed.cjs";
 import {
   assertCompatibleReleaseState,
   computeReleaseFingerprint,
@@ -17,6 +18,7 @@ loadLocalReleaseEnvironment();
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const arch = readOption("--arch") || (process.arch === "x64" ? "x64" : "arm64");
+const feed = feedModule.resolveMacReleaseFeed(identity);
 const descriptor = {
   productName: identity.productName,
   version: String(packageJson.version ?? "").trim(),
@@ -25,8 +27,9 @@ const descriptor = {
   nodeVersion: process.version,
   signIdentity: value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
   teamId: value(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-  feedOwner: value(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-  feedRepo: value(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+  feedOwner: feed.packaged.owner,
+  feedRepo: feed.packaged.repo,
+  feedStage: feed.stage,
 };
 const path = releaseStatePath(rootDir, identity.productName);
 const state = await readReleaseState(path);
@@ -52,10 +55,12 @@ if (process.argv.includes("--json")) {
     compatible,
     incompatibility: incompatibility || null,
     nextStage: compatible ? nextIncompleteStage(state) : null,
+    feed: { stage: feed.stage, packaged: feed.packaged.slug, publishTargets: feed.targets.map((target) => target.slug) },
     state,
   }, null, 2));
 } else {
   console.log(summarizeReleaseState(state).join("\n"));
+  console.log(`\nMac update feed stage: ${feed.stage}. The packaged app checks ${feed.packaged.slug}; a release is published to ${feed.targets.map((target) => target.slug).join(", then ")}.`);
   if (state && !compatible) console.log(`\nNot resumable: ${incompatibility}`);
   else if (state) console.log("\nCheckpoint inputs match this checkout and release environment.");
 }

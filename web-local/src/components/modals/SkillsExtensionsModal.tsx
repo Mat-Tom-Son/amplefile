@@ -24,7 +24,6 @@ export function SkillsExtensionsModal({ connectedFolder, status, initialView, fi
   return (
     <div className="modal-backdrop skills-extensions-backdrop" role="presentation" onMouseDown={onClose}>
       <section ref={dialogRef} tabIndex={-1} className="skills-extensions-modal" role="dialog" aria-modal="true" aria-label="Skills & Extensions" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="ui-control ui-control--icon skills-extensions-close" type="button" onClick={onClose} aria-label="Close Skills & Extensions"><Dismiss20Regular /></button>
         <CapabilitiesPane
           connectedFolder={connectedFolder}
           status={status}
@@ -33,6 +32,7 @@ export function SkillsExtensionsModal({ connectedFolder, status, initialView, fi
           onViewChange={setView}
           onError={onError}
           onCatalogChanged={onCatalogChanged}
+          headerEnd={<button className="ui-control ui-control--icon skills-extensions-close" type="button" onClick={onClose} aria-label="Close Skills & Extensions"><Dismiss20Regular /></button>}
         />
       </section>
     </div>

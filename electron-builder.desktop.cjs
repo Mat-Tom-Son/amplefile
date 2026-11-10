@@ -1,13 +1,16 @@
 const path = require("node:path");
 const identity = require("./src/shared/product-identity.json");
+const { resolveMacReleaseFeed } = require("./scripts/mac-release-feed.cjs");
 
 const root = __dirname;
 const macReleaseBuild = process.env.AMPLEFILE_MAC_RELEASE_BUILD === "1";
 const unsignedMacBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
 const macSignIdentity = process.env.AMPLEFILE_MAC_SIGN_IDENTITY?.trim();
 const electronBuilderMacIdentity = macSignIdentity?.replace(/^Developer ID Application:\s*/i, "");
-const macReleaseOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
-const macReleaseRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
+// The feed the packaged app checks. Electron Builder writes this entry into
+// Contents/Resources/app-update.yml; the build never uploads (--publish
+// never), and scripts/publish-mac-release.mjs decides where the release goes.
+const macUpdateFeed = resolveMacReleaseFeed(identity).packaged;
 const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
 
 module.exports = {
@@ -24,8 +27,8 @@ module.exports = {
   publish: [
     {
       provider: "github",
-      owner: macReleaseOwner,
-      repo: macReleaseRepo,
+      owner: macUpdateFeed.owner,
+      repo: macUpdateFeed.repo,
       releaseType: "release",
     },
   ],

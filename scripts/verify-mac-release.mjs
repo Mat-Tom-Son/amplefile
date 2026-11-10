@@ -5,6 +5,8 @@ import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import feedModule from "./mac-release-feed.cjs";
+import { releaseManifestFeedFailures } from "./mac-release-publication.mjs";
 
 const run = promisify(execFile);
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -27,8 +29,11 @@ const zipPath = join(builderDir, `${artifactStem}.zip`);
 const updatePath = join(builderDir, "latest-mac.yml");
 const manifestPath = join(builderDir, `${identity.productName}-mac-release-manifest.json`);
 const textManifestPath = join(builderDir, `${identity.productName}-mac-release-manifest.txt`);
-const expectedFeedOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
-const expectedFeedRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
+const feed = feedModule.resolveMacReleaseFeed(identity);
+// What the packaged app checks, which for the bridge release is not the only
+// place the release is published.
+const expectedFeedOwner = feed.packaged.owner;
+const expectedFeedRepo = feed.packaged.repo;
 const failures = [];
 
 for (const [path, label] of [
@@ -133,7 +138,7 @@ function verifyReleaseManifest() {
     if (manifest.version !== version) failures.push(`Release manifest version ${manifest.version || "missing"} does not match ${version}.`);
     if (manifest.platform !== "darwin" || manifest.arch !== arch) failures.push("Release manifest platform or architecture is incorrect.");
     if (manifest.unsignedSmokeBuild !== !releaseBuild) failures.push("Release manifest signed/unsigned mode does not match the current verification mode.");
-    if (manifest.feed?.owner !== expectedFeedOwner || manifest.feed?.repo !== expectedFeedRepo) failures.push("Release manifest feed does not match the embedded Mac feed.");
+    failures.push(...releaseManifestFeedFailures(manifest, feed));
     const artifacts = new Map((manifest.artifacts ?? []).map((artifact) => [artifact.name, artifact]));
     for (const path of [dmgPath, `${dmgPath}.blockmap`, zipPath, `${zipPath}.blockmap`, updatePath]) {
       if (!existsSync(path)) continue;

@@ -6,6 +6,8 @@ import { loadEnvFile } from "node:process";
 import { assertLocalReleaseVerification, assertVerifiedBuildOrder, withReleaseVerificationLock } from "./local-release-verification.mjs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import feedModule from "./mac-release-feed.cjs";
+import { assertCheckedInFeedStage } from "./mac-release-publication.mjs";
 import {
   assertArtifactReceipt,
   assertCompatibleReleaseState,
@@ -23,6 +25,7 @@ const execFileAsync = promisify(execFile);
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 loadLocalReleaseEnvironment();
+const feed = feedModule.resolveMacReleaseFeed(identity);
 const builderCli = join(rootDir, "node_modules", "electron-builder", "out", "cli", "cli.js");
 const releaseBuild = process.argv.includes("--release");
 const unsignedSmokeBuild = process.argv.includes("--unsigned-smoke") || !releaseBuild;
@@ -50,6 +53,9 @@ const verifiedArtifacts = [...packageArtifacts, ...manifestArtifacts, "out/build
 if (process.platform !== "darwin") throw new Error(`${identity.productName} macOS artifacts must be built on a Mac host.`);
 if (releaseBuild && process.argv.includes("--unsigned-smoke")) throw new Error("Use either --release or --unsigned-smoke, not both.");
 if (resumeBuild && !releaseBuild) throw new Error("Only a signed macOS release build can be resumed.");
+// A signed build with an overridden stage could never be published; refuse
+// it here, before any signing or notarization. The ad hoc lane may override.
+if (releaseBuild) assertCheckedInFeedStage(feed);
 if (arch !== "arm64" && arch !== "x64") throw new Error(`Unsupported macOS architecture: ${arch}.`);
 if (!version) throw new Error("package.json does not declare a macOS release version.");
 if (releaseBuild) assertReleaseCredentials();
@@ -79,8 +85,9 @@ async function buildResumableRelease(verification) {
     nodeVersion: process.version,
     signIdentity: value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
     teamId: value(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-    feedOwner: value(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-    feedRepo: value(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+    feedOwner: feed.packaged.owner,
+    feedRepo: feed.packaged.repo,
+    feedStage: feed.stage,
   };
   const fingerprint = await computeReleaseFingerprint(rootDir, descriptor);
   const statePath = releaseStatePath(rootDir, identity.productName);

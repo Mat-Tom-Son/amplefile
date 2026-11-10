@@ -33,7 +33,7 @@ import { requestConfirm, showToast } from "../../ui/feedback";
 import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import type { ConnectedFolderAppearanceState } from "../../../../src/shared/connected-folder-appearance";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
-import type { AgentStatus, ChatSendRequest, ConversationSummary, FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { AgentStatus, ChatSendRequest, ConversationSummary, DesktopUpdateStatus, FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../../types";
 import {
   closedSidebarParents,
   defaultFileManagerSort,
@@ -78,6 +78,7 @@ import { FileManagerComposer, FileManagerPanel } from "./FileManagerPanel";
 import { ChatPanel, WorkerModelRow } from "../chat/ChatPanel";
 import { PaneResizer, panelWidthSpec, sidebarWidthSpec, usePaneWidth } from "./PaneResizer";
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
+import { UpdateIndicator } from "./UpdateIndicator";
 import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
 import { moveResultMessage } from "./move-result";
@@ -107,7 +108,7 @@ interface PlaceFileBridge {
  * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -119,6 +120,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   modelConfigurationRevision?: number;
   onSwitchConnectedFolder: (connectedFolder: ConnectedFolderSummary) => void;
   onOpenSettings: (page?: SettingsPage, modelScope?: ModelScope, focusAiModel?: boolean, workerConnectedFolderId?: string, focusWorkerInstructions?: boolean, backToCustomization?: () => void) => void;
+  /** The desktop updater's status, shown at the foot of the sidebar when it needs the person. */
+  updateStatus?: DesktopUpdateStatus | null;
+  /** The same update action as Settings → About's button. */
+  onUpdateAction?: () => void;
   onRefreshBootstrap: () => Promise<unknown>;
   /** The + beside Connected Folders: New Connected Folder and Connect Folder, as in the File menu. */
   onCreateConnectedFolder: () => void;
@@ -1545,6 +1550,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           })}
         </ul>
       </div>
+      {onUpdateAction ? <UpdateIndicator status={updateStatus} onUpdateAction={onUpdateAction} onOpenAbout={() => onOpenSettings("about")} /> : null}
     </nav>
 
     <PaneResizer spec={sidebarWidthSpec} side="left" width={sidebarWidth} label="Resize the sidebar" shellRef={shellRef} otherPaneWidth={panelOpen ? panelWidth : 0} onCommit={setSidebarWidth} />

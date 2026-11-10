@@ -163,6 +163,8 @@ AMPLEFILE_MAC_RELEASE_REPO="amplefile-mac-releases"
 AMPLEFILE_MAC_TEAM_ID="464JD5K8DC"
 ```
 
+`AMPLEFILE_MAC_RELEASE_OWNER` and `AMPLEFILE_MAC_RELEASE_REPO` name the separate release repository and default to it, so they are optional. They do not choose where a release is published or which feed the packaged app checks: the checked-in feed stage does ([Update feed](macos-release.md#update-feed)).
+
 The notary profile name is local and arbitrary; `kai-workspace-notary` is the profile on the release workstation. Never commit Apple passwords, API keys, certificate private keys, or exported identities. `APPLE_KEYCHAIN_PROFILE` may be replaced by a complete App Store Connect API-key or Apple-ID environment set when needed.
 
 Build the fast app-only candidate for interactive QA:
@@ -187,8 +189,10 @@ Every macOS candidate stage reports elapsed time. A complete signed distribution
 build writes an ignored checkpoint at
 `out/builder/AmpleFile-mac-release-state.json`. The checkpoint binds completed
 stages to the package version, architecture, Node version, signing identity,
-release feed, source/configuration fingerprint, signed app, and exact artifact
-hashes. It contains no signing or notarization credentials.
+update feed stage and packaged feed, source/configuration fingerprint, signed
+app, and exact artifact hashes. It contains no signing or notarization
+credentials. The status command also prints the feed stage, the feed the
+packaged app checks, and where a release would be published.
 
 Inspect a checkpoint without changing it:
 
@@ -232,9 +236,20 @@ a new version or an Apple submission.
 ## Public releases
 
 The public release is the signed, notarized Apple-silicon Mac build. The
-source repository, `Mat-Tom-Son/amplefile`, carries the exact source tag. The
-separate feed, `Mat-Tom-Son/amplefile-mac-releases`, holds only the
-distribution artifacts.
+source repository, `Mat-Tom-Son/amplefile`, carries the exact source tag
+and, from 0.1.5 on, the release itself: its GitHub Releases are the feed the
+packaged app checks. The separate feed, `Mat-Tom-Son/amplefile-mac-releases`,
+is the one versions through 0.1.4 check; it receives 0.1.5, the bridge
+release, as its last release.
+
+Which feed the packaged app checks and where a release is published both
+follow the feed stage, `macUpdateFeedStage` in
+`src/shared/product-identity.json`. The checked-in stage is
+`bridge`: the app checks the source repository, and the release is published
+to both repositories, the source repository first. The `source-repository`
+stage, for every later release, publishes to the source repository alone. See
+[Update feed](macos-release.md#update-feed) and
+[Moving the feed to the source repository](macos-release.md#moving-the-feed-to-the-source-repository).
 
 ```bash
 npm run desktop:release:mac
@@ -269,11 +284,14 @@ an optional diagnostic for those dormant workflows.
 The publisher validates the local receipt, current canonical `main`, annotated
 source tag, and source-bound signed artifact checkpoint begun after that
 check completed, before upload and immediately before publication. It requires a clean pushed source tree, public
-source and feed repositories, and an unused `v<version>` in the feed. Direct
+source and feed repositories, no release yet for `v<version>` in a feed it
+publishes to, the feed stage the source records, and a version higher than
+each feed's latest release. Direct
 publisher invocation has the same requirements. It verifies the local release,
 uploads all assets as a draft, checks remote names, sizes, and GitHub digests,
-then publishes as latest. No source-repository GitHub Release is required.
-Never hand-edit the local receipt or build checkpoint.
+publishes as latest, and confirms the feed then serves that release as its
+latest. In the `separate-repository` stage it creates no GitHub Release in
+the source repository. Never hand-edit the local receipt or build checkpoint.
 
 A failure before tagging is corrected by fixing, committing, and rerunning the
 local checks. Once pushed, a candidate tag is immutable: retain a failed tag and
@@ -297,7 +315,8 @@ Do not diagnose this with `security find-generic-password ... -g`: `-g` requests
 
 ## Code map
 
-- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, DMG layout, and what is archived in `app.asar`.
+- `electron-builder.desktop.cjs`: targets, the update feed written into the packaged app, Mac identity, entitlements, icon, DMG layout, and what is archived in `app.asar`.
+- `scripts/mac-release-feed.cjs`: the feed stage, the feed the packaged app checks, and the repositories a release is published to, for the builder configuration, every release script, and the website.
 - `desktop/src/renderer-protocol.ts`: where the renderer build lives and how the internal scheme serves it.
 - `scripts/verify-packaged-app-assets.mjs`: packaged layout, fuses, and ASAR integrity; `scripts/verify-packaged-renderer.mjs` is its check that the archive holds the renderer build.
 - `scripts/generate-dmg-background.mjs`: installer-only DMG artwork under ignored build output.
@@ -315,6 +334,8 @@ Do not diagnose this with `security find-generic-password ... -g`: `-g` requests
 - `scripts/verify-release-ci.mjs`: optional diagnostics for the dormant GitHub workflows, and the source-tag workflow's entrypoint.
 - `.github/workflows/release-tag.yml`: dependency-free source-tag verification.
 - `scripts/publish-mac-release.mjs`: guarded draft-first public publisher.
+- `scripts/mac-release-publication.mjs`: the publisher's feed decisions: continuity between feeds, publication order, resuming a two-feed publication, and attaching to the source tag.
+- `scripts/verify-mac-feed.mjs`: reads a public feed as an installed copy does and reports the version it offers.
 - `scripts/verify-mac-release.mjs`: bundle, signature, updater, manifest, checksum, and mounted-DMG verification.
 - `scripts/verify-installed-mac-app.mjs`: installed version/feed/signature/notarization verification without Keychain reads.
 - `scripts/reset-mac-safe-storage.mjs`: narrow ad hoc-to-Developer-ID credential recovery helper.
