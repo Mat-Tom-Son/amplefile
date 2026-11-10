@@ -28,7 +28,21 @@ Download links open the latest release in
 that release and points every Download link straight at its DMG, so a new
 release needs no rebuild and an unpublished version is never linked.
 
-The build takes that repository from the checked-in update feed stage
+Linux links open the newest Linux preview. The previews are prereleases in
+`Mat-Tom-Son/amplefile`, which no "latest" address reaches, so the same
+script asks GitHub for that repository's releases and points every Linux link
+at the page of the newest prerelease whose tag starts with `linux-`. Until
+GitHub answers, a Linux link opens the list of releases. A visitor on Linux
+sees the Linux button as the blue one at the top of the page, and the Linux
+preview first in the menu bar's Download menu.
+
+The menu bar that arrives on scroll has two menus: **Download**, with the Mac
+release, the Linux preview, and all releases, and **Help**, with the docs,
+Contributing, Privacy, and the license. The page shows the app's included
+tools without Chrome, although the app's Skills & Extensions dialog lists
+Chrome first.
+
+The build takes the Mac repository from the checked-in update feed stage
 ([Update feed](macos-release.md#update-feed)), not from a constant: the
 separate release repository in the `separate-repository` and `bridge`
 stages, and `Mat-Tom-Son/amplefile` in the `source-repository` stage. After a

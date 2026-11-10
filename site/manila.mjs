@@ -35,6 +35,20 @@ export const MN_CSS = `
 .mn-mb .gh { width:15px; height:15px; }
 .mn-mb .mbi { width:17px; height:17px; }
 .mn-mb .sp { flex:1; }
+/* Menus drop from the bar as a Mac's do: Download offers each system, Help the reading. */
+.mn-mw { position:relative; display:inline-flex; align-items:center; height:100%; }
+.mn-menu { position:absolute; top:calc(100% + 1px); left:0; z-index:2; min-width:236px; display:flex; flex-direction:column; padding:5px; border-radius:9px; background:rgba(28,39,52,.97); box-shadow:0 14px 34px rgba(0,0,0,.42), 0 0 0 .5px rgba(244,245,246,.16); -webkit-backdrop-filter:blur(20px) saturate(1.4); backdrop-filter:blur(20px) saturate(1.4); font-weight:400; }
+.mn-menu[hidden] { display:none; }
+.mn .mn-menu-i { display:flex; align-items:center; gap:8px; height:26px; padding:0 10px; border-radius:5px; color:inherit; text-decoration:none; white-space:nowrap; }
+.mn-menu-i .ic { flex:none; width:14px; height:14px; display:grid; place-items:center; }
+.mn-menu-i .ic svg { width:14px; height:14px; }
+.mn-menu-i .ic .apple { margin-top:-2px; }
+.mn-menu-i .lb { flex:1; }
+.mn-menu-i .hint { margin-left:20px; color:rgba(244,245,246,.5); }
+.mn .mn-menu-i:hover, .mn .mn-menu-i:focus-visible { outline:none; border-radius:5px; background:var(--mn-signal); color:var(--mn-on); }
+.mn-menu-i:hover .hint, .mn-menu-i:focus-visible .hint { color:rgba(255,255,255,.8); }
+.mn-menu-sep { height:1px; margin:5px 8px; background:rgba(244,245,246,.14); }
+@media (prefers-reduced-motion: no-preference) { .mn-menu:not([hidden]) { animation:mn-drop 160ms var(--ease) both; transform-origin:0 0; } }
 .mn-mb .clock { padding:0 8px; white-space:nowrap; }
 /* The note: an index card under the menu bar, handwritten, with an arrow up to the icon. */
 .mn-note { --note-r:120px; position:absolute; top:calc(100% + 2px); right:var(--note-r); width:300px; height:150px; pointer-events:none; color:var(--mn-signal); font-family:"Caveat", "Bradley Hand", "Segoe Print", cursive; visibility:hidden; }
@@ -86,11 +100,19 @@ export const MN_CSS = `
 .mn-nav { position:absolute; top:8px; right:0; z-index:3; height:40px; display:flex; align-items:center; gap:8px; }
 .mn .mn-gh { width:36px; height:36px; display:grid; place-items:center; border-radius:8px; color:var(--mn-desk-icon); transition:color 160ms var(--ease), background-color 160ms var(--ease); }
 .mn .mn-gh:hover { color:var(--mn-desk-tx); background:var(--mn-desk-raise); }
-.mn-btn { display:inline-flex; align-items:center; gap:8px; height:48px; padding:0 20px; border-radius:10px; background:var(--mn-signal); color:var(--mn-on) !important; font-size:16px; font-weight:500; text-decoration:none; white-space:nowrap; transition:background-color 160ms var(--ease), transform 160ms var(--ease); }
-.mn-btn:hover { background:var(--mn-signal-hi); }
+.mn-btn { --b:var(--mn-signal); --b-hi:var(--mn-signal-hi); --f:var(--mn-on); display:inline-flex; align-items:center; justify-content:center; gap:8px; height:48px; padding:0 20px; border-radius:10px; background:var(--b); color:var(--f) !important; font-size:16px; font-weight:500; text-decoration:none; white-space:nowrap; transition:background-color 160ms var(--ease), transform 160ms var(--ease); }
+.mn-btn:hover { background:var(--b-hi); }
 .mn-btn:active { transform:scale(.98); }
-.mn-btn .dl { width:16px; height:16px; }
 .mn-btn.sm { height:36px; padding:0 16px; font-size:14px; }
+/* The quiet button sits on the desk beside the blue one. A Linux visitor gets the two the other way round. */
+.mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.alt) { --b:var(--mn-desk-raise); --b-hi:rgba(244,245,246,.16); --f:var(--mn-desk-tx); }
+html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal-hi); --f:var(--mn-on); }
+/* The hero's pair is quiet, ink on the paper: the blue button is already in view above it. */
+.mn-btn.paper { --b:rgba(22,32,43,.07); --b-hi:rgba(22,32,43,.13); --f:var(--mn-ink); height:40px; padding:0 16px; font-size:15px; }
+.mn-cta { margin-top:28px; display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+.mn-btn .apple, .mn-btn .tux { flex:none; width:16px; height:16px; }
+/* the leaf lifts the Apple mark's weight above its box, so it sits a little high to look centered */
+.mn-btn .apple { margin-top:-2px; }
 /* every app view shares one scale: 1120 px for a 1280 px window, so its text stays at 11 px or more */
 .mn { --shot-w:1200px; }
 .mn-paper { position:relative; width:min(calc(100% - 24px), var(--shot-w)); margin-inline:auto; aspect-ratio:1280 / 304; clip-path:inset(-32px -32px 0 -32px); }
@@ -99,7 +121,8 @@ export const MN_CSS = `
 .mn-hero { display:flex; flex-direction:column; align-items:center; text-align:center; }
 .mn-hero h1 { max-width:none; }
 .mn-lede { margin-top:24px; max-width:50rem; font-size:clamp(18px, 1.6cqi, 21px); line-height:1.5; color:var(--mn-ink2); text-wrap:balance; }
-.mn-act { display:flex; flex-direction:column; align-items:flex-end; gap:12px; }
+.mn-facts { margin-top:16px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px 12px; font-size:14px; line-height:20px; color:var(--mn-ink3); }
+.mn-facts span + span::before { content:""; display:inline-block; width:3px; height:3px; margin:0 12px 3px 0; border-radius:50%; background:currentColor; opacity:.6; }
 .mn-req { font-size:14px; line-height:20px; color:var(--mn-ink3); white-space:nowrap; }
 
 /* What a Worker does, laid on the folder front. */
@@ -108,6 +131,10 @@ export const MN_CSS = `
 .mn-hero + .mn-sec { margin-top:clamp(96px, 8cqi, 112px); }
 .mn :where(p) { text-wrap:pretty; letter-spacing:.005em; }
 .mn-sec .copy p { max-width:40em; color:var(--mn-ink2); text-wrap:balance; }
+.mn-sec .copy .fine { margin-top:-4px; font-size:14px; line-height:20px; color:var(--mn-ink3); }
+.mn-sec .copy .fine .ln { display:inline; }
+.mn-sec .copy .fine a { margin-left:4px; text-underline-offset:2px; transition:color 160ms var(--ease); }
+.mn-sec .copy .fine a:hover { color:var(--mn-ink); }
 .mn .ln { display:block; }
 .mn-sec .shot { width:min(100%, var(--shot-w)); }
 
@@ -122,20 +149,15 @@ export const MN_CSS = `
 .mn-end-front { padding:32px clamp(20px, 4.4cqi, 64px) 32px; display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:24px 40px; align-items:center; }
 .mn-end h2 { font-size:clamp(28px, 2.8cqi, 40px); line-height:1.1; letter-spacing:-.02em; }
 .mn-end .mn-req { display:block; margin-top:12px; font-size:14px; }
-.mn-dot { display:inline-flex; align-items:center; gap:16px; color:var(--mn-ink); font-size:16px; font-weight:500; text-decoration:none; white-space:nowrap; }
-.mn-dot i { width:clamp(64px, 5.6cqi, 80px); aspect-ratio:1; display:grid; place-items:center; border-radius:50%; background:var(--mn-signal); color:var(--mn-on); transition:background-color 160ms var(--ease), transform 160ms var(--ease); }
-.mn-dot i .dl { width:32%; height:32%; }
-.mn-dot:hover i { background:var(--mn-signal-hi); }
-.mn-dot:active i { transform:scale(.97); }
-.mn-dot:focus-visible { outline:none; }
-.mn-dot:focus-visible i { outline:2px solid var(--mn-ink); outline-offset:4px; }
+.mn-end .mn-req + .mn-req { margin-top:2px; }
 .mn-end-acts { display:flex; align-items:center; gap:16px; }
 .mn .mn-circ { width:clamp(64px, 5.6cqi, 80px); aspect-ratio:1; display:grid; place-items:center; border-radius:50%; transition:background-color 160ms var(--ease), transform 160ms var(--ease); }
 .mn .mn-circ:active { transform:scale(.97); }
 .mn .mn-circ:focus-visible { outline:2px solid var(--mn-ink); outline-offset:4px; }
-.mn .mn-circ.mac { background:var(--mn-ink); color:var(--mn-front); }
-.mn .mn-circ.mac:hover { background:#2a3644; }
+.mn .mn-circ.mac, .mn .mn-circ.linux { background:var(--mn-ink); color:var(--mn-front); }
+.mn .mn-circ.mac:hover, .mn .mn-circ.linux:hover { background:#2a3644; }
 .mn .mn-circ.mac .apple { width:38%; height:auto; margin-top:-6%; }
+.mn .mn-circ.linux .tux { width:42%; height:auto; }
 .mn .mn-circ.src { background:var(--mn-signal); color:var(--mn-on); }
 .mn .mn-circ.src:hover { background:var(--mn-signal-hi); }
 .mn .mn-circ.src .gh { width:42%; height:auto; }
@@ -145,6 +167,10 @@ export const MN_CSS = `
 .mn-links .gh { color:var(--mn-ink); }
 
 @container page (max-width: 900px) {
+  .mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.alt) { width:36px; padding:0; }
+  .mn-nav .mn-btn.alt span, html.os-linux .mn-nav .mn-btn:not(.alt) span { display:none; }
+  html.os-linux .mn-nav .mn-btn.alt { width:auto; padding:0 16px; }
+  html.os-linux .mn-nav .mn-btn.alt span { display:inline; }
   .mn-sec { gap:32px; }
   .mn-hero + .mn-sec { margin-top:clamp(80px, 18cqi, 96px); }
 }
@@ -158,6 +184,10 @@ export const MN_CSS = `
   .mn-head { top:48px; }
   .mn-nav { top:-48px; height:40px; }
   .mn-mb .clock, .mn-mb .hide-s { display:none; }
+  .mn .mn-menu-i { height:36px; }
+  /* a menu hangs from the bar's left edge, so it never runs off a phone */
+  .mn-mw { position:static; }
+  .mn-menu { left:max(8px, env(safe-area-inset-left, 0px)); }
   .mn-paper { width:min(calc(100% - 24px), 400px); aspect-ratio:1280 / 620; }
   .mn-front { padding:28px 20px 64px; }
   .mn-req { white-space:normal; }
@@ -166,7 +196,15 @@ export const MN_CSS = `
   .mn-end-folder .mn-tab::after { right:-42px; width:43px; clip-path:path("M0 0 C 14 0 20 4 27 17 L 32 29 C 35 35 39 41 43 41 L 0 41 Z"); }
   .mn-end-front { grid-template-columns:minmax(0, 1fr); padding:24px 20px 24px; }
   .mn .ln { display:inline; }
-  .mn-dot { width:100%; justify-content:space-between; }
+}
+/* The facts never start a line with a dot: two lines on a phone, three on a very narrow one. */
+@container page (max-width: 520px) {
+  .mn-facts span:first-child { flex-basis:100%; }
+  .mn-facts span:nth-child(2)::before { display:none; }
+}
+@container page (max-width: 350px) {
+  .mn-facts span { flex-basis:100%; }
+  .mn-facts span::before { display:none !important; }
 }
 
 /* Motion: one curve. The paper slides out of the folder, the copy follows, then Organize runs. */
@@ -175,17 +213,23 @@ export const MN_CSS = `
   .page.mn:not([hidden]) .mn-hero > * { animation:mn-rise 400ms var(--ease) both; }
   .page.mn:not([hidden]) .mn-hero > :nth-child(1) { animation-delay:240ms; }
   .page.mn:not([hidden]) .mn-hero > :nth-child(2) { animation-delay:300ms; }
+  .page.mn:not([hidden]) .mn-hero > :nth-child(3) { animation-delay:360ms; }
+  .page.mn:not([hidden]) .mn-hero > :nth-child(4) { animation-delay:420ms; }
 }
 @keyframes mn-paper { from { transform:translateY(56%); } to { transform:none; } }
 @keyframes mn-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 `;
 
-export function mnMarkup({ shot, dlBtn, MENUBAR_ICON, SRC, DL, REL, PRIV, ext, ARROW, GITHUB, APPLE, WORDMARK, MARK, views }) {
-  const { viewOrganizeLive, viewConnect, viewAutomationRun, viewAsk, viewHistory, viewAgent, viewNested } = views;
+export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WORDMARK, MARK, views }) {
+  // A menu keeps an icon column only when one of its items has an icon.
+  const menu = (id, label, items, icons = items.some((it) => it && it.icon)) => `<span class="mn-mw"><button class="mi" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" data-menu>${label}</button><div class="mn-menu" id="${id}" role="menu" aria-label="${label}" hidden>${items.map((it) => (it ? `<a class="mn-menu-i" role="menuitem" href="${it.href}" ${ext}${it.dl ? ` data-dl="${it.dl}"` : ""}>${icons ? `<span class="ic">${it.icon || ""}</span>` : ""}<span class="lb">${it.label}</span>${it.hint ? `<span class="hint">${it.hint}</span>` : ""}</a>` : '<div class="mn-menu-sep" role="separator"></div>')).join("")}</div></span>`;
+  const downloadMenu = menu("mn-menu-dl", "Download", [{ href: DL, dl: "mac", icon: APPLE, label: "Download for Mac", hint: "Apple silicon" }, { href: LINUX_REL, dl: "linux", icon: LINUX, label: "Linux Preview", hint: "x64" }, null, { href: REL, label: "All Releases" }]);
+  const helpMenu = menu("mn-menu-help", "Help", [{ href: DOCS, label: "AmpleFile Docs" }, { href: CONTRIB, label: "Contribute" }, null, { href: PRIV, label: "Privacy" }, { href: LICENSE, label: "MIT License" }]);
+  const { viewOrganizeLive, viewConnect, viewAutomationRun, viewAsk, viewSkills, viewHistory, viewAgent, viewNested } = views;
   const gh = (cls) => `<a class="${cls}" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a>`;
   return `<div class="page mn" id="top">
 <header class="mn-mb" aria-label="Menu bar"><div class="mn-mb-in">
-<button class="mi app" type="button" data-top>${MARK()}<b>AmpleFile</b></button><a class="mi" href="${DL}" ${ext}>Download</a>${gh("mi")}
+<button class="mi app" type="button" data-top>${MARK()}<b>AmpleFile</b></button>${downloadMenu}${helpMenu}${gh("mi")}
 <span class="sp"></span>
 <button class="mi mn-mbi" type="button" aria-expanded="false" aria-controls="mn-pop" aria-label="AmpleFile Agent">${MENUBAR_ICON}</button><span class="clock" data-clock>Sat 9:41 AM</span></div>
 <div class="mn-pop" id="mn-pop" hidden>${shot("agent", "v-agent in nofx", viewAgent())}</div>
@@ -194,21 +238,22 @@ export function mnMarkup({ shot, dlBtn, MENUBAR_ICON, SRC, DL, REL, PRIV, ext, A
 <div class="mn-head">
 <div class="mn-back" aria-hidden="true"></div>
 <div class="mn-tab"><a class="mn-wm" href="#top" data-top aria-label="AmpleFile, back to the top">${WORDMARK}</a></div>
-<nav class="mn-nav" aria-label="AmpleFile">${gh("mn-gh")}${dlBtn("mn-btn sm")}</nav>
+<nav class="mn-nav" aria-label="AmpleFile">${gh("mn-gh")}${linuxBtn("mn-btn sm alt")}${macBtn("mn-btn sm")}</nav>
 <div class="mn-paper">${shot("live", "p-live nofx", viewOrganizeLive())}</div>
 </div>
 <main class="mn-front">
-<section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p></section>
-<section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p></div>${shot("connect", "p-full", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
+<section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p><div class="mn-cta">${macBtn("mn-btn paper")}${linuxBtn("mn-btn paper")}</div><p class="mn-facts"><span>Free and open source</span><span>For Apple silicon Macs</span><span>Linux in preview</span></p></section>
+<section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p><p class="fine"><span class="ln">Files stay on your computer.</span> <span class="ln">What a Worker reads goes to the AI model provider you choose.</span> <a href="${PRIV}" ${ext}>Privacy</a></p></div>${shot("connect", "p-full", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Runs on Its Own</h2><p><span class="ln">Turn on a ready-made Automation,</span> <span class="ln">or tell your Worker to set up a custom one for&nbsp;you.</span></p></div>${shot("automation", "p-chat", viewAutomationRun({ h: 720 }), ' style="--ch:720"')}</section>
-<section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers run on a full AI agent harness.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${shot("ask", "p-chat", viewAsk({ h: 620 }), ' style="--ch:620"')}</section>
+<section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers are full AI agents on the model you choose.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${shot("ask", "p-chat", viewAsk({ h: 620 }), ' style="--ch:620"')}</section>
+<section class="mn-sec"><div class="copy"><h2>With Tools Built In</h2><p><span class="ln">Workers can search the web, create documents,</span> <span class="ln">operate your apps, and connect to your services.</span> <span class="ln">Add Skills and Extensions for anything&nbsp;else.</span></p></div>${shot("skills", "p-tools", viewSkills({ h: 680 }), ' style="--ch:680"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Changes Are Tracked</h2><p><span class="ln">Anything you or your Worker change in AmpleFile</span> <span class="ln">can be undone with one&nbsp;click.</span></p></div>${shot("history", "p-chat", viewHistory({ h: 600 }), ' style="--ch:600"')}</section>
 <section class="mn-sec" data-note><div class="copy"><h2>And Folders Can Stack</h2><p><span class="ln">Connect folders inside folders, as many as you like,</span> <span class="ln">and their Workers hand work to each&nbsp;other.</span></p></div>${shot("nested", "p-chat", viewNested({ h: 520 }), ' style="--ch:520"')}</section>
 </main>
 </div>
 <footer class="mn-end"><div class="mn-folder mn-end-folder"><div class="mn-back" aria-hidden="true"></div><div class="mn-tab" aria-hidden="true"></div>
-<div class="mn-front mn-end-front"><div><h2 class="mn-end-wm" aria-label="AmpleFile">${WORDMARK.replace('class="wm-dot"', 'class="wm-dot still"')}</h2><span class="mn-req">Apple silicon, macOS 12 or later</span></div>
-<div class="mn-end-acts"><a class="mn-circ mac" href="${DL}" ${ext} aria-label="Download for Mac" title="Download for Mac">${APPLE}</a><a class="mn-circ src" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a></div>
-<nav class="mn-links" aria-label="More"><a href="${REL}" ${ext}>Releases</a><a href="${PRIV}" ${ext}>Privacy</a><a href="https://github.com/Mat-Tom-Son/amplefile/blob/main/LICENSE" ${ext}>MIT License</a></nav></div></div></footer>
+<div class="mn-front mn-end-front"><div><h2 class="mn-end-wm" aria-label="AmpleFile">${WORDMARK.replace('class="wm-dot"', 'class="wm-dot still"')}</h2><span class="mn-req">Mac: Apple silicon, macOS 12 or later</span><span class="mn-req">Linux preview: x64, as a .deb, .rpm, or AppImage</span></div>
+<div class="mn-end-acts"><a class="mn-circ mac" href="${DL}" ${ext} data-dl="mac" aria-label="Download for Mac" title="Download for Mac">${APPLE}</a><a class="mn-circ linux" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}</a><a class="mn-circ src" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a></div>
+<nav class="mn-links" aria-label="More"><a href="${REL}" ${ext}>Releases</a><a href="${DOCS}" ${ext}>Docs</a><a href="${CONTRIB}" ${ext}>Contribute</a><a href="${PRIV}" ${ext}>Privacy</a><a href="${LICENSE}" ${ext}>MIT License</a></nav></div></div></footer>
 </div>`;
 }
