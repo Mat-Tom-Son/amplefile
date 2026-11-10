@@ -2083,14 +2083,22 @@ function humanize(value: string): string {
   return value.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/** The longest a step's one-line record of what it worked on may be. */
+const compactTextLimit = 160;
+
+/**
+ * A step's short record of a command, path, or message: secrets redacted, on
+ * one line, and no longer than the limit. It is a label for the step, not the
+ * text that ran, so a record that had to be cut ends in an ellipsis.
+ */
 function compactText(value: string): string {
-  return value
+  const text = value
     .replace(/((?:api|access|refresh)[-_ ]?(?:key|token)\s*[:=]\s*)[^\s,;)"']+/gi, "$1[redacted]")
     .replace(/(\bBearer\s+)[^\s,;)"']+/gi, "$1[redacted]")
     .replace(/\b(?:sk(?:-or-v1)?-|gh[pousr]_|github_pat_|xai-)[A-Za-z0-9_-]{12,}\b/gi, "[redacted]")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 160);
+    .trim();
+  return text.length > compactTextLimit ? `${text.slice(0, compactTextLimit - 1).trimEnd()}…` : text;
 }
 
 function piHeartbeatMs(): number {

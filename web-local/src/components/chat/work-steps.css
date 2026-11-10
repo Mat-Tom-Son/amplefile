@@ -37,7 +37,6 @@
 
 .work-steps-summary:focus-visible,
 .work-step-toggle:focus-visible,
-.work-step-copy:focus-visible,
 .work-step-target.file:focus-visible {
   outline: 2px solid var(--connected-folder-custom-color, #356fa3);
   outline-offset: 2px;
@@ -187,7 +186,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* An opened command step: the whole command, wrapped, under a bar with Copy. */
+/* An opened command step: the step's recorded command, wrapped, under its label. */
 .work-step-command {
   min-width: 0;
   margin: 5px 0 3px;
@@ -196,32 +195,9 @@
 }
 
 .work-step-command-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 4px 0 10px;
+  padding: 5px 10px 0;
   color: var(--fm-text2, #566173);
   font-size: var(--amplefile-type-xs);
-}
-
-.work-step-copy {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  font: inherit;
-  color: var(--fm-text2, #475569);
-  cursor: default;
-}
-
-.work-step-copy:hover {
-  background: var(--fm-cap2, rgba(37, 48, 68, 0.1));
-  color: var(--fm-text, #253044);
 }
 
 .work-step-command pre {
@@ -446,15 +422,6 @@ from {
 
 :root[data-theme="dark"] .work-step-command {
   background: var(--fm-cap, rgba(226, 232, 240, 0.08));
-}
-
-:root[data-theme="dark"] .work-step-copy {
-  color: var(--fm-text2, #c4cedb);
-}
-
-:root[data-theme="dark"] .work-step-copy:hover {
-  background: var(--fm-cap2, rgba(226, 232, 240, 0.14));
-  color: var(--fm-text, #e2e8f0);
 }
 
 :root[data-theme="dark"] .work-step-command pre {

@@ -101,10 +101,8 @@ test("saved rows expose captured edit text safely, and Copy retains progress plu
   assert.deepEqual(copies, [input.content]);
 });
 
-test("a command step opens to its whole command with Copy, and an opened thought drops its preview", async (t) => {
+test("a command step opens to its recorded command, which is not offered to copy, and an opened thought drops its preview", async (t) => {
   const dom = await createDomHarness(); t.after(dom.cleanup);
-  const copies: string[] = [];
-  window.ampleFileDesktop = { clipboard: { write: async (content) => { copies.push(content.text); } } } as NonNullable<Window["ampleFileDesktop"]>;
   const command = "python3 -c \"import openpyxl; print(sum(c.value or 0 for c in openpyxl.load_workbook('budget.xlsx').active['C'][1:]))\"";
   await dom.render(createElement(RuntimeContextPreview, { running: true, entries: [
     { id: "t1", kind: "thinking", text: "Checking the budget. The cabinetry line is the whole difference.", phase: "complete" },
@@ -124,11 +122,9 @@ test("a command step opens to its whole command with Copy, and an opened thought
   assert.equal(ran!.getAttribute("aria-expanded"), "true");
   assert.equal(ran!.textContent, "Ran");
   assert.equal(dom.container.querySelector(".work-step-command pre")!.textContent, command);
-  const copy = dom.container.querySelector<HTMLButtonElement>('[aria-label="Copy Command"]')!;
-  await dom.act(() => copy.click());
-  assert.deepEqual(copies, [command]);
-  assert.equal(copy.getAttribute("aria-label"), "Copied Command");
-  assert.equal(copy.textContent, "Copied");
+  assert.equal(dom.container.querySelector(".work-step-command-bar")!.textContent, "Recorded Command");
+  // A step keeps a shortened, one-line record, so the row never offers it as something to paste and run.
+  assert.equal(dom.container.querySelector(".work-step-command button"), null);
 
   await dom.act(() => ran!.click());
   assert.equal(dom.container.querySelector(".work-step-command"), null);
