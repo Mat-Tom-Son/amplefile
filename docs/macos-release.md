@@ -205,6 +205,13 @@ Apple submission.
   installed `0.1.5` to `0.1.6`, passed on November 10, 2026. Both proofs the
   feed move requires are recorded, and the move is complete. See
   [Updater evidence](#updater-evidence).
+- **0.1.7** was published to `Mat-Tom-Son/amplefile` on November 10, 2026,
+  from the annotated source tag `v0.1.7` (commit `1f5579e`): the Browser
+  pane, which shows the built-in browser's pages in the window; Chrome
+  removed from the included tools, leaving four; and Organize moved from the
+  toolbar into the Action menu. The signed candidate was exercised on a
+  temporary profile before publication; an installed update from `0.1.6` to
+  `0.1.7` is not recorded here.
 
 ## Release procedure
 
