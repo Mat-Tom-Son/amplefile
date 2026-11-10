@@ -147,3 +147,13 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     default: return null;
   }
 }
+
+/**
+ * The indicator while the updater checks again: the one shown before the
+ * check, so it does not vanish and come back. Its updater action waits for
+ * the check (the updater ignores it meanwhile); opening About still works.
+ */
+export function updateIndicatorDuringCheck(previous: UpdateIndicatorModel | null): UpdateIndicatorModel | null {
+  if (!previous) return null;
+  return previous.click === "update" ? { ...previous, click: null } : previous;
+}

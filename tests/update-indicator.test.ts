@@ -162,6 +162,16 @@ test("the indicator shows, hides, and runs the right action in each phase", asyn
   await click();
   assert.deepEqual({ updates, abouts }, { updates: 2, abouts: 1 }, "restarting does nothing on a click");
 
+  await render(status("available"));
+  await render(status("checking"));
+  assert.equal(button()!.querySelector(".fm-update-label")!.textContent, "Update Available", "a check does not make the indicator vanish");
+  assert.equal(button()!.getAttribute("aria-disabled"), "true", "its update waits for the check");
+  await click();
+  assert.deepEqual({ updates, abouts }, { updates: 2, abouts: 1 });
+  await render(status("not_available", { availableVersion: null }));
+  await render(status("checking"));
+  assert.equal(dom.container.querySelector(".fm-update"), null, "a check from up to date still draws nothing");
+
   await render(status("error", { error: "The network connection was lost." }));
   assert.ok(button()!.classList.contains("is-error"));
   await click();

@@ -1,5 +1,5 @@
-import type { CSSProperties } from "react";
-import { updateIndicatorFor } from "../../lib/update-status";
+import { useEffect, useRef, type CSSProperties } from "react";
+import { updateIndicatorDuringCheck, updateIndicatorFor, type UpdateIndicatorModel } from "../../lib/update-status";
 import type { DesktopUpdateStatus } from "../../types";
 
 /**
@@ -13,7 +13,11 @@ export function UpdateIndicator({ status, onUpdateAction, onOpenAbout }: {
   onUpdateAction: () => void;
   onOpenAbout: () => void;
 }) {
-  const model = updateIndicatorFor(status);
+  const checking = status?.phase === "checking";
+  const shown = useRef<UpdateIndicatorModel | null>(null);
+  const fresh = updateIndicatorFor(status);
+  const model = checking ? updateIndicatorDuringCheck(shown.current) : fresh;
+  useEffect(() => { if (!checking) shown.current = fresh; });
   if (!model) return null;
   const inert = model.click === null;
   const style = model.progressPercent === null ? undefined : { "--fm-update-progress": `${model.progressPercent}%` } as CSSProperties;
