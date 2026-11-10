@@ -10,9 +10,10 @@ import {
   assertFeedContinuity,
   compareReleaseVersions,
   planTargetPublication,
+  bridgePauseMessage,
+  nextPublicationTarget,
   releaseCreateArguments,
   releaseNotes,
-  selectPublicationTargets,
 } from "../scripts/mac-release-publication.mjs";
 import { readPublicUpdateFeed } from "../scripts/verify-mac-feed.mjs";
 
@@ -254,32 +255,27 @@ test("a published release is never replaced, and only a two-feed publication res
   }
   const publisher = read("scripts/publish-mac-release.mjs");
   assert.match(publisher, /for \(const target of alreadyPublished\) \{\n    verifyRemoteRelease\(target, false\);/);
-  assert.match(publisher, /if \(!pending\.length\) \{\n    throw new Error\(`\$\{tag\} is already published to/);
+  assert.match(publisher, /if \(!target\) throw new Error\(`\$\{tag\} is already published to/);
 });
 
-test("a bridge publication can stop after the source repository, never before it", () => {
+test("a run publishes to one feed, and the separate repository only after the source repository", () => {
   const feed = feedAt("bridge");
   const fresh = [{ target: feed.source, action: "publish" }, { target: feed.separate, action: "publish" }];
   const half = [{ target: feed.source, action: "verify-published" }, { target: feed.separate, action: "publish" }];
-  assert.deepEqual(selectPublicationTargets({ feed, plans: fresh }), [feed.source, feed.separate], "source first");
-  assert.deepEqual(selectPublicationTargets({ feed, plans: fresh, only: source }), [feed.source]);
-  assert.deepEqual(selectPublicationTargets({ feed, plans: half }), [feed.separate]);
-  assert.deepEqual(selectPublicationTargets({ feed, plans: half, only: separate }), [feed.separate]);
-  assert.deepEqual(selectPublicationTargets({ feed, plans: half, only: source }), [], "nothing left there; the publisher says so");
-  assert.throws(
-    () => selectPublicationTargets({ feed, plans: fresh, only: separate }),
-    /Mat-Tom-Son\/amplefile-mac-releases is published only after Mat-Tom-Son\/amplefile serves the release/,
-    "copies that take the bridge must find it in the feed they then check",
-  );
-  assert.throws(
-    () => selectPublicationTargets({ feed, plans: fresh, only: { owner: "Other", repo: "feed" } }),
-    /names Other\/feed, which this release is not published to/,
-  );
+  const done = [{ target: feed.source, action: "verify-published" }, { target: feed.separate, action: "verify-published" }];
+  assert.equal(nextPublicationTarget({ plans: fresh }), feed.source, "the first run stops after the feed nothing reads yet");
+  assert.equal(nextPublicationTarget({ plans: half }), feed.separate, "only a later run reaches the feed installed copies read");
+  assert.equal(nextPublicationTarget({ plans: done }), null, "nothing left; the publisher says so");
   const steady = feedAt("source-repository");
-  assert.throws(
-    () => selectPublicationTargets({ feed: steady, plans: [{ target: steady.source, action: "publish" }], only: source }),
-    /applies to the bridge release/,
-  );
+  assert.equal(nextPublicationTarget({ plans: [{ target: steady.source, action: "publish" }] }), steady.source);
+
+  const message = bridgePauseMessage({ feed, version: "0.1.5", productName: "AmpleFile", published: feed.source, remaining: feed.separate });
+  assert.match(message, /AmpleFile 0\.1\.5 is published in Mat-Tom-Son\/amplefile only\. No installed copy reads that feed yet\./);
+  assert.match(message, /npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son\/amplefile --version 0\.1\.5/);
+  assert.match(message, /Check for Updates\.\.\. reports 0\.1\.5 is up to date/);
+  assert.match(message, /Merge nothing to main until the next run has finished/);
+  assert.match(message, /Then publish to Mat-Tom-Son\/amplefile-mac-releases with: npm run desktop:release:mac:resume/);
+  assert.doesNotMatch(read("scripts/publish-mac-release.mjs"), /AMPLEFILE_MAC_PUBLISH_ONLY/, "the pause is not optional");
 });
 
 test("a release in the source repository attaches to its annotated tag and never creates one", () => {
@@ -294,13 +290,13 @@ test("a release in the source repository attaches to its annotated tag and never
   const inSeparate = releaseCreateArguments({ ...common, target: feed.separate });
   assert.deepEqual(inSeparate.slice(0, 7), ["release", "create", "v0.1.5", "--repo", separateSlug, "--target", "main"]);
   assert.ok(!inSeparate.includes("--verify-tag"));
-  assert.ok(inSeparate.includes("--draft") && inSource.includes("--draft"), "nothing is public until every draft is verified");
+  assert.ok(inSeparate.includes("--draft") && inSource.includes("--draft"), "nothing is public until its draft is verified");
 
   const publisher = read("scripts/publish-mac-release.mjs");
   assert.doesNotMatch(publisher, /cleanup-tag|release", "delete|"tag", "-d|push.*--force/, "the publisher never deletes or moves a tag");
   assert.match(
     publisher,
-    /assertServedAsLatest\(target\);\n    if \(sameRepository\(target, feed\.source\)\) \{\n[^\n]*\n      await verifyReleaseSource\(\{ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence\.tagObjectSha \}\);/,
+    /assertServedAsLatest\(target\);\n  if \(sameRepository\(target, feed\.source\)\) \{\n[^\n]*\n    await verifyReleaseSource\(\{ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence\.tagObjectSha \}\);/,
     "after publishing there, the annotated tag object is the one verified before upload",
   );
   assert.match(publisher, /`repos\/\$\{target\.slug\}\/releases\/latest`, "--jq", "\.tag_name"/, "installed copies are offered what GitHub marks latest");

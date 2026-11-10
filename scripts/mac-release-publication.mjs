@@ -110,32 +110,34 @@ export function planTargetPublication({ target, tag, existing, publishesToSevera
 }
 
 /**
- * The targets this run publishes to, in publication order. `plans` pairs
- * every target with its `planTargetPublication` action.
+ * The one feed this run publishes to: the first, in publication order, that
+ * does not serve the release yet, or `null` when every feed does. `plans`
+ * pairs every target with its `planTargetPublication` action.
  *
- * `only` stops a bridge publication after one feed, so the built bridge can
- * be checked against the source repository before any installed copy is
- * offered it. A feed is published only once every feed before it serves the
- * release: copies that take the bridge from the separate repository must
- * find it in the source repository.
+ * A run never publishes to two feeds. The bridge goes to the source
+ * repository in one run and to the separate repository in a later one, so
+ * the built bridge can be checked against the source repository before any
+ * installed copy is offered it, and so nothing, not even a draft, reaches
+ * the separate repository until the source repository serves the release.
  */
-export function selectPublicationTargets({ feed, plans, only = null }) {
-  const pending = plans.filter((plan) => plan.action === "publish").map((plan) => plan.target);
-  if (!only) return pending;
-  if (feed.targets.length < 2) {
-    throw new Error("AMPLEFILE_MAC_PUBLISH_ONLY applies to the bridge release, the only one published to two feeds.");
-  }
-  const index = feed.targets.findIndex((target) => sameRepository(target, only));
-  if (index < 0) {
-    throw new Error(`AMPLEFILE_MAC_PUBLISH_ONLY names ${describe(only)}, which this release is not published to.`);
-  }
-  for (const earlier of feed.targets.slice(0, index)) {
-    const plan = plans.find((entry) => sameRepository(entry.target, earlier));
-    if (plan?.action !== "verify-published") {
-      throw new Error(`${feed.targets[index].slug} is published only after ${earlier.slug} serves the release.`);
-    }
-  }
-  return pending.filter((target) => sameRepository(target, only));
+export function nextPublicationTarget({ plans }) {
+  return plans.find((plan) => plan.action === "publish")?.target ?? null;
+}
+
+/**
+ * What to do after a run that published the bridge to the source repository
+ * and left the separate repository for the next run.
+ */
+export function bridgePauseMessage({ feed, version, productName, published, remaining }) {
+  return [
+    `${productName} ${version} is published in ${published.slug} only. No installed copy reads that feed yet.`,
+    `Publishing to ${remaining.slug} is the step that cannot be taken back, so check first:`,
+    `  1. npm run desktop:verify:feed:mac -- --feed ${published.slug} --version ${version}`,
+    `  2. Open a copy of the signed candidate and confirm that Check for Updates... reports ${version} is up to date`,
+    `     (docs/macos-release.md, "The bridge release").`,
+    `Merge nothing to main until the next run has finished: publication requires origin/main to be the tagged commit.`,
+    `Then publish to ${remaining.slug} with: npm run desktop:release:mac:resume`,
+  ].join("\n");
 }
 
 /**

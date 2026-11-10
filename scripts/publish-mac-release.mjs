@@ -11,13 +11,14 @@ import feedModule from "./mac-release-feed.cjs";
 import {
   assertCheckedInFeedStage,
   assertFeedContinuity,
+  bridgePauseMessage,
+  nextPublicationTarget,
   planTargetPublication,
   releaseCreateArguments,
   releaseNotes,
-  selectPublicationTargets,
 } from "./mac-release-publication.mjs";
 
-const { parseRepository, resolveMacReleaseFeed, sameRepository } = feedModule;
+const { resolveMacReleaseFeed, sameRepository } = feedModule;
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 loadLocalReleaseEnvironment();
@@ -85,18 +86,15 @@ await withReleaseVerificationLock(rootDir, "publication", async (lockToken) => {
     throw new Error(`The ${identity.productName} manifest was built for a different Mac update feed stage than ${feed.stage}.`);
   }
 
-  // A publication to both feeds can stop between them. A feed that already
-  // serves these exact bytes is done; everything else is refused above.
+  // The bridge is published to one feed per run. A feed that already serves
+  // these exact bytes is done; everything else is refused above.
   const alreadyPublished = plans.filter((plan) => plan.action === "verify-published").map((plan) => plan.target);
   for (const target of alreadyPublished) {
     verifyRemoteRelease(target, false);
     console.log(`[${identity.productName} macOS release] ${target.slug} already serves ${tag} with identical assets.`);
   }
-  const publishOnly = stringValue(process.env.AMPLEFILE_MAC_PUBLISH_ONLY);
-  const pending = selectPublicationTargets({ feed, plans, only: publishOnly ? parseRepository(publishOnly) : null });
-  if (!pending.length) {
-    throw new Error(`${tag} is already published to ${(publishOnly ? [publishOnly] : feed.targets.map(slugOf)).join(" and ")}.`);
-  }
+  const target = nextPublicationTarget({ plans });
+  if (!target) throw new Error(`${tag} is already published to ${feed.targets.map(slugOf).join(" and ")}.`);
 
   assertFeedContinuity({
     feed,
@@ -106,42 +104,39 @@ await withReleaseVerificationLock(rootDir, "publication", async (lockToken) => {
     alreadyPublished,
   });
 
-  // Every draft is uploaded and verified before anything becomes public.
-  for (const target of pending) {
-    console.log(`[${identity.productName} macOS release] Uploading ${tag} to ${target.slug} as a draft.`);
-    run(
-      "gh",
-      releaseCreateArguments({
-        target,
-        source: feed.source,
-        tag,
-        title: `${identity.productName} ${version} for macOS`,
-        notes: releaseNotes({ feed, target, productName: identity.productName, version, arch, teamId }),
-        assetPaths: requiredAssets.map((name) => join(builderDir, name)),
-      }),
-      `Could not create draft ${identity.productName} macOS release ${tag} in ${target.slug}`,
-      45 * 60_000,
-    );
-    verifyRemoteRelease(target, true);
-  }
+  // The draft is uploaded and verified before anything becomes public.
+  console.log(`[${identity.productName} macOS release] Uploading ${tag} to ${target.slug} as a draft.`);
+  run(
+    "gh",
+    releaseCreateArguments({
+      target,
+      source: feed.source,
+      tag,
+      title: `${identity.productName} ${version} for macOS`,
+      notes: releaseNotes({ feed, target, productName: identity.productName, version, arch, teamId }),
+      assetPaths: requiredAssets.map((name) => join(builderDir, name)),
+    }),
+    `Could not create draft ${identity.productName} macOS release ${tag} in ${target.slug}`,
+    45 * 60_000,
+  );
+  verifyRemoteRelease(target, true);
 
   // Uploads take time. Recheck authority and bytes at the public effect boundary.
   if (assertSourceState() !== sourceSha) throw new Error("Release source changed during upload. The release remains a draft.");
   await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha });
   await assertBuildState(lockToken);
-  for (const target of pending) {
-    run("gh", ["release", "edit", tag, "--repo", target.slug, "--draft=false", "--latest"], `Could not publish ${identity.productName} macOS release ${tag} in ${target.slug}`);
-    const release = verifyRemoteRelease(target, false);
-    assertServedAsLatest(target);
-    if (sameRepository(target, feed.source)) {
-      // The release attached to the annotated source tag; it must not have replaced it.
-      await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha });
-    }
-    console.log(`[${identity.productName} macOS release] Published ${release.url}`);
+  run("gh", ["release", "edit", tag, "--repo", target.slug, "--draft=false", "--latest"], `Could not publish ${identity.productName} macOS release ${tag} in ${target.slug}`);
+  const release = verifyRemoteRelease(target, false);
+  assertServedAsLatest(target);
+  if (sameRepository(target, feed.source)) {
+    // The release attached to the annotated source tag; it must not have replaced it.
+    await verifyReleaseSource({ repo: sourceRepo, sha: sourceSha, tag, expectedTagObjectSha: sourceEvidence.tagObjectSha });
   }
-  const remaining = plans.filter((plan) => plan.action === "publish" && !pending.includes(plan.target)).map((plan) => plan.target.slug);
-  if (remaining.length) {
-    console.log(`[${identity.productName} macOS release] Not yet published to ${remaining.join(", ")}. Run the publisher again without AMPLEFILE_MAC_PUBLISH_ONLY to finish.`);
+  console.log(`[${identity.productName} macOS release] Published ${release.url}`);
+
+  const remaining = plans.find((plan) => plan.action === "publish" && plan.target !== target)?.target;
+  if (remaining) {
+    console.log(`\n${bridgePauseMessage({ feed, version, productName: identity.productName, published: target, remaining })}`);
   }
 });
 

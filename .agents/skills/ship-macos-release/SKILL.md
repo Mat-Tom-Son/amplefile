@@ -110,11 +110,11 @@ verify the offered version and leave installation and relaunch unclaimed.
    architecture, Node runtime, signing identity, feed stage, or artifact
    bytes. Changed source, Node/npm, or dependencies also requires fresh local
    checks.
-5. A bridge release is published to two repositories. If publication stops
-   between them, run the same resume command again: a repository that
-   already serves the identical assets is verified and skipped. Delete a
-   leftover draft only after confirming it was never published, and never
-   with `--cleanup-tag` in the source repository.
+5. A bridge release is published to two repositories, one per run of the
+   same resume command: a repository that already serves the identical
+   assets is verified and skipped. Delete a leftover draft only after
+   confirming it was never published, and never with `--cleanup-tag` in the
+   source repository.
 
 Never edit `out/builder/AmpleFile-mac-release-state.json`. A checkpoint is
 ignored recovery data, not proof by itself. Resume must validate the source
@@ -130,13 +130,12 @@ The strict verifier still runs; GitHub Actions status is not required.
 
 The feed moves in two releases, and only on the owner's instruction:
 
-1. The bridge release, in the `bridge` stage. Publish it to the source
-   repository alone first
-   (`AMPLEFILE_MAC_PUBLISH_ONLY=Mat-Tom-Son/amplefile npm run desktop:release:mac:resume`),
-   check that the built candidate reports itself up to date from that feed,
-   and only then publish to the separate repository. Publishing there cannot
-   be taken back: copies that take the bridge check the source repository
-   from then on.
+1. The bridge release, in the `bridge` stage. The first
+   `npm run desktop:release:mac:resume` publishes it to the source repository
+   alone and stops. Check that the built candidate reports itself up to date
+   from that feed, and only then run the same command again, which publishes
+   to the separate repository. Publishing there cannot be taken back: copies
+   that take the bridge check the source repository from then on.
 2. Every later release, in the `source-repository` stage, published to the
    source repository alone and attached to its existing annotated tag.
 

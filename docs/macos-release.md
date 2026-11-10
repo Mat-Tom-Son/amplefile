@@ -84,11 +84,14 @@ manifest, the feed its copies check.
 - `separate-repository`: the separate repository's latest release must check
   the separate repository. Once a bridge is its latest release, nothing more
   is published there this way.
-- `bridge`: the separate repository must have a release to bridge from. The
-  release is drafted in both repositories, then published to the source
-  repository first, because nothing reads it until a bridged copy is
-  installed. A second bridge needs `AMPLEFILE_MAC_REPLACE_BRIDGE=v<bridge
-  version>`, naming the bridge it replaces.
+- `bridge`: the separate repository must have a release to bridge from. A
+  run publishes to one feed. The first run publishes to the source
+  repository, which nothing reads until a bridged copy is installed, and
+  stops, saying what to check. Only a later run, which finds the identical
+  release already served there, publishes to the separate repository; until
+  then nothing, not even a draft, is created in it. A second bridge needs
+  `AMPLEFILE_MAC_REPLACE_BRIDGE=v<bridge version>`, naming the bridge it
+  replaces.
 - `source-repository`: the separate repository's latest release must already
   check the source repository, and the source repository must already serve
   a Mac release. A release that skips the bridge is refused.
@@ -99,9 +102,9 @@ manifest, the feed its copies check.
   verified before upload. The separate release repository has no source
   history; GitHub creates a lightweight `v<version>` tag on its `main` when
   the draft is published.
-- A publication to both feeds that stops partway can be run again. A feed
-  that already serves the identical assets is verified and skipped; a draft
-  left behind is still refused until it is deleted.
+- A feed that already serves the identical assets is verified and skipped.
+  A draft left behind by an interrupted run is refused until it is deleted,
+  in either repository.
 
 ## Release workflow and checkpoints
 
@@ -349,11 +352,12 @@ A stage change is part of the release commit for the version that ships it:
    steps 1 to 4 of the [Release procedure](#release-procedure): merge, local
    check, signed build, tag. The strict verifier fails the build unless the
    packaged `app-update.yml` names `Mat-Tom-Son/amplefile`.
-3. Publish to the source repository only. Nothing installed reads it yet, so
-   this step changes no installed copy:
+3. Publish. In the `bridge` stage the first run publishes to the source
+   repository only and stops. Nothing installed reads that feed yet, so this
+   step changes no installed copy:
 
    ```bash
-   AMPLEFILE_MAC_PUBLISH_ONLY=Mat-Tom-Son/amplefile npm run desktop:release:mac:resume
+   npm run desktop:release:mac:resume
    npm run desktop:verify:feed:mac -- --version <bridge version>
    ```
 
@@ -372,9 +376,11 @@ A stage change is part of the release commit for the version that ships it:
    see [If the bridge is bad](#if-the-bridge-is-bad). The copy keeps the
    checkpointed candidate untouched; the profile override does not isolate
    Keychain.
-5. Publish to the separate repository. This is the step that cannot be taken
-   back: running copies check within four hours, and each one that updates
-   checks the source repository from then on.
+5. Publish to the separate repository by running the same command again. It
+   finds the release already served by the source repository and publishes
+   to the separate one. This is the step that cannot be taken back: running
+   copies check within four hours, and each one that updates checks the
+   source repository from then on.
 
    ```bash
    npm run desktop:release:mac:resume
