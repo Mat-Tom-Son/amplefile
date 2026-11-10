@@ -411,7 +411,7 @@ update the implementation, help, tests, and these docs together.
 |---|---|---|
 | Receipt schema | `src/local/cli/act-receipts.ts` | `tests/amplefile-cli-act-receipts.test.ts` |
 | Act argv, command table, setup-only refusal | `src/local/cli/act-commands.ts` | `tests/amplefile-cli-act-protocol.test.ts` |
-| Facade over the route internals | `src/local/cli/act-facade.ts`, `src/local/server.ts` | `tests/amplefile-act-facade.test.ts` and the owning domain suites |
+| Facade over the route internals | `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts` | `tests/amplefile-act-facade.test.ts` and the owning domain suites |
 | History-restore fencing and `chat compact` | `src/local/amplefile-kernel.ts` | `tests/amplefile-kernel.test.ts` |
 | Prepared verbs | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts` |
 | Recently Deleted | `src/local/recently-deleted-store.ts` | `tests/amplefile-recently-deleted-store.test.ts`, `tests/amplefile-cli-recently-deleted-verbs.test.ts`, `tests/recently-deleted-settings.test.ts` |

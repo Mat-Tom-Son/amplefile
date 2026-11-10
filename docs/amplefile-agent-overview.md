@@ -28,7 +28,7 @@ product keeps for its own sake. The overview never causes a record to exist.
 | Source | Module | Durability | The overview reads |
 |---|---|---|---|
 | Running task registry | `AmpleFileKernel` in `src/local/amplefile-kernel.ts` | In-memory, app run | Running `assistant_turn` and `compaction` tasks (stable v1) plus the experimental `automation_run` task, with Connected Folder id, actor, `startedAt` |
-| Settled turn outcomes | `SettledTurnRecord` in `src/local/server.ts` | In-memory, app run | Task-scoped `succeeded`/`failed`/`aborted` results with `endedAt` |
+| Settled turn outcomes | `SettledTurnRecord` in `src/local/api/state.ts` | In-memory, app run | Task-scoped `succeeded`/`failed`/`aborted` results with `endedAt` |
 | Requests and questions | The durable request store under the state root's `requests/` directory | Durable machine-local app state, reconciled against the turn journal after a restart, never replayed | Requests in `working`/`handed_off` (running) with the child task ids they started, open questions whose respondent is the person (needs you), and settled requests with their outcome |
 | Chat lifecycle and titles | `src/local/agent/chat-store.ts` | Durable — append-only portable transcripts with a rebuildable machine-local summary index | `conversation_lifecycle` events, title changes, `snoozedUntil` due times, and the newest assistant `landing.followUpPrompt` |
 | History checkpoints | `listConnectedFolderCheckpoints` in `src/local/history.ts` | Durable machine-local app state | `checkpointId`, `createdAt`, `label`, `reason`, `scope` |
@@ -205,7 +205,7 @@ Also deliberately not part of it:
 - Overview types and composer — `src/local/overview.ts`; `tests/amplefile-overview.test.ts` (byte-identical determinism, ordering, caps, truncation, restart honesty, unavailable sources).
 - Seen-marker store — `src/local/overview-seen-store.ts`; `tests/amplefile-overview-seen-store.test.ts`.
 - Kernel query (`getOverview`) with the v1-exclusion guard — `src/local/amplefile-kernel.ts`; `tests/amplefile-kernel.test.ts`.
-- Local API routes (`/api/amplefile-agent/overview`, `/overview/seen`, served without AmpleFile Agent readiness) — `src/local/server.ts`; `tests/amplefile-agent-api.test.ts`, `tests/local-server.test.ts`.
+- Local API routes (`/api/amplefile-agent/overview`, `/overview/seen`, served without AmpleFile Agent readiness) — `src/local/api/overview-routes.ts`; `tests/amplefile-agent-api.test.ts`, `tests/local-server.test.ts`.
 - CLI act command (`agent overview`) — `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`; `tests/amplefile-cli-act-protocol.test.ts`, `tests/amplefile-cli-commands.test.ts` (read-lane guard).
 - Narration teaching in the AmpleFile Agent's instructions — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
 - `tests/amplefile-agent-popover-refresh.test.ts` and `tests/frontend-interaction-contract.test.ts` check that the popover and the main window do not render the digest.
