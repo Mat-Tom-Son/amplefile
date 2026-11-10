@@ -201,6 +201,8 @@ function normalizeDescriptor(descriptor) {
     teamId: String(descriptor.teamId ?? ""),
     feedOwner: String(descriptor.feedOwner ?? ""),
     feedRepo: String(descriptor.feedRepo ?? ""),
+    // Which repositories the release is published to follows from the stage.
+    feedStage: String(descriptor.feedStage ?? ""),
   };
 }
 

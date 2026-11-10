@@ -12,5 +12,6 @@
   "managementScopeId": "amplefile-agent",
   "sourceRepositoryOwner": "Mat-Tom-Son",
   "sourceRepositoryName": "amplefile",
-  "macReleaseRepositoryName": "amplefile-mac-releases"
+  "macReleaseRepositoryName": "amplefile-mac-releases",
+  "macUpdateFeedStage": "separate-repository"
 }

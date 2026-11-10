@@ -6,6 +6,7 @@ import { loadEnvFile } from "node:process";
 import { assertLocalReleaseVerification, assertVerifiedBuildOrder, withReleaseVerificationLock } from "./local-release-verification.mjs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import feedModule from "./mac-release-feed.cjs";
 import {
   assertArtifactReceipt,
   assertCompatibleReleaseState,
@@ -23,6 +24,7 @@ const execFileAsync = promisify(execFile);
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 loadLocalReleaseEnvironment();
+const feed = feedModule.resolveMacReleaseFeed(identity);
 const builderCli = join(rootDir, "node_modules", "electron-builder", "out", "cli", "cli.js");
 const releaseBuild = process.argv.includes("--release");
 const unsignedSmokeBuild = process.argv.includes("--unsigned-smoke") || !releaseBuild;
@@ -79,8 +81,9 @@ async function buildResumableRelease(verification) {
     nodeVersion: process.version,
     signIdentity: value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
     teamId: value(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-    feedOwner: value(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-    feedRepo: value(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+    feedOwner: feed.packaged.owner,
+    feedRepo: feed.packaged.repo,
+    feedStage: feed.stage,
   };
   const fingerprint = await computeReleaseFingerprint(rootDir, descriptor);
   const statePath = releaseStatePath(rootDir, identity.productName);

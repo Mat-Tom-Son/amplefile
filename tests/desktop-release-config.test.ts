@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import feedModule from "../scripts/mac-release-feed.cjs";
 import { MAIN_CI_JOBS, TAG_CI_JOBS } from "../scripts/release-ci.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -52,10 +53,12 @@ test("desktop release configuration uses the isolated AmpleFile identities and f
   assert.equal(builder.win, undefined);
   assert.equal(builder.nsis, undefined);
   assert.deepEqual(builder.publish, macBuilder.publish, "every package build points its updater at the Mac feed");
+  // tests/mac-release-feed.test.ts pins which feed the checked-in stage packages.
+  const packagedFeed = feedModule.resolveMacReleaseFeed(identity, {}).packaged;
   assert.deepEqual(macBuilder.publish, [{
     provider: "github",
-    owner: "Mat-Tom-Son",
-    repo: "amplefile-mac-releases",
+    owner: packagedFeed.owner,
+    repo: packagedFeed.repo,
     releaseType: "release",
   }]);
   assert.equal(macSmokeBuilder.productName, identity.macSmokeProductName);
