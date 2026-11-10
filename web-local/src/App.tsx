@@ -21,7 +21,9 @@ import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from 
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
 import { isMacOS } from "./lib/platform";
 import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
-import { ConfirmDialogHost, showToast, ToastHost } from "./ui/feedback";
+import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
+import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
+import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
 
@@ -173,6 +175,12 @@ export function App() {
     setPendingConnectedFolderOpen(null);
   }, [pendingConnectedFolderOpen, boot?.connectedFolders]);
   useEffect(() => {
+    // `&update=<phase>` previews an update phase in Settings → About and the sidebar.
+    if (fixtureRequested) {
+      const phase = fixtureUpdatePhaseFromQuery(window.location.search);
+      if (phase) setUpdateStatus(buildFixtureUpdateStatus(phase));
+      return;
+    }
     const updates = window.ampleFileDesktop?.updates;
     if (!updates) return;
     let cancelled = false;
@@ -254,16 +262,24 @@ export function App() {
     modelConfigurationChanged();
   }
 
+  /**
+   * Settings → About's update button and the sidebar's update indicator both
+   * click through here. A download or install ends in a restart, so it asks
+   * first and names the work the restart would stop. The preview asks the same
+   * question, with `&agentState=running` standing in for a working Chat, and
+   * then only says updating is disabled.
+   */
   async function runUpdateAction() {
-    const updates = window.ampleFileDesktop?.updates;
-    if (!updates) return;
+    const desktopUpdates = window.ampleFileDesktop?.updates;
+    if (!fixtureRequested && !desktopUpdates) return;
+    const previewOnly = async () => { showToast({ text: "Updating is disabled in the preview", tone: "info" }); return null; };
+    const updates: DesktopUpdateCalls = desktopUpdates ?? { check: previewOnly, updateNow: previewOnly, install: previewOnly };
+    const readWork = fixtureRequested
+      ? async () => ({ chats: new URLSearchParams(window.location.search).get("agentState") === "running" && activeConnectedFolder ? [{ connectedFolderId: activeConnectedFolder.id, conversationId: "preview" }] : [], ampleFileAgentWorking: false })
+      : () => readRunningWork(api);
     try {
-      const status = updateStatus?.phase === "ready"
-        ? await updates.install()
-        : updateStatus?.phase === "available" || updateStatus?.phase === "error"
-          ? await updates.updateNow()
-          : await updates.check();
-      setUpdateStatus(status);
+      const next = await runDesktopUpdateAction({ status: updateStatus, updates, confirm: requestConfirm, readWork, connectedFolders: boot?.connectedFolders ?? [] });
+      if (next) setUpdateStatus(next);
     } catch (caught) { setError(errorText(caught)); }
   }
 
@@ -278,7 +294,7 @@ export function App() {
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}
-    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onError={setError} /></ConnectedFolderAppearanceProvider>
+    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onError={setError} /></ConnectedFolderAppearanceProvider>
     : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
     {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}

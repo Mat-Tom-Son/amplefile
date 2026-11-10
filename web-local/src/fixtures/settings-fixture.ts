@@ -20,18 +20,43 @@ import type { DesktopUpdateStatus } from "../types";
 /** The release the preview stands in for: the version in the root package.json. */
 export const fixtureAppVersion: string = packageVersion;
 
-/** About → Updates as the Mac app shows it after a check found nothing newer. */
-export function buildFixtureUpdateStatus(): DesktopUpdateStatus {
-  return {
+/** The release the preview offers as an update: the next patch after `fixtureAppVersion`. */
+export const fixtureAvailableVersion: string = fixtureAppVersion.replace(/(\d+)$/, (patch) => String(Number(patch) + 1));
+
+/** The update phases the preview can show with `&update=<phase>`. */
+export const fixtureUpdatePhases = ["not_available", "available", "downloading", "ready", "installing", "error"] as const satisfies readonly DesktopUpdateStatus["phase"][];
+export type FixtureUpdatePhase = typeof fixtureUpdatePhases[number];
+
+/** The `&update=` phase in a preview URL's query, or null when it names none of them. */
+export function fixtureUpdatePhaseFromQuery(search: string): FixtureUpdatePhase | null {
+  const requested = new URLSearchParams(search).get("update");
+  return fixtureUpdatePhases.find((phase) => phase === requested) ?? null;
+}
+
+/**
+ * About → Updates and the sidebar's update indicator as the Mac app shows
+ * them in each phase. Without a phase: after a check found nothing newer.
+ * The messages are the ones the desktop updater writes.
+ */
+export function buildFixtureUpdateStatus(phase: FixtureUpdatePhase = "not_available"): DesktopUpdateStatus {
+  const base: DesktopUpdateStatus = {
     supported: true,
-    phase: "not_available",
+    phase,
     currentVersion: fixtureAppVersion,
-    availableVersion: null,
+    availableVersion: fixtureAvailableVersion,
     progressPercent: null,
     checkedAt: "2026-11-04T08:15:00.000Z",
-    message: `AmpleFile ${fixtureAppVersion} is up to date.`,
+    message: "",
     error: null,
   };
+  switch (phase) {
+    case "not_available": return { ...base, availableVersion: null, message: `AmpleFile ${fixtureAppVersion} is up to date.` };
+    case "available": return { ...base, message: `AmpleFile ${fixtureAvailableVersion} is available.` };
+    case "downloading": return { ...base, progressPercent: 42, message: "Downloading update..." };
+    case "ready": return { ...base, progressPercent: 100, message: `AmpleFile ${fixtureAvailableVersion} is ready to install.` };
+    case "installing": return { ...base, progressPercent: 100, message: "Restarting to install update..." };
+    case "error": return { ...base, message: "Update download failed.", error: "The network connection was lost." };
+  }
 }
 
 const days = 24 * 60 * 60 * 1_000;

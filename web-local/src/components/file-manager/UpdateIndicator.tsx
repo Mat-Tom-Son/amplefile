@@ -1,0 +1,53 @@
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { updateIndicatorDuringCheck, updateIndicatorFor, type UpdateIndicatorModel } from "../../lib/update-status";
+import type { DesktopUpdateStatus } from "../../types";
+
+/**
+ * The foot of the sidebar when an update needs the person: a dot in the
+ * window's accent with a short label. It renders nothing—and takes no
+ * space—in every other phase. A click runs the same action as Settings →
+ * About's update button, or opens About where that page holds the detail.
+ */
+export function UpdateIndicator({ status, onUpdateAction, onOpenAbout }: {
+  status: DesktopUpdateStatus | null;
+  onUpdateAction: () => void;
+  onOpenAbout: () => void;
+}) {
+  const checking = status?.phase === "checking";
+  const shown = useRef<UpdateIndicatorModel | null>(null);
+  const fresh = updateIndicatorFor(status);
+  const model = checking ? updateIndicatorDuringCheck(shown.current) : fresh;
+  useEffect(() => { if (!checking) shown.current = fresh; });
+  // A screen reader hears the moves into available, ready, and failed; never
+  // a progress tick, and never by taking focus.
+  const [announcement, setAnnouncement] = useState("");
+  const announcedTone = useRef<UpdateIndicatorModel["tone"] | null>(null);
+  const freshTone = fresh?.tone ?? null;
+  const freshAnnouncement = fresh?.announcement ?? null;
+  useEffect(() => {
+    if (checking || freshTone === announcedTone.current) return;
+    announcedTone.current = freshTone;
+    setAnnouncement(freshAnnouncement ?? "");
+  }, [checking, freshTone, freshAnnouncement]);
+  const live = <span className="sr-only" role="status">{announcement}</span>;
+  if (!model) return live;
+  const inert = model.click === null;
+  const style = model.progressPercent === null ? undefined : { "--fm-update-progress": `${model.progressPercent}%` } as CSSProperties;
+  return <>{live}<div className="fm-update">
+    <button
+      type="button"
+      className={`fm-update-button is-${model.tone}`}
+      aria-label={model.accessibleName}
+      aria-disabled={inert || undefined}
+      title={model.tooltip}
+      onClick={() => {
+        if (model.click === "update") onUpdateAction();
+        else if (model.click === "open-about") onOpenAbout();
+      }}
+    >
+      <span className="fm-update-mark" aria-hidden="true"><span className="fm-update-dot" style={style} /></span>
+      <span className="fm-update-label"><span className="fm-update-label-full">{model.label}</span><span className="fm-update-label-short">{model.shortLabel}</span></span>
+      {model.detail ? <span className="fm-update-detail" aria-hidden="true">{model.detail}</span> : null}
+    </button>
+  </div></>;
+}
