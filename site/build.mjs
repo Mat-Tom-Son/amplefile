@@ -4,6 +4,7 @@
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import feedModule from "../scripts/mac-release-feed.cjs";
 import { MN_CSS, mnMarkup } from "./manila.mjs";
 import * as VIEWS from "./views.mjs";
 import { MENUBAR_ICON, WINDOW_CSS } from "./views.mjs";
@@ -14,7 +15,12 @@ const out = join(here, "public");
 const brand = join(root, "desktop", "assets", "brand");
 
 const ORIGIN = "https://www.amplefile.com";
-const RELEASES = "Mat-Tom-Son/amplefile-mac-releases";
+// Download links follow the checked-in Mac update feed stage and ignore the environment: they
+// point at the repository whose latest release is always a Mac release.
+const RELEASES = feedModule.resolveMacReleaseFeed(
+  JSON.parse(readFileSync(join(root, "src", "shared", "product-identity.json"), "utf8")),
+  {},
+).downloads.slug;
 // Download opens the latest release, which is always published. When the page loads, a script
 // asks GitHub for that release and points every Download link straight at its DMG.
 const DL = `https://github.com/${RELEASES}/releases/latest`;

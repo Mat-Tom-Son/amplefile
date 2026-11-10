@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import feedModule from "./mac-release-feed.cjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const builderDir = join(rootDir, "out", "builder");
@@ -11,6 +12,7 @@ const identity = JSON.parse(await readFile(join(rootDir, "src", "shared", "produ
 const version = String(packageJson.version ?? "").trim();
 const arch = stringValue(process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
 const unsignedSmokeBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
+const feed = feedModule.resolveMacReleaseFeed(identity);
 
 if (!existsSync(builderDir)) throw new Error(`${identity.productName} macOS builder output was not found.`);
 if (!version) throw new Error(`package.json does not declare a ${identity.productName} release version.`);
@@ -46,10 +48,11 @@ const manifest = {
   arch,
   unsignedSmokeBuild,
   buildNodeVersion: process.version,
-  feed: {
-    owner: stringValue(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-    repo: stringValue(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
-  },
+  // The feed the packaged app checks. The publisher reads it back from a
+  // published release to learn which feed that release's installed copies use.
+  feed: { owner: feed.packaged.owner, repo: feed.packaged.repo },
+  feedStage: feed.stage,
+  publishTargets: feed.targets.map((target) => ({ owner: target.owner, repo: target.repo })),
   artifacts,
 };
 
@@ -66,6 +69,8 @@ function formatTextManifest(value) {
     `Generated: ${value.generatedAt}`,
     `Platform: ${value.platform}-${value.arch}`,
     `Feed: ${value.feed.owner}/${value.feed.repo}`,
+    `Feed stage: ${value.feedStage}`,
+    `Published to: ${value.publishTargets.map((target) => `${target.owner}/${target.repo}`).join(", ")}`,
     `Build Node: ${value.buildNodeVersion}`,
     `Unsigned smoke build: ${value.unsignedSmokeBuild ? "yes" : "no"}`,
     "",
