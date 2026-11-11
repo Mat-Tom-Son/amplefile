@@ -137,6 +137,9 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
 .mn-sec .copy .fine a:hover { color:var(--mn-ink); }
 .mn .ln { display:block; }
 .mn-sec .shot { width:min(100%, var(--shot-w)); }
+.mn-sec .shots { width:min(100%, var(--shot-w)); display:flex; flex-direction:column; align-items:center; gap:16px; }
+.mn-sec .shots .shot { width:100%; }
+.mn .only-phone { display:none; }
 
 /* The footer is the mark itself: the folder, and its blue dot is the download. */
 /* smaller than the page folder: a shorter tab with its own curve, a smaller heading and dot */
@@ -196,6 +199,7 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
   .mn-end-folder .mn-tab::after { right:-42px; width:43px; clip-path:path("M0 0 C 14 0 20 4 27 17 L 32 29 C 35 35 39 41 43 41 L 0 41 Z"); }
   .mn-end-front { grid-template-columns:minmax(0, 1fr); padding:24px 20px 24px; }
   .mn .ln { display:inline; }
+  .mn .only-phone { display:block; }
 }
 /* The facts never start a line with a dot: two lines on a phone, three on a very narrow one. */
 @container page (max-width: 520px) {
@@ -225,7 +229,9 @@ export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, L
   const menu = (id, label, items, icons = items.some((it) => it && it.icon)) => `<span class="mn-mw"><button class="mi" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" data-menu>${label}</button><div class="mn-menu" id="${id}" role="menu" aria-label="${label}" hidden>${items.map((it) => (it ? `<a class="mn-menu-i" role="menuitem" href="${it.href}" ${ext}${it.dl ? ` data-dl="${it.dl}"` : ""}>${icons ? `<span class="ic">${it.icon || ""}</span>` : ""}<span class="lb">${it.label}</span>${it.hint ? `<span class="hint">${it.hint}</span>` : ""}</a>` : '<div class="mn-menu-sep" role="separator"></div>')).join("")}</div></span>`;
   const downloadMenu = menu("mn-menu-dl", "Download", [{ href: DL, dl: "mac", icon: APPLE, label: "Download for Mac", hint: "Apple silicon" }, { href: LINUX_REL, dl: "linux", icon: LINUX, label: "Linux Preview", hint: "x64" }, null, { href: REL, label: "All Releases" }]);
   const helpMenu = menu("mn-menu-help", "Help", [{ href: DOCS, label: "AmpleFile Docs" }, { href: CONTRIB, label: "Contribute" }, null, { href: PRIV, label: "Privacy" }, { href: LICENSE, label: "MIT License" }]);
-  const { viewOrganizeLive, viewConnect, viewAutomationRun, viewAsk, viewSkills, viewHistory, viewAgent, viewNested } = views;
+  const { viewOrganizeLive, viewConnect, viewAutomationRun, viewAsk, viewSkills, viewBrowser, viewHistory, viewAgent, viewNested } = views;
+  // A view with a close-up: on a phone the whole window sits above the close-up, and the two play as one scene.
+  const closeUp = (name, cls, make, h) => `<div class="shots">${shot(`${name}-whole`, "p-full only-phone", make({ h }), ` style="--ch:${h}" data-mirror`)}${shot(name, cls, make({ h }), ` style="--ch:${h}"`)}</div>`;
   const gh = (cls) => `<a class="${cls}" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a>`;
   return `<div class="page mn" id="top">
 <header class="mn-mb" aria-label="Menu bar"><div class="mn-mb-in">
@@ -244,11 +250,12 @@ export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, L
 <main class="mn-front">
 <section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p><div class="mn-cta">${macBtn("mn-btn paper")}${linuxBtn("mn-btn paper")}</div><p class="mn-facts"><span>Free and open source</span><span>For Apple silicon Macs</span><span>Linux in preview</span></p></section>
 <section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p><p class="fine"><span class="ln">Files stay on your computer.</span> <span class="ln">What a Worker reads goes to the AI model provider you choose.</span> <a href="${PRIV}" ${ext}>Privacy</a></p></div>${shot("connect", "p-full", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
-<section class="mn-sec"><div class="copy"><h2>Runs on Its Own</h2><p><span class="ln">Turn on a ready-made Automation,</span> <span class="ln">or tell your Worker to set up a custom one for&nbsp;you.</span></p></div>${shot("automation", "p-chat", viewAutomationRun({ h: 720 }), ' style="--ch:720"')}</section>
-<section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers are full AI agents on the model you choose.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${shot("ask", "p-chat", viewAsk({ h: 620 }), ' style="--ch:620"')}</section>
-<section class="mn-sec"><div class="copy"><h2>With Tools Built In</h2><p><span class="ln">Workers can search the web, create documents,</span> <span class="ln">operate your apps, and connect to your services.</span> <span class="ln">Add Skills and Extensions for anything&nbsp;else.</span></p></div>${shot("skills", "p-tools", viewSkills({ h: 680 }), ' style="--ch:680"')}</section>
-<section class="mn-sec"><div class="copy"><h2>Changes Are Tracked</h2><p><span class="ln">Anything you or your Worker change in AmpleFile</span> <span class="ln">can be undone with one&nbsp;click.</span></p></div>${shot("history", "p-chat", viewHistory({ h: 600 }), ' style="--ch:600"')}</section>
-<section class="mn-sec" data-note><div class="copy"><h2>And Folders Can Stack</h2><p><span class="ln">Connect folders inside folders, as many as you like,</span> <span class="ln">and their Workers hand work to each&nbsp;other.</span></p></div>${shot("nested", "p-chat", viewNested({ h: 520 }), ' style="--ch:520"')}</section>
+<section class="mn-sec"><div class="copy"><h2>Runs on Its Own</h2><p><span class="ln">Turn on a ready-made Automation,</span> <span class="ln">or tell your Worker to set up a custom one for&nbsp;you.</span></p></div>${closeUp("automation", "p-chat", viewAutomationRun, 720)}</section>
+<section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers are full AI agents on the model you choose.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${closeUp("ask", "p-chat", viewAsk, 620)}</section>
+<section class="mn-sec"><div class="copy"><h2>With Tools Built In</h2><p><span class="ln">Workers can search the web, create documents,</span> <span class="ln">operate your apps, and connect to your services.</span> <span class="ln">Add Skills and Extensions for anything&nbsp;else.</span></p></div>${closeUp("skills", "p-tools", viewSkills, 680)}</section>
+<section class="mn-sec"><div class="copy"><h2>And a Browser of Its Own</h2><p><span class="ln">Workers open and use web pages in AmpleFile’s built-in browser.</span> <span class="ln">Watch along, sign in to a site yourself,</span> <span class="ln">and answer when a site asks for&nbsp;permission.</span></p></div>${closeUp("browser", "p-chat", viewBrowser, 720)}</section>
+<section class="mn-sec"><div class="copy"><h2>Changes Are Tracked</h2><p><span class="ln">Anything you or your Worker change in AmpleFile</span> <span class="ln">can be undone with one&nbsp;click.</span></p></div>${closeUp("history", "p-chat", viewHistory, 600)}</section>
+<section class="mn-sec" data-note><div class="copy"><h2>And Folders Can Stack</h2><p><span class="ln">Connect folders inside folders, as many as you like,</span> <span class="ln">and their Workers hand work to each&nbsp;other.</span></p></div>${closeUp("nested", "p-chat", viewNested, 520)}</section>
 </main>
 </div>
 <footer class="mn-end"><div class="mn-folder mn-end-folder"><div class="mn-back" aria-hidden="true"></div><div class="mn-tab" aria-hidden="true"></div>

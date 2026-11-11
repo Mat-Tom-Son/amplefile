@@ -51,6 +51,11 @@ export const glyph = {
   connect: sv('<circle cx="4" cy="8" r="1.9"/><circle cx="12" cy="3.9" r="1.9"/><circle cx="12" cy="12.1" r="1.9"/><path d="M5.7 7.15 10.3 4.8M5.7 8.85l4.6 2.35"/>', 1.2),
   skill: sv('<path d="M3.25 2.5h7.5a1.5 1.5 0 0 1 1.5 1.5v9.5h-7.5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M3.25 12a1.5 1.5 0 0 1 1.5-1.5h7.5"/><path d="M6 5.25h3.5"/>', 1.2),
   plug: sv('<path d="M6 2.25v3M10 2.25v3"/><path d="M4.25 5.25h7.5V8a3.75 3.75 0 0 1-7.5 0z"/><path d="M8 11.75v2"/>', 1.2),
+  reload: sv('<path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.2 2.6v2.9h-2.9"/>', 1.4),
+  lock: sv('<rect x="3.75" y="7.25" width="8.5" height="6" rx="1.5"/><path d="M5.75 7.25V5.5a2.25 2.25 0 0 1 4.5 0v1.75"/>', 1.2),
+  external: sv('<path d="M9 2.75h4.25V7M13 3 7.5 8.5"/><path d="M6.25 4H4a1.25 1.25 0 0 0-1.25 1.25V12A1.25 1.25 0 0 0 4 13.25h6.75A1.25 1.25 0 0 0 12 12V9.75"/>', 1.3),
+  paneFull: sv('<rect x="2" y="3" width="12" height="10" rx="1.75"/><path d="M2 6.25h12"/>', 1.1),
+  paneFold: sv('<rect x="2" y="3" width="12" height="10" rx="1.75"/><path d="M2 9.75h12"/>', 1.1),
   code: sv('<path d="m5.25 5-3 3 3 3M10.75 5l3 3-3 3M9 3.5l-2 9"/>', 1.2),
   box: sv('<path d="M2.5 5 8 2.25 13.5 5v6L8 13.75 2.5 11z"/><path d="M2.5 5 8 7.75 13.5 5M8 7.75v6"/>', 1.2),
 };
@@ -273,7 +278,9 @@ export function viewConnect({ h = 680 } = {}) {
   });
   const icon = `<span class="sw"${at({ out: 1 })}>${fi("folder")}</span><span class="sw"${at({ in: 1 })}>${folderTitle("Desktop")}</span>`;
   const before = `<div class="mw-pane info"${at({ out: 1 })}><div class="mw-pscroll untabbed">${pv("Desktop", "7 items")}<section class="mw-sec"><div class="mw-cta"><div class="t">No Worker here yet</div><div class="s">Adds a Worker and History. Nothing moves.</div><span class="mw-btn primary"${at({ press: 1 })}>Connect This Folder</span></div></section></div></div>`;
-  const after = `<div class="mw-pane info a-fade"${at({ in: 1 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Desktop", "7 items", "--cf-5")}${automations()}</div>${infoComp({ placeholder: "Work in Desktop", sugRise: true })}</div>`;
+  // A folder just connected carries one offer: Set Up for Me, the only place it is made.
+  const offer = `<div class="mw-rcpt offer"><div class="mw-rhead"><span class="t">Set Up This Folder</span></div><p class="mw-offer-s">Your Worker can look this folder over, organize it, and give it a look that fits.</p><div class="mw-ract"><span class="mw-btn small primary">Set Up for Me</span><span class="mw-btn small">No Thanks</span></div></div>`;
+  const after = `<div class="mw-pane info a-fade"${at({ in: 1 })}>${tabs("Info")}<div class="mw-pscroll">${offer}${pv("Desktop", "7 items", "--cf-5")}${automations()}</div>${infoComp({ placeholder: "Work in Desktop", suggests: SUGGEST_ALL.slice(0, 2), sugRise: true })}</div>`;
   const body = `${side}${main({ title: "Desktop", icon, lists: rows(DESK), path: DESK_PATH, count: "7 items" })}<aside class="mw-panel">${before}${after}</aside>`;
   return win({ label: "AmpleFile connecting Desktop: Connect This Folder turns it into a Connected Folder with a Worker, and nothing moves", h, steps, start: "52,86", body, extra: toast("Desktop is now a Connected Folder.", { in: 1, fade: 2 }) });
 }
@@ -365,6 +372,48 @@ ${heading("Included with AmpleFile")}<div class="se-grid">${tile("desktop", "Com
 ${heading("Tools and Packages", "Pi’s built-in tools and the Pi packages installed through it")}<div class="se-card">${more("code", "Built-In Tools", 7)}${more("box", "Packages", 1)}</div></div></div>`;
   const body = `${side}${main({ title: "Home Renovation", icon: folderTitle("Home Renovation"), more: { press: 1 }, menu, lists: rows(list), path: HR_PATH, count: "9 items" })}<aside class="mw-panel">${info}</aside>`;
   return win({ label: "Skills & Extensions for Home Renovation: Computer Control, Web, Documents, and Service Connections are included with AmpleFile, with a Skill and an Extension installed everywhere and one Skill for this Connected Folder", h, steps, start: "40,46", body, extra: dialog });
+}
+
+// ---------- Home Renovation: a Worker in the Browser pane ----------
+
+/** A Worker opens a supplier's page in the built-in browser; its tab arrives as the strip alone, and Show Browser brings the page up beside the folder. */
+export function viewBrowser({ h = 720 } = {}) {
+  // 1 click the field and type; 2 send; 3 the Worker opens the page and its tab arrives folded; 4 Show Browser; 5 the Worker looks the order up; 6 the turn ends.
+  const steps = [900, 900, 1500, 1300, 1700, 1500];
+  const ADDRESS = "barrowtile.example/orders";
+  const ask = "Check Barrow Tile’s site for when my tile order ships.";
+  const list = [
+    { n: "budget.xlsx", k: "xlsx", d: "Yesterday at 7:02 PM", s: "30 KB" },
+    { n: "kitchen-plan.pdf", k: "pdf", d: "Oct 28, 2026 at 9:40 AM", s: "1.1 MB" },
+    { n: "Permits", k: "folder", d: "Nov 3, 2026 at 4:12 PM", s: "--" },
+    { n: "Photos", k: "folder", d: "Today at 8:15 AM", s: "--" },
+    { n: "Quote Comparison.docx", k: "docx", d: "Today at 9:44 AM", s: "18 KB" },
+    { n: "quote-barrow-tile.pdf", k: "pdf", d: "Oct 30, 2026 at 2:16 PM", s: "207 KB" },
+    { n: "tile-sample.png", k: "img", d: "Oct 27, 2026 at 6:33 PM", s: "2.3 MB" },
+  ];
+  const side = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Home Renovation", dots: name === "Home Renovation" ? [["run", { in: 2, out: 6 }]] : [] })) });
+  const info = `<div class="mw-pane info"${at({ out: 2 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Home Renovation", "7 items", "--cf-2")}${automations()}</div>${infoComp({ placeholder: "Work in Home Renovation", sugA: { out: 1 }, type: 1, text: ask, focusIn: 1, sendAt: 2 })}</div>`;
+  const webStep = (run, done, target, inAt, doneAt) => `<div class="mw-step a-step"${at({ in: inAt })}><span class="si">${glyph.globe}</span><span class="sl"><b class="shim"${at({ out: doneAt })}>${run}</b><b${at({ in: doneAt })}>${done}</b>${target ? `<span class="st">${target}</span>` : ""}</span></div>`;
+  const msgs = `<div class="mw-ub a-send">${ask}</div>
+<div class="mw-working shim"${at({ in: 2, out: 3 })}>Working…</div>
+<div class="mw-steps"${at({ in: 3, out: 6 })}>${step({ icon: "thought", done: "Thought for 2s", inAt: 3 })}${webStep("Opening", "Opened", ADDRESS, 3, 4)}${webStep("Using the browser", "Used the browser", "", 5, 6)}</div>
+<span class="mw-pill a-fade"${at({ in: 6 })}>${glyph.globe}<span>Opened a web page, used the browser</span>${glyph.chevR}</span>
+<div class="mw-as a-rise"${at({ in: 6, d: 120 })}><p>Barrow Tile shows order 4471 shipping Tuesday, November 17, with delivery on Thursday the 19th.</p><p>That lands before the installer starts, so the kitchen week still holds.</p></div>`;
+  const chat = chatPane({ title: "Tile order", a: { in: 2 }, msgs, comp: chatComp(6) });
+  // The page itself: a supplier's site, drawn as a web page and not as the app.
+  const order = (id, what, when, a = "") => `<div class="r"${a}><span class="id">${id}</span><span class="w">${what}</span><span class="d">${when}</span></div>`;
+  const site = `<div class="bp-site"><div class="hd"><b>Barrow Tile</b><span>Shop</span><span>Showrooms</span><span class="on">Orders</span><span class="sp"></span><span>Account</span></div>
+<div class="bd"><h3>Your Orders</h3><div class="find"><span class="f"><span class="ph"${at({ out: 5 })}>Order number</span><span${at({ in: 5 })}>4471</span></span><span class="go">Look Up</span></div>
+<div class="tb">${order("4471", "Porcelain floor tile, 42 boxes", "Ships Tue, Nov 17", " data-hit")}${order("4390", "Grout and sealer", "Delivered Oct 30")}${order("4312", "Tile samples, set of 6", "Delivered Oct 12")}</div></div></div>`;
+  const tab = `<span class="bp-tab"><span class="ti">${glyph.globe}</span><span class="tt">Orders — Barrow Tile</span><i class="mw-dot run"${at({ out: 6 })}></i><span class="tx">${glyph.x}</span></span>`;
+  const layout = `<span class="mw-cap bp-lay"><span class="mw-tool">${glyph.paneFull}</span><span class="mw-tool"${at({ press: 4 })}>${glyph.paneFold}</span></span>`;
+  const worker = `<span class="bp-worker"${at({ out: 6 })}><i class="mw-dot run"></i><span>Worker in Home Renovation</span><span class="ch">${glyph.chat}</span></span>`;
+  const pane = `<div class="bp-divide"${at({ in: 4 })}></div>
+<section class="bp"><header class="bp-bar a-rise"${at({ in: 3 })}>${tab}<span class="bp-new">${glyph.plus}</span><span class="sp"></span>${layout}</header>
+<div class="bp-page a-fade"${at({ in: 4 })}><div class="bp-nav"><span class="mw-cap"><span class="mw-tool dis">${glyph.chevL}</span><span class="mw-tool dis">${glyph.chevR}</span><span class="mw-tool">${glyph.reload}</span></span><span class="bp-addr">${glyph.lock}<span>https://${ADDRESS}</span></span>${worker}<span class="bp-tool">${glyph.search}</span><span class="bp-tool">${glyph.external}</span></div>
+<div class="bp-view">${site}</div></div></section>`;
+  const body = `${side}${main({ title: "Home Renovation", icon: folderTitle("Home Renovation"), lists: rows(list), path: HR_PATH, count: "7 items" }).replace("</section>", `${pane}</section>`)}<aside class="mw-panel">${info}${chat}</aside>`;
+  return win({ label: "A Worker opens Barrow Tile's orders page in AmpleFile's built-in browser; its tab arrives under the folder, Show Browser brings the page up beside the files, and the Worker looks up when the tile order ships", h, steps, start: "40,94", body });
 }
 
 // ---------- Taxes 2026: Undo in History ----------
@@ -631,6 +680,9 @@ export const WINDOW_CSS_PX = `
 .mw-rrow .n { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .mw-rrow .v { flex:none; color:var(--fm-text3); font-size:12px; }
 .mw-ract { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.mw-rcpt.offer { margin-bottom:8px; }
+.mw-offer-s { margin:3px 0 0; color:var(--fm-text2); font-size:12px; line-height:1.4; }
+.mw-btn.small.primary { margin-top:0; }
 
 /* Message box */
 .mw-comp { flex:none; padding:12px 12px 6px; background:var(--fm-panel); }
@@ -757,6 +809,54 @@ export const WINDOW_CSS_PX = `
 .se-sum svg + svg { width:15px; height:15px; }
 .se-sum span { flex:1; }
 .se-sum small { color:var(--fm-text2); font-size:12px; font-weight:500; }
+
+/* The Browser pane under the folder's contents (file-manager-browser.css), and a web page inside it */
+.bp-divide { flex:none; box-sizing:border-box; height:9px; border-top:1px solid var(--fm-line); border-bottom:1px solid var(--fm-line); background:#f5f5f7; }
+.bp-divide::after { content:""; display:block; width:28px; height:3px; margin:2px auto 0; border-radius:999px; background:rgba(0,0,0,.16); }
+.bp { flex:none; display:flex; flex-direction:column; background:#fff; }
+.bp svg { display:block; flex:none; }
+.bp-bar { box-sizing:border-box; height:38px; display:flex; align-items:center; gap:4px; padding:0 10px 0 8px; border-top:1px solid var(--fm-line); background:#f6f6f8; }
+.mw[data-steps].s4 .bp-bar { border-top:0; }
+.bp-bar .sp { flex:1; }
+.bp-tab { box-sizing:border-box; display:flex; align-items:center; gap:7px; width:200px; height:28px; padding:0 5px 0 9px; border-radius:7px; background:#fff; box-shadow:var(--fm-btn-shadow); white-space:nowrap; }
+.bp-tab .ti { color:var(--fm-text2); }
+.bp-tab .ti svg { width:16px; height:16px; }
+.bp-tab .tt { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.bp-tab .tx { width:18px; height:18px; display:grid; place-items:center; color:var(--fm-text2); }
+.bp-tab .tx svg { width:9px; height:9px; }
+.bp-new { width:26px; height:26px; display:grid; place-items:center; color:var(--fm-text2); }
+.bp-new svg { width:14px; height:14px; }
+.bp-lay { height:28px; }
+.bp-lay .mw-tool { height:22px; }
+.bp-page { height:300px; display:flex; flex-direction:column; }
+.bp-nav { box-sizing:border-box; flex:none; height:38px; display:flex; align-items:center; gap:8px; padding:0 10px; background:#f6f6f8; border-bottom:1px solid var(--fm-line); }
+.bp-nav .mw-cap { height:28px; }
+.bp-nav .mw-tool { height:22px; }
+.bp-addr { flex:1; min-width:0; display:flex; align-items:center; gap:7px; height:28px; padding:0 10px; border-radius:999px; background:var(--fm-cap); white-space:nowrap; overflow:hidden; }
+.bp-addr svg { width:13px; height:13px; color:var(--fm-text2); }
+.bp-worker { flex:none; display:inline-flex; align-items:center; gap:7px; height:28px; padding:0 4px 0 10px; border-radius:999px; background:var(--fm-accent-soft); font-size:12px; white-space:nowrap; }
+.bp-worker .ch { width:24px; height:24px; display:grid; place-items:center; color:var(--fm-text2); }
+.bp-worker .ch svg { width:14px; height:14px; }
+.bp-tool { flex:none; width:26px; height:26px; display:grid; place-items:center; color:var(--fm-text2); }
+.bp-tool svg { width:15px; height:15px; }
+.bp-view { flex:1; min-height:0; overflow:hidden; background:#fff; }
+.bp-site { height:100%; display:flex; flex-direction:column; color:#2b2622; font-family:Georgia, "Times New Roman", serif; font-size:13px; }
+.bp-site .hd { flex:none; display:flex; align-items:center; gap:22px; height:44px; padding:0 28px; background:#7a3e24; color:#f6ebe2; font-family:-apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size:12px; white-space:nowrap; }
+.bp-site .hd b { margin-right:10px; font-family:Georgia, "Times New Roman", serif; font-size:17px; font-weight:700; letter-spacing:.01em; }
+.bp-site .hd .on { padding-bottom:2px; border-bottom:2px solid #f6ebe2; }
+.bp-site .hd .sp { flex:1; }
+.bp-site .bd { flex:1; padding:18px 28px 0; background:#fbf7f3; }
+.bp-site h3 { margin:0 0 12px; font-size:20px; font-weight:400; }
+.bp-site .find { display:flex; gap:8px; margin-bottom:14px; font-family:-apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.bp-site .f { box-sizing:border-box; display:flex; align-items:center; width:220px; height:30px; padding:0 10px; border:1px solid #cdbfb3; border-radius:4px; background:#fff; }
+.bp-site .f .ph { color:#9a8d83; }
+.bp-site .go { display:inline-flex; align-items:center; height:30px; padding:0 14px; border-radius:4px; background:#7a3e24; color:#fff; font-weight:600; }
+.bp-site .tb { border-top:1px solid #e3d8ce; font-family:-apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.bp-site .r { display:grid; grid-template-columns:70px minmax(0, 1fr) 170px; align-items:center; height:34px; padding:0 8px; border-bottom:1px solid #e3d8ce; white-space:nowrap; transition:background-color 300ms ease-out; }
+.bp-site .r .id { font-weight:600; }
+.bp-site .r .d { color:#6d6259; }
+.mw[data-steps].s5 .bp-site .r[data-hit] { background:#f4e3d2; }
+.mw[data-steps].s5 .bp-site .r[data-hit] .d { color:#7a3e24; font-weight:600; }
 
 /* Notices rise from the bottom center of the folder list */
 .mw-toast { position:absolute; z-index:4; bottom:40px; left:594px; translate:-50% 0; display:flex; align-items:center; gap:10px; min-height:42px; padding:10px 10px 10px 14px; border:1px solid #d8e0e8; border-left:4px solid #0b6fd6; border-radius:8px; background:rgba(255,255,255,.96); box-shadow:0 8px 16px rgba(0,0,0,.14); color:#253044; font-weight:600; white-space:nowrap; transition:opacity 220ms ease-out, transform 220ms ease-out; }

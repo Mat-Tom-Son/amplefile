@@ -4,6 +4,11 @@ amplefile.com is one static page built from `site/`. It shows the app as HTML
 drawn at the file manager's own sizes and words, and each section plays a
 short scene while it is on screen.
 
+On a wide screen a section shows the whole window. On a phone, a section whose
+action is in the right panel shows the whole window with a close-up of the
+panel beneath it; the page draws that view twice and plays both as one scene,
+so every step lands on both together.
+
 ## Files
 
 | Path | Contents |
