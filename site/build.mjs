@@ -143,32 +143,41 @@ const SCRIPT = `
   function setupScenes() {
     if (reduce) return;
     const HOLD = 4800;
-    const scenes = [...page.querySelectorAll(".mw[data-steps], .mb-pop[data-steps]")].map((mw) => {
+    const scenes = [...page.querySelectorAll(".mw[data-steps], .mb-pop[data-steps]")].filter((mw) => !mw.closest("[data-mirror]")).map((mw) => {
       const delays = mw.dataset.steps.split(",").map(Number);
       const n = delays.length;
-      const cur = mw.querySelector(".mw-cursor");
-      const box = mw.closest(".shot") || mw;
+      // On a phone a section draws its view twice, the whole window above its close-up. Both are one scene: every step lands on both together.
+      const pair = mw.closest(".shots");
+      const roots = [mw, ...(pair ? pair.querySelectorAll("[data-mirror] .mw[data-steps]") : [])];
+      const cursorOf = (root) => root.querySelector(".mw-cursor");
+      const cursors = roots.map(cursorOf).filter(Boolean);
+      const box = pair || mw.closest(".shot") || mw;
       // A view in the folder's pinned top stays on screen while the front slides over it, so only the uncovered part counts.
       const under = !!mw.closest(".mn-head");
       const area = (under && mw.closest(".mn-paper")) || box;
       // state: idle (at the start), playing, or done (resting on the finished state)
       const st = { token: 0, vis: false, state: "idle", wait: 0, ticks: [] };
-      const home = () => { if (!cur) return; const [x, y] = (mw.dataset.cursor || "50,90").split(",").map(Number); cur.style.left = x + "%"; cur.style.top = y + "%"; };
+      const home = (root) => { const cur = cursorOf(root); if (!cur) return; const [x, y] = (root.dataset.cursor || "50,90").split(",").map(Number); cur.style.left = x + "%"; cur.style.top = y + "%"; };
       function reset() {
         st.token++; st.state = "idle"; clearTimeout(st.wait);
-        mw.classList.add("no-anim");
-        for (let i = 1; i <= n; i++) mw.classList.remove("s" + i);
-        mw.querySelectorAll(".is-press").forEach((el) => el.classList.remove("is-press"));
-        mw.querySelectorAll("[data-type]").forEach((t) => { t.textContent = ""; });
         st.ticks.forEach(clearInterval); st.ticks = [];
-        mw.querySelectorAll("[data-tick]").forEach((t) => { t.textContent = t.dataset.tick0 ?? (t.dataset.tick0 = t.textContent === "0s" ? "0s" : ""); });
-        mw.querySelectorAll("[data-stream]").forEach((el) => { el.classList.add("streaming"); el.querySelectorAll(".on").forEach((x) => x.classList.remove("on")); });
-        if (cur) { cur.classList.remove("on", "down"); home(); }
-        void mw.offsetWidth;
-        mw.classList.remove("no-anim");
+        for (const root of roots) {
+          root.classList.add("no-anim");
+          for (let i = 1; i <= n; i++) root.classList.remove("s" + i);
+          root.querySelectorAll(".is-press").forEach((el) => el.classList.remove("is-press"));
+          root.querySelectorAll("[data-type]").forEach((t) => { t.textContent = ""; });
+          root.querySelectorAll("[data-tick]").forEach((t) => { t.textContent = t.dataset.tick0 ?? (t.dataset.tick0 = t.textContent === "0s" ? "0s" : ""); });
+          root.querySelectorAll("[data-stream]").forEach((el) => { el.classList.add("streaming"); el.querySelectorAll(".on").forEach((x) => x.classList.remove("on")); });
+          const cur = cursorOf(root);
+          if (cur) { cur.classList.remove("on", "down"); home(root); }
+          void root.offsetWidth;
+          root.classList.remove("no-anim");
+        }
       }
-      function aim(el) {
-        const r = el.getBoundingClientRect(), m = mw.getBoundingClientRect();
+      function aim(root, el) {
+        const cur = cursorOf(root);
+        if (!cur) return;
+        const r = el.getBoundingClientRect(), m = root.getBoundingClientRect();
         if (!r.width || !m.width) return;
         cur.style.left = ((r.left + Math.min(r.width / 2, 60) - m.left) / m.width * 100) + "%";
         cur.style.top = ((r.top + r.height / 2 - m.top) / m.height * 100) + "%";
@@ -176,54 +185,57 @@ const SCRIPT = `
       }
       const presses = [...mw.querySelectorAll("[data-press]")].map((el) => +el.dataset.press);
       const lastPress = presses.length ? Math.max(...presses) : 0;
+      const find = (selector) => roots.map((root) => root.querySelector(selector)).filter(Boolean);
       async function play(t) {
         st.state = "playing";
         const live = () => t === st.token;
         for (let k = 1; k <= n; k++) {
-          const target = mw.querySelector('[data-press="' + k + '"]');
-          if (target && cur) aim(target);
+          const targets = roots.map((root) => root.querySelector('[data-press="' + k + '"]'));
+          roots.forEach((root, i) => { if (targets[i]) aim(root, targets[i]); });
           await sleep(delays[k - 1]); if (!live()) return;
-          if (target) {
-            target.classList.add("is-press"); if (cur) cur.classList.add("down");
+          if (targets[0]) {
+            targets.forEach((target) => { if (target) target.classList.add("is-press"); });
+            cursors.forEach((cur) => cur.classList.add("down"));
             await sleep(150); if (!live()) return;
-            target.classList.remove("is-press"); if (cur) cur.classList.remove("down");
+            targets.forEach((target) => { if (target) target.classList.remove("is-press"); });
+            cursors.forEach((cur) => cur.classList.remove("down"));
             // After its last click the pointer gets out of the way.
-            if (cur && k === lastPress) setTimeout(() => { if (live()) cur.classList.remove("on"); }, 650);
+            if (k === lastPress) setTimeout(() => { if (live()) cursors.forEach((cur) => cur.classList.remove("on")); }, 650);
           }
-          mw.classList.add("s" + k);
+          roots.forEach((root) => root.classList.add("s" + k));
           // Elapsed seconds, counted from this step
-          mw.querySelectorAll('[data-tick="' + k + '"]').forEach((el) => { let n = 0; st.ticks.push(setInterval(() => { el.textContent = ++n + "s"; }, 1000)); });
+          find('[data-tick="' + k + '"]').forEach((el) => { let count = 0; st.ticks.push(setInterval(() => { el.textContent = ++count + "s"; }, 1000)); });
           // A reply streams in word groups, as the app batches text per frame
-          const flow = mw.querySelector('[data-stream="' + k + '"]');
-          if (flow) {
-            const ws = [...flow.querySelectorAll(".w")];
-            for (let i = 0; i < ws.length;) {
+          const flows = find('[data-stream="' + k + '"]');
+          if (flows.length) {
+            const words = flows.map((flow) => [...flow.querySelectorAll(".w")]);
+            for (let i = 0; i < words[0].length;) {
               const g = 1 + ((i * 7) % 4);
-              for (let j = 0; j < g && i < ws.length; j++, i++) for (let p = ws[i]; p && p !== flow; p = p.parentElement) p.classList.add("on");
+              for (let j = 0; j < g && i < words[0].length; j++, i++) words.forEach((ws, f) => { for (let p = ws[i]; p && p !== flows[f]; p = p.parentElement) p.classList.add("on"); });
               await sleep(70 + ((i * 13) % 45)); if (!live()) return;
             }
-            flow.classList.remove("streaming");
+            flows.forEach((flow) => flow.classList.remove("streaming"));
           }
-          const typer = mw.querySelector('[data-type="' + k + '"]');
-          if (typer) {
-            if (cur) cur.classList.remove("on");
+          const typers = find('[data-type="' + k + '"]');
+          if (typers.length) {
+            cursors.forEach((cur) => cur.classList.remove("on"));
             await sleep(260); if (!live()) return;
-            const text = typer.dataset.text || "";
+            const text = typers[0].dataset.text || "";
             const per = Math.min(34, 1700 / Math.max(1, text.length));
-            for (let i = 0; i < text.length; i++) { typer.textContent = text.slice(0, i + 1); await sleep(per + ((i * 37) % 9)); if (!live()) return; }
+            for (let i = 0; i < text.length; i++) { typers.forEach((typer) => { typer.textContent = text.slice(0, i + 1); }); await sleep(per + ((i * 37) % 9)); if (!live()) return; }
           }
         }
-        if (cur) { await sleep(900); if (!live()) return; cur.classList.remove("on"); }
+        if (cursors.length) { await sleep(900); if (!live()) return; cursors.forEach((cur) => cur.classList.remove("on")); }
         st.state = "done";
         await sleep(HOLD); if (!live()) return;
         if (st.vis) replay();
       }
       async function replay() {
         const t = ++st.token;
-        mw.classList.add("is-cut");
+        roots.forEach((root) => root.classList.add("is-cut"));
         await sleep(240); if (t !== st.token) return;
         reset();
-        mw.classList.remove("is-cut");
+        roots.forEach((root) => root.classList.remove("is-cut"));
         st.wait = setTimeout(() => { if (st.vis && st.state === "idle") start(); }, 520);
       }
       function start() { if (st.state === "idle") play(++st.token); }
@@ -231,7 +243,7 @@ const SCRIPT = `
       const fr = { io: 0, hook: 0 };
       function seen(f) {
         if (f >= 0.4 && !st.vis) { st.vis = true; if (st.state === "idle") start(); else if (st.state === "done") replay(); }
-        else if (f < 0.06 && st.vis) { st.vis = false; mw.classList.remove("is-cut"); reset(); }
+        else if (f < 0.06 && st.vis) { st.vis = false; roots.forEach((root) => root.classList.remove("is-cut")); reset(); }
       }
       reset();
       const feel = (src, f) => { fr[src] = f; seen(Math.max(fr.io, fr.hook)); };
