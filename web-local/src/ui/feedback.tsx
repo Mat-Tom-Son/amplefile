@@ -10,6 +10,8 @@ export interface ConfirmDialogOptions {
   body?: string;
   confirmLabel: string;
   tone?: ConfirmTone;
+  /** Aborting withdraws the question: the dialog closes and the answer is no. For a question that stops being true while it is open. */
+  signal?: AbortSignal;
 }
 
 export interface ConfirmDialogRequest extends ConfirmDialogOptions {
@@ -38,7 +40,9 @@ export interface ToastEntry extends ToastOptions {
 
 let confirmDialogDispatch: ((request: ConfirmDialogRequest) => void) | null = null;
 let confirmDialogRequestId = 0;
+let confirmDialogWithdraw: ((id: number) => void) | null = null;
 let toastDispatch: ((toast: ToastEntry) => void) | null = null;
+let toastDismiss: ((id: number) => void) | null = null;
 let toastId = 0;
 
 export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> {
@@ -50,20 +54,24 @@ export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> 
       resolve,
       returnFocusTo,
     };
-    if (!confirmDialogDispatch) {
+    if (!confirmDialogDispatch || options.signal?.aborted) {
       resolve(false);
       return;
     }
+    options.signal?.addEventListener("abort", () => confirmDialogWithdraw?.(request.id), { once: true });
     confirmDialogDispatch(request);
   });
 }
 
-export function showToast(options: ToastOptions): void {
+/** Shows a notice. The function it returns takes the notice down early, when what it said is no longer true. */
+export function showToast(options: ToastOptions): () => void {
+  const id = ++toastId;
   toastDispatch?.({
     ...options,
-    id: ++toastId,
+    id,
     tone: options.tone ?? "info",
   });
+  return () => toastDismiss?.(id);
 }
 
 export function ConfirmDialogHost() {
@@ -72,8 +80,13 @@ export function ConfirmDialogHost() {
 
   useEffect(() => {
     confirmDialogDispatch = (request) => setQueue((current) => [...current, request]);
+    confirmDialogWithdraw = (id) => setQueue((current) => {
+      current.find((item) => item.id === id)?.resolve(false);
+      return current.filter((item) => item.id !== id);
+    });
     return () => {
       confirmDialogDispatch = null;
+      confirmDialogWithdraw = null;
     };
   }, []);
 
@@ -170,6 +183,10 @@ export function ToastHost() {
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
+  useEffect(() => {
+    toastDismiss = dismissToast;
+    return () => { toastDismiss = null; };
+  }, [dismissToast]);
 
   return (
     <div className="toast-stack" data-above-modals="" aria-live="polite" aria-atomic="false">

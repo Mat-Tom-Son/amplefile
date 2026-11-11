@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-tab-menu", request),
       popupHeaderMenu: (request: {
         actions: {
-          newChat: boolean; customize: boolean; setUp: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
+          newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
           putToWork?: boolean; removeFromSidebar?: boolean; createConnectedFolder?: boolean; useExistingFolder?: boolean; remove?: boolean;
         };
         point: { x: number; y: number };

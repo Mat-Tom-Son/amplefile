@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { chmod, copyFile, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -13,8 +12,7 @@ import { prepareLinuxDevelopmentCli } from "../desktop/src/linux-development-cli
 
 const run = promisify(execFile);
 const cli = resolve("out/included-tools/linux-cli/amplefile-cli");
-const chrome = resolve("out/included-tools/chrome-native-host/amplefile-chrome-host");
-const native = process.platform === "linux" && existsSync(cli) && existsSync(chrome);
+const native = process.platform === "linux" && existsSync(cli);
 
 test("Linux development CLI fails at setup when the native transport has not been prepared", async t => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-dev-cli-missing-"));
@@ -109,31 +107,4 @@ fs.writeFileSync(path.join(root,'responses',id+'.json'),JSON.stringify(response)
   assert.equal(reply.payload.messageFile, largeMessage, "current payload and response bounds permit normal large messages");
   await writeFile(message, "x".repeat(AMPLEFILE_CLI_ACT_MAX_PAYLOAD_BYTES + 1));
   await assert.rejects(run(cli, ["chat", "send", "--message-file", message], { env }), (error: any) => error.code === 2);
-});
-
-test("Linux Chrome host validates origin, private descriptor, framing, and loopback forwarding", { skip: !native }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-linux-chrome-")); t.after(() => rm(root, { recursive: true, force: true }));
-  const binary = join(root, "host"); await copyFile(chrome, binary); await chmod(binary, 0o755);
-  const distribution = JSON.parse(await readFile("src/shared/chrome-distribution.json", "utf8"));
-  const origin = `chrome-extension://${distribution.storeId}/`; const token = "a".repeat(64);
-  const server = createServer(async (req, res) => {
-    assert.equal(req.headers.authorization, `Bearer ${token}`);
-    const chunks = []; for await (const chunk of req) chunks.push(chunk);
-    const envelope = JSON.parse(Buffer.concat(chunks).toString()); assert.equal(envelope.extensionOrigin, origin); assert.equal(envelope.request.action, "status");
-    res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ version: 1, state: "status", status: { state: "connected" } }));
-  }); await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve)); t.after(() => { server.closeAllConnections(); server.close(); });
-  const port = (server.address() as { port: number }).port;
-  const descriptor = join(root, "launch.json");
-  await writeFile(descriptor, JSON.stringify({ version: 1, launchId: "12345678-1234-4123-8123-123456789abc", bootstrapToken: token, endpoint: `http://127.0.0.1:${port}/bootstrap` }), { mode: 0o600 });
-  async function request(caller: string) {
-    const child = spawn(binary, [caller], { stdio: ["pipe", "pipe", "pipe"] });
-    const bytes = Buffer.from(JSON.stringify({ version: 1, action: "status" })); const header = Buffer.alloc(4); header.writeUInt32LE(bytes.length);
-    child.stdin.on("error", () => {}); child.stdin.end(Buffer.concat([header, bytes]));
-    const chunks: Buffer[] = []; child.stdout.on("data", chunk => chunks.push(chunk));
-    await new Promise<void>((resolve, reject) => { child.on("error", reject); child.on("exit", code => code === 0 ? resolve() : reject(new Error(`exit ${code}`))); });
-    const reply = Buffer.concat(chunks); assert.equal(reply.readUInt32LE(), reply.length - 4); return JSON.parse(reply.subarray(4).toString());
-  }
-  assert.equal((await request("chrome-extension://invalid/")).status.state, "connection_error");
-  assert.equal((await request(origin)).status.state, "connected");
-  await chmod(descriptor, 0o644); assert.equal((await request(origin)).status.state, "app_not_running");
 });

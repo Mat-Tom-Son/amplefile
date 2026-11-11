@@ -7,7 +7,7 @@ Connected Folders the **AmpleFile Agent**, and the model/provider settings page
 
 AmpleFile uses Pi's native capability system for full-trust Skills and Extensions. This guide explains how Skills, Extensions, packages, scopes, and authorization fit the product without confusing them with ordinary files.
 
-**Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile Agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
+**Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the four included tools — Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, and Service Connections says No Connections or Configured) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile Agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
 
 The dialog has one header row that stays in place while its body scrolls: the
 title, the Installed/Discover switch, **+ Add Custom** (which opens the
@@ -168,13 +168,13 @@ setup surface, not an ordinary Chat question. Terminal-only component
 factories remain unsupported.
 
 [Extensions and computer work](extension-foundation.md) defines the included
-Computer Control, Chrome, Web, Documents and MCP service connections. Their
+Computer Control, Web, Documents and MCP service connections. Their
 pinned versions and reviewed compatibility patches live in
 [the integration manifest](../patches/included-tools/manifest.json). “Included
 with AmpleFile” describes maintenance, not a different Extension runtime.
-AmpleFile also ships one Skill of its own outside the five tools:
+AmpleFile also ships one Skill of its own outside the four tools:
 `set-up-connected-folder` (`resources/included-tools/skills/`), which **Set Up for
-Me** and **Just the Look** use (see [the product model](product-model.md)). It
+Me** uses (see [the product model](product-model.md#set-up-for-me)). It
 is listed under **Everywhere** as Included with AmpleFile, and it can be turned
 off through the same Pi path filter as any other resource, but never removed.
 The Documents tool's own Skill is likewise turned off rather than removed.
@@ -182,15 +182,12 @@ The Documents tool's own Skill is likewise turned off rather than removed.
 The Installed view's **Included with AmpleFile** strip shows each included
 tool's observed readiness as one concise status and offers **Set Up** only when a
 person can act; enabled state and Pi load diagnostics stay in the tool's
-details. Setup belongs to that tool: macOS permissions, the Chrome
-companion, optional Brave search credentials, and native MCP server definitions
-and authentication. Computer Control setup is one **Allow Computer Control**
-button with a two-item permission checklist; Chrome setup is two steps, add the
-AmpleFile extension from the Chrome Web Store and choose Connect in it, in either
-order. Both also appear in first run's optional **Let your Worker
-use your Mac** step, and their setup works with or without a Connected Folder; see
-[Extensions and computer work](extension-foundation.md) and
-[Chrome extension distribution](chrome-extension-distribution.md). A saved credential alone does not establish readiness.
+details. Setup belongs to that tool: macOS permissions, optional Brave search
+credentials, and native MCP server definitions and authentication. Computer
+Control setup is one **Allow Computer Control** button with a two-item
+permission checklist. It also appears in first run's optional **Let your Worker
+use your Mac** step, and its setup works with or without a Connected Folder; see
+[Extensions and computer work](extension-foundation.md). A saved credential alone does not establish readiness.
 Visible setup surfaces refresh cold host reads automatically. Successful tool use
 supplies native readiness evidence without repeatedly pressing Check. Computer
 permissions retain a visible timestamp and become neutral historical evidence

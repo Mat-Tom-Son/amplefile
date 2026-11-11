@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, nativeImage } from "electron";
+import { app, BrowserWindow, nativeImage, webContents } from "electron";
 
 import { BrowserStatusBubble } from "../dist/desktop/desktop/src/browser-status-bubble.js";
 import { BuiltInBrowser } from "../dist/desktop/desktop/src/built-in-browser.js";
@@ -29,6 +29,10 @@ const pages = {
 <div style="height: 2400px"></div><p id="capture-footer" style="height:80px;background:rgb(180,30,75)">Bottom of the page</p>
 <script>console.log("smoke console"); setTimeout(() => { const late = document.createElement("p"); late.textContent = "Arrived late"; document.body.append(late); }, 600);</script>`,
   "/two": "<!doctype html><title>Two</title><h1>Second page</h1>",
+  // Asks to be confirmed before it is left, as a page with unsaved changes does; Chromium honours that only after a press in the page.
+  "/leave": `<!doctype html><title>Leave</title><button id="press" style="position:fixed;left:10px;top:10px;width:160px;height:60px" onclick="window.pressed = true">Press</button>
+<a id="away" href="/two" style="position:fixed;left:10px;top:100px">Go away</a>
+<script>addEventListener("beforeunload", (event) => { event.preventDefault(); event.returnValue = ""; });</script>`,
   "/interactions": `<!doctype html><title>Interactions</title>
 <button id="hover" onmouseenter="document.getElementById('menu').hidden = false">Hover menu</button><p id="menu" hidden>Revealed by hover</p>
 <button id="modified" onclick="window.modified = [event.shiftKey, event.isTrusted]" oncontextmenu="event.preventDefault(); window.context = [event.button, event.isTrusted]">Modified click</button>
@@ -70,6 +74,8 @@ const server = createServer((request, response) => {
     setTimeout(() => response.end(), 600);
     return;
   }
+  // A site that never answers, for a load the person stops.
+  if (request.url === "/never") return;
   if (request.url === "/file.txt") {
     response.writeHead(200, { "content-type": "text/plain", "content-disposition": "attachment; filename=\"smoke file.txt\"" });
     response.end("downloaded bytes");
@@ -110,6 +116,8 @@ async function run() {
     historyPath: join(downloads, "history.json"),
     userAgentProduct: "AmpleFile/9.9.9",
     partition: `browser-smoke-${randomUUID()}`,
+    // A Worker's script gives up waiting on an unanswered question this soon here.
+    questionWaitMs: 1_200,
   });
   const host = browser.toolHost;
   try {
@@ -375,9 +383,133 @@ async function run() {
     assert.equal(window.contentView.children.length, 2, "it stays in the window, ready for the next link");
     bubble.close();
     assert.equal(window.contentView.children.length, 1);
+    // A key the window acts on, pressed in a page: the window is told which page, and is given the keyboard,
+    // so what is typed next goes to its address or find field and never into the page. This window is off screen
+    // and cannot hold the keyboard, so what shows here is the host asking the window to take it.
+    const shownPage = window.contentView.children[0].webContents;
+    const forwarded = (key) => events.filter((event) => event.channel === "amplefile:browser:shortcut" && event.payload.key.toLowerCase() === key);
+    const command = process.platform === "darwin" ? "meta" : "control";
+    let windowAskedToFocus = 0;
+    const focusWindow = window.webContents.focus.bind(window.webContents);
+    window.webContents.focus = () => { windowAskedToFocus += 1; focusWindow(); };
+    // The keyboard is handed back only inside the window the person is working in. This one can never be that, so
+    // the test says which window is, as the system would.
+    const focusedWindow = BrowserWindow.getFocusedWindow;
+    BrowserWindow.getFocusedWindow = () => window;
+    for (const [index, key] of ["l", "f", "t", "w"].entries()) {
+      shownPage.sendInputEvent({ type: "keyDown", keyCode: key, modifiers: [command] });
+      await until(() => forwarded(key).length === 1, `the window hears Command-${key.toUpperCase()}`);
+      assert.equal(forwarded(key)[0].payload.pageId, restoredId, "with the page it was pressed in");
+      // The window hears the key first and is given the keyboard a moment later, once it has moved its own focus.
+      await until(() => windowAskedToFocus === index + 1, `the window is given the keyboard with Command-${key.toUpperCase()}`);
+    }
+    // A key that is the page's own is not the window's business.
+    shownPage.sendInputEvent({ type: "keyDown", keyCode: "a", modifiers: [command] });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(forwarded("a").length, 0);
+    assert.equal(windowAskedToFocus, 4);
+    // With another app in front, AmpleFile's window is not the one the person is working in: it hears the key,
+    // and is not brought forward to take the keyboard.
+    BrowserWindow.getFocusedWindow = () => null;
+    shownPage.sendInputEvent({ type: "keyDown", keyCode: "l", modifiers: [command] });
+    await until(() => forwarded("l").length === 2, "the window hears the key");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(windowAskedToFocus, 4, "a window behind another app is not given the keyboard");
+    BrowserWindow.getFocusedWindow = focusedWindow;
+    window.webContents.focus = focusWindow;
     browser.detachWindow(window);
     assert.equal(window.contentView.children.length, 0, "a closing window gives its pages back");
     assert.equal((await host.read({ tab: restoredId, mode: "text" })).text.includes("Second page"), true, "the page outlives its window");
+
+    // A page that asks to be confirmed before it is left (a form half filled in). The person is asked in the window
+    // and nothing leaves until they say; a Worker's action runs when called and its result says the page had asked.
+    const pageState = (pageId) => browser.states().find((state) => state.pageId === pageId);
+    const asksToStay = await host.open({ url: `${base}/leave` });
+    const leaveId = asksToStay.tab;
+    // Chromium lets a page ask only once it has been pressed in; a Worker's script counts as a press.
+    const pressIn = (tab) => until(async () => {
+      await host.click({ tab, x: 60, y: 40 });
+      return (await host.evaluate({ tab, script: "String(navigator.userActivation.hasBeenActive && window.pressed === true)" })).result === "true";
+    }, "the page is pressed in");
+    await pressIn(leaveId);
+    const title = async () => (await host.evaluate({ tab: leaveId, script: "document.title" })).result;
+    // The person types another address.
+    browser.navigate(leaveId, `${base}/two`);
+    await until(() => pageState(leaveId)?.leaveQuestion, "the window is to ask before the page is left");
+    assert.equal(await title(), "Leave", "nothing leaves until the person says");
+    browser.command(leaveId, { type: "stay-on-page" });
+    assert.equal(pageState(leaveId).leaveQuestion, null);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(await title(), "Leave", "Stay keeps the page");
+    assert.equal((await host.evaluate({ tab: leaveId, script: "String(window.pressed)" })).result, "true", "and what was done in it");
+    // Reload asks too; Leave does what was asked.
+    browser.command(leaveId, { type: "reload" });
+    await until(() => pageState(leaveId)?.leaveQuestion, "Reload asks");
+    browser.command(leaveId, { type: "leave-page" });
+    await until(async () => (await host.evaluate({ tab: leaveId, script: "String(window.pressed)" })).result === "undefined", "Leave reloads the page");
+    assert.equal(pageState(leaveId).leaveQuestion, null);
+    // Close Tab: the page gets to ask, and the tab the window dropped is offered back with the question.
+    await pressIn(leaveId);
+    const offeredBefore = events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === leaveId).length;
+    browser.close(leaveId);
+    await until(() => pageState(leaveId)?.leaveQuestion, "closing asks");
+    assert.equal(events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === leaveId).length, offeredBefore + 1, "the tab comes back to the window with the question");
+    browser.command(leaveId, { type: "stay-on-page" });
+    await new Promise((resolve) => setTimeout(resolve, 1_800));
+    assert.equal(await title(), "Leave", "Stay keeps the tab open, past the time an unanswering page is given");
+    // A link pressed inside the page leaves it without a question: the desktop cannot ask at once, or do it again later.
+    const shownLeave = webContents.getAllWebContents().find((contents) => contents.getURL() === `${base}/leave`);
+    shownLeave.sendInputEvent({ type: "mouseDown", x: 30, y: 108, button: "left", clickCount: 1 });
+    shownLeave.sendInputEvent({ type: "mouseUp", x: 30, y: 108, button: "left", clickCount: 1 });
+    await until(() => pageState(leaveId)?.title === "Two", "the link is followed");
+    assert.equal(pageState(leaveId).leaveQuestion, null);
+    // The person closes it for good.
+    await host.navigate({ tab: leaveId, to: `${base}/leave` });
+    await pressIn(leaveId);
+    browser.close(leaveId);
+    await until(() => pageState(leaveId)?.leaveQuestion, "closing asks again");
+    browser.command(leaveId, { type: "leave-page" });
+    await until(() => !pageState(leaveId), "Leave closes the tab");
+
+    // A Worker's navigation leaves such a page, and says so once.
+    const workerLeaves = await host.open({ url: `${base}/leave` });
+    await pressIn(workerLeaves.tab);
+    const moved = await host.navigate({ tab: workerLeaves.tab, to: `${base}/two` });
+    assert.equal(moved.title, "Two", "the action runs as called");
+    assert.equal(moved.leftUnconfirmed, true, "and its result says the page had asked to be confirmed");
+    assert.equal((await host.read({ tab: workerLeaves.tab, mode: "text" })).tab.leftUnconfirmed, undefined, "said once");
+    // A Worker's click on a link does the same, and never raises the person's question.
+    await host.navigate({ tab: workerLeaves.tab, to: `${base}/leave` });
+    await pressIn(workerLeaves.tab);
+    const followed = await host.click({ tab: workerLeaves.tab, x: 30, y: 108 });
+    assert.equal(followed.navigated, true);
+    assert.equal(followed.tab.leftUnconfirmed, true);
+    assert.equal(pageState(workerLeaves.tab).leaveQuestion, null, "the person is not asked about a Worker's action");
+    browser.close(workerLeaves.tab);
+    // A Worker's own Close Tab on such a page closes it, and says the page had asked.
+    const workerCloses = await host.open({ url: `${base}/leave`, owner: "smoke/chat-close" });
+    await pressIn(workerCloses.tab);
+    assert.deepEqual(await host.close({ tab: workerCloses.tab, owner: "smoke/chat-close" }), { leftUnconfirmed: true });
+    assert.equal(pageState(workerCloses.tab), undefined, "the tab is closed");
+    const plainClose = await host.open({ url: `${base}/two`, owner: "smoke/chat-close" });
+    assert.deepEqual(await host.close({ tab: plainClose.tab, owner: "smoke/chat-close" }), {}, "a page that did not ask closes without a note");
+
+
+    // A load the person stops leaves the tab as it was: after a page that did not load, its message, not a blank page.
+    const failing = browser.navigate("stop01", "http://127.0.0.1:1/");
+    assert.equal(failing.pageId, "stop01");
+    await until(() => pageState("stop01")?.error, "the page says why it did not load");
+    const failure = pageState("stop01").error;
+    browser.navigate("stop01", `${base}/never`);
+    await until(() => pageState("stop01")?.loading, "another address starts loading");
+    assert.deepEqual(pageState("stop01").error, failure, "the message stays while the other address loads");
+    browser.command("stop01", { type: "stop" });
+    await until(() => !pageState("stop01").loading, "the load stops");
+    assert.deepEqual(pageState("stop01").error, failure, "and after it is stopped");
+    browser.navigate("stop01", `${base}/two`);
+    await until(() => pageState("stop01").title === "Two", "a page that arrives replaces it");
+    assert.equal(pageState("stop01").error, null);
+    browser.close("stop01");
 
     // A site asks; the question waits in its tab until the person answers, and the answer is remembered for that site.
     const asking = browser.navigate("perm01", `${base}/two`);
@@ -403,6 +535,16 @@ async function run() {
     await until(() => browser.states().find((state) => state.pageId === "perm01")?.permissionRequest, "the site asks again");
     browser.respondPermission("perm01", browser.states().find((state) => state.pageId === "perm01").permissionRequest.requestId, "block");
     assert.equal((await blocked).result, "denied");
+    // A Worker's script that waits on a question is not left waiting: it is told the person has to answer,
+    // and the question stays for the person.
+    await assert.rejects(
+      host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" }),
+      /The script has not finished: the page is waiting for the person to let it use your MIDI devices\. Only the person can answer/,
+    );
+    const waitingQuestion = browser.states().find((state) => state.pageId === "perm01").permissionRequest;
+    assert.deepEqual(waitingQuestion?.kinds, ["midi"], "the question is still the person's to answer");
+    await host.navigate({ tab: "perm01", to: `${base}/two` });
+    assert.equal(browser.states().find((state) => state.pageId === "perm01").permissionRequest, null);
     // Leaving the page drops a question nobody answered.
     // The script is still waiting when the page goes: the dropped question denies it, or the call ends with the page.
     const unanswered = host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" })
@@ -495,8 +637,13 @@ async function run() {
       assert.equal(await popup.webContents.executeJavaScript(openTwo), "false:false", "forgetting the popup's allowance blocks it again");
       assert.equal(await tabCount(), afterAllowed);
       browser.command(popupTab.tab, { type: "dismiss-blocked-popup" });
+      // A pop-up window whose page asks to be confirmed has nowhere to ask, and can still be closed.
+      await popup.webContents.loadURL(`${popupOrigin}/leave`);
+      await until(async () => await popup.webContents.executeJavaScript("document.getElementById('press').click(); navigator.userActivation.hasBeenActive && window.pressed === true", true), "the pop-up is pressed in");
+      popup.close();
+      await until(() => popup.isDestroyed(), "its close button closes it");
     } finally {
-      popup.destroy();
+      if (!popup.isDestroyed()) popup.destroy();
     }
 
     // Mute and zoom show on the tab.

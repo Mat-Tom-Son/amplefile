@@ -1,7 +1,7 @@
 # Linux builds
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
-packages. [Linux test preview 0.1.6](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.6)
+packages. [Linux test preview 0.1.7](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7)
 uses a separate prerelease tag in the source repository. The public Mac release
 and updater remain separate; Linux previews have no automatic update feed.
 The build command itself never publishes.
@@ -63,7 +63,7 @@ Standard Folders read `$XDG_CONFIG_HOME/user-dirs.dirs`, falling back to
 `~/.config/user-dirs.dirs` and conventional directory names when no setting
 exists. Desktop, Documents, Downloads and Pictures follow their configured
 locations. A directory pointed at the home folder is disabled and omitted;
-the home folder has its own row. Only existing directories are listed, and
+the home folder has its own row. The path bar names the root **File System**. Only existing directories are listed, and
 iCloud Drive is Mac-only. The parser reads data without evaluating shell code.
 See the [XDG user directories contract](https://wiki.freedesktop.org/www/Software/xdg-user-dirs/).
 
@@ -146,4 +146,6 @@ remain intact; shared-screen support extends the native Extension entrypoint.
 Provider sign-in waits for the browser callback automatically. **Paste Link**
 is an optional inline fallback in first-run setup and AI Models; sign-in can also
 be cancelled there. Required provider codes and device-code instructions still appear.
-Chrome is omitted from Linux first-run setup.
+The built-in Browser pane replaces the removed Chrome extension integration.
+Linux packages contain no Chrome bootstrap; startup removes only a provably
+owned obsolete registration and helper from the normal app profile.

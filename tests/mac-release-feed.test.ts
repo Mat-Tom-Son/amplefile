@@ -415,6 +415,11 @@ test("download links and policy text name the feeds of the checked-in stage", ()
   assert.ok(page.includes(latest(feed.downloads.slug)), "the built site was rebuilt for this stage (npm run site:build)");
   assert.ok(page.includes(`https://api.github.com/repos/${feed.downloads.slug}/releases/latest`));
   assert.ok(!page.includes(latest(other)) && !page.includes(`api.github.com/repos/${other}/releases`));
+  // Linux previews are prereleases in the source repository: the page lists releases and takes only a prerelease.
+  assert.ok(page.includes(`"https://api.github.com/repos/${sourceSlug}/releases?per_page=30"`), "the page asks the source repository for its Linux previews");
+  assert.match(page, /x\.prerelease && !x\.draft && \/\^linux-\/\.test\(x\.tag_name\)/, "a Linux link never opens a release that is not a prerelease");
+  assert.match(page, /data-dl="linux"[^>]*aria-label="Linux Preview"/);
+  assert.match(page, /href="https:\/\/github\.com\/[^"]+\/releases\/latest"[^>]*data-dl="mac"/, "Mac links still open the latest release");
 
   // What an installed copy contacts, and where public releases are published.
   assert.ok(read("PRIVACY.md").includes(`\`${feed.packaged.slug}\` feed`), "PRIVACY.md names the feed installed copies check");

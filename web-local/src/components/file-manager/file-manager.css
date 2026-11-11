@@ -1869,36 +1869,6 @@
   gap: 6px;
 }
 
-/* Organize, the design's wide toolbar button. */
-.fm-tool.fm-tool-wide {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: auto;
-  height: 32px;
-  padding: 0 13px 0 11px;
-  border-radius: 999px;
-  background: var(--fm-cap);
-  color: var(--fm-text);
-  font-size: calc(13px * var(--fm-scale));
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.fm-tool.fm-tool-wide:hover {
-  background: var(--fm-cap2);
-}
-
-.fm-tool.fm-tool-wide svg {
-  width: 16px;
-  height: 16px;
-}
-
-@container (max-width: 620px) {
-  .fm-tool-wide-t { display: none; }
-  .fm-tool.fm-tool-wide { padding: 0 9px; }
-}
-
 /* Search names and contents: the scope bar and the design's search columns. */
 .fm-scope {
   flex: none;
@@ -2247,10 +2217,11 @@
   flex: 0 1 auto;
 }
 
-/* Notices rise from the bottom center of the window, clear of the panel's message box. */
+/* Notices rise from the bottom center of the window, clear of the panel's message box
+   and above the Browser pane's page, which the desktop draws over everything here. */
 :root[data-theme] .app-shell.layout-file-manager .toast-stack {
   right: auto;
-  bottom: 40px;
+  bottom: var(--fm-notice-bottom, 40px);
   /* Centered over the folder list, between the sidebar and the panel. */
   left: calc(var(--fm-notice-left, 228px) + (100vw - var(--fm-notice-left, 228px) - var(--fm-notice-right, 320px)) / 2);
   justify-items: center;
@@ -2630,6 +2601,14 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* Set Up for Me, offered once after a folder is connected: the receipt's card with one line and two answers. */
+.fm-setup-offer-s {
+  margin: 4px 0 0;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+  line-height: 1.4;
 }
 
 /*

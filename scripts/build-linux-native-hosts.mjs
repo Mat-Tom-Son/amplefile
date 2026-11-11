@@ -13,31 +13,19 @@ if ((process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM || process.platform) === "li
     cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: target },
   });
   const cli = join(root, "out/included-tools/linux-cli");
-  const chrome = join(root, "out/included-tools/chrome-native-host");
-  await mkdir(cli, { recursive: true }); await mkdir(chrome, { recursive: true });
+  await mkdir(cli, { recursive: true });
   await writeCargoNotices(join(root, "desktop/native/linux/Cargo.toml"), join(cli, "THIRD-PARTY-LICENSES.txt"));
-  await copyFile(join(cli, "THIRD-PARTY-LICENSES.txt"), join(chrome, "THIRD-PARTY-LICENSES.txt"));
-  for (const [name, directory] of [["amplefile-cli", cli], ["amplefile-chrome-host", chrome]]) {
-    await copyFile(join(target, "release", name), join(directory, name));
-    await chmod(join(directory, name), 0o755);
-  }
-  const distribution = JSON.parse(await readFile(join(root, "src/shared/chrome-distribution.json"), "utf8"));
-  const sources = await Promise.all(["Cargo.toml", "Cargo.lock", "src/lib.rs", "src/cli.rs", "src/chrome.rs"].map(async path => ({ path, sha256: createHash("sha256").update(await readFile(join(root, "desktop/native/linux", path))).digest("hex") })));
+  await copyFile(join(target, "release/amplefile-cli"), join(cli, "amplefile-cli"));
+  await chmod(join(cli, "amplefile-cli"), 0o755);
+  const sources = await Promise.all(["Cargo.toml", "Cargo.lock", "src/lib.rs", "src/cli.rs"].map(async path => ({ path, sha256: createHash("sha256").update(await readFile(join(root, "desktop/native/linux", path))).digest("hex") })));
   const provenance = {
     target: "x86_64-unknown-linux-gnu", sources,
-    distributionSha256: createHash("sha256").update(JSON.stringify(distribution)).digest("hex"),
     compiler: execFileSync("rustc", ["--version"], { encoding: "utf8" }).trim(),
   };
   await writeFile(join(cli, "source.json"), `${JSON.stringify({
     ...provenance, schema: "amplefile.linux-cli-source.v1", binarySha256: createHash("sha256").update(await readFile(join(cli, "amplefile-cli"))).digest("hex"),
   }, null, 2)}\n`);
-  await writeFile(join(chrome, "source.json"), `${JSON.stringify({
-    ...provenance,
-    schema: "amplefile.chrome-native-host-source.v1", origin: `chrome-extension://${distribution.storeId}/`,
-    nativeHostName: distribution.nativeHostName, bootstrapVersion: distribution.bootstrapVersion,
-    binarySha256: createHash("sha256").update(await readFile(join(chrome, "amplefile-chrome-host"))).digest("hex"),
-  }, null, 2)}\n`);
-  console.log("Built Linux CLI and Chrome native hosts.");
+  console.log("Built the Linux CLI.");
   const waylandManifest = join(root, "desktop/native/linux-wayland/Cargo.toml");
   const waylandTarget = join(root, "out/linux-wayland-target");
   execFileSync("cargo", ["build", "--release", "--locked", "--manifest-path", waylandManifest], {

@@ -57,7 +57,7 @@ type AmpleFileDesktopFileMenuCommand = "open" | "open-with" | "reveal" | "copy-p
 
 type AmpleFileDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
 
-type AmpleFileDesktopHeaderMenuCommand = "new-chat" | "customize" | "set-up" | "look" | "reveal" | "manage" | "skills" | "settings"
+type AmpleFileDesktopHeaderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
   | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
 
 interface AmpleFileDesktopHeaderMenuRequest {
@@ -66,7 +66,7 @@ interface AmpleFileDesktopHeaderMenuRequest {
    * leaves out Manage; its sidebar uses the Standard Folder and + commands.
    */
   actions: {
-    newChat: boolean; customize: boolean; setUp: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
+    newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
     putToWork?: boolean; removeFromSidebar?: boolean; createConnectedFolder?: boolean; useExistingFolder?: boolean; remove?: boolean; removeDeletes?: boolean;
   };
   point: { x: number; y: number };
@@ -110,7 +110,7 @@ interface AmpleFileBrowserHistoryEntry {
 }
 
 type AmpleFileBrowserCommand =
-  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" }
+  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" | "leave-page" | "stay-on-page" }
   | { type: "mute"; muted: boolean }
   | { type: "find"; text: string; forward: boolean; newSearch: boolean }
   | { type: "forget-permission" | "open-privacy-settings"; kind: import("../../src/shared/browser").BrowserSitePermission };

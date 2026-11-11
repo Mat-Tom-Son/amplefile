@@ -91,8 +91,7 @@ module.exports = {
     icon: path.join(root, "desktop", "assets", "icon-512.png"),
     publish: null,
     extraFiles: [{ from: "out/included-tools/linux-cli", to: "bin" }],
-    extraResources: [{ from: "out/included-tools/chrome-native-host", to: "chrome-native-host" },
-      { from: "out/included-tools/computer-helper", to: "computer-helper", filter: ["linux-bridge", "source.json", "LICENSE.pi-computer-use", "THIRD-PARTY-LICENSES.txt"] },
+    extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper", filter: ["linux-bridge", "source.json", "LICENSE.pi-computer-use", "THIRD-PARTY-LICENSES.txt"] },
       { from: "out/included-tools/wayland-helper", to: "wayland-helper" }],
     desktop: { entry: { StartupWMClass: "amplefile-desktop", Keywords: "AI;Assistant;Folders;" } },
   },
@@ -110,9 +109,9 @@ module.exports = {
       "libei >= 1.2", "libxkbcommon", "gstreamer1", "gstreamer1-plugins-base", "pipewire-gstreamer", "xdg-desktop-portal"],
   },
   mac: {
-    extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }, { from: "out/included-tools/chrome-native-host", to: "chrome-native-host" }],
+    extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }],
     // The afterPack hook signs this Swift app without Electron JIT entitlements.
-    signIgnore: ["/computer-helper/", "/chrome-native-host/"],
+    signIgnore: ["/computer-helper/"],
     target: ["dmg", "zip"],
     icon: path.join(root, "desktop", "assets", "icon.icns"),
     category: "public.app-category.productivity",

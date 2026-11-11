@@ -1,3 +1,4 @@
+import { desktopPlatform } from "../../lib/platform";
 import type { TreeEntry } from "../../types";
 import { descendantFolders, folderAncestors, folderTreeRows, type NestableFolder } from "../../../../src/shared/folder-nesting";
 
@@ -179,13 +180,13 @@ export function collapseCrumbs(crumbs: readonly FileManagerCrumb[], keepTail = 4
 }
 
 /** A folder on this computer as Finder names it: the disk first, then each folder. */
-export function nativePathParts(root: string): string[] {
+export function nativePathParts(root: string, platform: NodeJS.Platform = desktopPlatform() ?? "darwin"): string[] {
   const normalized = root.replace(/\\/g, "/").replace(/\/+$/, "");
   const volume = /^\/Volumes\/([^/]+)(\/.*)?$/.exec(normalized);
   if (volume) return [volume[1]!, ...(volume[2] ?? "").split("/").filter(Boolean)];
   const drive = /^([A-Za-z]:)(\/.*)?$/.exec(normalized);
   if (drive) return [drive[1]!, ...(drive[2] ?? "").split("/").filter(Boolean)];
-  return ["Macintosh HD", ...normalized.split("/").filter(Boolean)];
+  return [platform === "linux" ? "File System" : "Macintosh HD", ...normalized.split("/").filter(Boolean)];
 }
 
 export function parentPath(path: string): string {

@@ -114,57 +114,6 @@ The distinct native Codex grant remains separate. Public documentation:
 and [Codex account API](https://learn.chatgpt.com/docs/app-server#auth-endpoints).
 Private diagnostic captures stay outside the repository.
 
-## Chrome 0.15.51
-
-The optional embedded factory registers ordinary Pi tools per session and stays
-cold during catalog reads. Its shared loopback transport accepts optional native
-host connection callbacks, retains an app-owned connection independently of Pi
-sessions, and fences queued/dispatched commands on lease revocation. A turn holds
-the selected connection through gaps between tools. Protocol3 checks the exact
-HTTP extension origin, connection ID, credential and required capabilities
-before dequeue, independently of Store/package version. Native-origin paths end
-in `/`; HTTP Origin comparison trims that exact validated suffix rather than
-using Node's `URL.origin`, which is `null` for chrome-extension URLs.
-
-Store bootstrap and UI are packaged separately under the app-owned Chrome
-resource. They retain a local installation proof, expose only content-free
-status, resume only an explicitly connected profile, and serialize setup actions
-against stale status responses. The ordinary standalone and manually prepared
-protocol2 behavior remains available. Native-host onboarding and doctor use
-the trusted connection surface and bounded protocol check. Native screenshot
-results, session-owned cleanup, unknown-effect cancellation and no replay remain
-the upstream tool path. See [distribution](../../docs/chrome-extension-distribution.md)
-and the package's maintained `docs/EMBEDDED-HOST.md` for the additive interface.
-
-Text snapshots return the actual selected body range, its page revision, capture time
-and target. `textOffset` with `expectedTextVersion` continues a page and rejects
-changed text or URLs by exact comparison, including ordinary HTTP pages. Compact snapshots preserve their complete captured JSON in private
-temporary files; large results also use native Pi `read` instead of clipping
-JSON. Files remain available for the owning session, including reload, and are
-removed on session shutdown. Storage is bounded at 32 MiB per result and 256 MiB
-per session, without eviction; failures say the result was not stored. Native
-structure remains sampled, with captured control/query counts and refinement
-guidance. Explicit navigation/wait timeouts also govern the companion deadline.
-
-Authenticated active-command heartbeats and accepted results also refresh the
-app's connection observation. Only requests from the authenticated companion
-supply liveness; writing a server response is not evidence of browser contact. Wrong
-origins, credentials, generations, epochs and unknown command IDs remain inert.
-
-Focused upstream browser corrections are backported without replacing the
-reviewed embedded factory: new groups name the target window; hidden pages fail
-before trusted input rather than claiming success; click/fill may use their
-existing disclosed DOM fallback. Fill selects all of a multiline field and
-targeted type moves to its end. A forty-five-second fetch/body deadline recovers
-a half-open long poll without timing out or replaying a command. These fixes
-follow upstream 0.15.53–0.15.56
-([source and changelog](https://github.com/tianrendong/pi-chrome)); the pinned
-0.15.51 runtime, standalone behavior and Stop/lease fences remain reviewed here.
-The native worker harness covers hidden input, multiline replacement, caret
-behavior, window grouping and socket timeout as well as authenticated liveness.
-Companion-side changes require the separately built Chrome extension update;
-Store approval is not implied by a desktop build.
-
 ## Computer Control 0.5.1
 
 The native protocol check preserves its canonical executable comparison. A
@@ -206,7 +155,7 @@ The additive `createWebAccessExtension` factory uses upstream DuckDuckGo/Brave s
 
 `tests/included-toolkit-native.test.ts` starts isolated child fixtures with real native Pi loaders and local HTTP/stdio servers. It covers cold loading, credential and session isolation, schema validation, source-bearing web extraction, challenge/rate-limit/error handling, cancellation, OAuth PKCE and stale-configuration rejection, and readiness probes. Setup fixtures use isolated synthetic credentials; they never touch personal credentials. `tests/included-mcp-settings-api.test.ts` exercises real local HTTP setup-session binding and restart behavior. Native Extension UI callback coverage remains in the shared bridge suites.
 
-The optional `AMPLEFILE_LIVE_WEB_TEST=1` fixture runs an actual DuckDuckGo search. It is excluded from the normal network-free test lane. Packaged Electron, live model use, OS permission setup, and the Chrome companion in a real profile still need the release acceptance lane; passing local fixtures does not certify those user paths.
+The optional `AMPLEFILE_LIVE_WEB_TEST=1` fixture runs an actual DuckDuckGo search. It is excluded from the normal network-free test lane. Packaged Electron, live model use, and OS permission setup still need the release acceptance lane; passing local fixtures does not certify those user paths.
 
 ## Document dependency review
 

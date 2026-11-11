@@ -94,11 +94,8 @@ parameters in a required `input` object so alternatives remain nested; OpenAI
 rejects alternatives at the function-schema root. The adapter forwards exactly
 that declared object and all native cancellation/update/context arguments to
 the original executor. It fills in no inputs. Documents requires source
-and output for render, recalculate and OCR; status needs neither. Chrome
-inspection and uploads need an element target, click/hover/tap accept an
-element or both pointer coordinates, and drag needs both endpoints. Native
-defaults remain valid, including an empty new tab, viewport scrolling and
-typing into a focused field. Computer Control, Web, built-ins and the native
+and output for render, recalculate and OCR; status needs neither. Computer
+Control, Web, built-ins and the native
 codemode/search tools already declare their required inputs. Service
 Connections keeps the server's MCP declarations unchanged. There is no second
 tool registry or inferred contract for third-party tools.
@@ -259,7 +256,7 @@ agent and Worker sessions. A stopped tool may drain, but late UI events cannot r
 turn or permit overlapping reuse. The local inspector observes Chat-turn,
 title, bounded inference, and compaction calls without changing their hooks.
 
-Included Computer, Chrome and Web tools use native observations and source
+Included Computer and Web tools use native observations and source
 identities. Documents adds ordinary bundled libraries and a cancellable
 JavaScript worker, with PDF text/render helpers and deliberately selected PNG
 emission. Its render evidence pins captured source bytes, page, scale,
@@ -273,7 +270,7 @@ starting on use. See [the integration contract](extension-foundation.md) and
 for supported paths and exact limits.
 
 Native provider fixtures, integration fixtures and actual Electron dependency
-fixtures cover these mechanisms. Live model judgment, real OS/companion setup
+fixtures cover these mechanisms. Live model judgment, real OS setup
 and signed candidate behavior require their own release acceptance evidence.
 
 ## Adversarial review and acceptance
@@ -376,9 +373,7 @@ Large structured returns remain valid JSON and point to full files. Retained run
 evidence lives under machine-local `document-artifacts/` or an explicit ordinary
 artifacts directory until deliberately removed. Temporary render scratch is separate.
 
-Chrome text mode returns body-text ranges with a source revision, and full captured
-results can spill to files readable by native Pi. Retrying a wait uses its advertised
-deadline. MCP retains accompanying structured results and cursors through its existing
+MCP retains accompanying structured results and cursors through its existing
 output guard; a cold undiscovered server is identified with its connect path. These
 changes live in the reviewed native patches, not a parallel tool implementation.
 

@@ -7,7 +7,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -67,13 +66,9 @@ import { ModelContextWindow } from "./model-context-window.js";
 import { writeDesktopClipboard } from "./clipboard.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
 import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
-import { IncludedChromeConnectionService } from "../../src/local/agent/included-chrome-connection.js";
-import type { ChromeHostFacilities } from "../../src/shared/chrome-connection.js";
-import chromeDistribution from "../../src/shared/chrome-distribution.json" with { type: "json" };
-import { ChromeNativeHostRegistration, googleChromeInstalled, openChromeStore } from "./chrome-native-host.js";
 import { prepareLinuxDevelopmentCli } from "./linux-development-cli.js";
 import { ComputerHelperInstallation } from "./computer-helper-installation.js";
-import { createJiti } from "jiti";
+import { leftoverChromeCleanupApplies, removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
@@ -242,7 +237,6 @@ let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
-let chromeConnectionStartRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
@@ -404,7 +398,6 @@ interface DesktopHost {
   connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
   kernel: AmpleFileKernel;
   cli: AmpleFileDesktopCliHost;
-  chromeConnection: IncludedChromeConnectionService;
   computerSession?: ComputerSessionService;
 }
 
@@ -441,27 +434,6 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     else if (event.method === "openSettings") mainWindow?.webContents.send("amplefile:agent:open-settings");
     else if (event.method === "quit") app.quit();
     });
-    const nativeJiti = createJiti(import.meta.url, { moduleCache: true });
-    const loadChromeConnection = () => nativeJiti.import<{
-      startIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<{ close(): void }>;
-      probeIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<unknown>;
-    }>(join(includedToolsRoot(), "chrome", "index.ts"));
-    const chromeRegistration = new ChromeNativeHostRegistration({
-      stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
-      sourceDirectory: app.isPackaged ? join(process.resourcesPath, "chrome-native-host") : join(app.getAppPath(), "out/included-tools/chrome-native-host"),
-      // An isolated/dev host must not replace the normal Chrome registration.
-      enabled: ["darwin", "linux"].includes(process.platform) && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
-      appPath: process.platform === "linux" ? process.env.APPIMAGE || process.execPath : process.execPath,
-    });
-    const chromeConnection = await IncludedChromeConnectionService.create({
-      stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
-      registerNativeHost: (explicit, ifAbsent) => chromeRegistration.register(explicit, ifAbsent),
-      // Setup says "Install Google Chrome" instead of failing to open it; app bundles only.
-      browserInstalled: () => googleChromeInstalled(),
-      openStore: () => openChromeStore(chromeDistribution.storeId),
-      startTransport: async (facilities) => (await loadChromeConnection()).startIncludedChromeConnection(facilities),
-      probe: async () => { await (await loadChromeConnection()).probeIncludedChromeConnection(chromeConnection); },
-    });
     const bundledComputerHelper = process.platform === "linux"
       ? join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "out", "included-tools"), "computer-helper", "linux-bridge")
       : app.isPackaged
@@ -476,7 +448,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     const runtime = new PackagedPiRuntimeProvider({
       includedTools: {
         rootPath: includedToolsRoot(), stateRoot: join(userData, "assistant-tools"),
-        chromeConnection, computerSession,
+        computerSession,
         helperAppPath: computerHelper?.helperAppPath ?? bundledComputerHelper,
         prepareComputerHelper: computerHelper?.prepare,
         repairComputerHelper: computerHelper?.repair,
@@ -504,7 +476,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     secureSettings = settings;
     piRuntime = runtime;
     return {
-      settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, chromeConnection, computerSession,
+      settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, computerSession,
     };
   })();
   return desktopHostPromise;
@@ -523,9 +495,8 @@ async function startInteractiveApp(): Promise<void> {
     // A headless CLI host may be tearing down; it re-checks for this launch
     // afterwards and stays up, but the new act token must not race it.
     await headlessQuit.whenTeardownSettled();
-    const host = await ensureDesktopHost();
-    chromeConnectionStartRequested = true;
-    await host.chromeConnection.startIfEnabled().catch(() => console.warn("Chrome connection startup requires setup."));
+    await ensureDesktopHost();
+    removeLeftoverChromeRegistrationOnce();
     const api = await ensureInteractiveLocalApi();
     loadDesktopPreferences();
     registerRendererProtocol();
@@ -545,6 +516,16 @@ async function startInteractiveApp(): Promise<void> {
   return interactiveStartupPromise;
 }
 
+/**
+ * Removes the Google Chrome registration and helper copy an earlier AmpleFile
+ * left. Only interactive startup calls it, never a headless CLI host.
+ */
+function removeLeftoverChromeRegistrationOnce(): void {
+  if (!leftoverChromeCleanupApplies({ platform: process.platform, isPackaged: app.isPackaged, localSmokeBuild: localMacSmokeBuild, environment: process.env })) return;
+  void removeLeftoverChromeRegistration({ stateRoot: join(app.getPath("userData"), "assistant-tools") })
+    .catch((error) => console.warn(`${productName} could not remove an earlier Chrome helper copy: ${errorMessage(error)}`));
+}
+
 const headlessQuit = new HeadlessQuitSequence({
   interactiveRequested: () => interactiveRequested,
   cliRequestGeneration: () => cliRequestGeneration,
@@ -558,14 +539,6 @@ const headlessQuit = new HeadlessQuitSequence({
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
   removeActToken: () => removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined),
-  // Only interactive startup starts the Chrome connection, and closing it is
-  // permanent for this process (the Pi runtime holds the same service). A
-  // headless host that never started it leaves it alone, so a person who
-  // opens AmpleFile during teardown still gets a working Chrome connection.
-  closeChromeConnection: async () => {
-    if (!chromeConnectionStartRequested) return;
-    await (await ensureDesktopHost()).chromeConnection.close();
-  },
   quit: () => {
     quitting = true;
     // Exit synchronously after the queue and host-backed auth storage are both
@@ -1564,6 +1537,7 @@ function updateApplicationMenuState(value: unknown): void {
   const menu = Menu.getApplicationMenu();
   setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.connectedFolderOpen);
@@ -2016,6 +1990,7 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: () => railTooltipOverlay?.raise(),
+    declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
 }
@@ -2029,7 +2004,7 @@ async function openExternal(value: string): Promise<void> {
 async function shutdown(): Promise<void> {
   if (shutdownPromise) return shutdownPromise;
   modelContextWindow?.dispose();
-  // Closing pages for quit must not close their tabs: they come back next launch.
+  // Quitting closes every page. Tabs are not kept: sign-ins and history are what the next launch has.
   builtInBrowser?.dispose();
   if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
   rendererRecoveryTimer = null;
@@ -2041,13 +2016,11 @@ async function shutdown(): Promise<void> {
   updateAgentPowerState(0);
   const runtime = piRuntime;
   piRuntime = null;
-  const chrome = desktopHostPromise?.then((host) => host.chromeConnection.close()) ?? Promise.resolve();
   const computer = desktopHostPromise?.then((host) => host.computerSession?.close()) ?? Promise.resolve();
   shutdownPromise = (async () => {
     const outcomes = await Promise.allSettled([
       withShutdownTimeout(localApiLifetime.close(), "local API"),
       withShutdownTimeout(runtime?.flush() ?? Promise.resolve(), "Pi state"),
-      withShutdownTimeout(chrome, "Chrome connection"),
       withShutdownTimeout(computer, "desktop sharing"),
       withShutdownTimeout(removeAmpleFileCliActTokenFile(app.getPath("userData")), "CLI act token"),
     ]);

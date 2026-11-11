@@ -88,19 +88,6 @@ if (packagedPlatform === "darwin") {
       failures.push("Computer helper icon does not match the AmpleFile application icon.");
     }
   } catch (error) { failures.push(`Could not verify computer helper provenance: ${formatError(error)}`); }
-  const chromeHost = join(resourcesDir, "chrome-native-host");
-  assertPath(join(chromeHost, "amplefile-chrome-host"), "Chrome native bootstrap");
-  assertPath(join(chromeHost, "source.json"), "Chrome native bootstrap provenance");
-  try {
-    const distribution = JSON.parse(readFileSync(join(rootDir, "src/shared/chrome-distribution.json"), "utf8"));
-    const provenance = JSON.parse(readFileSync(join(chromeHost, "source.json"), "utf8"));
-    const expectedOrigin = distribution.storeId ? `chrome-extension://${distribution.storeId}/` : "";
-    if (provenance.schema !== "amplefile.chrome-native-host-source.v1" || provenance.origin !== expectedOrigin
-      || provenance.nativeHostName !== distribution.nativeHostName || provenance.bootstrapVersion !== distribution.bootstrapVersion
-      || provenance.target !== "arm64-apple-macosx12.0"
-      || provenance.sourceSha256 !== createHash("sha256").update(readFileSync(join(rootDir, "desktop/native/chrome-bootstrap.swift"))).digest("hex")
-      || provenance.distributionSha256 !== createHash("sha256").update(JSON.stringify(distribution)).digest("hex")) failures.push("Chrome native bootstrap does not match the reviewed source and Store identity.");
-  } catch (error) { failures.push(`Could not verify Chrome native bootstrap: ${formatError(error)}`); }
   if (existsSync(join(binDir, identity.cliCommand)) && !(statSync(join(binDir, identity.cliCommand)).mode & 0o111)) {
     failures.push(`${identity.productName} CLI shell shim is not executable.`);
   }
@@ -108,10 +95,9 @@ if (packagedPlatform === "darwin") {
 
 if (packagedPlatform === "linux") {
   assertPath(join(binDir, `${identity.cliCommand}-cli`), "native Linux CLI");
-  assertPath(join(resourcesDir, "chrome-native-host", `${identity.cliCommand}-chrome-host`), "Linux Chrome bootstrap");
+  if (existsSync(join(resourcesDir, "chrome-native-host"))) failures.push("Linux packages must not contain the removed Chrome host.");
   for (const [directory, binary, schema, protocolVersion] of [
     [binDir, `${identity.cliCommand}-cli`, "amplefile.linux-cli-source.v1", undefined],
-    [join(resourcesDir, "chrome-native-host"), `${identity.cliCommand}-chrome-host`, "amplefile.chrome-native-host-source.v1", undefined],
     [join(resourcesDir, "computer-helper"), "linux-bridge", "amplefile.computer-helper-source.v1", 4],
     [join(resourcesDir, "wayland-helper"), "amplefile-wayland", "amplefile.wayland-helper-source.v1", 1],
   ]) {
@@ -164,12 +150,9 @@ if (existsSync(asarPath)) {
     "/package.json",
     "/LICENSE",
     "/dist/desktop/desktop/src/main.js",
-    "/dist/desktop/desktop/src/chrome-native-host.js",
     "/dist/desktop/desktop/src/computer-helper-installation.js",
-    "/dist/desktop/src/local/agent/included-chrome-connection.js",
     "/dist/desktop/src/local/agent/included-tool-observations.js",
     "/dist/desktop/resources/included-tools/readiness.js",
-    "/dist/desktop/src/shared/chrome-distribution.json",
     "/dist/desktop/desktop/src/preload.cjs",
     "/dist/desktop/desktop/src/model-context-preload.cjs",
     "/dist/desktop/desktop/src/model-context-window.js",
@@ -180,14 +163,12 @@ if (existsSync(asarPath)) {
     "/resources/included-tools/host.ts",
     "/resources/included-tools/readiness.ts",
     "/resources/included-tools/input-contracts.mjs",
-    ...["computer", "chrome", "web", "mcp", "documents"].map((id) => `/resources/included-tools/${id}/index.ts`),
+    ...["computer", "web", "mcp", "documents"].map((id) => `/resources/included-tools/${id}/index.ts`),
     "/resources/included-tools/documents/runtime.mjs",
     "/resources/included-tools/documents/worker.mjs",
     "/resources/included-tools/documents/skills/documents/SKILL.md",
     "/resources/included-tools/skills/set-up-connected-folder/SKILL.md",
-    ...["@injaneity/pi-computer-use", "pi-chrome", "pi-web-access", "@earendil-works/pi-mcp", "jiti", "typebox", "docx", "exceljs", "pptxgenjs", "pdf-lib", "pdfjs-dist", "@napi-rs/canvas"].map((name) => `/node_modules/${name}/package.json`),
-    "/node_modules/pi-chrome/extensions/chrome-profile-bridge/browser-extension/service_worker.js",
-    "/node_modules/pi-chrome/extensions/chrome-profile-bridge/browser-extension/host-config.json",
+    ...["@injaneity/pi-computer-use", "pi-web-access", "@earendil-works/pi-mcp", "jiti", "typebox", "docx", "exceljs", "pptxgenjs", "pdf-lib", "pdfjs-dist", "@napi-rs/canvas"].map((name) => `/node_modules/${name}/package.json`),
     "/node_modules/@injaneity/pi-computer-use/src/platform/macos/helper-identity.mjs",
   ]) {
     if (!entries.has(required)) failures.push(`app.asar is missing ${required}.`);

@@ -1,0 +1,836 @@
+/*
+ * The Browser pane (docs/built-in-browser.md): the built-in browser's tabs
+ * under the folder's contents. It wears the file manager's tokens
+ * (file-manager-tokens.css) and its capsule, button, card, and dot styles;
+ * only what is the browser's own is drawn here.
+ */
+
+/* The folder's half of the main area: its search scope, contents, and path bar. */
+.fm-files {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fm-browser {
+  --fm-browser-bar-height: 38px;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--fm-window);
+  /* Folding the folder or the browser away slides the edge between them. */
+  transition: height 220ms var(--amplefile-ease-smooth);
+}
+
+.fm-browser[data-layout="collapsed"] {
+  height: var(--fm-browser-bar-height);
+}
+
+/* The slider's share of the height under the toolbar; the folder keeps 132px and the browser 180px. */
+.fm-browser[data-layout="split"] {
+  height: clamp(180px, calc(var(--fm-browser-fraction, 0.55) * (100% - var(--fm-toolbar-height))), max(180px, calc(100% - var(--fm-toolbar-height) - 132px)));
+}
+
+/* With the folder folded away there is no band above; a line under the toolbar stands in. */
+.fm-browser[data-layout="full"] {
+  height: calc(100% - var(--fm-toolbar-height));
+  border-top: 1px solid var(--fm-line);
+}
+
+.fm-main:has(.fm-browser-resize.is-dragging) .fm-browser {
+  transition: none;
+}
+
+/* The band between the folder and the browser: the panel's ground between two
+   lines, so the folder above and the browser below read as two panes. Beside
+   the folder it is the slider, with a grip at its middle. */
+.fm-browser-divide {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  height: 9px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--fm-line);
+  border-bottom: 1px solid var(--fm-line);
+  background: var(--fm-panel);
+  outline: none;
+}
+
+.fm-browser-resize {
+  cursor: row-resize;
+}
+
+/* A little more to take hold of than the band itself. */
+.fm-browser-resize::before {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  bottom: -3px;
+  left: 0;
+  content: "";
+}
+
+.fm-browser-resize::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--fm-text3);
+  opacity: 0.45;
+  translate: -50% -50%;
+  content: "";
+  transition: opacity 120ms ease, background-color 120ms ease, width 160ms var(--amplefile-ease-smooth);
+}
+
+.fm-browser-resize:hover::after {
+  opacity: 0.8;
+}
+
+.fm-browser-resize:focus-visible::after,
+.fm-browser-resize.is-dragging::after {
+  width: 52px;
+  background: var(--fm-accent);
+  opacity: 1;
+}
+
+.fm-shell:has(.fm-browser-resize.is-dragging),
+.fm-shell:has(.fm-browser-resize.is-dragging) * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
+/* The tab strip: always there while a tab is open. */
+
+.fm-browser-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: var(--fm-browser-bar-height);
+  padding: 0 10px 0 8px;
+  background: var(--fm-stripe);
+}
+
+.fm-browser-tabs {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fm-browser-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* More tabs than fit: the strip scrolls, and fades at the edge that holds more. */
+.fm-browser-tabs[data-more="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.fm-browser-tabs[data-more="start"] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+.fm-browser-tabs[data-more="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+/* The tab in front keeps room for its name however many tabs share the strip. */
+.fm-browser-tab.is-on {
+  min-width: min(132px, 100%);
+}
+
+/* The frame behind the tab in front; lib/tab-chrome-motion.ts slides it to the tab chosen. */
+.fm-browser-tab-chrome {
+  position: absolute;
+  z-index: 0;
+  visibility: hidden;
+  border-radius: 7px;
+  background: var(--fm-btn);
+  box-shadow: var(--fm-btn-shadow);
+  pointer-events: none;
+}
+
+/* Tabs share the strip: each takes up to 200px and gives way as more open. */
+.fm-browser-tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 1 200px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 200px;
+  min-width: 38px;
+  max-width: 200px;
+  height: 28px;
+  border-radius: 7px;
+  animation: fm-browser-tab-in 200ms var(--amplefile-ease-smooth);
+}
+
+@keyframes fm-browser-tab-in {
+  from { flex-basis: 0; width: 0; min-width: 0; max-width: 0; opacity: 0; }
+}
+
+.fm-browser-tab:hover:not(.is-on) {
+  background: var(--fm-hover);
+}
+
+/* Until the sliding frame is placed, the tab in front draws its own. */
+.fm-browser-tabs:not([data-active-chrome]) .fm-browser-tab.is-on {
+  background: var(--fm-btn);
+  box-shadow: var(--fm-btn-shadow);
+}
+
+.fm-browser-tab-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 9px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+  text-align: left;
+}
+
+.fm-browser-tab.is-on .fm-browser-tab-main {
+  color: var(--fm-text);
+}
+
+.fm-browser-tab-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.fm-browser-tab-icon img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.fm-browser-tab-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* A long title fades out at the tab's edge instead of ending in dots. */
+.fm-browser-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+}
+
+.fm-browser-tab-sound {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+/* A pop-up the site tried to open is held on this tab. */
+.fm-browser-tab-held {
+  color: var(--ui-attention, #c26a00);
+}
+
+.fm-browser-tab-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fm-text2);
+  opacity: 0;
+  transition: opacity 110ms ease-out, background-color 110ms ease-out;
+}
+
+.fm-browser-tab:hover .fm-browser-tab-close,
+.fm-browser-tab.is-on .fm-browser-tab-close,
+.fm-browser-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.fm-browser-tab-close:hover {
+  background: var(--fm-cap2);
+  color: var(--fm-text);
+}
+
+.fm-browser-tab-close svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* A tab too narrow for both shows its icon, not its close button over the icon; the tab in front always has room. */
+.fm-browser-tab {
+  container-type: inline-size;
+  container-name: fm-browser-tab;
+}
+
+@container fm-browser-tab (max-width: 72px) {
+  .fm-browser-tab-close {
+    display: none;
+  }
+
+  .fm-browser-tab-main {
+    padding-right: 9px;
+  }
+}
+
+.fm-browser-spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--fm-cap2);
+  border-top-color: var(--fm-accent);
+  border-radius: 50%;
+  animation: fm-browser-spin 720ms linear infinite;
+}
+
+@keyframes fm-browser-spin {
+  to { rotate: 360deg; }
+}
+
+/* A site is waiting on the person: the one dot that is not the Worker's. */
+.fm-dot.is-ask {
+  background: var(--ui-attention, #c26a00);
+  animation: fm-pop-in 240ms var(--amplefile-ease-pop);
+}
+
+.fm-browser-tool {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fm-text2);
+  transition: background-color 110ms ease-out, color 110ms ease-out, scale 160ms var(--amplefile-ease-smooth);
+}
+
+.fm-browser-tool:hover:not(:disabled) {
+  background: var(--fm-cap2);
+  color: var(--fm-text);
+}
+
+.fm-browser-tool:active:not(:disabled) {
+  scale: 0.94;
+}
+
+.fm-browser-tool:disabled {
+  opacity: 0.35;
+}
+
+.fm-browser-tool svg {
+  width: 16px;
+  height: 16px;
+}
+
+.fm-browser-bar-space {
+  flex: 1 1 0;
+  min-width: 8px;
+}
+
+.fm-browser-layout {
+  height: 28px;
+}
+
+.fm-browser-layout .fm-tool {
+  height: 22px;
+}
+
+/* The tab in front: its address row, what the site or a Worker says, and the page. */
+
+.fm-browser-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out;
+}
+
+/* The tab strip and the address row are one surface, the browser's own, over the page. */
+.fm-browser-nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px 2px;
+  background: var(--fm-stripe);
+}
+
+.fm-browser-nav > .fm-capsule {
+  height: 28px;
+}
+
+.fm-browser-nav > .fm-capsule .fm-tool {
+  height: 22px;
+}
+
+.fm-browser-address-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+}
+
+.fm-browser-address {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px 0 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fm-cap);
+  color: var(--fm-text2);
+}
+
+.fm-browser-address:focus-within {
+  box-shadow: 0 0 0 3px var(--fm-accent-soft), inset 0 0 0 1px var(--fm-accent);
+}
+
+/* While a page loads, a line runs along the foot of the address field. */
+.fm-browser-address.is-loading::after {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  height: 2px;
+  background: var(--fm-accent);
+  content: "";
+  animation: fm-browser-loading 1.1s ease-in-out infinite;
+}
+
+@keyframes fm-browser-loading {
+  from { translate: -100% 0; }
+  to { translate: 250% 0; }
+}
+
+.fm-browser-address input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text);
+  font: inherit;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* One ring: the field's capsule draws it, so the input inside draws none. */
+.fm-shell .fm-browser-address input:focus-visible,
+.fm-shell .fm-browser-strip.is-find input:focus-visible {
+  outline: none;
+}
+
+.fm-browser-address input::placeholder {
+  color: var(--fm-text3);
+}
+
+.fm-browser-address-glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+}
+
+.fm-browser-address-glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fm-browser-site {
+  flex: none;
+}
+
+.fm-browser-site-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fm-text2);
+  font-size: calc(11px * var(--fm-scale));
+  font-weight: 600;
+}
+
+.fm-browser-site-button:hover {
+  background: var(--fm-cap2);
+  color: var(--fm-text);
+}
+
+.fm-browser-site-button.is-insecure {
+  color: var(--ui-danger, #d70015);
+}
+
+.fm-browser-site-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fm-browser-site-menu,
+.fm-browser-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fm-window) 92%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22), 0 0 0 0.5px var(--fm-line);
+  animation: amplefile-menu-in 150ms var(--amplefile-ease-smooth);
+}
+
+.fm-browser-site-menu {
+  left: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 250px;
+  max-width: 340px;
+  padding: 10px 12px;
+  color: var(--fm-text);
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-browser-site-menu-h {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-browser-site-menu-s {
+  color: var(--fm-text2);
+}
+
+.fm-browser-site-menu-s.is-insecure {
+  color: var(--ui-danger, #d70015);
+}
+
+.fm-browser-site-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 0.5px solid var(--fm-line);
+}
+
+.fm-browser-site-menu-decision {
+  flex: 1;
+  color: var(--fm-text2);
+}
+
+.fm-browser-suggestions {
+  right: 0;
+  left: 0;
+  max-height: 264px;
+  margin: 0;
+  padding: 5px;
+  overflow: auto;
+  list-style: none;
+}
+
+.fm-browser-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--fm-text);
+  font-size: calc(12px * var(--fm-scale));
+  white-space: nowrap;
+}
+
+.fm-browser-suggestions li.is-selected {
+  background: var(--fm-accent);
+  color: var(--fm-on-accent);
+}
+
+.fm-browser-suggestions svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+}
+
+.fm-browser-suggestion-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fm-browser-suggestion-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0.65;
+  text-overflow: ellipsis;
+}
+
+.fm-browser-zoom {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fm-cap2);
+  color: var(--fm-text);
+  font-size: calc(11px * var(--fm-scale));
+}
+
+/* A Worker is using the page: the running dot, whose Worker, and the way to its Chat. */
+.fm-browser-worker {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 2px 0 10px;
+  border-radius: 999px;
+  background: var(--fm-accent-soft);
+  color: var(--fm-text);
+  font-size: calc(12px * var(--fm-scale));
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out;
+}
+
+.fm-browser-worker-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-browser-worker > .fm-browser-tool {
+  width: 24px;
+  height: 24px;
+}
+
+.fm-browser-worker:not(:has(.fm-browser-tool)) {
+  padding-right: 10px;
+}
+
+/* What a site asks or the browser has to say about the page, above the page. */
+.fm-browser-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 10px 4px 12px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--fm-line);
+  background: var(--fm-stripe);
+  color: var(--fm-text);
+  font-size: calc(12px * var(--fm-scale));
+  animation: fm-rise-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
+}
+
+.fm-browser-strip > svg {
+  flex: none;
+  color: var(--fm-text2);
+}
+
+.fm-browser-strip.is-question {
+  background: var(--ui-attention-soft, rgba(255, 149, 0, 0.14));
+}
+
+.fm-browser-strip.is-question > svg {
+  color: var(--ui-attention, #c26a00);
+}
+
+.fm-browser-strip-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.fm-browser-strip-url {
+  color: var(--fm-text2);
+  overflow-wrap: anywhere;
+}
+
+.fm-browser-strip.is-find {
+  justify-content: flex-end;
+}
+
+.fm-browser-strip.is-find input {
+  width: min(260px, 50%);
+  height: 24px;
+  padding: 0 9px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fm-cap);
+  color: var(--fm-text);
+  font: inherit;
+  outline: none;
+}
+
+.fm-browser-strip.is-find input:focus {
+  box-shadow: 0 0 0 3px var(--fm-accent-soft), inset 0 0 0 1px var(--fm-accent);
+}
+
+.fm-browser-find-count {
+  min-width: 64px;
+  color: var(--fm-text2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The placeholder the desktop host draws the page over; what shows here is the window's own. */
+.fm-browser-viewport:focus-visible {
+  outline: none;
+}
+
+.fm-browser-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--fm-line);
+  background: var(--fm-window);
+}
+
+.fm-browser-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+  color: var(--fm-text2);
+  text-align: center;
+}
+
+.fm-browser-state strong {
+  color: var(--fm-text);
+  font-size: calc(15px * var(--fm-scale));
+  font-weight: 600;
+}
+
+.fm-browser-state code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: calc(11px * var(--fm-scale));
+}
+
+.fm-browser-state-note {
+  max-width: 420px;
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-browser-state.is-new {
+  justify-content: flex-start;
+  padding-top: 28px;
+}
+
+.fm-browser-recent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: min(520px, 100%);
+  text-align: left;
+}
+
+.fm-browser-recent .fm-card {
+  align-self: stretch;
+}
+
+.fm-browser-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: calc(32px * var(--fm-scale) * var(--fm-density));
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 0.5px solid var(--fm-card-line);
+  background: transparent;
+  color: var(--fm-text);
+  text-align: left;
+}
+
+.fm-browser-recent-item:last-child {
+  border-bottom: 0;
+}
+
+.fm-browser-recent-item:hover {
+  background: var(--fm-hover);
+}
+
+.fm-browser-recent-item svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--fm-text2);
+}
+
+.fm-browser-recent-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-browser-recent-host {
+  flex: 1 0 auto;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  text-align: right;
+}
+
+/* The preview has no pages: the placeholder says so where a page would be. */
+.fm-browser-sample {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  color: var(--fm-text3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-browser-spinner,
+  .fm-browser-address.is-loading::after { animation: none; }
+}

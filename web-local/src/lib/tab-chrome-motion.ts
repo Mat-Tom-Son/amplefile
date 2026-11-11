@@ -1,0 +1,112 @@
+/**
+ * The frame behind the tab in front (the Browser pane's tab strip): it slides
+ * and resizes from the tab it was on to the tab chosen, while the labels stay
+ * still. Honours both reduce-motion switches.
+ */
+export function createTabChromeMotion(strip: HTMLElement, chrome: HTMLElement) {
+  const view = strip.ownerDocument.defaultView!;
+  const root = strip.ownerDocument.documentElement;
+  const systemMotion = typeof view.matchMedia === "function" ? view.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  let selected: HTMLElement | null = null;
+  let geometry: { left: number; top: number; width: number; height: number } | null = null;
+  let animation: Animation | null = null;
+
+  function reduceMotion(): boolean {
+    const preference = root.dataset.appearanceMotion;
+    return preference === "reduce" || Boolean(systemMotion?.matches);
+  }
+
+  function settle(): void {
+    animation?.cancel();
+    animation = null;
+  }
+
+  function position(animate: boolean): void {
+    if (!selected?.isConnected || !strip.contains(selected)) {
+      settle();
+      geometry = null;
+      chrome.style.visibility = "hidden";
+      delete strip.dataset.activeChrome;
+      return;
+    }
+    const stripBox = strip.getBoundingClientRect();
+    const tabBox = selected.getBoundingClientRect();
+    const next = {
+      left: tabBox.left - stripBox.left + strip.scrollLeft,
+      top: tabBox.top - stripBox.top + strip.scrollTop,
+      width: tabBox.width,
+      height: tabBox.height,
+    };
+    if (geometry && Object.entries(next).every(([key, value]) => Math.abs(value - geometry![key as keyof typeof next]) < 0.1)) return;
+    // Read the interpolated position before cancelling, so quick clicks retarget
+    // from the visible shape instead of snapping back to the previous tab.
+    const previous = geometry ? chrome.getBoundingClientRect() : null;
+    settle();
+    Object.assign(chrome.style, {
+      left: `${next.left}px`, top: `${next.top}px`,
+      width: `${next.width}px`, height: `${next.height}px`, visibility: "visible",
+    });
+    strip.dataset.activeChrome = "ready";
+    geometry = next;
+    if (!animate || !previous || reduceMotion() || typeof chrome.animate !== "function") return;
+    animation = chrome.animate([
+      { transform: `translateX(${previous.left - tabBox.left}px)`, width: `${previous.width}px` },
+      { transform: "translateX(0px)", width: `${next.width}px` },
+    ], { duration: 180, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
+
+  const resize = typeof view.ResizeObserver === "function" ? new view.ResizeObserver(() => position(false)) : null;
+  resize?.observe(strip);
+  const preferenceObserver = new view.MutationObserver(() => { if (reduceMotion()) settle(); });
+  preferenceObserver.observe(root, { attributes: true, attributeFilter: ["data-appearance-motion"] });
+  const onSystemMotionChange = () => { if (reduceMotion()) settle(); };
+  systemMotion?.addEventListener("change", onSystemMotionChange);
+  // A closed tab shrinks away (lib/motion.ts) and moves its neighbours without
+  // resizing them, so the frame follows the selected tab until the copy is gone.
+  let follow = 0;
+  const followLeavingTabs = () => {
+    position(false);
+    follow = strip.querySelector("[data-exit-ghost]") ? view.requestAnimationFrame(followLeavingTabs) : 0;
+  };
+  const leaving = new view.MutationObserver((records) => {
+    if (follow || !records.some((record) => [...record.addedNodes].some((node) => node instanceof view.HTMLElement && "exitGhost" in node.dataset))) return;
+    follow = view.requestAnimationFrame(followLeavingTabs);
+  });
+  leaving.observe(strip, { childList: true, subtree: true });
+
+  return {
+    select(tab: HTMLElement | null, animate = false): void {
+      if (!animate) settle();
+      if (selected !== tab) {
+        if (selected) resize?.unobserve(selected);
+        selected = tab;
+        if (selected) resize?.observe(selected);
+      }
+      position(animate);
+    },
+    dispose(): void {
+      settle();
+      view.cancelAnimationFrame(follow);
+      leaving.disconnect();
+      resize?.disconnect();
+      preferenceObserver.disconnect();
+      systemMotion?.removeEventListener("change", onSystemMotionChange);
+    },
+  };
+}
+
+/**
+ * With more tabs than fit, the strip scrolls. This keeps the tab in front
+ * inside the strip and marks which edges hold more tabs (`data-more`: none,
+ * start, end, or both), which the stylesheet fades.
+ */
+export function settleTabStrip(strip: HTMLElement, front: HTMLElement | null): void {
+  if (front) {
+    const box = strip.getBoundingClientRect();
+    const tab = front.getBoundingClientRect();
+    if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 12;
+    else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 12;
+  }
+  const more = strip.scrollWidth - strip.clientWidth;
+  strip.dataset.more = more <= 1 ? "none" : strip.scrollLeft <= 1 ? "end" : strip.scrollLeft >= more - 1 ? "start" : "both";
+}

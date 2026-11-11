@@ -1,6 +1,6 @@
 ---
 name: set-up-connected-folder
-description: Set up this Connected Folder for the person in one pass — work out what it is for, organize it if that helps, write instructions for future Workers, and give it a fitting banner, icon, and color. Also gives a Connected Folder just a fitting look without touching its files. Use when the person asks to set up, organize, tidy, or get started with this Connected Folder, or to give it a look, or clicks Set up for me or Just the look.
+description: Set up this Connected Folder for the person in one pass — work out what it is for, organize it if that helps, write instructions for future Workers, and give it a fitting banner, icon, and color. Also gives a Connected Folder just a fitting look without touching its files. Use when the person asks to set up, organize, tidy, or get started with this Connected Folder, or to give it a look, or clicks Set Up for Me.
 ---
 
 # Set up this Connected Folder
@@ -137,9 +137,9 @@ Finish with a short, scannable reply:
   skipped. When it did not, say each move and rename has its own restore point
   in the History tab.
 
-## Just the look
+## Only the look
 
-When the person asks only for a look (for example "Just the look"), do steps 1
+When the person asks only for a look (for example "just give this folder a look"), do steps 1
 and 4 and nothing else: read the folder to understand it, then set the banner,
 icon, and color. Never move, rename, create, or delete a file or folder, and do
 not write Worker instructions. Report in three or four lines: what the folder

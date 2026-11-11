@@ -1,16 +1,9 @@
 import assert from "node:assert/strict";
-import { randomBytes, randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createElement } from "react";
 
-import { ChromeNativeHostRegistration } from "../desktop/src/chrome-native-host.js";
 import { includedComputerStatus } from "../resources/included-tools/readiness.js";
-import { IncludedChromeConnectionService, type ChromeDistribution } from "../src/local/agent/included-chrome-connection.js";
-import type { ChromeBootstrapRequest } from "../src/shared/chrome-connection.js";
 import type { IncludedToolStatus } from "../src/shared/included-tools.js";
 import { includedToolReadiness } from "../web-local/src/lib/included-tool-readiness.js";
 import { createDomHarness } from "./support/dom.js";
@@ -25,26 +18,6 @@ const { IncludedComputerSetup } = await import("../web-local/src/components/pane
 const { FileManagerWelcome } = await import("../web-local/src/components/file-manager/FileManagerWelcome.js");
 assets.deregister();
 
-const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
-const origin = `chrome-extension://${distribution.storeId}/`;
-const connectRequest = (): ChromeBootstrapRequest => ({ version: 1, action: "connect", requestId: randomUUID(), clientId: randomUUID(), clientProof: randomBytes(32).toString("hex"), extensionVersion: "1.0.0", bridge: distribution.bridge });
-
-async function chromeService(t: TestContext, overrides: Partial<Parameters<typeof IncludedChromeConnectionService.create>[0]> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-first-"));
-  const registrations: Array<[boolean, boolean | undefined]> = [];
-  let opened = 0;
-  const service = await IncludedChromeConnectionService.create({
-    stateRoot: join(root, "state"), distribution,
-    registerNativeHost: async (explicit, ifAbsent) => { registrations.push([explicit, ifAbsent]); },
-    openStore: async () => { opened++; },
-    startTransport: async () => ({ close() {} }),
-    probe: async () => {},
-    ...overrides,
-  });
-  t.after(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
-  return { root, service, registrations, opened: () => opened };
-}
-
 test("Computer Control can always be set up, and its status tells macOS's answer apart from capture", () => {
   assert.equal(includedToolReadiness({ id: "computer", state: "unknown", detail: "", checkedAt: "" }).setup, true);
   assert.equal(includedToolReadiness({ id: "documents", state: "unknown", detail: "", checkedAt: "" }).setup, false);
@@ -52,55 +25,6 @@ test("Computer Control can always be set up, and its status tells macOS's answer
   assert.equal(allowedNotCapturing.facts?.screenRecordingAllowed, true);
   assert.equal(allowedNotCapturing.facts?.screenRecording, false, "allowed is not yet capturable until the helper restarts");
   assert.equal(includedComputerStatus({ status: "unavailable", supportedOS: false, reason: "This included helper requires macOS 14 or later." }).facts?.supportedOS, false);
-});
-
-test("Chrome works when the extension is added first: launch registers quietly and Connect in the extension is accepted", async (t) => {
-  const { root, service, registrations, opened } = await chromeService(t);
-  assert.equal(service.environment().extensionSeen, false);
-  await service.startIfEnabled();
-  assert.deepEqual(registrations, [[false, true]], "launch registers only when Chrome has no AmpleFile registration");
-  await access(join(root, "state", "chrome", "native-host", "launch.json"));
-  assert.equal(service.status().state, "not_connected");
-
-  const answer = await service.bootstrap(origin, connectRequest());
-  assert.equal(answer.state, "lease_ready", "Connect chosen in the extension needs no earlier Connect Chrome in AmpleFile");
-  assert.equal(service.status().hasSelection, true);
-  assert.equal(service.environment().extensionSeen, true);
-  assert.equal(opened(), 0, "nothing opened the Web Store");
-  const saved = JSON.parse(await readFile(join(root, "state", "chrome", "native-host", "connection.json"), "utf8"));
-  assert.equal(saved.enabled, true);
-
-  // A quiet launch registration that fails reports nothing and starts nothing.
-  const quiet = await chromeService(t, { registerNativeHost: async () => { throw new Error("Chrome Store setup is available in the installed AmpleFile app."); } });
-  await quiet.service.startIfEnabled();
-  assert.equal(quiet.service.status().problem, undefined);
-  await assert.rejects(access(join(quiet.root, "state", "chrome", "native-host", "launch.json")), { code: "ENOENT" });
-  // A resume without a selection still connects nothing.
-  const resume = await quiet.service.bootstrap(origin, { ...connectRequest(), action: "resume" });
-  assert.equal(resume.state === "status" && resume.status.state, "not_connected");
-});
-
-test("launch registration claims only an absent registration, and only when Chrome is set up", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-if-absent-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const sourceDirectory = join(root, "app-resources"), chromeUserDataRoot = join(root, "chrome");
-  await mkdir(sourceDirectory);
-  await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary");
-  await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "amplefile.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
-  const options = { sourceDirectory, stateRoot: join(root, "state"), chromeUserDataRoot, distribution, enabled: true, platform: "darwin" as const, verifySignature: false };
-  const manifestPath = join(chromeUserDataRoot, "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
-
-  await new ChromeNativeHostRegistration(options).register(false, true);
-  await assert.rejects(access(manifestPath), { code: "ENOENT" }, "no Chrome profile folder, nothing written");
-
-  await mkdir(chromeUserDataRoot);
-  await new ChromeNativeHostRegistration(options).register(false, true);
-  assert.deepEqual(JSON.parse(await readFile(manifestPath, "utf8")).allowed_origins, [origin]);
-
-  const other = { name: distribution.nativeHostName, description: "Another installation", path: "/Applications/Other AmpleFile.app/host", type: "stdio", allowed_origins: [origin] };
-  await writeFile(manifestPath, JSON.stringify(other));
-  await new ChromeNativeHostRegistration({ ...options, stateRoot: join(root, "second-state") }).register(false, true);
-  assert.deepEqual(JSON.parse(await readFile(manifestPath, "utf8")), other, "another installation's registration stays as it is");
 });
 
 /** Fetch stub for the setup routes; `computer` answers each setup action. */
@@ -169,11 +93,10 @@ test("a failed status read clears once the next read succeeds", async (t) => {
 });
 
 for (const platform of ["darwin", "linux"] as const) {
-test(`first run offers Computer Control, never Chrome on ${platform}`, async (t) => {
+test(`first run offers Computer Control on ${platform}`, async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
-    { id: "chrome", state: "setup_required", detail: "", checkedAt: "", chrome: { state: "not_connected", checkedAt: "", hasSelection: false }, chromeSetup: { browserInstalled: true, extensionSeen: false } },
     { id: "computer", state: "unknown", detail: "", checkedAt: "" },
   ]);
   Object.defineProperty(window, "ampleFileDesktop", { value: { app: { platform }, api: {} }, configurable: true });
@@ -183,8 +106,6 @@ test(`first run offers Computer Control, never Chrome on ${platform}`, async (t)
   await dom.act(() => button(/^Get Started$/)!.click());
   await dom.waitFor(() => heading() === `Let Your Worker Use Your ${platform === "darwin" ? "Mac" : "Computer"}`);
   assert.equal(document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label"), "Step 2 of 3");
-  assert.equal(button(/^Chrome/), undefined, "Chrome stays in Skills & Extensions");
-  assert.doesNotMatch(document.body.textContent!, /Chrome/);
   await dom.act(() => button(/^Computer Control/)!.click());
   await dom.waitFor(() => Boolean(button(platform === "darwin" ? /^Allow Computer Control$/ : /^Start and Check$/)));
   await dom.act(() => button(/^Continue$/)!.click());

@@ -208,3 +208,7 @@ test("a folder you go to comes in from the side you went", () => {
   assert.equal(navigationSide(at("Garden"), at("Kitchen"), "forward"), "right");
 });
 
+
+test("Linux breadcrumbs name the filesystem root", () => {
+  assert.deepEqual(nativePathParts("/home/mat/Documents", "linux"), ["File System", "home", "mat", "Documents"]);
+});

@@ -35,14 +35,14 @@ same conversation.
 2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or
    OpenRouter, or paste an API key; provider usage may cost money), then asks
    for your first folder. Change the model anytime in **Settings → AI Models**.
-3. Choose **Set Up for Me** to have the Worker organize the folder and give it
-   a look, or just start a Chat.
+3. On the card that appears, choose **Set Up for Me** to have the Worker
+   organize the folder and give it a look, or just start a Chat.
 
 Files stay on your computer. Content a Worker uses goes to the model provider
 you choose; see [Privacy](PRIVACY.md).
 
 Linux x64 previews provide RPM, DEB and AppImage packages, including Computer Control.
-Download the [Linux 0.1.6 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.6);
+Download the [Linux 0.1.7 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7);
 see [Linux builds](docs/linux-build.md) for setup and verification.
 
 ## Run from source
@@ -82,7 +82,7 @@ native app, tests, and what to do when the toolchain is wrong.
 - **Tools.** Workers can use a [built-in browser](docs/built-in-browser.md),
   run long commands as [background jobs](docs/background-jobs.md), use
   [collaboration and Git tools](docs/worker-tools.md), and use the
-  included Computer Control, Chrome, Web, Documents, and Service Connections
+  included Computer Control, Web, Documents, and Service Connections
   tools, managed with any Skills and Extensions you add in
   **Skills & Extensions** ([details](docs/skills-and-extensions.md)).
 - **Other agents.** **Settings → Command Line** adds the `amplefile` command so

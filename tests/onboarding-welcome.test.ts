@@ -228,8 +228,11 @@ test("first run keeps the App's folder registration contract and the dark defaul
   assert.match(app, /useApplicationAppearance/);
   assert.match(app, /body:\s*\{ connectedFolderRoot: selected\.path, folderGrantId: selected\.folderGrantId \}/);
   assert.match(app, /const selected = await picker\.chooseFolder\(\); if \(!selected\) return;[\s\S]*?\/api\/connected-folders\/local-folder/);
-  // Set up for me waits for an AI connection instead of sending a turn that cannot start.
+  // Set Up for Me and Organize wait for an AI connection instead of sending a turn that cannot start.
   const fileManager = await read("web-local/src/components/file-manager/FileManagerView.tsx");
-  assert.match(fileManager, /function setUp\(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode\) \{\s*withAi\(\(\) => sendSetUp\(target, mode\)\);/);
+  assert.match(fileManager, /function setUp\(target: ConnectedFolderSummary\) \{[^}]*withAi\(\(\) => \{ onCloseSetUpOffer\?\.\(target\.id\); sendToWorker\(target, connectedFolderSetUpMessage, "Set Up for Me"\); \}\);/);
+  assert.match(fileManager, /function organize\(target: ConnectedFolderSummary\) \{\s*withAi\(\(\) => sendToWorker\(target, "Organize this folder\.", "Organize this folder\."\)\);/);
+  // Every way a folder is connected offers to set it up, once.
+  assert.equal(app.match(/offerSetUp\(/g)?.length, 3, "New Connected Folder, Connect Folder, and first run's Standard Folder");
   assert.match(fileManager, /function withAi\(send: \(\) => void\) \{\s*if \(fixtureMode \|\| agent\?\.configured\) \{ send\(\); return; \}\s*requestConnectAi\(send\);/);
 });
