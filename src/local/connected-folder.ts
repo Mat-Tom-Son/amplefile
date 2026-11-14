@@ -615,7 +615,8 @@ export async function getConnectedFolderEntryInfo(connectedFolderRoot: string, r
 }
 
 /**
- * The file tab's read-only inline preview. Text renders from a bounded head
+ * The file list's read-only Preview (Space, where the desktop has no Quick
+ * Look), for a Connected Folder or a standard folder. Text renders from a bounded head
  * read with the truncation disclosed; recognized image types defer to the
  * raw-file route, as do PDFs; binary or oversized content declines with its reason
  * instead of decoding garbage. The read honors the same Connected Folder path policy as
