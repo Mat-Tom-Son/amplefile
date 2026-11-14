@@ -152,7 +152,7 @@ test("a failed browser call is said in the desktop's own words", () => {
 });
 
 test("why a page did not load is said in plain words, whatever Chromium calls it", () => {
-  const say = (code: number, description = "") => browserLoadErrorText({ code, description });
+  const say = (code: number, description = "") => browserLoadErrorText({ code, description }, "darwin");
   assert.equal(say(-105, "ERR_NAME_NOT_RESOLVED"), "This site’s address couldn’t be found.");
   assert.equal(say(-106, "ERR_INTERNET_DISCONNECTED"), "This Mac isn’t connected to the internet.");
   assert.equal(say(-102, "ERR_CONNECTION_REFUSED"), "The site refused the connection.");

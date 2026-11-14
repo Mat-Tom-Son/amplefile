@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { errorText } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
+import { desktopPlatform, type DesktopPlatform } from "../../lib/platform";
 import { notifyFolderAutomationsChanged } from "../../hooks/useFolderAutomations";
 import { createFixtureAutomationReads } from "../../fixtures/settings-fixture";
 import { showToast } from "../../ui/feedback";
@@ -15,6 +16,16 @@ import {
   type AutomationOutcome,
   type AutomationTriggerView,
 } from "../../../../src/shared/automation-presentation";
+
+/**
+ * The empty list points at the AmpleFile Agent, which sets Automations up: in
+ * the menu bar on the Mac, and in the View menu on Linux, where a desktop may
+ * not show tray icons.
+ */
+export function automationsEmptyText(platform: DesktopPlatform = desktopPlatform()): string {
+  if (platform === "linux") return "No automations yet. To set one up, open View → AmpleFile Agent and ask it. Say what should happen, when, and in which Connected Folders.";
+  return "No automations yet. To set one up, ask the AmpleFile Agent in the menu bar. Say what should happen, when, and in which Connected Folders.";
+}
 
 export type AutomationHealthState = "enabled" | "disabled" | "suspended" | "completed";
 export type AutomationsPaneOutcome = AutomationOutcome;
@@ -464,7 +475,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
         </section>
       ) : null}
       {data && !allAutomations.length ? (
-        <div className="automations-empty">No automations yet. To set one up, ask the AmpleFile Agent in the menu bar. Say what should happen, when, and in which Connected Folders.</div>
+        <div className="automations-empty">{automationsEmptyText()}</div>
       ) : null}
       {showFolderFilter ? (
         <div className="capabilities-type-chips automation-folder-filter" role="group" aria-label="Connected Folder">

@@ -24,7 +24,9 @@ sample data from `web-local/src/fixtures/` and never calls the local API, so
 Vite alone (`npx vite --config vite.local.config.ts`) is enough. It imitates
 the Mac app—Mac words and key glyphs, the traffic-light inset, and a stand-in
 for the window material—unless `&platform=browser` asks for the plain browser
-rendering. `/popover.html?fixture=agent` previews the menu-bar popover.
+rendering. `&platform=linux` shows the Linux app's words and key names (Ctrl
+instead of ⌘, "this computer", "your file manager", no Quick Look) in the
+same preview; the Linux title bar and its menus are drawn only by the desktop. `/popover.html?fixture=agent` previews the menu-bar popover.
 `&agentState=running` and `&agentEvents=1` show a running Chat and its live
 steps; in development, `&script=fixture-chat-1` replays a Chat
 (`&scriptDelay=` sets the pause in milliseconds). `&update=` shows an update

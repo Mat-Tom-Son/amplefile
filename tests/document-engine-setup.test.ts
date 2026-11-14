@@ -8,7 +8,7 @@ import { checkDocumentEngines, discoverDocumentEngines, documentEngineCandidates
 import { listIncludedToolStatus, setupIncludedTool } from "../src/local/agent/included-tool-setup.js";
 import type { IncludedToolStatus } from "../src/shared/included-tools.js";
 import { includedToolReadiness } from "../web-local/src/lib/included-tool-readiness.js";
-import { documentEngineInstallCommand } from "../web-local/src/components/panes/IncludedDocumentsSetup.js";
+import { documentEngineInstallCommands } from "../web-local/src/components/panes/IncludedDocumentsSetup.js";
 
 const posixOnly = { skip: process.platform === "win32" };
 
@@ -142,9 +142,16 @@ test("Set up rechecks by itself: installing and removing LibreOffice changes the
 });
 
 test("Set up shows only commands a person runs themselves, matched to their computer", () => {
-  assert.deepEqual(documentEngineInstallCommand("libreoffice", "darwin", true), { label: "Or in Terminal, with Homebrew:", command: "brew install --cask libreoffice" });
-  assert.deepEqual(documentEngineInstallCommand("tesseract", "darwin", true), { label: "Or in Terminal, with Homebrew:", command: "brew install tesseract" });
-  assert.equal(documentEngineInstallCommand("libreoffice", "darwin", false), null, "no Homebrew, no Homebrew command");
-  assert.deepEqual(documentEngineInstallCommand("tesseract", "linux", false), { label: "On Debian or Ubuntu, in Terminal:", command: "sudo apt install tesseract-ocr" });
-  assert.equal(documentEngineInstallCommand("libreoffice", "win32", false), null);
+  assert.deepEqual(documentEngineInstallCommands("libreoffice", "darwin", true), [{ label: "Or in Terminal, with Homebrew:", command: "brew install --cask libreoffice" }]);
+  assert.deepEqual(documentEngineInstallCommands("tesseract", "darwin", true), [{ label: "Or in Terminal, with Homebrew:", command: "brew install tesseract" }]);
+  assert.deepEqual(documentEngineInstallCommands("libreoffice", "darwin", false), [], "no Homebrew, no Homebrew command");
+  assert.deepEqual(documentEngineInstallCommands("libreoffice", "linux", false), [
+    { label: "On Fedora, in Terminal:", command: "sudo dnf install libreoffice" },
+    { label: "On Debian or Ubuntu, in Terminal:", command: "sudo apt install libreoffice" },
+  ], "dnf- and apt-based systems each get their own package name");
+  assert.deepEqual(documentEngineInstallCommands("tesseract", "linux", false), [
+    { label: "On Fedora, in Terminal:", command: "sudo dnf install tesseract" },
+    { label: "On Debian or Ubuntu, in Terminal:", command: "sudo apt install tesseract-ocr" },
+  ]);
+  assert.deepEqual(documentEngineInstallCommands("libreoffice", "win32", false), []);
 });

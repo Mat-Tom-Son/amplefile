@@ -5,6 +5,7 @@ import { productIdentity } from "../../../../src/shared/product-identity";
 import { outsideAgentSkill } from "../../../../src/shared/outside-agent-skill";
 import { errorText } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
+import { computerNoun } from "../../lib/platform";
 import { showToast } from "../../ui/feedback";
 
 type CommandLineStatus = Awaited<ReturnType<NonNullable<NonNullable<Window["ampleFileDesktop"]>["commandLine"]>["status"]>>;
@@ -77,6 +78,7 @@ export function CommandLinePane({ fixtureMode = false, compact = false }: { fixt
     return <section className="settings-section command-line-pane"><p>Adding {command} to Terminal and to other AI agents needs the {product} desktop app.</p></section>;
   }
   const path = status?.path;
+  const computer = computerNoun();
   const pathLabel = !path ? "Checking" : !path.supported ? "Not available here" : path.state === "installed" ? "Added" : path.state === "elsewhere" ? "Points to another copy" : "Not added";
 
   return (
@@ -110,12 +112,12 @@ export function CommandLinePane({ fixtureMode = false, compact = false }: { fixt
       <div className="settings-list">
         {agents.map(({ target, name }) => {
           const skill = status?.skills[target];
-          const label = !skill ? "Checking" : skill.installed === "current" ? "Added" : skill.installed === "outdated" ? "Update available" : !skill.available ? "Not found on this Mac" : "Not added";
+          const label = !skill ? "Checking" : skill.installed === "current" ? "Added" : skill.installed === "outdated" ? "Update available" : !skill.available ? `Not found on this ${computer}` : "Not added";
           return (
             <div className="settings-list-row" key={target}>
               <div>
                 <strong>{name}</strong>
-                <small>{skill?.installed === "none" && !skill.available ? `${name} isn't set up on this Mac.` : `Adds the ${command} skill to ${name}'s skills.`}</small>
+                <small>{skill?.installed === "none" && !skill.available ? `${name} isn't set up on this ${computer}.` : `Adds the ${command} skill to ${name}'s skills.`}</small>
               </div>
               <div className="settings-actions">
                 <span className={`command-line-state${skill?.installed === "current" ? " is-on" : ""}`}>{skill?.installed === "current" ? <Checkmark16Regular aria-hidden="true" /> : null}{label}</span>

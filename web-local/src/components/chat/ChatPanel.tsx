@@ -49,11 +49,20 @@ import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";
+import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
+import { desktopPlatform, isMacOS, type DesktopPlatform } from "../../lib/platform";
 import { ChatMessageRow, MarkdownMessage, continueInterruptedTurnMessage, copyMarkdownToClipboard } from "./messages";
 import { TurnAnnouncer, chatTurnStatus } from "./TurnAnnouncer";
 import { showToast } from "../../ui/feedback";
 
 const emptyFixtureTreeEntries: TreeEntry[] = [];
+
+/** The message box while the Worker replies: Enter steers it, the command key with Enter queues the message. */
+export function steerQueuePlaceholder(platform: DesktopPlatform = desktopPlatform()): string {
+  if (isMacOS(platform)) return "Steer (Enter) · Queue (⌘Enter)";
+  return `Steer (Enter) · Queue (${desktopShortcutText([desktopShortcutModifierKey(platform), "Enter"], platform)})`;
+}
+
 const fixtureComposerCommands: AgentCommand[] = [
   { name: "skill:trip-planner", description: "Plan a trip from confirmed details and preferences", source: "skill" },
   { name: "compact", description: "Compact this Chat's working context", source: "builtin" },
@@ -2140,7 +2149,7 @@ export function ChatPanel({
                 void sendMessage();
               }
             }}
-            placeholder={running && !pendingSendRef.current ? "Steer (Enter) · Queue (⌘Enter)" : variant === "panel" ? "Reply" : "Message Worker"}
+            placeholder={running && !pendingSendRef.current ? steerQueuePlaceholder() : variant === "panel" ? "Reply" : "Message Worker"}
           />
           {/* What you add sits on the left; how the Worker runs and Send sit on
               the right. */}

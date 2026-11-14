@@ -1,18 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 import ts from "typescript";
+import { findCssBrowser } from "./support/css-browser.js";
 
 test("shared motion cancels running effects and removes exits when either Reduce Motion switch changes", { timeout: 60_000 }, async (t) => {
-  let browser: string | undefined;
-  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[]) {
-    try { await access(candidate); browser = candidate; break; } catch {}
-  }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is required for motion verification."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-shared-motion-"));
   try {

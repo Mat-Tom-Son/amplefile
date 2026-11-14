@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { applicationAppearanceVariables, applicationPalettes, defaultApplicationAppearance } from "../src/shared/application-appearance.js";
 import { accentIdentityFromHex, resolveConnectedFolderAppearance, wcagContrast } from "../src/shared/connected-folder-appearance.js";
+import { findCssBrowser } from "./support/css-browser.js";
 
 const desktopSheets = ["brand.css", "styles.css", "components/chat/work-steps.css", "application-appearance.css"];
 const popoverSheets = ["brand.css", "components/file-manager/file-manager-tokens.css", "popover/popover.css", "popover/popover-document.css", "components/chat/work-steps.css", "application-appearance.css"];
@@ -16,9 +17,7 @@ const panelSheets = [...desktopSheets, "components/file-manager/file-manager-tok
 const exec = promisify(execFile);
 
 test("actual desktop and popover CSS honor appearance roles, reading, density and accessibility", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is required for the real cascade test; set AMPLEFILE_CSS_BROWSER."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-appearance-css-"));
   try {

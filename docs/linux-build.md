@@ -67,6 +67,14 @@ the home folder has its own row. The path bar names the root **File System**. On
 iCloud Drive is Mac-only. The parser reads data without evaluating shell code.
 See the [XDG user directories contract](https://wiki.freedesktop.org/www/Software/xdg-user-dirs/).
 
+The window speaks Linux: Ctrl instead of ⌘ in shortcuts and hints, "this
+computer" instead of "this Mac", **Show in File Manager**, and "your file
+manager" where the Mac app names Finder. Quick Look is Mac-only, so Space does
+nothing in the file list and Shortcut Keys leaves it out. Deleting in a
+Standard Folder moves items to the desktop's Trash; in a Connected Folder,
+History brings them back. With no Automations yet, Settings → Automations
+points to **View → AmpleFile Agent**.
+
 The AmpleFile Agent is available from **View → AmpleFile Agent**, including
 desktops that do not display tray icons. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.
