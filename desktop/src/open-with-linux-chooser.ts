@@ -1,16 +1,18 @@
 import { homedir } from "node:os";
-import { dialog, Menu, nativeImage, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
+import { dialog, Menu, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 
+import { linuxMenuIcons } from "./linux-menu-icons.js";
 import { openWithDialogOptions, type OpenWithPickedApp } from "./open-with.js";
 import {
   desktopAppFromFile,
-  findDesktopIconPng,
   findExecutable,
   linuxOpenWithChoices,
   linuxOpenWithLaunchPlan,
   openWithMenuLabels,
   type LinuxDesktopApp,
 } from "./open-with-linux.js";
+
+const menuIconDeadlineMs = 400;
 
 /**
  * Linux Open With: a native menu, shown at the pointer by the main process,
@@ -32,12 +34,14 @@ export async function pickLinuxOpenWithApp(window: BrowserWindow | null, filePat
     launchPlan: (path) => linuxOpenWithLaunchPlan(app, path, tools),
   });
   const labels = openWithMenuLabels(choices.apps);
-  const icons = await Promise.all(choices.apps.map((app) => findDesktopIconPng(app.icon, env, home)));
+  // Themed icons, SVG ones drawn offscreen; an icon not ready in time is left
+  // out of this menu rather than delaying it, and is cached for the next one.
+  const icons = await linuxMenuIcons(choices.apps.map((app) => app.icon), { env, home, deadlineMs: menuIconDeadlineMs });
   const choice = await popupMenu(window, [
     ...choices.apps.map((app, index): MenuItemConstructorOptions & { choice: LinuxDesktopApp } => ({
       choice: app,
       label: escapeMnemonic(`${labels.get(app.id) ?? app.name}${app.id === choices.defaultId ? " (Default)" : ""}`),
-      ...menuIcon(icons[index]),
+      ...(icons[index] ? { icon: icons[index] } : {}),
     })),
     ...(choices.apps.length ? [] : [{ label: "No Apps for This Type", enabled: false }]),
   ]);
@@ -57,12 +61,6 @@ export async function pickLinuxOpenWithApp(window: BrowserWindow | null, filePat
 
 function escapeMnemonic(label: string): string {
   return label.replace(/&/g, "&&");
-}
-
-function menuIcon(path: string | null): { icon?: Electron.NativeImage } {
-  if (!path) return {};
-  const image = nativeImage.createFromPath(path);
-  return image.isEmpty() ? {} : { icon: image.resize({ width: 16, height: 16 }) };
 }
 
 function popupMenu(

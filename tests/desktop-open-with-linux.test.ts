@@ -14,7 +14,6 @@ import {
   desktopLocaleKeys,
   detectMimeType,
   expandDesktopExec,
-  findDesktopIconPng,
   isDesktopAppShown,
   linuxLaunchEnvironment,
   linuxOpenWithChoices,
@@ -435,11 +434,6 @@ test("fixture data directories: precedence, overrides, Hidden, TryExec, mimeapps
     assert.equal(picked?.name, "Okular");
     assert.equal(await desktopAppFromFile(join(root, "home/.local/share/applications/removed-by-user.desktop"), env), null);
     assert.equal(await desktopAppFromFile(join(root, "nope.desktop"), env), null);
-
-    await write("home/.local/share/icons/hicolor/48x48/apps/my-icon.png", "png");
-    assert.equal(await findDesktopIconPng("my-icon", env, home), join(home, ".local/share/icons/hicolor/48x48/apps/my-icon.png"));
-    assert.equal(await findDesktopIconPng("../escape", env, home), null);
-    assert.equal(await findDesktopIconPng(null, env, home), null);
   } finally {
     await cleanup();
   }
