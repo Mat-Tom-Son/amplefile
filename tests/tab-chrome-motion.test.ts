@@ -1,20 +1,19 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 import ts from "typescript";
+import { findCssBrowser } from "./support/css-browser.js";
 
 // The Browser pane's tab strip in real Chromium, with its real stylesheet:
 // tabs share the strip, and the frame behind the tab in front slides to the
 // tab chosen (web-local/src/lib/tab-chrome-motion.ts).
 test("browser tabs share the strip, and the frame behind the tab in front slides, retargets, and honors reduced motion", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is required; set AMPLEFILE_CSS_BROWSER."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-browser-tabs-"));
   try {

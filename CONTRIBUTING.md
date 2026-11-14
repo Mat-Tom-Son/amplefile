@@ -13,8 +13,11 @@ pull request first so we can agree on the approach.
   but contributor installs need that npm.
 - A Mac: AmpleFile ships for Apple-silicon Macs, and the native lanes
   (`desktop:*`) need one.
-- **Google Chrome** for the tests that lay out real CSS; without it they are
-  skipped. Point `AMPLEFILE_CSS_BROWSER` at another Chromium to use that.
+- **Google Chrome** or Chromium for the tests that lay out real CSS; without
+  one they are skipped. The tests look in the Mac's Applications folder and
+  for `google-chrome`, `google-chrome-stable`, `chromium`, and
+  `chromium-browser` in `/usr/bin`. Point `AMPLEFILE_CSS_BROWSER` at another
+  Chromium to use that.
 - No model provider key or Apple account is needed for the checks and tests.
 
 Check `npm --version` after selecting Node: the npm bundled with Node varies.

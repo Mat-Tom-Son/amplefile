@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -11,6 +11,7 @@ import { createElement } from "react";
 import { includedToolDefinitions } from "../src/shared/included-tools.js";
 import { applicationAppearanceVariables, defaultApplicationAppearance } from "../src/shared/application-appearance.js";
 import { createDomHarness } from "./support/dom.js";
+import { findCssBrowser } from "./support/css-browser.js";
 
 // Only Vite's graphics/CSS imports are replaced. Components, focus management,
 // setup requests and responses all run normally.
@@ -319,9 +320,7 @@ test("late readiness responses cannot cross Connected Folders or survive a close
 });
 
 test("real detail CSS keeps long paths above tool lists and preserves scrolling at narrow and short sizes", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is needed for actual layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-capability-css-"));
@@ -361,9 +360,7 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
 });
 
 test("actual catalog markup keeps one header row, one toolbar row, and openable rows in the window's style", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is needed for actual catalog layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {}, headerEnd: createElement("button", { className: "ui-control ui-control--icon skills-extensions-close", type: "button", "aria-label": "Close Skills & Extensions" }) }));

@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { findCssBrowser } from "./support/css-browser.js";
 
 test("Latest occupies its own row instead of covering the scrollable transcript", { timeout: 30_000 }, async (t) => {
-  let browser: string | undefined;
-  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]) {
-    if (!candidate) continue;
-    try { await access(candidate); browser = candidate; break; } catch {}
-  }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is required for actual Chat layout coverage."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-latest-layout-"));
   t.after(() => rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }));
