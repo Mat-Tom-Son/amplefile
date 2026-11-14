@@ -91,8 +91,35 @@ line itself, never through a shell, and refuses a terminal app unless
 in `/usr/share/applications` for a desktop entry or any program. Open With
 never changes a default app.
 
+Each app in the menu shows its icon from the desktop's icon theme, found as
+the [Icon Theme specification](https://specifications.freedesktop.org/icon-theme-spec/latest/)
+describes: the current theme (read from the settings portal, then GSettings,
+then KDE's `kdeglobals`, else hicolor), its `Inherits` chain, hicolor, then
+`/usr/share/pixmaps`, at 16 pixels with a 2x version. PNG icons are scaled;
+SVG icons, which native menus cannot draw, are drawn by Chromium in an
+offscreen renderer as images, so they run no script and load nothing: a
+sandboxed page with JavaScript off, a `default-src 'none'` policy and an
+in-memory session that refuses every non-`data:` request. SVG files over
+512 KiB and PNG files over 1 MiB are skipped. Icons are cached for the session
+and the theme is read again after five minutes. An icon not ready within
+400 ms is left out of that menu, which never waits for it; the next menu
+shows it. No `rsvg-convert`, gdk-pixbuf helper or other new dependency is
+needed. XPM icons are not shown.
+
 The AmpleFile Agent is available from **View → AmpleFile Agent**, including
-desktops that do not display tray icons. Closing the last Linux window keeps
+desktops that do not display tray icons. Opened from the window, it appears
+inside the window's top-right corner, under the title bar, on that window's
+display. Opened from the tray menu, it appears next to the pointer in an X11
+session; in a Wayland session, XWayland included, the pointer position is
+not known after a click in the panel, and a tray icon reports no position, so
+it appears in the work-area corner nearest the panel on the display of the
+AmpleFile window. It always stays inside one display's work area and shrinks
+on a display too small for it. Window managers that honor requested positions
+(X11, and XWayland under GNOME or KDE) place it there. Wayland compositors
+choose window positions themselves: niri opens the fixed-size popover as a
+floating window, not a tile, centered on the output, under xwayland-satellite
+and natively alike. A niri `window-rule` matching the title `AmpleFile Agent`
+with `default-floating-position` can move it. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.
 Use **File → Quit** to end the app. The first time the last window closes, a
 desktop notification says AmpleFile is still running and how to reopen or
@@ -126,6 +153,20 @@ windowing starts, but this lane does not qualify browser input or capture there.
 
 Windows use the `amplefile-desktop` app ID (Wayland) and window class (X11),
 matching the desktop entry, so docks and task switchers show AmpleFile's icon.
+As on the Mac, the window's title is the name of the Connected Folder shown
+(AmpleFile when none is), which task switchers and `niri msg windows` list.
+
+**File → Open Recent** lists the Connected Folders shown most recently, as the
+Mac's Open Recent does, newest first, followed by **Clear Menu**. Choosing one
+opens it the way a folder passed to the app does, so only a Connected Folder
+still registered opens. Names come from the Connected Folder list each time,
+so a renamed one shows its new name and a disconnected one disappears. The
+sidebar's **Recents** is a different list: files changed lately. Electron's
+recent-documents calls do nothing on Linux, so up to ten Connected Folder ids
+are kept in `recent-connected-folders.json` in the app's data directory.
+AmpleFile does not add Connected Folders to the desktop's recent files
+(`recently-used.xbel`): there is no command for it, and only GLib's own
+writer keeps that shared file intact while other apps update it.
 The application menu lists AmpleFile as a file manager, and file managers offer
 **Open With AmpleFile** for folders. That never makes AmpleFile the default
 folder handler: the packages declare `inode/directory` but run no `xdg-mime`
