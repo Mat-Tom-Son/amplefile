@@ -10,10 +10,13 @@ const args = process.argv.slice(2);
 if (args.some(arg => arg !== "--dir")) throw new Error("Supported option: --dir (unpacked diagnostic build)");
 // Background capture probes need a mapped X11 display. Give the build its own
 // display rather than depend on the person's compositor or disturb their UI.
+// Without their Wayland socket and session type, Electron selects that private
+// X display itself, so the probes never open windows on the person's desktop.
 if (process.env.AMPLEFILE_LINUX_BUILD_DISPLAY !== "1") {
+  const env = { ...process.env, AMPLEFILE_LINUX_BUILD_DISPLAY: "1", XDG_SESSION_TYPE: "x11" };
+  delete env.WAYLAND_DISPLAY;
   const result = spawnSync("xvfb-run", ["-a", "-s", "-screen 0 1920x1080x24", process.execPath, fileURLToPath(import.meta.url), ...args], {
-    cwd: root, stdio: "inherit",
-    env: { ...process.env, AMPLEFILE_LINUX_BUILD_DISPLAY: "1" },
+    cwd: root, stdio: "inherit", env,
   });
   if (result.error) throw new Error("Linux packaging requires xvfb-run and xauth for the isolated desktop probes.", { cause: result.error });
   process.exit(result.status ?? 1);
@@ -48,6 +51,8 @@ const executable = join(output, "linux-unpacked", packageName);
 run(process.execPath, ["scripts/verify-packaged-app-assets.mjs", "--package-dir", join(output, "linux-unpacked"), "--platform", "linux"]);
 run(process.execPath, ["scripts/linux-sandbox-smoke.mjs", executable]);
 run(process.execPath, ["scripts/linux-installed-smoke.mjs", executable, "--expect-version", version]);
+// The installers themselves, extracted without root or installation.
+if (!args.includes("--dir")) run(process.execPath, ["scripts/verify-linux-packages.mjs", output, "--version", version]);
 const artifacts = [];
 for (const name of (args.includes("--dir") ? [] : await readdir(output)).filter(name => artifactPattern.test(name)).sort()) {
   const bytes = await readFile(join(output, name));

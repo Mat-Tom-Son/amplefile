@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A local-first desktop app powered by Pi.",
+  "desktopName": "amplefile-desktop.desktop",
   "author": "Mat-Tom-Son",
   "license": "MIT",
   "homepage": "https://amplefile.com",

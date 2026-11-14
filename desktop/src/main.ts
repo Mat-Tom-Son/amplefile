@@ -1,5 +1,6 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
 import { configureLinuxPasswordStore } from "./linux-password-store.js";
+import { linuxX11RelaunchArguments, openPathArguments } from "./linux-launch.js";
 import { ComputerSessionService } from "../../src/local/agent/computer-session.js";
 import { NativeWaylandTransport } from "../../src/local/agent/wayland-transport.js";
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
@@ -123,17 +124,24 @@ import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protoc
 
 // AppImage launchers can fall back to --no-sandbox when namespaces are blocked.
 // Refuse before initializing user state rather than weaken renderer isolation.
-if (process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox")) {
+const refusedUnsandboxedLaunch = process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox");
+if (refusedUnsandboxedLaunch) {
   console.error("AmpleFile requires the Chromium sandbox. Install the DEB/RPM with the distribution's supported sandbox configuration.");
   app.exit(1);
 }
 
+configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
 // Hidden browser views need X11's native parent for trusted input and capture.
 // Desktop sharing still uses the Wayland portal in a Wayland login session.
-configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
-if (process.platform === "linux" && process.env.DISPLAY && !app.commandLine.hasSwitch("ozone-platform")) {
-  app.commandLine.appendSwitch("ozone-platform", "x11");
-}
+// Chromium has already chosen its platform here, so the instance that owns the
+// app starts again under X11 when it needs to (linuxX11RelaunchArguments).
+const linuxX11Relaunch = refusedUnsandboxedLaunch ? null : linuxX11RelaunchArguments({
+  platform: process.platform,
+  display: process.env.DISPLAY,
+  argv: process.argv,
+  selectedOzonePlatform: app.commandLine.getSwitchValue("ozone-platform"),
+  socketExists: existsSync,
+});
 
 const productionProductName = productIdentity.productName;
 const localMacSmokeProductName = productIdentity.macSmokeProductName;
@@ -244,8 +252,8 @@ let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
 let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string } | null = null;
-const pendingMacOpenPaths: string[] = [];
-let macOpenPathDrainPromise: Promise<void> | null = null;
+const pendingOpenPaths: string[] = [];
+let openPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
   prepare: prepareForApplicationQuit,
   quit: () => app.quit(),
@@ -300,8 +308,33 @@ try {
 }
 interactiveRequested = initialCliRequestId === null && initialCliArgumentError === null;
 const initialInspectContext = interactiveRequested && ampleFileInspectContextFromArgv(process.argv);
-const ownsInstance = app.requestSingleInstanceLock(ampleFileCliInstanceData(initialCliRequestId, initialInspectContext));
+// Only the instance that owns the app starts again under X11; a second launch
+// just hands its arguments to the owner, whichever platform it chose.
+const ownsInstance = app.requestSingleInstanceLock(ampleFileCliInstanceData(initialCliRequestId, initialInspectContext))
+  && !relaunchedUnderX11();
 if (!ownsInstance) app.quit();
+
+function relaunchedUnderX11(): boolean {
+  if (!linuxX11Relaunch) return false;
+  app.releaseSingleInstanceLock();
+  // An AppImage's mount ends with this process, so start the image again.
+  const appImage = process.env.APPIMAGE;
+  const executable = appImage && isAbsolute(appImage) && existsSync(appImage) ? appImage : process.execPath;
+  // Chromium keeps some files open and inheritable (ICU data, the archive);
+  // close everything but stdio first, or the new instance holds them, and an
+  // AppImage's old mount, for its lifetime. Output stays on this launch's
+  // stdout and stderr, which Electron's own relauncher would discard.
+  const closeInheritedFiles = 'for fd in /proc/self/fd/*; do n=${fd##*/}; case $n in 0|1|2) ;; *) eval "exec $n>&-" 2>/dev/null;; esac; done; exec "$0" "$@"';
+  const child = spawn("/bin/sh", ["-c", closeInheritedFiles, executable, ...linuxX11Relaunch], { stdio: "inherit", env: process.env });
+  child.once("error", (error) => console.error(`${productName} could not start under X11: ${errorMessage(error)}`));
+  child.unref();
+  return true;
+}
+
+if (ownsInstance && process.platform === "linux" && interactiveRequested) {
+  // A desktop launcher's %U: folders open like a Finder open-file below.
+  pendingOpenPaths.push(...openPathArguments(process.argv, { defaultApp: process.defaultApp === true, workingDirectory: process.cwd() }));
+}
 
 if (ownsInstance && process.platform === "darwin") {
   // macOS can deliver this before `ready`. Queue the path so Finder and Dock
@@ -309,18 +342,18 @@ if (ownsInstance && process.platform === "darwin") {
   // app host is available. Unknown folders are never registered implicitly.
   app.on("open-file", (event, path) => {
     event.preventDefault();
-    pendingMacOpenPaths.push(path);
+    pendingOpenPaths.push(path);
     interactiveRequested = true;
     if (app.isReady()) {
       void startInteractiveApp()
-        .then(drainPendingMacOpenPaths)
+        .then(drainPendingOpenPaths)
         .catch(reportStartupError);
     }
   });
 }
 
 if (ownsInstance) {
-  app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
+  app.on("second-instance", (_event, argv, workingDirectory, additionalData) => {
     // Route by cause: the shim relaunches this executable for every CLI
     // request, so anything CLI-shaped stays headless — even when the request
     // id was lost in transit — and only a genuine interactive relaunch (the
@@ -341,7 +374,10 @@ if (ownsInstance) {
       return;
     }
     interactiveRequested = true;
-    void startInteractiveApp().then(showWindow).catch(reportStartupError);
+    if (process.platform === "linux") {
+      pendingOpenPaths.push(...openPathArguments(argv, { defaultApp: process.defaultApp === true, workingDirectory }));
+    }
+    void startInteractiveApp().then(showWindow).then(drainPendingOpenPaths).catch(reportStartupError);
   });
   app.whenReady().then(async () => {
     configureStableUserDataPath();
@@ -514,7 +550,7 @@ async function startInteractiveApp(): Promise<void> {
         else showWindow();
       });
     }
-    await drainPendingMacOpenPaths();
+    await drainPendingOpenPaths();
   })();
   return interactiveStartupPromise;
 }
@@ -1926,23 +1962,26 @@ function applyNativeActiveConnectedFolderToWindow(window: BrowserWindow | null):
   window.setTitle(activeNativeConnectedFolder?.name ?? productName);
 }
 
-async function drainPendingMacOpenPaths(): Promise<void> {
-  if (process.platform !== "darwin") return;
-  if (macOpenPathDrainPromise) {
-    await macOpenPathDrainPromise;
-    if (pendingMacOpenPaths.length) await drainPendingMacOpenPaths();
+// Folders the system asked AmpleFile to open: Finder's open-file on macOS, a
+// desktop launcher's arguments on Linux. Each opens only an already
+// registered Connected Folder; connecting a folder stays an explicit act.
+async function drainPendingOpenPaths(): Promise<void> {
+  if (process.platform !== "darwin" && process.platform !== "linux") return;
+  if (openPathDrainPromise) {
+    await openPathDrainPromise;
+    if (pendingOpenPaths.length) await drainPendingOpenPaths();
     return;
   }
 
-  macOpenPathDrainPromise = (async () => {
-    while (pendingMacOpenPaths.length) {
-      const path = pendingMacOpenPaths.shift();
+  openPathDrainPromise = (async () => {
+    while (pendingOpenPaths.length) {
+      const path = pendingOpenPaths.shift();
       if (!path) continue;
       await ensureMainWindow();
       showWindow();
       const connectedFolderId = await registeredConnectedFolderIdForOpenPath(path);
       if (!connectedFolderId) {
-        console.warn(`${productName} ignored an unregistered Finder folder: ${path}`);
+        console.warn(`${productName} ignored a folder that is not a Connected Folder: ${path}`);
         continue;
       }
       await setActiveNativeConnectedFolder(connectedFolderId);
@@ -1954,11 +1993,11 @@ async function drainPendingMacOpenPaths(): Promise<void> {
       }
     }
   })().finally(() => {
-    macOpenPathDrainPromise = null;
+    openPathDrainPromise = null;
   });
 
-  await macOpenPathDrainPromise;
-  if (pendingMacOpenPaths.length) await drainPendingMacOpenPaths();
+  await openPathDrainPromise;
+  if (pendingOpenPaths.length) await drainPendingOpenPaths();
 }
 
 async function registeredConnectedFolderIdForOpenPath(path: string): Promise<string | null> {

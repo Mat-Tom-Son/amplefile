@@ -14,10 +14,14 @@ import sharp from "sharp";
 // - The menu-bar template pair renders amplefile-menubar.svg at 18 and 36 px,
 //   plus the frames of the pulse the dot makes while the AmpleFile Agent works.
 // - The dark-theme lockup is the Ink lockup with light lettering.
+// - Linux packages install the flat mark as a hicolor theme set: one PNG per
+//   size in out/generated-assets/linux-icons (named NxN.png, as Electron
+//   Builder collects them) plus the full SVG master as the scalable icon.
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const brandDir = join(rootDir, "desktop", "assets", "brand");
 const outDir = join(rootDir, "desktop", "assets");
+const linuxIconDir = join(rootDir, "out", "generated-assets", "linux-icons");
 const pngDir = join(brandDir, "png");
 const iconsetDir = join(brandDir, "AmpleFile.iconset");
 const macIconSource = join(brandDir, "AmpleFile-macOS-1024.png");
@@ -37,6 +41,8 @@ const brandColors = Object.freeze({
 
 /** The flat mark sizes; sizes up to 32 px come from the small master. */
 const markSizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+/** The hicolor sizes Linux packages install; electron-builder.desktop.cjs reads this directory. */
+const linuxIconSizes = [16, 24, 32, 48, 64, 128, 256, 512];
 /** Dot opacity for each frame of the working pulse; frame 0 is the resting icon. */
 const workingPulse = [1, 0.8, 0.45, 0.25, 0.45, 0.8];
 
@@ -173,6 +179,14 @@ async function writeFavicons(marks) {
   }
 }
 
+// Generated build output, like the DMG background: never committed.
+async function writeLinuxIcons(marks) {
+  await rm(linuxIconDir, { recursive: true, force: true });
+  await mkdir(join(linuxIconDir, "scalable"), { recursive: true });
+  for (const size of linuxIconSizes) await writeFile(join(linuxIconDir, `${size}x${size}.png`), marks.get(size));
+  await copyFile(markSvg, join(linuxIconDir, "scalable", "amplefile-desktop.svg"));
+}
+
 await mkdir(outDir, { recursive: true });
 for (const source of [macIconSource, markSvg, smallMarkSvg, menuBarSvg, lockupSvg]) {
   if (!existsSync(source)) throw new Error(`Brand source not found: ${source}`);
@@ -182,7 +196,7 @@ await buildIcns();
 await copyFile(macIconSource, join(outDir, "icon.png"));
 const marks = await renderMarks();
 await writeFile(join(outDir, "icon-32.png"), marks.get(32));
-await writeFile(join(outDir, "icon-512.png"), marks.get(512));
+await writeLinuxIcons(marks);
 await buildIco(marks);
 await renderMenuTemplates();
 await writeDarkLockup();

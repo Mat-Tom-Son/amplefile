@@ -40,7 +40,10 @@ to an archive before rebuilding the same local version.
 On Fedora, install the RPM with `sudo dnf install ./AmpleFile-VERSION-linux-x86_64.rpm`.
 On Ubuntu, install the DEB with `sudo apt install ./AmpleFile-VERSION-linux-amd64.deb`.
 The installer adds the `amplefile` command without replacing another owner's
-command. Uninstall preserves Connected Folders, Pi resources and app data.
+command. Both packages recommend GNOME Keyring for credential storage, a weak
+dependency that a KWallet desktop can decline. On Ubuntu 24.04 and Debian 13
+the DEB's audio, GTK and accessibility dependencies also accept the renamed
+64-bit-time libraries (`libasound2t64` and others). Uninstall preserves Connected Folders, Pi resources and app data.
 AppImage runs without libfuse2; desktop libraries and a functioning Chromium
 sandbox are still required. The app refuses `--no-sandbox`.
 
@@ -109,10 +112,28 @@ copied in a file manager from `x-special/gnome-copied-files` or `text/uri-list`
 Cut is also pasted as a copy, leaving the originals in place. Files that another
 Chromium-based app put on the clipboard are not read.
 
-Where X11/XWayland is available, Electron uses it by
-default for trusted background browser input and screenshots. Wayland desktop
-sharing still uses the native portal. Native Wayland-only Electron windowing is not
-qualified by this lane.
+The app follows one display rule however it is launched (menu entry, AppImage,
+terminal or `amplefile` command): X11 when an X display is reachable, which on
+a Wayland desktop means XWayland, for trusted background browser input and
+screenshots; otherwise Electron's own choice, native Wayland on a Wayland-only
+session. Chromium picks its display platform before the app's code runs, so
+when it picked Wayland and an X display is reachable, the instance that owns
+the app starts again once with `--ozone-platform=x11` on its command line; a
+second launch only hands its arguments to the running app. The launchers carry
+no platform switch, and an explicit `--ozone-platform` is always respected.
+Wayland desktop sharing still uses the native portal. Native Wayland-only
+windowing starts, but this lane does not qualify browser input or capture there.
+
+Windows use the `amplefile-desktop` app ID (Wayland) and window class (X11),
+matching the desktop entry, so docks and task switchers show AmpleFile's icon.
+The application menu lists AmpleFile as a file manager, and file managers offer
+**Open With AmpleFile** for folders. That never makes AmpleFile the default
+folder handler: the packages declare `inode/directory` but run no `xdg-mime`
+command and change no `mimeapps.list`. As with a folder opened from Finder on a
+Mac, a folder that is already a Connected Folder opens in the window; any other
+folder only brings the window forward, because connecting a folder is its own
+explicit act. Desktops with no default folder handler configured may still pick
+any declaring app themselves.
 
 ## Computer Control
 
@@ -153,11 +174,27 @@ appropriate xdg-desktop-portal backend through the distribution.
 
 ## Verification
 
-The build verifies packaged assets and fuses, rejects sandbox-disabling
+The build runs its probes on a private X display with the person's Wayland
+socket removed, verifies packaged assets and fuses, rejects sandbox-disabling
 launches, and runs Pi through a synthetic loopback provider. That test checks
 the Worker-inherited CLI, exact output bytes, folder identity, Chat, History,
 model selection, durable request completion, and renderer sandbox state.
 It uses disposable app/Pi profiles, with no personal credentials or paid model.
+
+It then checks the installers themselves, without root or installation: the
+DEB and RPM are extracted (`dpkg-deb`, or `ar` and `tar`; `rpm2cpio` and
+`cpio`) and the AppImage unpacks itself. Each must contain the executable, the
+CLI under `bin/`, the Computer Control and Wayland helpers, the desktop entry
+(an `Exec` without platform or sandbox switches, `inode/directory`, the menu
+categories, `GenericName` and `Comment`) and the hicolor icons from 16 to 512
+pixels (plus the scalable SVG in DEB/RPM). The DEB and RPM must declare every
+configured dependency and the keyring recommendation, and carry maintainer
+scripts that set no default application. A format is skipped, with a printed
+notice, only when its extraction tools are missing. To check existing artifacts:
+
+```sh
+node scripts/verify-linux-packages.mjs out/linux --version VERSION
+```
 
 To check persistence across cold launches:
 
