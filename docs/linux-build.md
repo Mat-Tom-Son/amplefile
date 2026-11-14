@@ -67,6 +67,19 @@ the home folder has its own row. The path bar names the root **File System**. On
 iCloud Drive is Mac-only. The parser reads data without evaluating shell code.
 See the [XDG user directories contract](https://wiki.freedesktop.org/www/Software/xdg-user-dirs/).
 
+**Open With** shows a menu of the apps the desktop associates with the
+file's type, its default app first. The type comes from shared-mime-info
+(`gio info`, then `xdg-mime`, then file name globs); the apps come from
+desktop entries in `$XDG_DATA_HOME` and `$XDG_DATA_DIRS`, including Flatpak
+and Snap exports, and from `mimeapps.list`. Hidden, NoDisplay, other-desktop
+and missing-TryExec entries are left out. The chosen app starts through
+`gio launch`, so Flatpak, Snap, D-Bus-activated and terminal apps behave as
+they do from the desktop. Without `gio`, AmpleFile expands the entry's Exec
+line itself, never through a shell, and refuses a terminal app unless
+`xdg-terminal-exec` is installed. **Other Application…** opens a file dialog
+in `/usr/share/applications` for a desktop entry or any program. Open With
+never changes a default app.
+
 The AmpleFile Agent is available from **View → AmpleFile Agent**, including
 desktops that do not display tray icons. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.

@@ -98,6 +98,7 @@ import {
   type NativeConnectedFolderMenuCommand,
 } from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
+import { pickLinuxOpenWithApp } from "./open-with-linux-chooser.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
@@ -920,9 +921,10 @@ function registerIpc(): void {
         if (!(await stat(filePath)).isFile()) throw new Error("Only files can be opened with another app.");
         return filePath;
       },
-      pickApp: async () => {
-        const options = openWithDialogOptions(process.platform);
+      pickApp: async (filePath) => {
         const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+        if (process.platform === "linux") return pickLinuxOpenWithApp(window, filePath);
+        const options = openWithDialogOptions(process.platform);
         const choice = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
         // Only the path the dialog itself returned is ever launched.
         return choice.canceled ? null : choice.filePaths[0] ?? null;
@@ -976,9 +978,10 @@ function registerIpc(): void {
         if (!(await stat(filePath)).isFile()) throw new Error("Only files can be opened with another app.");
         return filePath;
       },
-      pickApp: async () => {
-        const options = openWithDialogOptions(process.platform);
+      pickApp: async (filePath) => {
         const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+        if (process.platform === "linux") return pickLinuxOpenWithApp(window, filePath);
+        const options = openWithDialogOptions(process.platform);
         const choice = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
         return choice.canceled ? null : choice.filePaths[0] ?? null;
       },
@@ -1729,11 +1732,11 @@ function connectedFolderPathRequest(value: unknown, requireAction = true): { con
 function launchOpenWith(plan: OpenWithLaunchPlan): Promise<void> {
   if (plan.kind === "exec") {
     return new Promise((resolveLaunch, rejectLaunch) => {
-      execFile(plan.command, plan.args, (error) => error ? rejectLaunch(error) : resolveLaunch());
+      execFile(plan.command, plan.args, { env: plan.env, cwd: plan.cwd }, (error) => error ? rejectLaunch(error) : resolveLaunch());
     });
   }
   return new Promise((resolveLaunch, rejectLaunch) => {
-    const child = spawn(plan.command, plan.args, { detached: true, stdio: "ignore" });
+    const child = spawn(plan.command, plan.args, { detached: true, stdio: "ignore", env: plan.env, cwd: plan.cwd });
     child.once("error", rejectLaunch);
     child.once("spawn", () => {
       child.unref();

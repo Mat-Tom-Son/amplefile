@@ -70,7 +70,24 @@ test("Open with reaches the host only as a Connected Folder file reference and l
   assert.match(body, /return choice\.canceled \? null : choice\.filePaths\[0\] \?\? null;/);
   assert.match(body, /launch: launchOpenWith/);
   assert.doesNotMatch(body, /shell: true|exec\(/);
-  assert.match(main, /spawn\(plan\.command, plan\.args, \{ detached: true, stdio: "ignore" \}\)/);
+  assert.match(main, /spawn\(plan\.command, plan\.args, \{ detached: true, stdio: "ignore", env: plan\.env, cwd: plan\.cwd \}\)/);
+  // Linux offers the desktop's handlers from the main process: the renderer
+  // still sends only the file reference, never an app or a command.
+  assert.match(body, /if \(process\.platform === "linux"\) return pickLinuxOpenWithApp\(window, filePath\);/);
+  const standardHandler = main.slice(main.indexOf('ipcMain.handle("amplefile:standard-folder:open-path-with"'));
+  assert.match(standardHandler.slice(0, standardHandler.indexOf("\n  });\n") + 1), /if \(process\.platform === "linux"\) return pickLinuxOpenWithApp\(window, filePath\);/);
+});
+
+test("the Linux Open With chooser launches only enumerated apps or the native dialog's choice, never through a shell", async () => {
+  const chooser = await readFile(new URL("../desktop/src/open-with-linux-chooser.ts", import.meta.url), "utf8");
+  const linux = await readFile(new URL("../desktop/src/open-with-linux.ts", import.meta.url), "utf8");
+  assert.match(chooser, /linuxOpenWithChoices\(filePath, \{ env, home \}\)/);
+  assert.match(chooser, /dialog\.showOpenDialog\(window, options\)/);
+  assert.match(chooser, /result\.filePaths\[0\]/);
+  assert.doesNotMatch(chooser, /ipcMain|webContents|spawn|execFile/);
+  // Its only child-process use is execFile with argument vectors (gio info / xdg-mime).
+  assert.deepEqual([...linux.matchAll(/import \{([^}]*)\} from "node:child_process"/g)].map((match) => match[1]!.trim()), ["execFile"]);
+  assert.doesNotMatch(linux, /shell: true|from "electron"/);
 });
 
 test("only the channels the AmpleFile Agent popover preload uses accept the popover; every other handler requires the main renderer", () => {
