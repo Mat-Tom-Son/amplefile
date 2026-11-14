@@ -1,5 +1,9 @@
 //! A capture-only child of portal-capture-diagnostic. No input is dispatched.
-use amplefile_wayland::{capture::Capture, niri::Input};
+use amplefile_wayland::{
+    capture::Capture,
+    compositor::{self, Path},
+    virtual_input::Input,
+};
 use anyhow::{ensure, Context, Result};
 use std::os::fd::{FromRawFd, OwnedFd};
 #[tokio::main(flavor = "current_thread")]
@@ -44,7 +48,10 @@ async fn main() -> Result<()> {
         format!("{:x}", Sha256::digest(rgba)) == frame.info.sha256,
         "PNG and raw pixels disagree"
     );
-    let _input = Input::new(position, size, (frame.info.width, frame.info.height))?;
+    let Path::VirtualInput(profile) = compositor::path(compositor::identify("niri")?) else {
+        anyhow::bail!("niri uses virtual input")
+    };
+    let _input = Input::new(&profile, position, size, (frame.info.width, frame.info.height))?;
     println!("PASS GPU capture {}x{}, logical {:?}, valid PNG, output-bound input mapping; no input sent",frame.info.width,frame.info.height,size);
     Ok(())
 }

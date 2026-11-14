@@ -1,5 +1,5 @@
 //! One explicitly selected monitor, with a shared capture/input session.
-use crate::{capture::{Capture, Frame}, input::Sender};
+use crate::{capture::{Capture, Frame}, compositor::{self, CaptureMemory, Desktop, LockSignal, Path, Profile}, input::Sender};
 use anyhow::{anyhow, ensure, Context, Result};
 use ashpd::desktop::{remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions},
     screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType}, PersistMode, Session};
@@ -22,12 +22,9 @@ const GNOME_LOCK: LockService = LockService { name: "org.gnome.ScreenSaver", pat
 const KDE_LOCK: LockService = LockService { name: "org.freedesktop.ScreenSaver", path: "/ScreenSaver" };
 
 fn lock_service(desktop: &str) -> Result<LockService> {
-    let names: Vec<_> = desktop.split(':').collect();
-    let gnome = names.iter().any(|name| name.eq_ignore_ascii_case("GNOME"));
-    let kde = names.iter().any(|name| name.eq_ignore_ascii_case("KDE"));
-    match (gnome, kde) {
-        (true, false) => Ok(GNOME_LOCK),
-        (false, true) => Ok(KDE_LOCK),
+    match compositor::identify(desktop) {
+        Ok(Desktop::Gnome) => Ok(GNOME_LOCK),
+        Ok(Desktop::Kde) => Ok(KDE_LOCK),
         _ => Err(anyhow!("Screen sharing requires an identifiable GNOME or KDE desktop session")),
     }
 }
@@ -82,8 +79,14 @@ impl Drop for SharedScreen {
 
 impl SharedScreen {
     pub async fn request(cancel: impl std::future::Future<Output = ()>) -> Result<Self> {
-        if std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().split(':').any(|name|name.eq_ignore_ascii_case("niri")) { return Self::request_niri(cancel).await; }
-        let lock_service = lock_service(&std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default())?;
+        let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+        // Identify and qualify before any portal call, so an unsupported
+        // desktop never shows a chooser it could not honor.
+        match compositor::qualify(compositor::identify(&current_desktop)?)? {
+            Path::VirtualInput(profile) => return Self::request_virtual_input(profile, cancel).await,
+            Path::Portal(_) => {}
+        }
+        let lock_service = lock_service(&current_desktop)?;
         let remote = RemoteDesktop::new().await?;
         let cast = Screencast::with_connection(remote.connection().clone()).await?;
         let session = Arc::new(remote.create_session(Default::default()).await?);
@@ -175,7 +178,10 @@ impl SharedScreen {
 
     /// Pump transport events before every observation and action. Revocation
     /// invalidates this object; callers must never turn it into an auto-retry.
-    async fn request_niri(cancel: impl std::future::Future<Output = ()>) -> Result<Self> {
+    async fn request_virtual_input(profile: Profile, cancel: impl std::future::Future<Output = ()>) -> Result<Self> {
+        // Only the logind LockedHint signal is implemented. A profile whose
+        // lock signal differs must not reach a chooser.
+        ensure!(profile.lock == LockSignal::CompositorLockedHint, "No lock monitor is implemented for {}", profile.name);
         let cast = Screencast::new().await?;
         let session = Arc::new(cast.create_session(Default::default()).await?);
         let (closed_sender, closed) = watch::channel(false);
@@ -192,8 +198,8 @@ impl SharedScreen {
         ready.await.context("Portal watcher ended before subscription")??;
         let mut screen = Self {session:None,cast_session:Some(session.clone()),closed,watchers:vec![watcher],capture:None,input:None,mapping_id:None,logical_size:None,logical_position:None,devices:0,alive:true};
         let (lock_ready,lock_subscribed) = oneshot::channel();
-        screen.watchers.push(tokio::spawn(async move {crate::session_lock::monitor_niri(lock_ready).await;closed_sender.send_replace(true);}));
-        if let Err(error) = lock_subscribed.await.context("niri lock monitor ended").and_then(|r|r) {screen.close().await.ok();return Err(error.context("Desktop lock monitoring is unavailable"));}
+        screen.watchers.push(tokio::spawn(async move {crate::session_lock::monitor_logind(lock_ready).await;closed_sender.send_replace(true);}));
+        if let Err(error) = lock_subscribed.await.context("Lock monitor ended").and_then(|r|r) {screen.close().await.ok();return Err(error.context("Desktop lock monitoring is unavailable"));}
         let mut revoked = screen.closed.clone();
         let operation = async {
             cast.select_sources(&session,SelectSourcesOptions::default().set_sources(Some(SourceType::Monitor.into())).set_multiple(false).set_cursor_mode(CursorMode::Embedded).set_persist_mode(PersistMode::DoNot)).await?.response()?;
@@ -203,9 +209,12 @@ impl SharedScreen {
             let position = stream.position().context("The screen portal supplied no monitor position")?;
             let size = stream.size().context("The screen portal supplied no monitor size")?;
             let fd = cast.open_pipe_wire_remote(&session,Default::default()).await?;
-            screen.capture = Some(Capture::portal_linear(fd.into(),stream.pipe_wire_node_id()).await?);
+            screen.capture = Some(match profile.capture {
+                CaptureMemory::LinearDmaBuf => Capture::portal_linear(fd.into(),stream.pipe_wire_node_id()).await?,
+                CaptureMemory::System => Capture::portal(fd.into(),stream.pipe_wire_node_id()).await?,
+            });
             let frame = screen.capture.as_ref().unwrap().frame().await?;
-            let input = Sender::niri(position,size,(frame.info.width,frame.info.height))?;
+            let input = Sender::virtual_input(&profile,position,size,(frame.info.width,frame.info.height))?;
             screen.mapping_id = input.regions()?.first().and_then(|r|r.mapping_id.clone());
             screen.logical_size = Some(size);screen.logical_position = Some(position);
             screen.input = Some(input);screen.devices = 3;
@@ -379,7 +388,7 @@ mod tests {
     fn only_identifiable_supported_desktops_choose_a_lock_service() {
         for desktop in ["GNOME", "ubuntu:GNOME", "gnome"] { assert_eq!(lock_service(desktop).unwrap(), GNOME_LOCK); }
         for desktop in ["KDE", "plasma:KDE", "kde"] { assert_eq!(lock_service(desktop).unwrap(), KDE_LOCK); }
-        for desktop in ["", "GNOME:KDE", "not-GNOME", "XFCE", "KDE-other"] { assert!(lock_service(desktop).is_err()); }
+        for desktop in ["", "GNOME:KDE", "not-GNOME", "XFCE", "KDE-other", "niri", "sway", "COSMIC"] { assert!(lock_service(desktop).is_err()); }
     }
     #[tokio::test]
     async fn both_native_lock_interfaces_revoke_on_active_signal() {

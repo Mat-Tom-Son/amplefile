@@ -1,14 +1,17 @@
-//! niri publishes its confirmed lock state as logind's LockedHint. Require the
-//! current user's active Wayland session and revoke on lock, VT switch or loss.
+//! For compositors that publish their own confirmed lock state as logind's
+//! LockedHint (niri; see `compositor::LockSignal::CompositorLockedHint`).
+//! Require the current user's active Wayland session and revoke on lock, VT
+//! switch or loss. A locker client that never sets the hint makes this signal
+//! meaningless, which is why such desktops are not admitted at all.
 use anyhow::{ensure, Context, Result};
 use futures_util::StreamExt;
 use tokio::sync::oneshot;
 use zbus::zvariant::OwnedObjectPath;
 
-pub async fn monitor_niri(ready: oneshot::Sender<Result<()>>) {
+pub async fn monitor_logind(ready: oneshot::Sender<Result<()>>) {
     let mut ready = Some(ready);
     let result = async {
-        let id = std::env::var("XDG_SESSION_ID").context("niri screen sharing requires XDG_SESSION_ID for lock monitoring")?;
+        let id = std::env::var("XDG_SESSION_ID").context("Screen sharing requires XDG_SESSION_ID for lock monitoring")?;
         ensure!(!id.is_empty() && id.len() <= 128,"Invalid login session identifier");
         let connection = zbus::Connection::system().await?;
         let manager = zbus::Proxy::new(&connection,"org.freedesktop.login1","/org/freedesktop/login1","org.freedesktop.login1.Manager").await?;
@@ -21,7 +24,7 @@ pub async fn monitor_niri(ready: oneshot::Sender<Result<()>>) {
         let mut changes = properties.receive_properties_changed().await?;
         let mut owners = session.receive_owner_changed().await?;
         ensure!(!session.get_property::<bool>("LockedHint").await?,"Unlock the desktop before sharing");
-        ensure!(session.get_property::<bool>("Active").await?,"Activate the niri login session before sharing");
+        ensure!(session.get_property::<bool>("Active").await?,"Activate the login session before sharing");
         let _ = ready.take().unwrap().send(Ok(()));
         loop {
             tokio::select! {

@@ -6,7 +6,8 @@ pub mod portal;
 pub mod seat;
 mod keyboard;
 
-pub mod niri;
+pub mod compositor;
+pub mod virtual_input;
 pub mod input;
 pub mod session_lock;
 
