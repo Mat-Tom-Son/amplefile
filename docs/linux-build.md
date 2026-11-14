@@ -70,10 +70,28 @@ See the [XDG user directories contract](https://wiki.freedesktop.org/www/Softwar
 The AmpleFile Agent is available from **View → AmpleFile Agent**, including
 desktops that do not display tray icons. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.
-Use Quit to end the app. Where X11/XWayland is available, Electron uses it by
-default for trusted background browser input and screenshots. Wayland desktop
-sharing still uses the native portal. Native Wayland-only Electron windowing is not
-qualified by this lane.
+Use Quit to end the app.
+
+The app follows one display rule however it is launched (menu entry, AppImage,
+terminal or `amplefile` command): X11 when an X display is reachable, which on
+a Wayland desktop means XWayland, for trusted background browser input and
+screenshots; otherwise Electron's own choice, native Wayland on a Wayland-only
+session. Chromium picks its display platform before the app's code runs, so
+when it picked Wayland and an X display is reachable, the instance that owns
+the app starts again once with `--ozone-platform=x11` on its command line; a
+second launch only hands its arguments to the running app. The launchers carry
+no platform switch, and an explicit `--ozone-platform` is always respected.
+Wayland desktop sharing still uses the native portal. Native Wayland-only
+windowing starts, but this lane does not qualify browser input or capture there.
+
+The application menu lists AmpleFile as a file manager, and file managers offer
+**Open With AmpleFile** for folders. That never makes AmpleFile the default
+folder handler: the packages declare `inode/directory` but run no `xdg-mime`
+command and change no `mimeapps.list`. As with a folder opened from Finder on a
+Mac, a folder that is already a Connected Folder opens in the window; any other
+folder only brings the window forward, because connecting a folder is its own
+explicit act. Desktops with no default folder handler configured may still pick
+any declaring app themselves.
 
 ## Computer Control
 

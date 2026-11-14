@@ -45,7 +45,7 @@ test("the Darwin Connected Folder header menu requires the trusted main renderer
 test("Finder and Open Recent recreate the Mac window before automation a queued Connected Folder", () => {
   assert.match(
     main,
-    /drainPendingMacOpenPaths[\s\S]*?while \(pendingMacOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?registeredConnectedFolderIdForOpenPath\(path\)[\s\S]*?amplefile:connected-folder:open-connected-folder/,
+    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?registeredConnectedFolderIdForOpenPath\(path\)[\s\S]*?amplefile:connected-folder:open-connected-folder/,
   );
   assert.match(main, /registeredConnectedFolderIdForOpenPath[\s\S]*?info\.isDirectory\(\)[\s\S]*?realpath\(connectedFolder\.connectedFolderRoot\)[\s\S]*?samePath\(openedRoot, registeredRoot\)/);
   assert.match(main, /request = \{ token: randomUUID\(\), connectedFolderId \}[\s\S]*?amplefile:connected-folder:open-connected-folder/);
@@ -78,7 +78,7 @@ test("headless CLI relaunches never front the interactive window", () => {
   // interactive relaunch (person opened AmpleFile again) reaches showWindow.
   assert.match(
     main,
-    /app\.on\("second-instance", \(_event, argv, _workingDirectory, additionalData\) => \{[\s\S]*?ampleFileSecondInstanceIntent\(argv, additionalData\)[\s\S]*?intent\.kind === "cli-invalid"[\s\S]*?return;[\s\S]*?intent\.kind === "cli"[\s\S]*?processAmpleFileCliRequest\(intent\.requestId\)[\s\S]*?return;[\s\S]*?interactiveRequested = true;[\s\S]*?startInteractiveApp\(\)\.then\(showWindow\)/,
+    /app\.on\("second-instance", \(_event, argv, workingDirectory, additionalData\) => \{[\s\S]*?ampleFileSecondInstanceIntent\(argv, additionalData\)[\s\S]*?intent\.kind === "cli-invalid"[\s\S]*?return;[\s\S]*?intent\.kind === "cli"[\s\S]*?processAmpleFileCliRequest\(intent\.requestId\)[\s\S]*?return;[\s\S]*?interactiveRequested = true;[\s\S]*?startInteractiveApp\(\)\.then\(showWindow\)/,
   );
   // Parsing ids inline would fall through to showWindow whenever both
   // channels came back empty — CLI-shaped launches must not do that.
