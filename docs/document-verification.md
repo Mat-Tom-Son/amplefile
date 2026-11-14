@@ -66,6 +66,11 @@ The Documents details show a two-row checklist:
 
 When Homebrew is present, a missing row also shows its command
 (`brew install --cask libreoffice` or `brew install tesseract`) with **Copy**.
+On Linux, a missing row shows one command for Fedora and one for Debian or
+Ubuntu, each with **Copy**: `sudo dnf install libreoffice` and
+`sudo apt install libreoffice`, or `sudo dnf install tesseract` and
+`sudo apt install tesseract-ocr`. Both Tesseract packages bring English
+language data with them.
 Under the list, a hint says both are free and, on a Mac without LibreOffice,
 to open it once after installing so macOS can approve it.
 

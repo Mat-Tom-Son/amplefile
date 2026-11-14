@@ -6,6 +6,7 @@
  */
 
 import { browserAddressFor, browserSearchUrl, isBrowserAddress, type BrowserOpenTabCommand, type BrowserPageState } from "../../../src/shared/browser";
+import { desktopPlatform, isMacOS, type DesktopPlatform } from "./platform";
 
 /** One tab in the Browser pane. `url` is empty for a new tab nobody has typed an address into. */
 export interface BrowserTab {
@@ -190,10 +191,10 @@ export const browserQuestionGuardMs = 500;
  * Why a page did not load, in plain words. Chromium's own name for the
  * failure (`ERR_NAME_NOT_RESOLVED`) is kept as supporting detail beside it.
  */
-export function browserLoadErrorText(error: { code: number; description: string }): string {
+export function browserLoadErrorText(error: { code: number; description: string }, platform: DesktopPlatform = desktopPlatform()): string {
   const code = error.code;
   if (code === -105 || code === -137) return "This site’s address couldn’t be found.";
-  if (code === -106) return "This Mac isn’t connected to the internet.";
+  if (code === -106) return isMacOS(platform) ? "This Mac isn’t connected to the internet." : "This computer isn’t connected to the internet.";
   if (code === -102) return "The site refused the connection.";
   if (code === -7 || code === -118) return "The site took too long to respond.";
   if (code === -100 || code === -101 || code === -324) return "The connection to the site was interrupted.";

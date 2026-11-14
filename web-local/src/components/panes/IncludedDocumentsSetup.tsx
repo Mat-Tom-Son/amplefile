@@ -6,11 +6,21 @@ import { copyToClipboard } from "../../lib/clipboard";
 export const libreOfficeDownloadUrl = "https://www.libreoffice.org/download/download-libreoffice/";
 export const tesseractInstallGuideUrl = "https://tesseract-ocr.github.io/tessdoc/Installation.html";
 
-/** The install command a person can run themselves; AmpleFile never runs it. */
-export function documentEngineInstallCommand(engine: "libreoffice" | "tesseract", platform: string, homebrew: boolean): { label: string; command: string } | null {
-  if (platform === "darwin" && homebrew) return { label: "Or in Terminal, with Homebrew:", command: engine === "libreoffice" ? "brew install --cask libreoffice" : "brew install tesseract" };
-  if (platform === "linux") return { label: "On Debian or Ubuntu, in Terminal:", command: engine === "libreoffice" ? "sudo apt install libreoffice" : "sudo apt install tesseract-ocr" };
-  return null;
+type InstallCommandHint = { label: string; command: string };
+
+/**
+ * The install commands a person can run themselves; AmpleFile never runs them.
+ * Linux names both package managers the Linux packages are built for, since
+ * the status does not say which distribution this is: Fedora's `tesseract`
+ * and Debian's `tesseract-ocr` each bring the English language data with them.
+ */
+export function documentEngineInstallCommands(engine: "libreoffice" | "tesseract", platform: string, homebrew: boolean): InstallCommandHint[] {
+  if (platform === "darwin" && homebrew) return [{ label: "Or in Terminal, with Homebrew:", command: engine === "libreoffice" ? "brew install --cask libreoffice" : "brew install tesseract" }];
+  if (platform === "linux") return [
+    { label: "On Fedora, in Terminal:", command: engine === "libreoffice" ? "sudo dnf install libreoffice" : "sudo dnf install tesseract" },
+    { label: "On Debian or Ubuntu, in Terminal:", command: engine === "libreoffice" ? "sudo apt install libreoffice" : "sudo apt install tesseract-ocr" },
+  ];
+  return [];
 }
 
 function openPage(url: string) {
@@ -30,13 +40,13 @@ function InstallCommand({ label, command }: { label: string; command: string }) 
 }
 
 /** Where it is and which version a Check saw stay supporting detail, in the state's tooltip. */
-function EngineRow({ name, engine, command, action, children }: { name: string; engine: DocumentEngineSetup; command: { label: string; command: string } | null; action: { label: string; url: string }; children: string }) {
+function EngineRow({ name, engine, commands, action, children }: { name: string; engine: DocumentEngineSetup; commands: InstallCommandHint[]; action: { label: string; url: string }; children: string }) {
   const working = engine.found && !engine.problem;
   return <li className={working ? "done" : ""}>
     {working ? <Check size={16} aria-hidden="true" /> : <Circle size={16} aria-hidden="true" />}
     <span><strong>{name}</strong> {children}
       {engine.problem ? <span className="setup-command">It didn't start. {engine.problem}</span> : null}
-      {!engine.found && command ? <InstallCommand {...command} /> : null}
+      {!engine.found ? commands.map((command) => <InstallCommand key={command.command} {...command} />) : null}
     </span>
     {engine.found ? <span className={engine.problem ? "setup-checklist-state problem" : "setup-checklist-state"} title={[engine.path, engine.version].filter(Boolean).join(" · ")}>{engine.problem ? "Didn't Start" : "Installed"}</span>
       : <button type="button" className="ui-control" onClick={() => openPage(action.url)}>{action.label}</button>}
@@ -51,13 +61,13 @@ export function DocumentsEngineSetup({ status, enabled }: { status: IncludedTool
   const setup = status?.documentsSetup;
   if (!enabled || !setup) return null;
   const { platform, homebrew, libreoffice, tesseract } = setup;
-  const libreOfficeCommand = documentEngineInstallCommand("libreoffice", platform, homebrew);
-  const tesseractCommand = documentEngineInstallCommand("tesseract", platform, homebrew);
+  const libreOfficeCommands = documentEngineInstallCommands("libreoffice", platform, homebrew);
+  const tesseractCommands = documentEngineInstallCommands("tesseract", platform, homebrew);
   const missing = !libreoffice.found || !tesseract.found;
   return <>
     <ul className="setup-checklist documents-engines" aria-label="Programs for checking documents">
-      <EngineRow name="LibreOffice" engine={libreoffice} command={libreOfficeCommand} action={{ label: "Download", url: libreOfficeDownloadUrl }}>lets your Worker see Word and PowerPoint pages and calculate spreadsheet formulas.</EngineRow>
-      <EngineRow name="Tesseract" engine={tesseract} command={tesseractCommand} action={{ label: "Install Guide", url: tesseractInstallGuideUrl }}>(optional) lets your Worker read the text in scanned pages.</EngineRow>
+      <EngineRow name="LibreOffice" engine={libreoffice} commands={libreOfficeCommands} action={{ label: "Download", url: libreOfficeDownloadUrl }}>lets your Worker see Word and PowerPoint pages and calculate spreadsheet formulas.</EngineRow>
+      <EngineRow name="Tesseract" engine={tesseract} commands={tesseractCommands} action={{ label: "Install Guide", url: tesseractInstallGuideUrl }}>(optional) lets your Worker read the text in scanned pages.</EngineRow>
     </ul>
     {missing ? <p className="setup-hint">Both are free.{platform === "darwin" && !libreoffice.found ? " After installing LibreOffice, open it once so macOS can approve it." : ""} This page updates by itself.</p> : null}
   </>;

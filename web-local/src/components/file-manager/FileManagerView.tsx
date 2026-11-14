@@ -19,7 +19,8 @@ import { copyToClipboard } from "../../lib/clipboard";
 import { canOpenDirectly, nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
 import { formatBytes, formatItemCount } from "../../lib/format";
 import { untitledChatLabel } from "../../constants";
-import { isMacOS, connectedFolderEntryNativePath } from "../../lib/platform";
+import { isMacOS, connectedFolderEntryNativePath, systemFileManagerName } from "../../lib/platform";
+import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
 import { deleteLocalFileRequest, deleteLocalFilesRequest, type PendingDelete } from "../../lib/pending-deletes";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import { combineActivityStatuses } from "../../lib/folder-nesting";
@@ -577,7 +578,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   function quickLook(path: string | null) {
     const entry = path ? byPath.get(path) : null;
     if (!entry || entry.kind !== "file") return;
-    if (!mac || !bridge) { showToast({ text: "Quick Look is available in the Mac app", tone: "info" }); return; }
+    if (!bridge) { showToast({ text: "Quick Look is available in the Mac app", tone: "info" }); return; }
+    // Quick Look is the Mac's; elsewhere the desktop has no preview to show, so Space does nothing.
+    if (!mac) return;
     void bridge.preview(entry.path).catch((caught) => onError(errorText(caught)));
   }
 
@@ -659,7 +662,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       // A browser without file paths can still upload into a Connected Folder.
       const files = await collected!;
       if (!files.length) return [];
-      if (target.place.kind !== "connected-folder") { showToast({ text: `Add files to ${targetName} in Finder, or put it to work first.`, tone: "info" }); return []; }
+      if (target.place.kind !== "connected-folder") { showToast({ text: `Add files to ${targetName} in ${systemFileManagerName()}, or put it to work first.`, tone: "info" }); return []; }
       const form = new FormData();
       form.set("targetFolderPath", target.path);
       form.set("relativePaths", JSON.stringify(files.map((item) => item.relativePath)));
@@ -1935,7 +1938,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
       {/* Finder's path bar: click an item to copy its path, double-click a folder to open it; ⇧⌘G goes anywhere by path. */}
       <footer className="fm-pathbar">
-        <button type="button" className="fm-goto-button" title="Go to Folder… (⇧⌘G)" aria-label="Go to Folder" onClick={() => setGoToOpen(true)}><FolderArrowRight16Regular /></button>
+        <button type="button" className="fm-goto-button" title={`Go to Folder… (${desktopShortcutText([desktopShortcutModifierKey(), "Shift", "G"])})`} aria-label="Go to Folder" onClick={() => setGoToOpen(true)}><FolderArrowRight16Regular /></button>
         <nav className="fm-crumbs" aria-label="Path">
           {collapseCrumbs(crumbs).map((crumb, index, shown) => <span className={`fm-crumb-wrap${index === shown.length - 1 ? " is-last" : ""}`} key={`${index}:${crumb.label}`}>
             {index ? <ChevronRight size={10} className="fm-crumb-sep" aria-hidden="true" /> : null}
