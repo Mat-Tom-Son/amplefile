@@ -33,7 +33,7 @@ import {
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
 import { getClient } from "./conversation-clients.js";
-import { openConnectedFolderFileStream } from "./event-streams.js";
+import { noteConnectedFolderDirectoryShown, noteConnectedFolderIgnoreRulesChanged, openConnectedFolderFileStream } from "./event-streams.js";
 import {
   deleteConnectedFolderEntriesWithRecovery,
   deleteConnectedFolderEntryWithRecovery,
@@ -120,6 +120,8 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
       url.searchParams.get("path") ?? "",
       { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
     );
+    // The file manager lists one level at a time; that level is on screen.
+    if (maxDepth === 0) noteConnectedFolderDirectoryShown(treeMatch[1], url.searchParams.get("path") ?? "");
     sendJson(res, { tree: scan.entries, truncated: scan.truncated });
     return true;
   }
@@ -377,7 +379,9 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     if (!Array.isArray(body.paths) || body.paths.some((path) => typeof path !== "string") || typeof body.ignored !== "boolean") {
       throw badRequest("Connected Folder paths and an ignore decision are required.");
     }
-    sendJson(res, await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, body.paths, body.ignored));
+    const update = await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, body.paths, body.ignored);
+    noteConnectedFolderIgnoreRulesChanged(ignoreMatch[1]);
+    sendJson(res, update);
     return true;
   }
 

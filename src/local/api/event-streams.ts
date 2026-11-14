@@ -32,7 +32,9 @@ import {
   isConnectedFolderIgnored,
   readConnectedFolderIgnoreState,
 } from "../connected-folder-ignore.js";
+import { watchConnectedFolderTree, type ConnectedFolderTreeWatch } from "../connected-folder-tree-watch.js";
 import { canonicalConnectedFolderWatchRoot } from "../connected-folder-watch.js";
+import { isHistoryAlwaysSkippedSegment } from "../history-capture-policy.js";
 import { getConnectedFolder, resolveConnectedFolderPath } from "../connected-folder.js";
 import { assertAmpleFileAgentReadyForRoutes } from "./amplefile-agent-routes.js";
 import { extensionSnapshot } from "./extension-ui.js";
@@ -188,7 +190,7 @@ export async function openConnectedFolderFileStream(
   connectedFolderId: string,
 ): Promise<void> {
   let recursive = true;
-  let watcher: ReturnType<typeof watch>;
+  let watcher: { close(): void; on(event: "error", listener: (error: Error) => void): unknown };
   const sendEvent = (event: unknown) => {
     res.send(event);
   };
@@ -225,11 +227,43 @@ export async function openConnectedFolderFileStream(
   const registered = await getConnectedFolder(connectedFolderId);
   if (registered.connectedFolderRoot !== connectedFolderRoot) throw notFound("Connected Folder changed while opening file monitoring.");
   if (res.closed) return;
-  try {
-    watcher = watch(watchRoot, { recursive: true }, onChange);
-  } catch {
-    recursive = false;
-    watcher = watch(watchRoot, onChange);
+  if (process.platform === "linux") {
+    // One kernel watch per folder, not per file: see connected-folder-tree-watch.
+    const tree = watchConnectedFolderTree(watchRoot, {
+      onChange,
+      onError: (error) => sendEvent({ type: "error", message: errorMessage(error) }),
+      // The folders History never records are dependency and tool data that
+      // can hold most of a folder's entries; ignored folders report nothing.
+      skipDirectory: async (path) => {
+        const name = basename(path);
+        if (isAlwaysHiddenConnectedFolderEntry(name) || isHistoryAlwaysSkippedSegment(name)) return true;
+        return isConnectedFolderIgnored(path, (await currentIgnoreState()).patterns);
+      },
+    });
+    const entry: ConnectedFolderTreeWatchEntry = { tree, forgetIgnoreRules: () => { ignoreRead = null; } };
+    const entries = connectedFolderTreeWatches.get(connectedFolderId) ?? new Set<ConnectedFolderTreeWatchEntry>();
+    entries.add(entry);
+    connectedFolderTreeWatches.set(connectedFolderId, entries);
+    watcher = {
+      close: () => {
+        tree.close();
+        entries.delete(entry);
+        if (!entries.size && connectedFolderTreeWatches.get(connectedFolderId) === entries) connectedFolderTreeWatches.delete(connectedFolderId);
+      },
+      on: () => undefined,
+    };
+    // Closing before the first walk ends must still release its watches.
+    res.onClose(() => watcher.close());
+    await tree.ready;
+    if (res.closed) return;
+    recursive = tree.complete();
+  } else {
+    try {
+      watcher = watch(watchRoot, { recursive: true }, onChange);
+    } catch {
+      recursive = false;
+      watcher = watch(watchRoot, onChange);
+    }
   }
   sendEvent({ type: "ready", recursive });
   const heartbeat = setInterval(() => {
@@ -247,6 +281,31 @@ export async function openConnectedFolderFileStream(
   state.fileStreams.set(close, connectedFolderId);
   watcher.on("error", (error) => sendEvent({ type: "error", message: errorMessage(error) }));
   res.onClose(close);
+}
+
+interface ConnectedFolderTreeWatchEntry {
+  tree: ConnectedFolderTreeWatch;
+  forgetIgnoreRules(): void;
+}
+
+/** The per-folder watches of each Connected Folder's open file streams (Linux). */
+const connectedFolderTreeWatches = new Map<string, Set<ConnectedFolderTreeWatchEntry>>();
+
+/**
+ * A folder level of a Connected Folder was just listed. Where its file streams
+ * leave that folder unwatched (a dependency folder, or one past the watch
+ * budget), watch that one level while it is among the most recently shown.
+ */
+export function noteConnectedFolderDirectoryShown(connectedFolderId: string, relativePath: string): void {
+  for (const entry of connectedFolderTreeWatches.get(connectedFolderId) ?? []) void entry.tree.show(relativePath);
+}
+
+/** The Connected Folder's ignore rules changed: watch what they now allow and stop watching what they now leave out. */
+export function noteConnectedFolderIgnoreRulesChanged(connectedFolderId: string): void {
+  for (const entry of connectedFolderTreeWatches.get(connectedFolderId) ?? []) {
+    entry.forgetIgnoreRules();
+    void entry.tree.rescan();
+  }
 }
 
 /** Live refresh for the one standard folder level on screen; a folder level is not watched recursively. */

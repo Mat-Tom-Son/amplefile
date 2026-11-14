@@ -247,6 +247,27 @@ folder only brings the window forward, because connecting a folder is its own
 explicit act. Desktops with no default folder handler configured may still pick
 any declaring app themselves.
 
+## Live file updates
+
+The file list updates as files change. The Linux kernel caps how many
+file watches one user may hold across every app (`fs.inotify.max_user_watches`),
+so AmpleFile watches a Connected Folder one folder at a time rather than one
+file at a time: a watch on a folder already reports the files directly inside
+it.
+
+- Ignored folders, hidden AmpleFile and Pi data, and the tool and dependency
+  folders History never records (`.git`, `node_modules`, `__pycache__` and the
+  like) are not watched, nor is anything beneath them.
+- One Connected Folder uses at most an eighth of the kernel's allowance, and
+  never more than 16,384 watches. When a folder tree is larger than that, the
+  folders nearest the top are watched.
+- A folder outside those bounds is still watched while it is on screen: the
+  eight most recently shown such folders each hold one watch.
+- Changing what a Connected Folder ignores updates what is watched.
+
+A change in an unwatched folder appears the next time that folder is opened.
+Standard Folders watch only the folder shown.
+
 ## Computer Control
 
 The included Linux helper provides AT-SPI application roots and semantic
