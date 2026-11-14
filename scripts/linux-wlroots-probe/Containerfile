@@ -1,0 +1,10 @@
+# Disposable Sway seat for private wlroots acceptance. Nothing from the
+# person's session, home, keyring, graphics or input devices is mounted.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install --setopt=install_weak_deps=False \
+      sway xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon python3-dbus \
+      python3-gobject python3-gobject-base gobject-introspection cairo-gobject gtk4 mesa-dri-drivers mesa-libEGL \
+      xdg-desktop-portal xdg-desktop-portal-wlr pipewire wireplumber \
+      pipewire-gstreamer gstreamer1-plugins-base libei libxkbcommon \
+      wlr-randr swaybg procps-ng util-linux glib2 dbus-tools xdotool \
+ && dnf clean all

@@ -112,6 +112,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for State {
         match event {
             wl_keyboard::Event::Keymap { format, fd, size } => {
                 let result = (|| -> Result<()> {
+                    // A wlroots seat with no active keyboard announces that
+                    // it has no keymap. That supplies nothing; it is not an
+                    // error, and the uploaded keymap stays authoritative.
+                    if matches!(format, WEnum::Value(wl_keyboard::KeymapFormat::NoKeymap)) {
+                        return Ok(());
+                    }
                     ensure!(
                         matches!(format, WEnum::Value(wl_keyboard::KeymapFormat::XkbV1))
                             && size > 0
@@ -311,7 +317,7 @@ impl Input {
         input.dispatch()?;
         ensure!(
             input.state.keyboard.is_some(),
-            "Compositor did not supply a keyboard keymap"
+            "The compositor has not shared a keyboard layout; press a key on the keyboard, then share again"
         );
         Ok(input)
     }

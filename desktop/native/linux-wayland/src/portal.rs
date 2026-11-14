@@ -441,6 +441,16 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn profiles_without_an_implemented_lock_monitor_never_open_a_portal() {
+        // Refused before any D-Bus connection: no portal, no chooser.
+        for desktop in [Desktop::Sway, Desktop::Hyprland, Desktop::River, Desktop::Labwc, Desktop::Wayfire] {
+            let Path::VirtualInput(profile) = compositor::path(desktop) else { unreachable!() };
+            let result = SharedScreen::request_virtual_input(profile, std::future::pending()).await;
+            assert!(result.err().unwrap().to_string().contains("No lock monitor is implemented"));
+        }
+    }
+
     #[test]
     fn scales_pixels_using_compositor_geometry_and_rejects_crops() {
         let mut region = crate::ei::Region { mapping_id: Some("monitor".into()), x: 1024, y: 120,
