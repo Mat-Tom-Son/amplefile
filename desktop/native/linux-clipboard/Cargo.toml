@@ -1,0 +1,13 @@
+[package]
+name = "amplefile-clipboard"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+x11rb = { version = "0.14", default-features = false }
+
+[[bin]]
+name = "amplefile-clipboard"
+path = "src/main.rs"

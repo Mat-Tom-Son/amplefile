@@ -100,6 +100,7 @@ if (packagedPlatform === "linux") {
     [binDir, `${identity.cliCommand}-cli`, "amplefile.linux-cli-source.v1", undefined],
     [join(resourcesDir, "computer-helper"), "linux-bridge", "amplefile.computer-helper-source.v1", 4],
     [join(resourcesDir, "wayland-helper"), "amplefile-wayland", "amplefile.wayland-helper-source.v1", 1],
+    [join(resourcesDir, "clipboard-helper"), "amplefile-clipboard", "amplefile.clipboard-helper-source.v1", 1],
   ]) {
     try {
       const source = JSON.parse(readFileSync(join(directory, "source.json"), "utf8"));

@@ -11,12 +11,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * "1" for Cut. Older Nautilus on Wayland offered only text: the line
  * `x-special/nautilus-clipboard`, then the gnome-copied-files body.
  *
- * Writing: Electron's clipboard writes one custom format per call, and each
- * write replaces the clipboard, so AmpleFile cannot offer several formats at
- * once. It writes `text/uri-list`, which Chromium publishes as its file-list
- * format; GNOME Files and Dolphin paste it, and GTK and the desktop portal
- * read it as a file list. AmpleFile's own Copy is always a copy: moving is
- * chosen when pasting, not when copying.
+ * Writing: under X11 the clipboard helper (`linux-clipboard-helper.ts`)
+ * offers every format at once. Electron's clipboard writes one custom format
+ * per call, and each write replaces the clipboard, so where the helper cannot
+ * run `writeLinuxClipboardFiles` writes only `text/uri-list`, which Chromium
+ * publishes as its file-list format; GNOME Files and Dolphin paste it, and GTK
+ * and the desktop portal read it as a file list. AmpleFile's own Copy is
+ * always a copy: moving is chosen when pasting, not when copying.
  */
 
 export const gnomeCopiedFilesFormat = "x-special/gnome-copied-files";

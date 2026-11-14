@@ -105,7 +105,8 @@ module.exports = {
     publish: null,
     extraFiles: [{ from: "out/included-tools/linux-cli", to: "bin" }],
     extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper", filter: ["linux-bridge", "source.json", "LICENSE.pi-computer-use", "THIRD-PARTY-LICENSES.txt"] },
-      { from: "out/included-tools/wayland-helper", to: "wayland-helper" }],
+      { from: "out/included-tools/wayland-helper", to: "wayland-helper" },
+      { from: "out/included-tools/clipboard-helper", to: "clipboard-helper" }],
     desktop: { entry: { GenericName: "File Manager", StartupWMClass: "amplefile-desktop", Keywords: "AI;Assistant;Folders;Files;" } },
   },
   deb: {

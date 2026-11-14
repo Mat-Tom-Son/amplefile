@@ -10,4 +10,7 @@ if (process.platform === "linux") {
   execFileSync("cargo", ["test", "--release", "--locked", "--manifest-path", join(root, "desktop/native/linux-wayland/Cargo.toml")], {
     cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: join(root, "out/linux-wayland-target") },
   });
+  execFileSync("cargo", ["test", "--release", "--locked", "--manifest-path", join(root, "desktop/native/linux-clipboard/Cargo.toml")], {
+    cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: join(root, "out/linux-clipboard-target") },
+  });
 }
