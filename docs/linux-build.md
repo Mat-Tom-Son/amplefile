@@ -91,7 +91,25 @@ never changes a default app.
 The AmpleFile Agent is available from **View → AmpleFile Agent**, including
 desktops that do not display tray icons. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.
-Use Quit to end the app. Where X11/XWayland is available, Electron uses it by
+Use **File → Quit** to end the app. The first time the last window closes, a
+desktop notification says AmpleFile is still running and how to reopen or
+quit it; it needs no tray icon and appears once per profile.
+
+Linux previews have no update feed, so the menus and tray offer no **Check for
+Updates…**, Settings → About says updates are not available in this build,
+and the sidebar shows no update indicator.
+
+Copying files puts them on the clipboard as `text/uri-list`, which GNOME
+Files, Dolphin and GTK file lists paste. Electron writes one custom clipboard
+format at a time, so AmpleFile does not also offer
+`x-special/gnome-copied-files`; file managers that read only that format, and
+text editors expecting pasted paths, do not receive the copy. Paste reads files
+copied in a file manager from `x-special/gnome-copied-files` or `text/uri-list`
+(ignoring comments and non-`file:` URIs) and copies them in; a file manager's
+Cut is also pasted as a copy, leaving the originals in place. Files that another
+Chromium-based app put on the clipboard are not read.
+
+Where X11/XWayland is available, Electron uses it by
 default for trusted background browser input and screenshots. Wayland desktop
 sharing still uses the native portal. Native Wayland-only Electron windowing is not
 qualified by this lane.

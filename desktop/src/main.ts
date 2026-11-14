@@ -64,6 +64,8 @@ import {
 import { AmpleFileAgentPopover, type AmpleFileAgentPopoverStagedItem } from "./amplefile-agent-popover.js";
 import { ModelContextWindow } from "./model-context-window.js";
 import { writeDesktopClipboard } from "./clipboard.js";
+import { readLinuxClipboardFiles, writeLinuxClipboardFiles } from "./linux-file-clipboard.js";
+import { closedLastWindowNeedsNotice, stillRunningNotice } from "./still-running-notice.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
 import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
 import { prepareLinuxDevelopmentCli } from "./linux-development-cli.js";
@@ -71,7 +73,7 @@ import { ComputerHelperInstallation } from "./computer-helper-installation.js";
 import { leftoverChromeCleanupApplies, removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
-import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
+import { DesktopUpdater, hasPackagedDesktopUpdateFeed, type DesktopUpdateStatus } from "./updater.js";
 import { HeadlessQuitSequence } from "./headless-quit.js";
 import {
   ampleFileDesktopUserDataPath,
@@ -723,7 +725,7 @@ async function createMainWindow(): Promise<void> {
     if (process.platform !== "win32" || !tray || !desktopPreferences.closeToTray) return;
     event.preventDefault();
     mainWindow?.hide();
-    maybeShowTrayNotice();
+    maybeShowStillRunningNotice();
   });
   // A closing window gives its browser pages back; they show again in the next window.
   const browserWindow = mainWindow;
@@ -738,6 +740,8 @@ async function createMainWindow(): Promise<void> {
     railTooltipOverlay = null;
     mainWindow = null;
     if (process.platform === "win32" && !quitting && !quittingForUpdate) app.quit();
+    // Linux keeps the host and accepted work after the last window; say so once, tray or not.
+    if (closedLastWindowNeedsNotice({ platform: process.platform, quitting: quitting || quittingForUpdate, alreadyShown: desktopPreferences.trayNoticeShown })) maybeShowStillRunningNotice();
   });
   configureWindowNavigation(mainWindow);
   configureContextMenu(mainWindow);
@@ -1431,8 +1435,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
   ];
   if (process.platform !== "darwin") {
     items.push(
-      { type: "separator" },
-      { label: "Check for Updates...", click: () => sendRendererMenuCommand("check-for-updates") },
+      ...checkForUpdatesMenuItems(() => sendRendererMenuCommand("check-for-updates")),
       { type: "separator" },
       { label: `About ${productName} ${applicationVersion}`, click: () => sendRendererMenuCommand("open-about") },
     );
@@ -1446,14 +1449,11 @@ function macApplicationMenu(): MenuItemConstructorOptions[] {
     label: productName,
     submenu: [
       { role: "about" },
-      {
-        label: "Check for Updates...",
-        click: () => {
-          void checkForUpdatesFromMenu().catch((error) => {
-            console.warn(`${productName} could not present the update check: ${errorMessage(error)}`);
-          });
-        },
-      },
+      ...checkForUpdatesMenuItems(() => {
+        void checkForUpdatesFromMenu().catch((error) => {
+          console.warn(`${productName} could not present the update check: ${errorMessage(error)}`);
+        });
+      }, { separator: false }),
       { type: "separator" },
       { label: "Settings...", accelerator: "Command+,", click: () => sendRendererMenuCommand("open-settings") },
       { type: "separator" },
@@ -1567,6 +1567,22 @@ function configureUpdater(): void {
     },
   });
   desktopUpdater.start();
+}
+
+/**
+ * Whether this build has an update feed to check: the updater's own answer,
+ * or before it starts the same feed test it uses. Linux previews, unpackaged
+ * runs, and the Mac local smoke build have none.
+ */
+function updatesSupportedHere(): boolean {
+  if (desktopUpdater) return desktopUpdater.supported;
+  return !localMacSmokeBuild && hasPackagedDesktopUpdateFeed({ isPackaged: app.isPackaged, platform: process.platform, resourcesPath: process.resourcesPath });
+}
+
+/** Check for Updates… (after a separator unless `separator` is false), only where an update check can do something. */
+function checkForUpdatesMenuItems(click: () => void, { separator = true } = {}): MenuItemConstructorOptions[] {
+  if (!updatesSupportedHere()) return [];
+  return [...(separator ? [{ type: "separator" as const }] : []), { label: "Check for Updates...", click }];
 }
 
 function getUpdateStatus(): DesktopUpdateStatus {
@@ -1825,8 +1841,10 @@ type NativeCommandMenuItem<Command extends string> =
   | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false; icon?: "amplefile" }
   | { type: "submenu"; label: string; items: NativeCommandMenuItem<Command>[] };
 
-/** The files on the system pasteboard (Finder's Copy), newest format first; empty when it holds no files. */
+/** The files on the system pasteboard (Finder's or a Linux file manager's Copy), newest format first; empty when it holds no files. */
 function readPasteboardFilePaths(): string[] {
+  // A Linux Cut is pasted as a copy too: the other app's files stay where they are.
+  if (process.platform === "linux") return readLinuxClipboardFiles(clipboard).paths;
   if (process.platform !== "darwin") return [];
   const plist = clipboard.read("NSFilenamesPboardType");
   const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
@@ -1838,8 +1856,9 @@ function readPasteboardFilePaths(): string[] {
   return [];
 }
 
-/** Puts files on the system pasteboard the way Finder's Copy does, so Finder (and Mail, and Messages) can paste them. */
+/** Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy does, so it can paste them. */
 function writePasteboardFilePaths(paths: readonly string[]): void {
+  if (process.platform === "linux") { writeLinuxClipboardFiles(clipboard, paths); return; }
   if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
   const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${paths.map((path) => `<string>${encodeXmlText(path)}</string>`).join("")}</array></plist>`;
   clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
@@ -2121,8 +2140,7 @@ function createTrayIfSupported(): void {
   const menu = Menu.buildFromTemplate([
     { label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(); } },
     { label: `Open ${productName}`, click: showWindow },
-    { type: "separator" },
-    { label: "Check for Updates...", click: () => sendRendererMenuCommand("check-for-updates") },
+    ...checkForUpdatesMenuItems(() => sendRendererMenuCommand("check-for-updates")),
     { type: "separator" },
     { label: `Quit ${productName}`, click: () => app.quit() },
   ]);
@@ -2285,14 +2303,13 @@ function updateTrayTooltip(): void {
     : productName);
 }
 
-function maybeShowTrayNotice(): void {
-  if (desktopPreferences.trayNoticeShown) return;
+/** Once per profile (`trayNoticeShown` is the persisted once-flag on every platform): AmpleFile kept running without its window. */
+function maybeShowStillRunningNotice(): void {
+  const notice = stillRunningNotice(process.platform, productName);
+  if (!notice || desktopPreferences.trayNoticeShown) return;
   updateDesktopPreferences({ trayNoticeShown: true });
   if (!Notification.isSupported()) return;
-  new Notification({
-    title: `${productName} is still running`,
-    body: "Your Workers and the AmpleFile Agent can keep working in the background. Use the tray icon to reopen or quit AmpleFile, or change this in Settings.",
-  }).show();
+  new Notification(notice).show();
 }
 
 function closeToTrayStatus(): { supported: boolean; enabled: boolean } {
