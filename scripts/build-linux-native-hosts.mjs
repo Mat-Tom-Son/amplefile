@@ -49,6 +49,22 @@ if (invokedDirectly && (process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM || proces
     ...provenance, schema: "amplefile.linux-cli-source.v1", binarySha256: createHash("sha256").update(await readFile(join(cli, "amplefile-cli"))).digest("hex"),
   }, null, 2)}\n`);
   console.log("Built the Linux CLI.");
+  const clipboardManifest = join(root, "desktop/native/linux-clipboard/Cargo.toml");
+  const clipboardTarget = join(root, "out/linux-clipboard-target");
+  execFileSync("cargo", ["build", "--release", "--locked", "--manifest-path", clipboardManifest], {
+    cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: clipboardTarget },
+  });
+  const clipboardHelper = join(root, "out/included-tools/clipboard-helper");
+  await mkdir(clipboardHelper, { recursive: true });
+  await copyFile(join(clipboardTarget, "release/amplefile-clipboard"), join(clipboardHelper, "amplefile-clipboard"));
+  await chmod(join(clipboardHelper, "amplefile-clipboard"), 0o755);
+  await writeCargoNotices(clipboardManifest, join(clipboardHelper, "THIRD-PARTY-LICENSES.txt"));
+  await writeFile(join(clipboardHelper, "source.json"), `${JSON.stringify({
+    ...provenance, schema: "amplefile.clipboard-helper-source.v1", protocolVersion: 1,
+    binarySha256: createHash("sha256").update(await readFile(join(clipboardHelper, "amplefile-clipboard"))).digest("hex"),
+    sources: await crateSources(join(root, "desktop/native/linux-clipboard")),
+  }, null, 2)}\n`);
+  console.log("Built the X11 clipboard helper.");
   const waylandManifest = join(root, "desktop/native/linux-wayland/Cargo.toml");
   const waylandTarget = join(root, "out/linux-wayland-target");
   execFileSync("cargo", ["build", "--release", "--locked", "--manifest-path", waylandManifest], {

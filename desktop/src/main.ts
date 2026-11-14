@@ -76,6 +76,7 @@ import {
 import { ModelContextWindow } from "./model-context-window.js";
 import { writeDesktopClipboard } from "./clipboard.js";
 import { readLinuxClipboardFiles, writeLinuxClipboardFiles } from "./linux-file-clipboard.js";
+import { linuxClipboardHelperUsable, LinuxClipboardOwner, linuxFileClipboardOffers, verifiedClipboardHelper } from "./linux-clipboard-helper.js";
 import { closedLastWindowNeedsNotice, stillRunningNotice } from "./still-running-notice.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
 import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
@@ -1094,7 +1095,7 @@ function registerIpc(): void {
     if (!isRecord(value) || !isRecord(value.target)) throw new Error("Choose where to paste.");
     const mode = value.mode === "move" ? "move" : "copy";
     const internal = isRecord(value.internal) && Array.isArray(value.internal.paths) && Array.isArray(value.internal.nativePaths) ? value.internal : null;
-    const pasteboard = readPasteboardFilePaths();
+    const pasteboard = await readPasteboardFilePaths();
     const internalNative = internal ? (internal.nativePaths as unknown[]).filter((item): item is string => typeof item === "string") : [];
     const fromHere = Boolean(internal) && (!pasteboard.length || (pasteboard.length === internalNative.length && pasteboard.every((path) => internalNative.includes(path))));
     const sources = fromHere
@@ -1104,7 +1105,7 @@ function registerIpc(): void {
     const result = await transferFileEntries({ mode: fromHere ? mode : "copy", sources, target: value.target });
     return { ...result, fromHere, count: sources.length };
   });
-  ipcMain.handle("amplefile:file-clipboard:write", (event, value: unknown): boolean => {
+  ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
     if (!Array.isArray(value) || !value.length || value.length > 5_000) throw new Error("Choose items to copy.");
     const paths = value.map((item) => {
@@ -1112,7 +1113,7 @@ function registerIpc(): void {
       return item;
     }).filter((path) => existsSync(path));
     if (!paths.length) return false;
-    writePasteboardFilePaths(paths);
+    await writePasteboardFilePaths(paths);
     return true;
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
@@ -1946,10 +1947,30 @@ type NativeCommandMenuItem<Command extends string> =
   | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false; icon?: "amplefile" }
   | { type: "submenu"; label: string; items: NativeCommandMenuItem<Command>[] };
 
+let linuxClipboardOwnerInstance: Promise<LinuxClipboardOwner | null> | undefined;
+
+/** The verified X11 clipboard helper when this launch can use it (docs/linux-build.md); null otherwise. */
+function linuxClipboardOwner(): Promise<LinuxClipboardOwner | null> {
+  linuxClipboardOwnerInstance ??= (async () => {
+    if (process.platform !== "linux" || !linuxClipboardHelperUsable({ ozonePlatform: app.commandLine.getSwitchValue("ozone-platform"), display: process.env.DISPLAY })) return null;
+    const helperPath = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "out", "included-tools"), "clipboard-helper", "amplefile-clipboard");
+    if (!(await verifiedClipboardHelper(helperPath))) {
+      console.warn(`${productName} copies files with Electron's clipboard: the bundled clipboard helper is missing or changed.`);
+      return null;
+    }
+    return new LinuxClipboardOwner({ helperPath, log: (message) => console.warn(`${productName} ${message}`) });
+  })();
+  return linuxClipboardOwnerInstance;
+}
+
 /** The files on the system pasteboard (Finder's or a Linux file manager's Copy), newest format first; empty when it holds no files. */
-function readPasteboardFilePaths(): string[] {
+async function readPasteboardFilePaths(): Promise<string[]> {
   // A Linux Cut is pasted as a copy too: the other app's files stay where they are.
-  if (process.platform === "linux") return readLinuxClipboardFiles(clipboard).paths;
+  if (process.platform === "linux") {
+    // The helper reads off the main thread, and also reads another Chromium app's files; Electron's read is the fallback.
+    const files = await (await linuxClipboardOwner())?.readFiles();
+    return (files ?? readLinuxClipboardFiles(clipboard)).paths;
+  }
   if (process.platform !== "darwin") return [];
   const plist = clipboard.read("NSFilenamesPboardType");
   const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
@@ -1962,8 +1983,14 @@ function readPasteboardFilePaths(): string[] {
 }
 
 /** Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy does, so it can paste them. */
-function writePasteboardFilePaths(paths: readonly string[]): void {
-  if (process.platform === "linux") { writeLinuxClipboardFiles(clipboard, paths); return; }
+async function writePasteboardFilePaths(paths: readonly string[]): Promise<void> {
+  if (process.platform === "linux") {
+    // The helper offers GNOME's format, the URI list and text together; Electron alone offers only the URI list.
+    const owner = await linuxClipboardOwner();
+    if (owner && await owner.offer(linuxFileClipboardOffers(paths))) return;
+    writeLinuxClipboardFiles(clipboard, paths);
+    return;
+  }
   if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
   const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${paths.map((path) => `<string>${encodeXmlText(path)}</string>`).join("")}</array></plist>`;
   clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));

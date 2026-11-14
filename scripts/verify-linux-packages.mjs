@@ -127,10 +127,12 @@ async function payloadProblems({ appRoot, shareRoot, desktopFile, exec, scalable
     [`bin/${identity.cliCommand}-cli`, "the native CLI under bin/"],
     ["resources/computer-helper/linux-bridge", "the Linux Computer Control helper"],
     ["resources/wayland-helper/amplefile-wayland", "the Wayland portal/input helper"],
+    ["resources/clipboard-helper/amplefile-clipboard", "the X11 clipboard helper"],
   ]) {
     if (!(await isExecutableFile(join(appRoot, path)))) problems.push(`missing ${label} (${path}) or it is not executable`);
   }
-  for (const path of ["resources/app.asar", "resources/computer-helper/source.json", "resources/wayland-helper/source.json", "resources/assets/icon.png"]) {
+  for (const path of ["resources/app.asar", "resources/computer-helper/source.json", "resources/wayland-helper/source.json",
+    "resources/clipboard-helper/source.json", "resources/clipboard-helper/THIRD-PARTY-LICENSES.txt", "resources/assets/icon.png"]) {
     try { await stat(join(appRoot, path)); } catch { problems.push(`missing ${path}`); }
   }
   try {

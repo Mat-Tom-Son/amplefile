@@ -185,15 +185,30 @@ Linux previews have no update feed, so the menus and tray offer no **Check for
 Updates…**, Settings → About says updates are not available in this build,
 and the sidebar shows no update indicator.
 
-Copying files puts them on the clipboard as `text/uri-list`, which GNOME
-Files, Dolphin and GTK file lists paste. Electron writes one custom clipboard
-format at a time, so AmpleFile does not also offer
-`x-special/gnome-copied-files`; file managers that read only that format, and
-text editors expecting pasted paths, do not receive the copy. Paste reads files
-copied in a file manager from `x-special/gnome-copied-files` or `text/uri-list`
-(ignoring comments and non-`file:` URIs) and copies them in; a file manager's
-Cut is also pasted as a copy, leaving the originals in place. Files that another
-Chromium-based app put on the clipboard are not read.
+Copying files offers them on the clipboard in every form Linux apps paste:
+`x-special/gnome-copied-files` (GNOME Files, Nemo, Caja, Thunar),
+`text/uri-list` (Dolphin, GTK file lists) and the absolute paths as plain text,
+one per line (`text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`,
+and Latin-1 `STRING` when every name fits it), so a text editor or terminal
+pastes the paths. AmpleFile's Copy is always a copy; whether to move is chosen
+when pasting, so it never offers a cut. Electron writes one custom clipboard
+format at a time, so a small bundled helper, `amplefile-clipboard`, owns the X
+`CLIPBOARD` selection and serves all of them. It runs only while the window
+uses X11 (XWayland on a Wayland desktop, per the display rule below) and leaves
+when another app copies, when AmpleFile quits or crashes, or after 24 hours.
+As with any X11 app, a copy is gone after AmpleFile quits unless a clipboard
+manager kept it. On niri, xwayland-satellite hands the helper's copy to native
+Wayland apps. When the helper cannot run (native Wayland-only windowing, or a
+missing or altered helper), Copy falls back to Electron's single
+`text/uri-list`, which GNOME Files, Dolphin and GTK file lists still paste.
+
+Paste reads files copied in a file manager or another app from
+`x-special/gnome-copied-files` or `text/uri-list` (ignoring comments and
+non-`file:` URIs), including files another Chromium or Electron app put there,
+and copies them in; a file manager's Cut is also pasted as a copy, leaving the
+originals in place. Under X11 the helper reads the clipboard in its own
+process, so a large copy never holds the window; elsewhere Electron reads it,
+and another Chromium-based app's files are then not read.
 
 The app follows one display rule however it is launched (menu entry, AppImage,
 terminal or `amplefile` command): X11 when an X display is reachable, which on
@@ -302,7 +317,8 @@ It uses disposable app/Pi profiles, with no personal credentials or paid model.
 It then checks the installers themselves, without root or installation: the
 DEB and RPM are extracted (`dpkg-deb`, or `ar` and `tar`; `rpm2cpio` and
 `cpio`) and the AppImage unpacks itself. Each must contain the executable, the
-CLI under `bin/`, the Computer Control and Wayland helpers, the desktop entry
+CLI under `bin/`, the Computer Control, Wayland and clipboard helpers (the
+clipboard helper with its provenance and licenses), the desktop entry
 (an `Exec` without platform or sandbox switches, `inode/directory`, the menu
 categories, `GenericName` and `Comment`) and the hicolor icons from 16 to 512
 pixels (plus the scalable SVG in DEB/RPM). The DEB and RPM must declare every
@@ -337,6 +353,14 @@ itself. It does not qualify Sway, which still lacks a lock signal. Real niri cap
 was also checked on a 1920×1200 display at 125%, including exact PNG pixels and
 selected-output coordinate mapping. These fixtures do not establish hardware GPU, physical
 sleep, IME, paid-provider or public signed-repository qualification.
+
+The `linux-clipboard-helper` tests run the built clipboard helper on a private
+Xvfb display (skipped when it or Xvfb is missing): every offered target and its
+bytes, names with spaces, `#`, `%`, non-ASCII characters and newlines, a
+5,000-file copy through incremental transfer, and the helper leaving when
+replaced, when its input closes and at its time bound. Pasting into GNOME Files
+and GNOME Text Editor was checked by hand on such a display; Nemo, Caja, Thunar,
+Dolphin and the GNOME and KDE Wayland bridges were not.
 
 The integration combines the Linux action-safety work in `609ddebc` with the
 Mac reliability fixes in `d8c90fc7`, `5543df03` and `9a24cd0e` from the source
