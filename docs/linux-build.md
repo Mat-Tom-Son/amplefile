@@ -11,6 +11,36 @@ changes, including when restoring a placement from a larger screen. The Linux
 title bar follows Appearance and contains the application menus; the sidebar does
 not reserve space for Mac window buttons. First-run setup uses the Linux Computer Control surface.
 
+## Title bar and desktop appearance
+
+AmpleFile draws the whole Linux title bar itself: its name, the application
+menus, and the window buttons, in the order and on the side the desktop's
+button layout gives. GNOME's `org.gnome.desktop.wm.preferences button-layout`
+is read through the XDG settings portal (GNOME's default draws Close alone, on
+the right); on KDE Plasma, kwinrc's `ButtonsOnLeft` and `ButtonsOnRight` are
+read instead. Only Minimize, Maximize (Restore while maximized) and Close are
+drawn; app-menu, icon and spacer entries are left out, and an empty layout,
+common on tiling desktops such as niri, draws no buttons. Without a portal or
+a layout, the three buttons appear on the right. The buttons are ordinary
+keyboard-reachable buttons that follow Appearance's light or dark, dim when the
+window is in the background, and show the accent in their focus ring; the rest
+of the bar still drags the window.
+
+The settings portal's `org.freedesktop.appearance` keys also apply: the
+desktop's accent color is the Device Accent in Settings → Appearance (as the
+system accent is on a Mac), its light or dark preference decides the System
+mode (Electron on Linux would otherwise take light or dark from the GTK theme,
+which need not match), and its high-contrast setting turns on More Contrast.
+Changes apply immediately. AmpleFile reads the portal with GLib's `gdbus`; one
+`gdbus monitor` process follows changes and ends with the app. Without
+`gdbus`, a portal, or a key, each setting keeps its earlier behavior: no
+device accent, the GTK theme's light or dark, and normal contrast.
+
+**File** has Close Tab (Ctrl+W, closing the browser tab in front, as ⌘W does on
+a Mac), Close Window (Shift+Ctrl+W, which keeps AmpleFile running) and Quit
+(Ctrl+Q). **Edit** has Paste and Match Style (Shift+Ctrl+V), which pastes text
+without its formatting.
+
 ## Build and run
 
 Use Node 24, npm 11.16.0 or newer, Rust/Cargo, a C/C++ toolchain, Clang,

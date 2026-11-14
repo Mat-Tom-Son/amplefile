@@ -105,6 +105,8 @@ import { pickLinuxOpenWithApp } from "./open-with-linux-chooser.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
+import { LinuxDesktopSettings } from "./linux-desktop-settings.js";
+import { fallbackWindowButtonLayout, linuxNativeThemeSource, type LinuxDesktopAppearance, type LinuxWindowChromeState } from "../../src/shared/linux-desktop-appearance.js";
 import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
 import { isBrowserPageId } from "../../src/shared/browser.js";
@@ -238,6 +240,11 @@ let rendererProtocolRegistered = false;
 let ipcRegistered = false;
 let powerMonitorRegistered = false;
 let accentColorMonitorRegistered = false;
+// Linux: the desktop's accent, light/dark, contrast and window-button layout (XDG settings portal).
+let linuxDesktopSettings: LinuxDesktopSettings | null = null;
+let linuxDesktopSettingsReady: Promise<void> | null = null;
+// The renderer's last Appearance mode, so a portal change can re-resolve "system".
+let rendererThemeSource: "light" | "dark" | "system" = "system";
 let rendererRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let rendererRecoveryInFlight = false;
 let rendererRecoveryAttempts = 0;
@@ -658,6 +665,7 @@ async function createMainWindow(): Promise<void> {
   }
 
   const api = await ensureInteractiveLocalApi();
+  if (process.platform === "linux") await waitForLinuxDesktopSettings();
 
   const state = visibleWindowState(readWindowState());
   const primaryWorkArea = screen.getPrimaryDisplay().workArea;
@@ -670,8 +678,13 @@ async function createMainWindow(): Promise<void> {
     title: productName,
     icon: resolveWindowIcon(),
     autoHideMenuBar: process.platform === "win32",
-    ...(process.platform === "linux" ? { darkTheme: nativeTheme.shouldUseDarkColors } : {}),
-    ...(["win32", "linux"].includes(process.platform) ? {
+    ...(process.platform === "linux" ? {
+      darkTheme: nativeTheme.shouldUseDarkColors,
+      // The renderer's title bar draws the window buttons where the desktop's
+      // layout puts them; Electron's overlay can only draw all three on the right.
+      titleBarStyle: "hidden" as const,
+    } : {}),
+    ...(process.platform === "win32" ? {
       ...(micaSupported ? { backgroundMaterial: "mica" as const } : {}),
       titleBarStyle: "hidden",
       titleBarOverlay: titleBarOverlayFor(nativeTheme.shouldUseDarkColors ? "dark" : "light"),
@@ -751,6 +764,15 @@ async function createMainWindow(): Promise<void> {
   // window the person hid (Windows close-to-tray, minimize) must not
   // resurface because an autonomous reload finished painting.
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  if (process.platform === "linux") {
+    const sendChromeState = () => sendLinuxWindowChromeState(window);
+    window.on("maximize", sendChromeState);
+    window.on("unmaximize", sendChromeState);
+    window.on("enter-full-screen", sendChromeState);
+    window.on("leave-full-screen", sendChromeState);
+    window.on("focus", sendChromeState);
+    window.on("blur", sendChromeState);
+  }
   mainWindow.on("blur", () => railTooltipOverlay?.hide());
   mainWindow.on("hide", () => railTooltipOverlay?.hide());
   mainWindow.on("minimize", () => railTooltipOverlay?.hide());
@@ -1186,22 +1208,42 @@ function registerIpc(): void {
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
-  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown, chrome: unknown) => {
+  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
     assertTrustedMainRenderer(event);
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
-    nativeTheme.themeSource = source === "light" || source === "dark" || source === "system" ? source : value;
+    const requested = source === "light" || source === "dark" || source === "system" ? source : value;
+    rendererThemeSource = requested;
+    // Electron on Linux takes light/dark from the GTK theme; the portal's explicit preference wins for "system".
+    nativeTheme.themeSource = process.platform === "linux"
+      ? linuxNativeThemeSource(requested, linuxDesktopSettings?.current().colorScheme ?? null)
+      : requested;
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (process.platform === "win32" || process.platform === "linux") {
-      const colors = process.platform === "linux" && isRecord(chrome) && typeof chrome.color === "string" && /^#[0-9a-f]{6}$/i.test(chrome.color)
-        && typeof chrome.symbolColor === "string" && /^#[0-9a-f]{6}$/i.test(chrome.symbolColor)
-        ? { color: chrome.color, symbolColor: chrome.symbolColor } : {};
-      mainWindow.setTitleBarOverlay({ ...titleBarOverlayFor(value), ...colors });
+    if (process.platform === "win32") {
+      mainWindow.setTitleBarOverlay(titleBarOverlayFor(value));
       if (!micaSupported) mainWindow.setBackgroundColor(windowBackgroundColors[value]);
+    } else if (process.platform === "linux") {
+      // The renderer draws the whole Linux title bar, buttons included.
+      mainWindow.setBackgroundColor(windowBackgroundColors[value]);
     } else if (process.platform === "darwin" && nativeWindowMaterial === "none") {
       mainWindow.setBackgroundColor(windowBackgroundColors[value]);
     }
+  });
+  ipcMain.handle("amplefile:window:chrome-state", (event) => {
+    assertTrustedMainRenderer(event);
+    return linuxWindowChromeState(mainWindow);
+  });
+  ipcMain.on("amplefile:window:control", (event, value: unknown) => {
+    assertTrustedMainRenderer(event);
+    const window = mainWindow;
+    if (process.platform !== "linux" || !window || window.isDestroyed()) return;
+    if (value === "minimize") window.minimize();
+    else if (value === "toggle-maximize") {
+      if (window.isFullScreen()) window.setFullScreen(false);
+      else if (window.isMaximized()) window.unmaximize();
+      else window.maximize();
+    } else if (value === "close") window.close();
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1429,6 +1471,15 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
         { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
         { role: "close", accelerator: "Shift+CommandOrControl+W" },
       );
+    } else if (process.platform === "linux") {
+      // As on the Mac, Ctrl+W closes the browser tab in front, and Shift+Ctrl+W
+      // closes the window (the host and accepted work keep running).
+      items.push(
+        { type: "separator" },
+        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { role: "close", label: "Close Window", accelerator: "Shift+Control+W" },
+        { role: "quit", accelerator: "Control+Q" },
+      );
     } else {
       items.push({ type: "separator" }, { role: "quit" });
     }
@@ -1442,7 +1493,9 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       { role: "cut" },
       { role: "copy" },
       { role: "paste" },
-      ...(process.platform === "darwin" ? [{ role: "pasteAndMatchStyle" as const }] : []),
+      // Linux: Chromium's own Ctrl+Shift+V, pasting text without its formatting.
+      ...(process.platform === "darwin" ? [{ role: "pasteAndMatchStyle" as const }]
+        : process.platform === "linux" ? [{ role: "pasteAndMatchStyle" as const, accelerator: "Shift+Control+V" }] : []),
       { role: "delete" },
       { type: "separator" },
       { role: "selectAll" },
@@ -2064,6 +2117,7 @@ async function openExternal(value: string): Promise<void> {
 
 async function shutdown(): Promise<void> {
   if (shutdownPromise) return shutdownPromise;
+  linuxDesktopSettings?.stop();
   modelContextWindow?.dispose();
   // Quitting closes every page. Tabs are not kept: sign-ins and history are what the next launch has.
   builtInBrowser?.dispose();
@@ -2380,18 +2434,66 @@ function configurePowerMonitor(): void {
   powerMonitor.on("shutdown", () => { void shutdown(); });
 }
 
+function sendAccentColorToRenderers(): void {
+  const accent = getSystemAccentColor();
+  const window = mainWindow;
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+    window.webContents.send("amplefile:window:accent-color-changed", accent);
+  }
+  // The menu-bar popover subscribes too, and may be open with no main window.
+  ampleFileAgentPopover?.send("amplefile:window:accent-color-changed", accent);
+}
+
+function linuxWindowChromeState(window: BrowserWindow | null): LinuxWindowChromeState | null {
+  if (process.platform !== "linux") return null;
+  const appearance = linuxDesktopSettings?.current();
+  const live = window && !window.isDestroyed() ? window : null;
+  return {
+    buttonLayout: appearance?.buttonLayout ?? fallbackWindowButtonLayout,
+    maximized: live?.isMaximized() ?? false,
+    fullScreen: live?.isFullScreen() ?? false,
+    focused: live?.isFocused() ?? true,
+    highContrast: appearance?.highContrast ?? false,
+  };
+}
+
+function sendLinuxWindowChromeState(window: BrowserWindow | null): void {
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
+  window.webContents.send("amplefile:window:chrome-state-changed", linuxWindowChromeState(window));
+}
+
+/**
+ * Starts following the Linux desktop's settings once. Window creation waits
+ * for the first read, at most a second, so the first paint already has the
+ * desktop's button layout and accent.
+ */
+function waitForLinuxDesktopSettings(): Promise<void> {
+  if (process.platform !== "linux") return Promise.resolve();
+  if (!linuxDesktopSettingsReady) {
+    const settings = new LinuxDesktopSettings({
+      onChange: applyLinuxDesktopAppearance,
+      log: (message) => console.warn(`${productName} ${message}`),
+    });
+    linuxDesktopSettings = settings;
+    linuxDesktopSettingsReady = settings.start().catch((error) => {
+      console.warn(`${productName} could not read desktop settings: ${errorMessage(error)}`);
+    });
+  }
+  return Promise.race([linuxDesktopSettingsReady, new Promise<void>((resolve) => { setTimeout(resolve, 1_000).unref?.(); })]);
+}
+
+function applyLinuxDesktopAppearance(next: LinuxDesktopAppearance, previous: LinuxDesktopAppearance): void {
+  if (next.colorScheme !== previous.colorScheme) {
+    nativeTheme.themeSource = linuxNativeThemeSource(rendererThemeSource, next.colorScheme);
+  }
+  if (next.accentColor !== previous.accentColor) sendAccentColorToRenderers();
+  sendLinuxWindowChromeState(mainWindow);
+}
+
 function configureAccentColorMonitor(): void {
   if (accentColorMonitorRegistered || (process.platform !== "win32" && process.platform !== "darwin")) return;
   accentColorMonitorRegistered = true;
-  const sendAccentColor = () => {
-    const accent = getSystemAccentColor();
-    const window = mainWindow;
-    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-      window.webContents.send("amplefile:window:accent-color-changed", accent);
-    }
-    // The menu-bar popover subscribes too, and may be open with no main window.
-    ampleFileAgentPopover?.send("amplefile:window:accent-color-changed", accent);
-  };
+  const sendAccentColor = sendAccentColorToRenderers;
   if (process.platform === "darwin") {
     systemPreferences.subscribeNotification("AppleColorPreferencesChangedNotification", sendAccentColor);
   } else {
@@ -2400,6 +2502,7 @@ function configureAccentColorMonitor(): void {
 }
 
 function getSystemAccentColor(): string | null {
+  if (process.platform === "linux") return linuxDesktopSettings?.current().accentColor ?? null;
   if (process.platform !== "win32" && process.platform !== "darwin") return null;
   try {
     const raw = systemPreferences.getAccentColor().replace(/^#/, "");

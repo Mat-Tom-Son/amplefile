@@ -237,7 +237,7 @@ declare global {
       };
       window: {
         material: "mica" | "vibrancy" | "none";
-        setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system", chrome?: { color: string; symbolColor: string }) => void;
+        setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system") => void;
         railTooltip: {
           show: (request: {
             text: string;
@@ -248,6 +248,10 @@ declare global {
         };
         getAccentColor: () => Promise<string | null>;
         onAccentColorChanged: (listener: (accent: string | null) => void) => () => void;
+        /** Linux only (null elsewhere): the window buttons to draw, the window's state, and the desktop's contrast. */
+        getChromeState?: () => Promise<import("../../src/shared/linux-desktop-appearance").LinuxWindowChromeState | null>;
+        onChromeStateChanged?: (listener: (state: import("../../src/shared/linux-desktop-appearance").LinuxWindowChromeState | null) => void) => () => void;
+        control?: (action: "minimize" | "toggle-maximize" | "close") => void;
         getCloseToTray: () => Promise<{ supported: boolean; enabled: boolean }>;
         setCloseToTray: (enabled: boolean) => Promise<{ supported: boolean; enabled: boolean }>;
       };

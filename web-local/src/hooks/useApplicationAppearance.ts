@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { applicationAppearanceVariables } from "../../../src/shared/application-appearance.js";
 import { ApplicationAppearanceStore } from "../lib/application-appearance-store";
 import { typographyFontForPlatform } from "../lib/platform";
+import { useLinuxWindowChrome } from "./useLinuxWindowChrome";
 
 let normalStore: ApplicationAppearanceStore | null = null;
 function browserStore(): ApplicationAppearanceStore {
@@ -26,7 +27,9 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
   const [systemAccent, setSystemAccent] = useState<string | null>(null);
   const preferences = snapshot.preferences;
   const theme = preferences.mode === "system" ? device.dark ? "dark" : "light" : preferences.mode;
-  const effective = { contrast: preferences.contrast === "more" || device.contrast,
+  // Chromium on Linux does not report the desktop's contrast; the host reads it from the settings portal.
+  const linuxChrome = useLinuxWindowChrome();
+  const effective = { contrast: preferences.contrast === "more" || device.contrast || (!fixtureMode && linuxChrome?.highContrast === true),
     motion: preferences.motion === "reduce" || device.motion, transparency: preferences.transparency === "opaque" || device.transparency };
 
   useEffect(() => {
@@ -72,8 +75,7 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
     root.dataset.appearanceTransparency = effective.transparency ? "opaque" : "system";
     const variables = applicationAppearanceVariables(resolved, theme, fixtureMode ? null : systemAccent, effective.contrast);
     for (const [key, value] of Object.entries(variables)) root.style.setProperty(key, value);
-    if (!fixtureMode) window.ampleFileDesktop?.window?.setTheme?.(theme, preferences.mode,
-      window.ampleFileDesktop?.app?.platform === "linux" ? { color: variables["--ui-surface"]!, symbolColor: variables["--ui-text"]! } : undefined);
+    if (!fixtureMode) window.ampleFileDesktop?.window?.setTheme?.(theme, preferences.mode);
   }, [preferences, theme, systemAccent, fixtureMode, effective.contrast, effective.motion, effective.transparency]);
 
   return { ...snapshot, store, theme, device, effective };

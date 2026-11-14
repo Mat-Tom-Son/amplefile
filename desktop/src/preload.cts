@@ -200,7 +200,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   },
   window: {
     material: windowMaterial,
-    setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system", chrome?: { color: string; symbolColor: string }) => ipcRenderer.send("amplefile:window:set-theme", theme, source, chrome),
+    setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system") => ipcRenderer.send("amplefile:window:set-theme", theme, source),
     railTooltip: {
       show: (request: unknown) => ipcRenderer.send("amplefile:window:rail-tooltip-show", request),
       hide: () => ipcRenderer.send("amplefile:window:rail-tooltip-hide"),
@@ -213,6 +213,14 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.on("amplefile:window:accent-color-changed", listener);
       return () => ipcRenderer.removeListener("amplefile:window:accent-color-changed", listener);
     },
+    // Linux: the renderer draws the window buttons where the desktop's layout puts them.
+    getChromeState: () => ipcRenderer.invoke("amplefile:window:chrome-state"),
+    onChromeStateChanged: (callback: (state: unknown) => void) => {
+      const listener = (_event: unknown, state: unknown) => callback(state);
+      ipcRenderer.on("amplefile:window:chrome-state-changed", listener);
+      return () => ipcRenderer.removeListener("amplefile:window:chrome-state-changed", listener);
+    },
+    control: (action: "minimize" | "toggle-maximize" | "close") => ipcRenderer.send("amplefile:window:control", action),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("amplefile:shell:open-external", url),

@@ -19,7 +19,7 @@ import { useBootstrapRefresh } from "./hooks/useBootstrapRefresh";
 import { api, errorText } from "./lib/api";
 import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from "./lib/connected-folder-setup";
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
-import { isMacOS } from "./lib/platform";
+import { desktopPlatform, isMacOS } from "./lib/platform";
 import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
 import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
@@ -88,7 +88,8 @@ export function App() {
   const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string } | null>(null);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
-  const showDesktopTitleBar = ["win32", "linux"].includes(window.ampleFileDesktop?.app.platform ?? "");
+  // The Linux preview (`&platform=linux`) draws the Linux title bar too, buttons included.
+  const showDesktopTitleBar = ["win32", "linux"].includes(desktopPlatform() ?? "");
 
   const openSettings = useCallback((page: SettingsPage = "appearance", modelScope?: ModelScope, focusAiModel = false, workerConnectedFolderId?: string, focusWorkerInstructions = false, backToCustomization?: () => void) => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;

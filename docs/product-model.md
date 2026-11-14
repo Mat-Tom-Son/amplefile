@@ -40,7 +40,10 @@ The local [Linux candidate](linux-build.md) resolves Standard Folders through
 XDG user directories, including relocated paths, and omits disabled directories
 and iCloud Drive. The home row remains separate. **View → AmpleFile Agent**
 also opens the agent when the Linux desktop has no tray icon. Closing the
-last Linux window preserves accepted work; Quit ends the host.
+last Linux window preserves accepted work; Quit ends the host. The Linux title
+bar draws the window buttons the desktop's button layout asks for, on its side,
+and the desktop's accent, light or dark, and contrast apply as a Mac's do
+([Title bar and desktop appearance](linux-build.md#title-bar-and-desktop-appearance)).
 
 AmpleFile's window is a smart file manager that looks native to macOS and
 Finder. It uses the same local API, file events, and desktop bridge as every
