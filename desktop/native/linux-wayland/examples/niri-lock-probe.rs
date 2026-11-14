@@ -1,4 +1,4 @@
-use amplefile_wayland::session_lock::monitor_niri;
+use amplefile_wayland::session_lock::monitor_logind;
 use anyhow::{ensure, Result};
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
         "Refusing the person's session"
     );
     let (ready, subscribed) = tokio::sync::oneshot::channel();
-    let task = tokio::spawn(monitor_niri(ready));
+    let task = tokio::spawn(monitor_logind(ready));
     tokio::time::timeout(std::time::Duration::from_secs(3), subscribed).await???;
     let connection = zbus::Connection::system().await?;
     let proxy = zbus::Proxy::new(

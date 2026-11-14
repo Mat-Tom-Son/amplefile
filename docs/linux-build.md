@@ -191,6 +191,27 @@ plane layout, and brackets CPU access with the Linux DMA-BUF synchronization
 API before producing bounded RGBA/PNG observations. A driver must support
 exporting CPU-readable linear buffers.
 
+The helper identifies the desktop from `XDG_CURRENT_DESKTOP` and admits only
+an allow-list: GNOME, KDE Plasma and niri. Any other desktop, or an ambiguous
+value, is refused before a chooser opens, with the reason. Every admitted
+desktop has a lock signal the helper can observe, because locking must end
+control. The niri path is a general one for compositors with
+`zwlr_virtual_pointer_v1` (version 2), `zwp_virtual_keyboard_v1`,
+`xdg-output` (version 3) and `wl_output` (version 4); the compositor must
+advertise all of them and exactly one seat. If the seat has no keymap yet,
+sharing is refused until a key is pressed on the keyboard.
+
+Sway, river, labwc and Wayfire offer those protocols and capture through
+`xdg-desktop-portal-wlr`, but are not supported: no other application can see
+when they are locked. Neither these compositors nor their lockers (swaylock,
+for one) set logind's `LockedHint`, as checked in the Fedora 44 builds of Sway
+1.11, swaylock 1.8.6, labwc 0.9.6, Wayfire 0.10.1 and river 0.5.0, and
+`ext-session-lock-v1` state is private to the locker. Hyprland has a lock
+notifier (`hyprland_lock_notifier_v1`) that could serve, but its monitor is not
+implemented or tested. COSMIC 1.11's portal offers RemoteDesktop with libei,
+but neither cosmic-comp nor its locker sets `LockedHint`, and its
+`org.freedesktop.ScreenSaver` service reports no lock state.
+
 KDE's helper path requires one connected monitor;
 multi-monitor KDE responses are refused. Portal/backend availability, a desktop
 accessibility bus, and a session screen-lock service are required. DEB/RPM
@@ -235,7 +256,13 @@ tests exercise cancellation, ownership, stale observations, setup and native
 transport. [Private desktop acceptance](../scripts/linux-wayland-probe/README.md)
 tests the actual portal, compositor, capture/input and Pi tool path in an
 isolated GNOME seat. [Private niri acceptance](../scripts/linux-niri-probe/README.md)
-checks native input and lock revocation at 100% and 125% scale. Real niri capture
+checks native input and lock revocation at 100% and 125% scale.
+[Private Sway acceptance](../scripts/linux-wlroots-probe/README.md) runs the
+same virtual-input path and portal capture on Sway 1.11 in a disposable
+container at 100% and 125%: exact click coordinates and text, refusal without
+a keymap, exact capture pixels, invalidation when the selected output changes
+or is removed, refusal of a rotated output, and the product's refusal of Sway
+itself. It does not qualify Sway, which still lacks a lock signal. Real niri capture
 was also checked on a 1920×1200 display at 125%, including exact PNG pixels and
 selected-output coordinate mapping. These fixtures do not establish hardware GPU, physical
 sleep, IME, paid-provider or public signed-repository qualification.

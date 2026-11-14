@@ -1,20 +1,20 @@
 //! A common input surface; the grant and accepted-turn policy stay in the host.
-use crate::{ei, niri};
+use crate::{compositor::Profile, ei, virtual_input};
 use anyhow::Result;
 use std::os::fd::OwnedFd;
 pub enum Sender {
     Eis(ei::Sender),
-    Niri(niri::Input),
+    Virtual(virtual_input::Input),
 }
 macro_rules! delegate {
-    ($self:ident,$method:ident $(,$arg:expr)*) => {match $self { Self::Eis(input) => input.$method($($arg),*),Self::Niri(input) => input.$method($($arg),*) }};
+    ($self:ident,$method:ident $(,$arg:expr)*) => {match $self { Self::Eis(input) => input.$method($($arg),*),Self::Virtual(input) => input.$method($($arg),*) }};
 }
 impl Sender {
     pub fn new(fd: OwnedFd) -> Result<Self> {
         Ok(Self::Eis(ei::Sender::new(fd)?))
     }
-    pub fn niri(position: (i32, i32), size: (i32, i32), pixels: (u32, u32)) -> Result<Self> {
-        Ok(Self::Niri(niri::Input::new(position, size, pixels)?))
+    pub fn virtual_input(profile: &Profile, position: (i32, i32), size: (i32, i32), pixels: (u32, u32)) -> Result<Self> {
+        Ok(Self::Virtual(virtual_input::Input::new(profile, position, size, pixels)?))
     }
     pub fn dispatch(&mut self) -> Result<()> {
         delegate!(self, dispatch)
@@ -55,7 +55,7 @@ impl Sender {
     pub async fn drag(&mut self, mapping: &str, path: &[(f64, f64)]) -> Result<()> {
         match self {
             Self::Eis(input) => input.drag(mapping, path).await,
-            Self::Niri(input) => input.drag(mapping, path).await,
+            Self::Virtual(input) => input.drag(mapping, path).await,
         }
     }
 }

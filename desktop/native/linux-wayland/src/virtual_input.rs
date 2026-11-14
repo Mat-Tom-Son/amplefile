@@ -1,6 +1,13 @@
-//! Rootless niri input, confined to the monitor selected in the screen portal.
-//! No daemon, global socket listener, clipboard access, or input at connection.
-use crate::{ei::Region, keyboard::Keyboard};
+//! Rootless output-bound input through `zwlr_virtual_pointer_v1` and
+//! `zwp_virtual_keyboard_v1`, confined to the monitor selected in the screen
+//! portal. The compositor profile decides how absolute positions map; the
+//! advertised globals must satisfy it. No daemon, global socket listener,
+//! clipboard access, or input at connection.
+use crate::{
+    compositor::{require_globals, AbsoluteInput, Profile},
+    ei::Region,
+    keyboard::Keyboard,
+};
 use anyhow::{ensure, Context, Result};
 use std::{
     collections::HashMap,
@@ -105,6 +112,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for State {
         match event {
             wl_keyboard::Event::Keymap { format, fd, size } => {
                 let result = (|| -> Result<()> {
+                    // A wlroots seat with no active keyboard announces that
+                    // it has no keymap. That supplies nothing; it is not an
+                    // error, and the uploaded keymap stays authoritative.
+                    if matches!(format, WEnum::Value(wl_keyboard::KeymapFormat::NoKeymap)) {
+                        return Ok(());
+                    }
                     ensure!(
                         matches!(format, WEnum::Value(wl_keyboard::KeymapFormat::XkbV1))
                             && size > 0
@@ -169,16 +182,30 @@ pub struct Input {
     _outputs: Vec<(wl_output::WlOutput, zxdg_output_v1::ZxdgOutputV1)>,
     selected: ObjectId,
     geometry: Output,
+    absolute_input: AbsoluteInput,
     region: Region,
     clock: Instant,
     held_keys: Vec<u32>,
     held_button: Option<u32>,
 }
 impl Input {
-    pub fn new(position: (i32, i32), size: (i32, i32), pixels: (u32, u32)) -> Result<Self> {
-        let connection =
-            Connection::connect_to_env().context("Cannot connect to the niri Wayland session")?;
+    pub fn new(
+        profile: &Profile,
+        position: (i32, i32),
+        size: (i32, i32),
+        pixels: (u32, u32),
+    ) -> Result<Self> {
+        let name = profile.name;
+        let connection = Connection::connect_to_env()
+            .with_context(|| format!("Cannot connect to the {name} Wayland session"))?;
         let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
+        let advertised: Vec<_> = globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .map(|global| (global.interface, global.version))
+            .collect();
+        require_globals(profile, &advertised)?;
         let qh = queue.handle();
         let seat = globals.bind::<wl_seat::WlSeat, _, _>(&qh, 1..=9, ())?;
         let manager = globals
@@ -187,7 +214,7 @@ impl Input {
                 2..=2,
                 (),
             )
-            .context("niri virtual pointer v2 is required")?;
+            .with_context(|| format!("{name} virtual pointer v2 is required"))?;
         let key_manager = globals
             .bind::<zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1, _, _>(
                 &qh,
@@ -238,7 +265,7 @@ impl Input {
             .collect();
         ensure!(
             matches.len() == 1,
-            "The shared screen must match exactly one niri monitor"
+            "The shared screen must match exactly one {name} monitor"
         );
         let (selected, geometry) = (matches[0].0.clone(), matches[0].1.clone());
         ensure!(size.0 > 0 && size.1 > 0, "Invalid monitor dimensions");
@@ -247,7 +274,14 @@ impl Input {
             scale >= 1.0
                 && scale <= 4.0
                 && (f64::from(pixels.1) - f64::from(size.1) * scale).abs() <= 2.0,
-            "Capture and niri monitor geometry disagree"
+            "Capture and {name} monitor geometry disagree"
+        );
+        // A wlroots-style compositor maps absolute input over the transformed
+        // logical box. Only the normal transform has been checked there.
+        ensure!(
+            profile.absolute_input == AbsoluteInput::OutputBeforeTransform
+                || geometry.transform == 0,
+            "Rotated or flipped displays are not supported on {name}"
         );
         let output = outputs
             .iter()
@@ -256,7 +290,7 @@ impl Input {
         let pointer =
             manager.create_virtual_pointer_with_output(Some(&seat), Some(&output.0), &qh, ());
         let region = Region {
-            mapping_id: Some(format!("niri:{}", geometry.name)),
+            mapping_id: Some(format!("{}:{}", name.to_ascii_lowercase(), geometry.name)),
             x: 0,
             y: 0,
             width: size.0 as u32,
@@ -274,6 +308,7 @@ impl Input {
             _outputs: outputs,
             selected,
             geometry,
+            absolute_input: profile.absolute_input,
             region,
             clock: Instant::now(),
             held_keys: vec![],
@@ -282,7 +317,7 @@ impl Input {
         input.dispatch()?;
         ensure!(
             input.state.keyboard.is_some(),
-            "Compositor did not supply a keyboard keymap"
+            "The compositor has not shared a keyboard layout; press a key on the keyboard, then share again"
         );
         Ok(input)
     }
@@ -343,7 +378,8 @@ impl Input {
     }
     pub fn move_absolute(&mut self, mapping: &str, x: f64, y: f64) -> Result<()> {
         self.point(mapping, x, y)?;
-        let (u, v) = inverse_transform(
+        let (u, v) = absolute_position(
+            self.absolute_input,
             self.geometry.transform,
             x / f64::from(self.region.width),
             y / f64::from(self.region.height),
@@ -496,6 +532,17 @@ impl Drop for Input {
 
 // niri applies the output transform to absolute input, just as it does for a
 // hardware tablet. Undo it here because tool coordinates are displayed pixels.
+// wlroots normalizes over the already transformed logical box; only the normal
+// transform is admitted there, so the position passes through unchanged.
+fn absolute_position(mode: AbsoluteInput, transform: u32, u: f64, v: f64) -> Result<(f64, f64)> {
+    match mode {
+        AbsoluteInput::OutputBeforeTransform => inverse_transform(transform, u, v),
+        AbsoluteInput::LogicalBox => {
+            ensure!(transform == 0, "Unsupported output transform");
+            Ok((u, v))
+        }
+    }
+}
 fn inverse_transform(transform: u32, u: f64, v: f64) -> Result<(f64, f64)> {
     Ok(match transform {
         0 => (u, v),
@@ -532,5 +579,20 @@ mod tests {
             }
         }
         assert!(inverse_transform(99, 0.5, 0.5).is_err());
+    }
+    #[test]
+    fn logical_box_input_passes_through_and_refuses_transforms() {
+        assert_eq!(
+            absolute_position(AbsoluteInput::LogicalBox, 0, 0.25, 0.75).unwrap(),
+            (0.25, 0.75)
+        );
+        for transform in 1..8 {
+            assert!(absolute_position(AbsoluteInput::LogicalBox, transform, 0.5, 0.5).is_err());
+            assert_eq!(
+                absolute_position(AbsoluteInput::OutputBeforeTransform, transform, 0.25, 0.75)
+                    .unwrap(),
+                inverse_transform(transform, 0.25, 0.75).unwrap()
+            );
+        }
     }
 }
