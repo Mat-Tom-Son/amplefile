@@ -317,7 +317,12 @@ function relaunchedUnderX11(): boolean {
   // An AppImage's mount ends with this process, so start the image again.
   const appImage = process.env.APPIMAGE;
   const executable = appImage && isAbsolute(appImage) && existsSync(appImage) ? appImage : process.execPath;
-  const child = spawn(executable, linuxX11Relaunch, { stdio: "inherit", env: process.env });
+  // Chromium keeps some files open and inheritable (ICU data, the archive);
+  // close everything but stdio first, or the new instance holds them, and an
+  // AppImage's old mount, for its lifetime. Output stays on this launch's
+  // stdout and stderr, which Electron's own relauncher would discard.
+  const closeInheritedFiles = 'for fd in /proc/self/fd/*; do n=${fd##*/}; case $n in 0|1|2) ;; *) eval "exec $n>&-" 2>/dev/null;; esac; done; exec "$0" "$@"';
+  const child = spawn("/bin/sh", ["-c", closeInheritedFiles, executable, ...linuxX11Relaunch], { stdio: "inherit", env: process.env });
   child.once("error", (error) => console.error(`${productName} could not start under X11: ${errorMessage(error)}`));
   child.unref();
   return true;
