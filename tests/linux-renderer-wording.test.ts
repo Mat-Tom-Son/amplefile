@@ -53,7 +53,7 @@ test("Shortcut Keys keeps the Mac rows and speaks Linux on Linux", () => {
   assert.deepEqual(mac.find((row) => row.keys.at(-1) === "V" && row.keys.length === 3)?.keys, ["Option", "Command", "V"]);
 
   const linux = filesRows("linux", true);
-  assert.deepEqual(action(linux, "Space"), [], "Linux has no Quick Look, so Space is not offered");
+  assert.deepEqual(action(linux, "Space"), ["Preview the selected item. Space or Esc closes it."], "Linux has no Quick Look; Space opens the window's own Preview");
   assert.deepEqual(action(linux, "C"), ["Copy the selected items (your file manager can paste them too)."]);
   assert.deepEqual(action(linux, "V"), ["Paste items copied here or in your file manager.", "Move the items copied here into this folder."]);
   assert.deepEqual(action(linux, "Backspace"), ["Delete. Undo it from History, or from the Trash in a Standard Folder."], "a Standard Folder's items go to the desktop's Trash on Linux too");
@@ -61,6 +61,7 @@ test("Shortcut Keys keeps the Mac rows and speaks Linux on Linux", () => {
   for (const row of linux) assert.doesNotMatch(row.action, /Finder|Quick Look|Mac\b/);
 
   const browser = filesRows(undefined, false);
+  assert.deepEqual(action(browser, "Space"), ["Quick Look the selected item."], "the plain browser points to the Mac app for Quick Look");
   assert.deepEqual(action(browser, "Backspace"), ["Delete. Undo it from History."], "the plain browser has no Trash to undo from");
 });
 
@@ -74,8 +75,9 @@ test("renderer strings that name the Mac go through the platform helpers", async
   assert.match(fileManager, /Add files to \$\{targetName\} in \$\{systemFileManagerName\(\)\}, or put it to work first\./);
   assert.match(fileManager, /title=\{`Go to Folder… \(\$\{desktopShortcutText\(\[desktopShortcutModifierKey\(\), "Shift", "G"\]\)\}\)`\}/);
   assert.doesNotMatch(fileManager, /⇧⌘G\)"/);
-  // Space asks the Mac app for Quick Look only from the browser; on another desktop it does nothing.
-  assert.match(fileManager, /if \(!bridge\) \{ showToast\(\{ text: "Quick Look is available in the Mac app", tone: "info" \}\); return; \}\n\s*\/\/[^\n]*\n\s*if \(!mac\) return;/);
+  // Space draws the window's own Preview off the Mac; the Mac asks Quick Look, and the plain browser points to the Mac app for it.
+  assert.match(fileManager, /const builtInPreview = !mac && Boolean\(desktopPlatform\(\)\);/);
+  assert.match(fileManager, /if \(builtInPreview\) \{[^}]*previewSpaceAction\([^}]*return;\n\s*\}\n[^\n]*\n[^\n]*\n[^\n]*\n\s*if \(!bridge\) \{ showToast\(\{ text: "Quick Look is available in the Mac app", tone: "info" \}\); return; \}\n\s*void bridge\.preview\(entry\.path\)/);
   assert.match(commandLine, /`Not found on this \$\{computer\}`/);
   assert.match(commandLine, /`\$\{name\} isn't set up on this \$\{computer\}\.`/);
   assert.doesNotMatch(commandLine, /this Mac/);
