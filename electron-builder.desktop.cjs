@@ -12,6 +12,10 @@ const electronBuilderMacIdentity = macSignIdentity?.replace(/^Developer ID Appli
 // never), and scripts/publish-mac-release.mjs decides where the release goes.
 const macUpdateFeed = resolveMacReleaseFeed(identity).packaged;
 const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
+// Written by npm run desktop:icons (scripts/generate-desktop-icons.mjs).
+const linuxIconSet = path.join(root, "out", "generated-assets", "linux-icons");
+// fpm source=destination mapping for the scalable hicolor icon.
+const scalableIconMapping = `${path.join(linuxIconSet, "scalable", `${identity.packageName}.svg`)}=/usr/share/icons/hicolor/scalable/apps/${identity.packageName}.svg`;
 
 module.exports = {
   appId: unsignedMacBuild ? identity.macSmokeAppId : identity.productionAppId,
@@ -77,36 +81,52 @@ module.exports = {
   asarUnpack: ["resources/included-tools/documents/worker.mjs", "node_modules/@napi-rs/**/*.node"],
   compression: "normal",
   npmRebuild: false,
-  // This runtime works without the legacy libfuse2 package.
+  // This runtime works without the legacy libfuse2 package. Its default
+  // launcher arguments are empty: no --no-sandbox, and no --ozone-platform,
+  // which the app chooses itself at startup (desktop/src/linux-launch.ts).
   toolsets: { appimage: "1.0.3" },
-  appImage: { executableArgs: ["--ozone-platform=x11"] },
   linux: {
     target: [{ target: "deb", arch: ["x64"] }, { target: "rpm", arch: ["x64"] }, { target: "AppImage", arch: ["x64"] }],
     executableName: identity.packageName,
-    executableArgs: ["--ozone-platform=x11"],
     syncDesktopName: true,
-    category: "Office",
+    // A file manager first (docs/product-model.md), so the menu spec's
+    // FileManager under Utility;FileTools rather than Office.
+    category: "Utility;FileTools;FileManager",
+    // "Open With" for folders. Declaring a type never makes AmpleFile the
+    // default: nothing here or in the install scripts runs xdg-mime or edits
+    // mimeapps.list. A folder opens only if it is already a Connected Folder.
+    mimeTypes: ["inode/directory"],
     maintainer: identity.sourceRepositoryOwner,
     synopsis: "Work with AI in ordinary folders",
-    icon: path.join(root, "desktop", "assets", "icon-512.png"),
+    // The desktop entry's Comment and the packages' description.
+    description: "Browse ordinary folders and work in them with an AI Worker for each Connected Folder",
+    // The hicolor PNG set from npm run desktop:icons; DEB/RPM add the SVG below.
+    icon: linuxIconSet,
     publish: null,
     extraFiles: [{ from: "out/included-tools/linux-cli", to: "bin" }],
     extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper", filter: ["linux-bridge", "source.json", "LICENSE.pi-computer-use", "THIRD-PARTY-LICENSES.txt"] },
       { from: "out/included-tools/wayland-helper", to: "wayland-helper" }],
-    desktop: { entry: { StartupWMClass: "amplefile-desktop", Keywords: "AI;Assistant;Folders;" } },
+    desktop: { entry: { GenericName: "File Manager", StartupWMClass: "amplefile-desktop", Keywords: "AI;Assistant;Folders;Files;" } },
   },
   deb: {
     afterInstall: "out/generated-linux-assets/after-install.sh",
     afterRemove: "out/generated-linux-assets/after-remove.sh",
-    depends: ["libc6 (>= 2.39)", "libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libglib2.0-bin", "libatspi2.0-0", "libsecret-1-0", "libuuid1", "libgbm1", "libasound2", "expect",
+    // Ubuntu 24.04 and Debian 13 renamed some libraries for 64-bit time
+    // (libasound2t64 and others). On amd64 the new packages also provide the
+    // old names; the alternatives keep resolution independent of that.
+    depends: ["libc6 (>= 2.39)", "libgtk-3-0 | libgtk-3-0t64", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libglib2.0-bin", "libatspi2.0-0 | libatspi2.0-0t64", "libsecret-1-0", "libuuid1", "libgbm1", "libasound2 | libasound2t64", "expect",
       "libei1 (>= 1.2)", "libxkbcommon0", "libgstreamer1.0-0", "libgstreamer-plugins-base1.0-0", "gstreamer1.0-plugins-base", "gstreamer1.0-pipewire", "xdg-desktop-portal"],
     recommends: ["gnome-keyring"],
+    fpm: [scalableIconMapping],
   },
   rpm: {
     afterInstall: "out/generated-linux-assets/after-install.sh",
     afterRemove: "out/generated-linux-assets/after-remove.sh",
     depends: ["glibc >= 2.39", "gtk3", "libnotify", "nss", "libXScrnSaver", "libXtst", "xdg-utils", "glib2", "at-spi2-core", "libsecret", "libuuid", "mesa-libgbm", "alsa-lib", "expect",
       "libei >= 1.2", "libxkbcommon", "gstreamer1", "gstreamer1-plugins-base", "pipewire-gstreamer", "xdg-desktop-portal"],
+    // Electron Builder has no RPM recommends option; fpm writes the weak
+    // dependency into the spec, matching the DEB's keyring recommendation.
+    fpm: ["--rpm-tag", "Recommends: gnome-keyring", scalableIconMapping],
   },
   mac: {
     extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }],
