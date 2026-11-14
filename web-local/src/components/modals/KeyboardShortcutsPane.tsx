@@ -7,15 +7,16 @@ import type { ShortcutGroup } from "../../types";
  * manager window): Finder's keys for the list and search, and the menu bar's
  * AmpleFile commands, and the Browser pane's keys in the desktop app. It has
  * no command palette or agent panel, so their keys are not listed.
- * Space previews with Quick Look only on the Mac (the plain browser points to
- * the Mac app for it); Linux and Windows have no preview behind Space, so it
- * is not listed there.
+ * Space previews with Quick Look on the Mac (the plain browser points to the
+ * Mac app for it); on another desktop it opens the window's own Preview, which
+ * Space or Esc closes.
  */
 export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: boolean): ShortcutGroup[] {
   const macOS = isMacOS(platform);
   const modifier = desktopShortcutModifierKey(platform);
   const fileManager = systemFileManagerName(platform);
   const quickLook = macOS || !platform;
+  const space = quickLook ? "Quick Look the selected item." : "Preview the selected item. Space or Esc closes it.";
   return [
     {
       title: "Files",
@@ -24,7 +25,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: ["Arrow down"], action: "Select the item below." },
         { keys: ["Shift", "Arrow down"], action: "Add the next item to the selection." },
         { keys: [modifier, "A"], action: "Select every item." },
-        ...(quickLook ? [{ keys: ["Space"], action: "Quick Look the selected item." }] : []),
+        { keys: ["Space"], action: space },
         { keys: [modifier, "Arrow down"], action: "Open the selected item." },
         { keys: [modifier, "Arrow up"], action: "Go to the enclosing folder." },
         { keys: [modifier, "["], action: "Go back." },

@@ -132,7 +132,12 @@ other surface.
   apps; files dragged in from Finder are added to the folder shown, or to the
   folder row they are dropped on, and a file dragged onto a folder row in the
   list moves there, each kept by History (a Standard Folder is changed in
-  Finder). Right-click uses the native menu.
+  Finder). Right-click uses the native menu. Where the desktop has no Quick
+  Look (Linux), Space opens the window's own **Preview** of the selected
+  file instead: a panel over the window that follows the selection as the
+  arrow keys move it and closes with Space, Esc, or its close button. It
+  shows text, images, and PDFs from the place's own `file-preview` and
+  `raw-file` routes ([Linux build](linux-build.md#sidebar-and-desktop)).
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
   pasteboard so Finder can paste it; ⌘V pastes what was copied here or in
   Finder (the desktop process reads the pasteboard and pastes; the window

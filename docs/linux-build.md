@@ -72,11 +72,37 @@ See the [XDG user directories contract](https://wiki.freedesktop.org/www/Softwar
 
 The window speaks Linux: Ctrl instead of ⌘ in shortcuts and hints, "this
 computer" instead of "this Mac", **Show in File Manager**, and "your file
-manager" where the Mac app names Finder. Quick Look is Mac-only, so Space does
-nothing in the file list and Shortcut Keys leaves it out. Deleting in a
+manager" where the Mac app names Finder. Deleting in a
 Standard Folder moves items to the desktop's Trash; in a Connected Folder,
 History brings them back. With no Automations yet, Settings → Automations
 points to **View → AmpleFile Agent**.
+
+Quick Look is Mac-only. On Linux, Space on a selected file opens AmpleFile's
+own **Preview**, a panel over the window, on every desktop (GNOME, KDE, niri,
+Sway). The file list keeps the keyboard: the arrow keys move the selection
+and the Preview follows it, and Space, Esc, or the close button put it away.
+Shortcut Keys lists Space as "Preview the selected item." It works the same
+in Connected Folders and Standard Folders:
+
+- Text of any kind, code and Markdown included, shows as plain text, up to
+  its first 256 KB; a longer file says where the Preview stops.
+- PNG, JPEG, GIF, WebP, BMP, AVIF, and SVG images up to 12 MB show as
+  pictures. An SVG is drawn as an image, so its scripts and references never
+  run.
+- PDFs up to 200 MB open in the built-in PDF viewer.
+- Folders, Word, PowerPoint, Excel, archives, audio, video, other binary
+  files, and anything over its limit show their icon, kind, and size, with
+  **Open**.
+
+The host decides the kind and reads the file through the place's existing
+`file-preview` and `raw-file` routes, under the same path policy as every
+other route: nothing outside the place, no symbolic links, and nothing in
+`.amplefile/` or `.pi/`. Text is shown, never run; a PDF is drawn by the
+built-in viewer inside the sandboxed window, from the file's own bytes; the
+window's content policy allows no remote loads; and the Preview starts no
+other program. AmpleFile does not use GNOME's Sushi
+previewer: it is a separate window that takes the keyboard from the file
+list, and a tiling compositor such as niri places it as a new column.
 
 **Open With** shows a menu of the apps the desktop associates with the
 file's type, its default app first. The type comes from shared-mime-info

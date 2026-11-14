@@ -17,6 +17,7 @@ import {
   resolveStandardFolderPath,
   scanStandardFolder,
   standardFolderEntryInfo,
+  standardFolderFilePreview,
   standardFolderRegistrationTarget,
   standardFolderRoot,
   type StandardFolderId,
@@ -95,7 +96,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     sendJson(res, { removed: true });
     return true;
   }
-  const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|raw-file|events|rename-local-entry|folders|connected-folders)$/);
+  const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|file-preview|raw-file|events|rename-local-entry|folders|connected-folders)$/);
   if (standardFolderMatch) {
     const standardFolderId = standardFolderMatch[1];
     if (!isStandardFolderId(standardFolderId)) throw notFound("That standard folder isn’t on this computer.");
@@ -108,6 +109,11 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     if (method === "GET" && route === "file-info") {
       if (!path) throw badRequest("A path inside the folder is required.");
       sendJson(res, await standardFolderEntryInfo(standardFolderId, path));
+      return true;
+    }
+    if (method === "GET" && route === "file-preview") {
+      if (!path) throw badRequest("A path inside the folder is required.");
+      sendJson(res, { preview: await standardFolderFilePreview(standardFolderId, path) });
       return true;
     }
     if (method === "GET" && route === "raw-file") {

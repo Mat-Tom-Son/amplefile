@@ -19,7 +19,7 @@ import { copyToClipboard } from "../../lib/clipboard";
 import { canOpenDirectly, nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
 import { formatBytes, formatItemCount } from "../../lib/format";
 import { untitledChatLabel } from "../../constants";
-import { isMacOS, connectedFolderEntryNativePath, systemFileManagerName } from "../../lib/platform";
+import { desktopPlatform, isMacOS, connectedFolderEntryNativePath, systemFileManagerName } from "../../lib/platform";
 import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
 import { deleteLocalFileRequest, deleteLocalFilesRequest, type PendingDelete } from "../../lib/pending-deletes";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
@@ -59,6 +59,8 @@ import {
   type FileManagerView as FileManagerViewMode,
   sidebarConnectedFolderRows,
 } from "./file-manager-model";
+import { FilePreview } from "./FilePreview";
+import { previewSpaceAction } from "./file-preview-model";
 import {
   placeApiBase,
   placeKey,
@@ -155,6 +157,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 }) {
   const fixtureMode = Boolean(fixture);
   const mac = isMacOS();
+  // Space asks Quick Look on the Mac; on another desktop (and in its sample
+  // window) the window draws its own Preview. The plain browser has neither.
+  const builtInPreview = !mac && Boolean(desktopPlatform());
   const resolveIdentity = useConnectedFolderIdentityResolver();
   // Each Connected Folder's name, colors, icon, and banner, edited in Customize Connected Folder.
   const connectedFolderCustomizations = useConnectedFolderCustomizations({
@@ -485,9 +490,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const byPath = useMemo(() => new Map(visible.map((entry) => [entry.path, entry])), [visible]);
   const selected = useMemo(() => new Set(selection.filter((path) => byPath.has(path))), [byPath, selection]);
   const focusPath = selection.length ? selection[selection.length - 1] ?? null : null;
+  // The built-in Preview follows the selected item, so the arrow keys move it.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Selection belongs to the folder shown; leaving it starts fresh.
-  useEffect(() => { setSelection([]); anchorRef.current = null; setQuery(""); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelection([]); anchorRef.current = null; setQuery(""); setPreviewOpen(false); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
@@ -576,11 +583,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   function quickLook(path: string | null) {
+    // Another desktop's window draws its own Preview, which Space opens and closes.
+    if (builtInPreview) {
+      const action = previewSpaceAction(previewShown, path ? byPath.get(path) ?? null : null);
+      if (action) setPreviewOpen(action === "open");
+      return;
+    }
     const entry = path ? byPath.get(path) : null;
     if (!entry || entry.kind !== "file") return;
+    // Quick Look is the Mac's; the plain browser points to the Mac app for it.
     if (!bridge) { showToast({ text: "Quick Look is available in the Mac app", tone: "info" }); return; }
-    // Quick Look is the Mac's; elsewhere the desktop has no preview to show, so Space does nothing.
-    if (!mac) return;
     void bridge.preview(entry.path).catch((caught) => onError(errorText(caught)));
   }
 
@@ -1578,6 +1590,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (event.key === "ArrowLeft" && view === "icons") return move(-1);
     if (event.key === " ") { event.preventDefault(); quickLook(focusPath); return; }
     if (event.key === "Enter" && selection.length === 1) { event.preventDefault(); requestRename(byPath.get(selection[0]!)); return; }
+    if (event.key === "Escape" && previewShown) { event.preventDefault(); setPreviewOpen(false); return; }
     if (event.key === "Escape") { if (selection.length) { event.preventDefault(); select([]); } return; }
     if (!command && !event.altKey && event.key.length === 1 && /\S/.test(event.key)) {
       const typed = typeSelectRef.current;
@@ -1614,6 +1627,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (previous.recentsOpen !== recentsOpen || previous.searching !== searching) settleIn([contentRef.current]);
   }, [recentsOpen, searching]);
   const searchMode = searching && (searchScope === "all" || place.kind === "connected-folder");
+  const previewEntry = builtInPreview && previewOpen && !searchMode && !recentsOpen && focusPath ? byPath.get(focusPath) ?? null : null;
+  const previewShown = Boolean(previewEntry);
+  // Nothing left to show (the selection was cleared, a search or Recents took the list): the Preview is put away.
+  useEffect(() => { if (previewOpen && !previewShown) setPreviewOpen(false); }, [previewOpen, previewShown]);
+  const closePreview = () => { setPreviewOpen(false); contentRef.current?.focus({ preventScroll: true }); };
   const search = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
   const searchChosen = searchMode && searchSelection ? search.results.find((result) => result.key === searchSelection) ?? null : null;
   const searchChosenConnectedFolder = searchChosen ? connectedFolders.find((item) => item.id === searchChosen.connectedFolderId) ?? null : null;
@@ -2098,6 +2116,15 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         onOpenSettings("ai-models", "connected-folder", section === "model", target.id, section === "instructions", () => setCustomizing({ connectedFolderId: target.id, section: returnSection }));
       }}
       onClose={() => setCustomizing(null)}
+    /> : null}
+    {previewEntry ? <FilePreview
+      key={`${placeKey(place)}:${previewEntry.path}`}
+      apiBase={apiBase}
+      entry={previewEntry}
+      fixtureMode={fixtureMode}
+      fixtureText={fixture && place.kind === "connected-folder" ? fixture.fileContents[place.id]?.[previewEntry.path] : undefined}
+      onOpen={() => { const entry = previewEntry; closePreview(); void openEntry(entry); }}
+      onClose={closePreview}
     /> : null}
     {goToOpen ? <GoToFolderSheet
       initialPath={`${(location.path ? connectedFolderEntryNativePath(placeRoot, location.path) : placeRoot).replace(/[\\/]+$/, "")}/`}

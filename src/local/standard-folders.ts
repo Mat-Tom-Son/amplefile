@@ -6,6 +6,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import {
   getConnectedFolderEntryInfo,
+  getConnectedFolderFilePreview,
   listConnectedFolders,
   nestedRegisteredConnectedFolderPaths,
   resolveNestableFolderPath,
@@ -13,6 +14,7 @@ import {
   scanConnectedFolderTree,
   type TreeEntry,
   type ConnectedFolderEntryInfo,
+  type ConnectedFolderFilePreview,
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { ampleFileStateRoot } from "./state-paths.js";
@@ -140,6 +142,15 @@ export async function standardFolderEntryInfo(id: StandardFolderId, relativePath
   // Downloads holds multi-gigabyte installers; the Info panel never waits on a hash.
   try {
     return await getConnectedFolderEntryInfo(standardFolderRoot(id, home), relativePath, { hash: false });
+  } catch (error) {
+    throw accessError(error, id);
+  }
+}
+
+/** Space's Preview of a file in a standard folder: the same bounded read and kinds as a Connected Folder's file-preview. */
+export async function standardFolderFilePreview(id: StandardFolderId, relativePath: string, home = homedir()): Promise<ConnectedFolderFilePreview> {
+  try {
+    return await getConnectedFolderFilePreview(standardFolderRoot(id, home), relativePath);
   } catch (error) {
     throw accessError(error, id);
   }
