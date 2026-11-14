@@ -198,7 +198,7 @@ test("the AmpleFile Agent names the popover surface, tray entry, and two-state c
   assert.match(popover, /Tell AmpleFile what to do/);
   assert.match(popover, /Reply to AmpleFile/);
 
-  assert.match(desktopMain, /\{ label: "AmpleFile Agent", click: \(\) => \{ void toggleAmpleFileAgentPopover\(\); \} \}/);
+  assert.match(desktopMain, /\{ label: "AmpleFile Agent", click: \(\) => \{ void toggleAmpleFileAgentPopover\(trayPopoverAnchor\(\)\); \} \}/);
   assert.match(desktopMain, /label: `Open \$\{productName\}`/);
   assert.match(desktopMain, /label: `Quit \$\{productName\}`/);
 

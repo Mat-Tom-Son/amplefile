@@ -1,6 +1,9 @@
-import { BrowserWindow, screen, type Rectangle, type WebContents } from "electron";
+import { BrowserWindow, screen, type WebContents } from "electron";
 
+import { linuxCursorIsReliable, popoverPlacement, type PopoverAnchor, type PopoverDisplay } from "./amplefile-agent-popover-placement.js";
 import { trayPopoverToggleAction } from "./tray-popover-toggle.js";
+
+export type { PopoverAnchor } from "./amplefile-agent-popover-placement.js";
 
 /**
  * The menu-bar/tray popover: a small always-available surface for the
@@ -24,11 +27,12 @@ export interface AmpleFileAgentPopoverOptions {
   devTools: boolean;
   configureNavigation: (window: BrowserWindow) => void;
   onError: (message: string) => void;
+  /** The main AmpleFile window's bounds, when it exists (Linux display choice). */
+  appWindowBounds: () => Electron.Rectangle | null;
 }
 
 const popoverWidth = 400;
 const popoverHeight = 560;
-const popoverEdgeGap = 6;
 // Mirrors maxManagementAttachments; dropped text lands in the composer, so it may be long.
 const maxStagedItems = 1_000;
 const maxStagedValueLength = 4 * 1024 * 1024;
@@ -50,7 +54,7 @@ export class AmpleFileAgentPopover {
     return Boolean(this.#window && !this.#window.isDestroyed() && this.#window.isVisible());
   }
 
-  async toggle(anchor: Rectangle | null): Promise<void> {
+  async toggle(anchor: PopoverAnchor): Promise<void> {
     // The click that dismisses the popover blurs it first, and the blur
     // handler hides it, so a naive toggle would observe "hidden" and re-show
     // the popover the person just closed (see tray-popover-toggle.ts).
@@ -70,7 +74,7 @@ export class AmpleFileAgentPopover {
     await this.show(anchor);
   }
 
-  async show(anchor: Rectangle | null): Promise<void> {
+  async show(anchor: PopoverAnchor): Promise<void> {
     if (this.#destroyed) return;
     // A second tray event while the first cold open is still loading must not
     // start a second show/focus pass over the same window.
@@ -78,7 +82,13 @@ export class AmpleFileAgentPopover {
     this.#pendingShow = (async () => {
       const window = await this.#ensureWindow();
       if (this.#destroyed || window.isDestroyed()) return;
-      window.setPosition(...popoverPosition(anchor));
+      const placed = this.#placement(anchor);
+      if (process.platform === "linux") {
+        // Linux may shrink the popover to fit a small or heavily scaled display.
+        window.setBounds(placed);
+      } else {
+        window.setPosition(placed.x, placed.y);
+      }
       window.show();
       if (process.platform === "darwin") {
         // The popover is a nonactivating panel: show() alone grants it key
@@ -114,7 +124,7 @@ export class AmpleFileAgentPopover {
   }
 
   /** Queues dropped material for the renderer; delivered once it has loaded. */
-  async stage(items: AmpleFileAgentPopoverStagedItem[], anchor: Rectangle | null): Promise<void> {
+  async stage(items: AmpleFileAgentPopoverStagedItem[], anchor: PopoverAnchor): Promise<void> {
     if (this.#destroyed || !items.length) return;
     const room = Math.max(0, maxStagedItems - this.#pendingStaged.length);
     const safe = items
@@ -220,36 +230,24 @@ export class AmpleFileAgentPopover {
     return window;
   }
 
+  #placement(anchor: PopoverAnchor): Electron.Rectangle {
+    const toDisplay = (display: Electron.Display): PopoverDisplay => ({ bounds: display.bounds, workArea: display.workArea });
+    const linux = process.platform === "linux";
+    return popoverPlacement({
+      platform: process.platform,
+      anchor,
+      size: { width: popoverWidth, height: popoverHeight },
+      displays: screen.getAllDisplays().map(toDisplay),
+      primary: toDisplay(screen.getPrimaryDisplay()),
+      cursor: linux && linuxCursorIsReliable(process.env) ? screen.getCursorScreenPoint() : null,
+      appWindowBounds: linux ? this.#options.appWindowBounds() : null,
+    });
+  }
+
   #flushStaged(): void {
     const window = this.#window;
     if (!this.#loaded || !window || window.isDestroyed() || !this.#pendingStaged.length) return;
     const items = this.#pendingStaged.splice(0, this.#pendingStaged.length);
     window.webContents.send("amplefile:agent:staged", items);
   }
-}
-
-/**
- * Positions the popover near its anchor (the tray icon) inside the work area:
- * under a macOS menu-bar icon, above a Windows taskbar tray, and centered on
- * the primary display when no anchor is available.
- */
-function popoverPosition(anchor: Rectangle | null): [number, number] {
-  const display = anchor
-    ? screen.getDisplayNearestPoint({ x: anchor.x + Math.round(anchor.width / 2), y: anchor.y + Math.round(anchor.height / 2) })
-    : screen.getPrimaryDisplay();
-  const area = display.workArea;
-  if (!anchor || (anchor.width === 0 && anchor.height === 0)) {
-    return [
-      area.x + Math.round((area.width - popoverWidth) / 2),
-      area.y + Math.round((area.height - popoverHeight) / 3),
-    ];
-  }
-  let x = anchor.x + Math.round(anchor.width / 2) - Math.round(popoverWidth / 2);
-  x = Math.min(Math.max(x, area.x + popoverEdgeGap), area.x + area.width - popoverWidth - popoverEdgeGap);
-  const anchorCenterY = anchor.y + anchor.height / 2;
-  const below = anchorCenterY < area.y + area.height / 2;
-  const y = below
-    ? Math.min(anchor.y + anchor.height + popoverEdgeGap, area.y + area.height - popoverHeight - popoverEdgeGap)
-    : Math.max(anchor.y - popoverHeight - popoverEdgeGap, area.y + popoverEdgeGap);
-  return [x, y];
 }

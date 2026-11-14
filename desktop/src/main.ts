@@ -5,6 +5,7 @@ import { ComputerSessionService } from "../../src/local/agent/computer-session.j
 import { NativeWaylandTransport } from "../../src/local/agent/wayland-transport.js";
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
 import { randomBytes, randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
@@ -62,7 +63,16 @@ import {
   ampleFileInspectContextFromArgv,
   ampleFileSecondInstanceIntent,
 } from "./amplefile-cli-host.js";
-import { AmpleFileAgentPopover, type AmpleFileAgentPopoverStagedItem } from "./amplefile-agent-popover.js";
+import { AmpleFileAgentPopover, type AmpleFileAgentPopoverStagedItem, type PopoverAnchor } from "./amplefile-agent-popover.js";
+import {
+  pruneRecentConnectedFolders,
+  readRecentConnectedFolders,
+  recentConnectedFolderMenuEntries,
+  recentConnectedFoldersPath,
+  recordRecentConnectedFolder,
+  writeRecentConnectedFolders,
+  type RecentConnectedFolderEntry,
+} from "./recent-connected-folders.js";
 import { ModelContextWindow } from "./model-context-window.js";
 import { writeDesktopClipboard } from "./clipboard.js";
 import { readLinuxClipboardFiles, writeLinuxClipboardFiles } from "./linux-file-clipboard.js";
@@ -250,6 +260,9 @@ let activateRegistered = false;
 let interactiveRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
+// Linux Open Recent: Connected Folder ids shown most recently, and their menu entries.
+let recentConnectedFolderEntries: RecentConnectedFolderEntry[] = [];
+let recentConnectedFoldersUpdate: Promise<void> = Promise.resolve();
 let activeNativeConnectedFolderGeneration = 0;
 let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string } | null = null;
 const pendingOpenPaths: string[] = [];
@@ -538,6 +551,7 @@ async function startInteractiveApp(): Promise<void> {
     removeLeftoverChromeRegistrationOnce();
     const api = await ensureInteractiveLocalApi();
     loadDesktopPreferences();
+    if (process.platform === "linux") void updateRecentConnectedFolders((ids) => ids);
     registerRendererProtocol();
     registerIpc();
     await ensureMainWindow();
@@ -724,7 +738,7 @@ async function createMainWindow(): Promise<void> {
   mainWindow.webContents.on("did-start-navigation", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("render-process-gone", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("page-title-updated", (event) => {
-    if (process.platform !== "darwin" || !activeNativeConnectedFolder) return;
+    if ((process.platform !== "darwin" && process.platform !== "linux") || !activeNativeConnectedFolder) return;
     event.preventDefault();
     applyNativeActiveConnectedFolderToWindow(mainWindow);
   });
@@ -1155,7 +1169,7 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:agent:open-agent-draft", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded AmpleFile Agent draft is required.");
-    await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }]);
+    await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }], windowPopoverAnchor(BrowserWindow.fromWebContents(event.sender)));
     return true;
   });
   ipcMain.on("amplefile:agent:hide", (event) => {
@@ -1411,6 +1425,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
         role: "recentDocuments" as const,
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
+      ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("new-chat") },
       { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("reload-connected-folder-state") },
@@ -1452,7 +1467,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
   if (menuId === "view") {
     return [
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
-      ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(); } }] : []),
+      ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: (_item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => { void toggleAmpleFileAgentPopover(windowPopoverAnchor(window)); } }] : []),
       { type: "separator" },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
@@ -1847,6 +1862,7 @@ async function setActiveNativeConnectedFolder(connectedFolderId: string | null):
   activeNativeConnectedFolder = { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
   applyNativeActiveConnectedFolderToWindow(mainWindow);
   if (process.platform === "darwin") app.addRecentDocument(connectedFolder.connectedFolderRoot);
+  if (process.platform === "linux") void updateRecentConnectedFolders((ids) => recordRecentConnectedFolder(ids, connectedFolder.id));
 }
 
 async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Promise<void> {
@@ -1957,9 +1973,58 @@ function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenu
 }
 
 function applyNativeActiveConnectedFolderToWindow(window: BrowserWindow | null): void {
-  if (process.platform !== "darwin" || !window || window.isDestroyed()) return;
-  window.setRepresentedFilename(activeNativeConnectedFolder?.connectedFolderRoot ?? "");
+  if ((process.platform !== "darwin" && process.platform !== "linux") || !window || window.isDestroyed()) return;
+  // The window title names the Connected Folder shown, as on the Mac, so task
+  // switchers and window lists (niri's included) tell windows apart.
+  if (process.platform === "darwin") window.setRepresentedFilename(activeNativeConnectedFolder?.connectedFolderRoot ?? "");
   window.setTitle(activeNativeConnectedFolder?.name ?? productName);
+}
+
+/**
+ * Applies a change to Linux's Open Recent record (see
+ * recent-connected-folders.ts), forgetting disconnected Connected Folders,
+ * and refreshes the menu entries. Changes run one at a time.
+ */
+function updateRecentConnectedFolders(change: (ids: string[]) => string[]): Promise<void> {
+  const run = async () => {
+    const path = recentConnectedFoldersPath(app.getPath("userData"));
+    const registered = await listConnectedFolders();
+    const stored = await readRecentConnectedFolders(path);
+    const next = pruneRecentConnectedFolders(change(stored), registered);
+    if (next.join("\n") !== stored.join("\n")) await writeRecentConnectedFolders(path, next);
+    recentConnectedFolderEntries = recentConnectedFolderMenuEntries(next, registered, homedir());
+  };
+  recentConnectedFoldersUpdate = recentConnectedFoldersUpdate.then(run).catch((error: unknown) => {
+    console.warn(`${productName} could not update Open Recent: ${errorMessage(error)}`);
+  });
+  return recentConnectedFoldersUpdate;
+}
+
+/** File → Open Recent on Linux: recently shown Connected Folders, then Clear Menu. */
+function linuxOpenRecentMenuItem(): MenuItemConstructorOptions {
+  return {
+    label: "Open Recent",
+    submenu: [
+      ...recentConnectedFolderEntries.map((entry): MenuItemConstructorOptions => ({
+        label: nativeMenuLabel(entry.label),
+        click: () => { void openRecentConnectedFolder(entry.id); },
+      })),
+      ...(recentConnectedFolderEntries.length ? [{ type: "separator" as const }] : []),
+      { label: "Clear Menu", enabled: recentConnectedFolderEntries.length > 0, click: () => { void updateRecentConnectedFolders(() => []); } },
+    ],
+  };
+}
+
+/** Opens a recent Connected Folder the way a launcher's folder argument does: registered ones only. */
+async function openRecentConnectedFolder(connectedFolderId: string): Promise<void> {
+  try {
+    const connectedFolder = await getConnectedFolder(connectedFolderId);
+    pendingOpenPaths.push(connectedFolder.connectedFolderRoot);
+    await drainPendingOpenPaths();
+  } catch (error) {
+    console.warn(`${productName} could not open a recent Connected Folder: ${errorMessage(error)}`);
+    await updateRecentConnectedFolders((ids) => ids.filter((id) => id !== connectedFolderId));
+  }
 }
 
 // Folders the system asked AmpleFile to open: Finder's open-file on macOS, a
@@ -2177,7 +2242,7 @@ function createTrayIfSupported(): void {
   }
   tray = new Tray(icon);
   const menu = Menu.buildFromTemplate([
-    { label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(); } },
+    { label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(trayPopoverAnchor()); } },
     { label: `Open ${productName}`, click: showWindow },
     ...checkForUpdatesMenuItems(() => sendRendererMenuCommand("check-for-updates")),
     { type: "separator" },
@@ -2187,13 +2252,13 @@ function createTrayIfSupported(): void {
     // No persistent context menu on macOS: setContextMenu would swallow the
     // left click. Click opens the AmpleFile Agent popover, right-click the menu,
     // and material dropped on the icon lands in the popover as staged context.
-    tray.on("click", () => { void toggleAmpleFileAgentPopover(); });
+    tray.on("click", () => { void toggleAmpleFileAgentPopover(trayPopoverAnchor()); });
     tray.on("right-click", () => tray?.popUpContextMenu(menu));
     tray.on("drop-files", (_event, files) => {
-      void openAmpleFileAgentPopoverWithItems(files.map((file) => ({ kind: "path" as const, value: file })));
+      void openAmpleFileAgentPopoverWithItems(files.map((file) => ({ kind: "path" as const, value: file })), trayPopoverAnchor());
     });
     tray.on("drop-text", (_event, text) => {
-      void openAmpleFileAgentPopoverWithItems([{ kind: "text" as const, value: text }]);
+      void openAmpleFileAgentPopoverWithItems([{ kind: "text" as const, value: text }], trayPopoverAnchor());
     });
   } else {
     tray.setContextMenu(menu);
@@ -2313,23 +2378,37 @@ async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
     devTools: !app.isPackaged,
     configureNavigation: configureWindowNavigation,
     onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
+    appWindowBounds: () => mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized() ? mainWindow.getBounds() : null,
   });
   return ampleFileAgentPopover;
 }
 
-async function toggleAmpleFileAgentPopover(): Promise<void> {
+/** The tray icon asked: its bounds, which Linux StatusNotifierItems leave empty. */
+function trayPopoverAnchor(): PopoverAnchor {
+  return { kind: "tray", trayBounds: tray?.getBounds() ?? null };
+}
+
+/** An AmpleFile window asked (Linux places the popover in it; other platforms use the tray). */
+function windowPopoverAnchor(window: Electron.BaseWindow | null | undefined): PopoverAnchor {
+  if (process.platform !== "linux") return trayPopoverAnchor();
+  const asking = window && !window.isDestroyed() ? window : mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const usable = asking && asking.isVisible() && !asking.isMinimized();
+  return { kind: "window", windowBounds: usable ? asking.getBounds() : null };
+}
+
+async function toggleAmpleFileAgentPopover(anchor: PopoverAnchor): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.toggle(tray?.getBounds() ?? null);
+    await popover.toggle(anchor);
   } catch (error) {
     console.warn(`${productName} could not open the AmpleFile Agent popover: ${errorMessage(error)}`);
   }
 }
 
-async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[]): Promise<void> {
+async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[], anchor: PopoverAnchor): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.stage(items, tray?.getBounds() ?? null);
+    await popover.stage(items, anchor);
   } catch (error) {
     console.warn(`${productName} could not stage dropped material: ${errorMessage(error)}`);
   }
