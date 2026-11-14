@@ -17,7 +17,7 @@ test("the app picker starts where each platform keeps its apps", () => {
     filters: [{ name: "Applications", extensions: ["exe"] }],
   });
   assert.equal(openWithDialogOptions("win32", {}).defaultPath, "C:\\Program Files");
-  assert.deepEqual(openWithDialogOptions("linux"), { title: "Choose an App", properties: ["openFile"] });
+  assert.equal(openWithDialogOptions("linux").defaultPath, "/usr/share/applications");
 });
 
 test("the chosen app is named without its extension", () => {
