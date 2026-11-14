@@ -1,7 +1,7 @@
 # Linux builds
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
-packages. [Linux test preview 0.1.7](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7)
+packages. [Linux test preview 0.1.7, build 2](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7-2)
 uses a separate prerelease tag in the source repository. The public Mac release
 and updater remain separate; Linux previews have no automatic update feed.
 The build command itself never publishes.

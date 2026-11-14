@@ -42,7 +42,7 @@ Files stay on your computer. Content a Worker uses goes to the model provider
 you choose; see [Privacy](PRIVACY.md).
 
 Linux x64 previews provide RPM, DEB and AppImage packages, including Computer Control.
-Download the [Linux 0.1.7 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7);
+Download the [Linux 0.1.7 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.7-2);
 see [Linux builds](docs/linux-build.md) for setup and verification.
 
 ## Run from source
