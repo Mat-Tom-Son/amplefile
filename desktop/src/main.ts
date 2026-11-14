@@ -121,7 +121,8 @@ import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protoc
 
 // AppImage launchers can fall back to --no-sandbox when namespaces are blocked.
 // Refuse before initializing user state rather than weaken renderer isolation.
-if (process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox")) {
+const refusedUnsandboxedLaunch = process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox");
+if (refusedUnsandboxedLaunch) {
   console.error("AmpleFile requires the Chromium sandbox. Install the DEB/RPM with the distribution's supported sandbox configuration.");
   app.exit(1);
 }
@@ -131,7 +132,7 @@ configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
 // Desktop sharing still uses the Wayland portal in a Wayland login session.
 // Chromium has already chosen its platform here, so the instance that owns the
 // app starts again under X11 when it needs to (linuxX11RelaunchArguments).
-const linuxX11Relaunch = linuxX11RelaunchArguments({
+const linuxX11Relaunch = refusedUnsandboxedLaunch ? null : linuxX11RelaunchArguments({
   platform: process.platform,
   display: process.env.DISPLAY,
   argv: process.argv,
