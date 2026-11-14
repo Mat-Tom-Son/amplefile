@@ -724,30 +724,3 @@ export async function desktopAppFromFile(path: string, env: NodeJS.ProcessEnv): 
   const app = desktopAppFromEntry({ id: basename(path), path, source: "user", text, env });
   return app && !app.hidden ? app : null;
 }
-
-/**
- * A PNG for a menu icon from the hicolor theme or pixmaps (Electron cannot
- * draw SVG icons in native menus); null when there is none.
- */
-export async function findDesktopIconPng(icon: string | null, env: NodeJS.ProcessEnv, home: string): Promise<string | null> {
-  if (!icon || icon.includes("\0")) return null;
-  if (isAbsolute(icon)) return icon.endsWith(".png") && (await readable(icon)) ? icon : null;
-  if (icon.includes("/")) return null;
-  const roots = [join(home, ".icons"), ...xdgDataDirs(env, home).map((dir) => join(dir, "icons"))];
-  for (const size of ["16x16", "22x22", "24x24", "32x32", "48x48", "64x64", "128x128", "256x256"]) {
-    for (const root of roots) {
-      const candidate = join(root, "hicolor", size, "apps", `${icon}.png`);
-      if (await readable(candidate)) return candidate;
-    }
-  }
-  const pixmap = join("/usr/share/pixmaps", `${icon}.png`);
-  return (await readable(pixmap)) ? pixmap : null;
-}
-
-async function readable(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
