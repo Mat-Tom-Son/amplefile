@@ -87,6 +87,8 @@ no platform switch, and an explicit `--ozone-platform` is always respected.
 Wayland desktop sharing still uses the native portal. Native Wayland-only
 windowing starts, but this lane does not qualify browser input or capture there.
 
+Windows use the `amplefile-desktop` app ID (Wayland) and window class (X11),
+matching the desktop entry, so docks and task switchers show AmpleFile's icon.
 The application menu lists AmpleFile as a file manager, and file managers offer
 **Open With AmpleFile** for folders. That never makes AmpleFile the default
 folder handler: the packages declare `inode/directory` but run no `xdg-mime`

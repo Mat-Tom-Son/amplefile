@@ -37,6 +37,10 @@ test("the Linux launchers carry no platform switch and declare folders", () => {
   assert.equal(config.linux.category, "Utility;FileTools;FileManager");
   assert.ok(config.rpm.fpm.includes("Recommends: gnome-keyring"));
   assert.ok(config.deb.depends.includes("libasound2 | libasound2t64"));
+  // Electron takes the Wayland app_id and X11 WM_CLASS from desktopName;
+  // StartupWMClass and the desktop file name must match it.
+  const packageJson = createRequire(import.meta.url)("../package.json");
+  assert.equal(packageJson.desktopName, `${config.linux.desktop.entry.StartupWMClass}.desktop`);
 });
 
 test("desktop entries are parsed and checked against the packaged contract", () => {
