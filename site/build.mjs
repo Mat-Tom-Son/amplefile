@@ -30,13 +30,15 @@ const REL = `https://github.com/${RELEASES}/releases`;
 // Linux previews are prereleases in the source repository, so no "latest" address reaches one.
 // Linux links open the list of releases; the same script points them at the newest preview's page.
 const LINUX_REL = `${SRC}/releases`;
+// Windows builds ship through the Microsoft Store, so Windows links open AmpleFile's Store listing.
+const WIN = "https://apps.microsoft.com/detail/9P84VNDK202N?cid=DevShareMCLPCS";
 const PRIV = `${SRC}/blob/main/PRIVACY.md`;
 const DOCS = `${SRC}/blob/main/docs/README.md`;
 const CONTRIB = `${SRC}/blob/main/CONTRIBUTING.md`;
 const LICENSE = `${SRC}/blob/main/LICENSE`;
 const ext = 'target="_blank" rel="noopener"';
 const TITLE = "AmpleFile · A Smart File Explorer for Mac";
-const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source, for Apple silicon Macs, with a Linux preview.";
+const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source, for Apple silicon Macs and Windows, with a Linux preview.";
 
 const MARK = (cls = "mark") => `<svg class="${cls}" viewBox="60 192 904 640" aria-hidden="true"><path class="mk-b" d="M140 192H366C403 192 416 206 434 232L454 260C466 276 480 284 502 284H884C928.183 284 964 319.817 964 364V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V272C60 227.817 95.817 192 140 192Z"/><path class="mk-f" d="M140 336H884C928.183 336 964 371.817 964 416V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V416C60 371.817 95.817 336 140 336Z"/><circle class="mk-d" cx="760" cy="656" r="80"/></svg>`;
 const APPLE = `<svg class="apple" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>`;
@@ -47,6 +49,9 @@ const WORDMARK = readFileSync(join(brand, "amplefile-wordmark.svg"), "utf8")
   .replace(/ width="[^"]*" height="[^"]*"/, "").replace(/fill="#16202B"/g, 'fill="currentColor"').replace(/<circle fill="#1F63D6"[^>]*>/, '<circle class="wm-dot" fill="#1F63D6" cx="1031.93557" cy="38.8" r="27"/>').trim();
 // A penguin drawn for this page at the Apple mark's weight: the belly, eyes, and beak are cut out of one shape.
 const LINUX = `<svg class="tux" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 1.5C14.6 1.5 16.2 3.4 16.2 6C16.2 7.7 16.8 8.9 17.8 10.3C19.5 12.7 20.8 14.7 20.8 16.6C20.8 17.5 20.4 18.1 19.8 18.5C21.2 18.9 22 19.8 22 20.8C22 21.8 21.1 22.4 19.6 22.4L15.8 22.4C14.8 22.4 14.1 21.9 14 21.1L10 21.1C9.9 21.9 9.2 22.4 8.2 22.4L4.4 22.4C2.9 22.4 2 21.8 2 20.8C2 19.8 2.8 18.9 4.2 18.5C3.6 18.1 3.2 17.5 3.2 16.6C3.2 14.7 4.5 12.7 6.2 10.3C7.2 8.9 7.8 7.7 7.8 6C7.8 3.4 9.4 1.5 12 1.5ZM12 10C13.6 10 14.6 11.6 15.3 13.4C16 15.2 16.3 17.2 15.7 18.3C15.1 19.3 13.6 19.4 12 19.4C10.4 19.4 8.9 19.3 8.3 18.3C7.7 17.2 8 15.2 8.7 13.4C9.4 11.6 10.4 10 12 10ZM9.7 5.2a.8 1.05 0 1 0 1.6 0a.8 1.05 0 1 0 -1.6 0ZM12.7 5.2a.8 1.05 0 1 0 1.6 0a.8 1.05 0 1 0 -1.6 0ZM12 6.8C13.2 6.8 14.2 7.4 14.2 7.9C14.2 8.5 13.2 9 12 9C10.8 9 9.8 8.5 9.8 7.9C9.8 7.4 10.8 6.8 12 6.8Z"/></svg>`;
+
+// The Windows mark drawn at the Apple mark's weight: four panes with a narrow gap.
+const WINDOWS = `<svg class="winlogo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 3h8.5v8.5H3zM12.5 3H21v8.5h-8.5zM3 12.5h8.5V21H3zM12.5 12.5H21V21h-8.5z"/></svg>`;
 
 // ---------- CSS ----------
 
@@ -91,10 +96,13 @@ html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:cl
 // ---------- Markup ----------
 
 const shot = (_name, cls, inner, extra = "") => `<div class="shot ${cls}${/\bnofx\b/.test(cls) ? "" : " fx"}"${extra}>${inner}</div>`;
-// data-dl names what a link downloads, "mac" or "linux", so the script can point it at the newest build.
-const macBtn = (cls) => `<a class="${cls}" href="${DL}" ${ext} data-dl="mac">${APPLE}<span>Download for Mac</span></a>`;
-const linuxBtn = (cls) => `<a class="${cls}" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}<span>Linux Preview</span></a>`;
-const PAGE = mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WORDMARK, MARK, views: VIEWS });
+// data-dl names what a link downloads, "mac", "windows", or "linux", so the script can point it at the newest build
+// and put the visitor's own system first. Each button also carries its system's class for the menu bar's blue button.
+// A button names only its system; its label and tooltip say what it opens.
+const macBtn = (cls) => `<a class="${cls} mac" href="${DL}" ${ext} data-dl="mac" aria-label="Download for Mac" title="Download for Mac">${APPLE}<span>Mac</span></a>`;
+const winBtn = (cls) => `<a class="${cls} win" href="${WIN}" ${ext} data-dl="windows" aria-label="Download for Windows" title="Download for Windows">${WINDOWS}<span>Windows</span></a>`;
+const linuxBtn = (cls) => `<a class="${cls} linux" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}<span>Linux</span></a>`;
+const PAGE = mnMarkup({ shot, macBtn, winBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, WIN, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WINDOWS, WORDMARK, MARK, views: VIEWS });
 
 // ---------- Script ----------
 
@@ -344,8 +352,9 @@ const SCRIPT = `
   update();
   requestAnimationFrame(update);
 
-  // Downloads. On Linux the Download menu lists the Linux preview first.
+  // Downloads. On Linux the Download menu lists the Linux preview first, and on Windows the Store listing.
   if (root.classList.contains("os-linux")) mnBar.querySelectorAll('.mn-menu [data-dl="linux"]').forEach((el) => el.parentElement.prepend(el));
+  if (root.classList.contains("os-windows")) mnBar.querySelectorAll('.mn-menu [data-dl="windows"]').forEach((el) => el.parentElement.prepend(el));
   const ask = (url) => fetch(url, { headers: { Accept: "application/vnd.github+json" } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const point = (kind, url, direct) => {
     if (typeof url !== "string" || !url.startsWith("https://github.com/")) return;
@@ -389,7 +398,7 @@ const html = `<!doctype html>
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="AmpleFile: a smart file explorer">
 <meta name="twitter:card" content="summary_large_image">
-<script>document.documentElement.classList.add("js");if(/Linux|X11/.test(navigator.platform||"")&&!/Android|CrOS/.test(navigator.userAgent))document.documentElement.classList.add("os-linux");</script>
+<script>document.documentElement.classList.add("js");if(/Linux|X11/.test(navigator.platform||"")&&!/Android|CrOS/.test(navigator.userAgent))document.documentElement.classList.add("os-linux");else if(/^Win/.test(navigator.platform||""))document.documentElement.classList.add("os-windows");</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
