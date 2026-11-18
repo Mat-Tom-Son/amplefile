@@ -104,13 +104,17 @@ export const MN_CSS = `
 .mn-btn:hover { background:var(--b-hi); }
 .mn-btn:active { transform:scale(.98); }
 .mn-btn.sm { height:36px; padding:0 16px; font-size:14px; }
-/* The quiet button sits on the desk beside the blue one. A Linux visitor gets the two the other way round. */
-.mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.alt) { --b:var(--mn-desk-raise); --b-hi:rgba(244,245,246,.16); --f:var(--mn-desk-tx); }
-html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal-hi); --f:var(--mn-on); }
+/* The quiet buttons sit on the desk beside the blue one. A Linux or Windows visitor gets their own system's button in blue. */
+.mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.linux), html.os-windows .mn-nav .mn-btn:not(.win) { --b:var(--mn-desk-raise); --b-hi:rgba(244,245,246,.16); --f:var(--mn-desk-tx); }
+html.os-linux .mn-nav .mn-btn.linux, html.os-windows .mn-nav .mn-btn.win { --b:var(--mn-signal); --b-hi:var(--mn-signal-hi); --f:var(--mn-on); }
 /* The hero's pair is quiet, ink on the paper: the blue button is already in view above it. */
-.mn-btn.paper { --b:rgba(22,32,43,.07); --b-hi:rgba(22,32,43,.13); --f:var(--mn-ink); height:40px; padding:0 16px; font-size:15px; }
-.mn-cta { margin-top:28px; display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+.mn-btn.paper { --b:rgba(22,32,43,.07); --b-hi:rgba(22,32,43,.13); --f:var(--mn-ink); height:44px; min-width:124px; padding:0 18px; font-size:15px; }
+/* Get It Now: a small heading over the three systems, set apart from the lede. */
+.mn .mn-get { margin-top:40px; font-size:20px; line-height:28px; font-weight:600; letter-spacing:-.01em; color:var(--mn-ink); }
+.mn-cta { margin-top:14px; display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
 .mn-btn .apple, .mn-btn .tux { flex:none; width:16px; height:16px; }
+/* the panes fill their box edge to edge, so the mark sits a size smaller to match the Apple mark's weight */
+.mn-btn .winlogo { flex:none; width:15px; height:15px; }
 /* the leaf lifts the Apple mark's weight above its box, so it sits a little high to look centered */
 .mn-btn .apple { margin-top:-2px; }
 /* every app view shares one scale: 1120 px for a 1280 px window, so its text stays at 11 px or more */
@@ -157,10 +161,11 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
 .mn .mn-circ { width:clamp(64px, 5.6cqi, 80px); aspect-ratio:1; display:grid; place-items:center; border-radius:50%; transition:background-color 160ms var(--ease), transform 160ms var(--ease); }
 .mn .mn-circ:active { transform:scale(.97); }
 .mn .mn-circ:focus-visible { outline:2px solid var(--mn-ink); outline-offset:4px; }
-.mn .mn-circ.mac, .mn .mn-circ.linux { background:var(--mn-ink); color:var(--mn-front); }
-.mn .mn-circ.mac:hover, .mn .mn-circ.linux:hover { background:#2a3644; }
+.mn .mn-circ.mac, .mn .mn-circ.win, .mn .mn-circ.linux { background:var(--mn-ink); color:var(--mn-front); }
+.mn .mn-circ.mac:hover, .mn .mn-circ.win:hover, .mn .mn-circ.linux:hover { background:#2a3644; }
 .mn .mn-circ.mac .apple { width:38%; height:auto; margin-top:-6%; }
 .mn .mn-circ.linux .tux { width:42%; height:auto; }
+.mn .mn-circ.win .winlogo { width:36%; height:auto; }
 .mn .mn-circ.src { background:var(--mn-signal); color:var(--mn-on); }
 .mn .mn-circ.src:hover { background:var(--mn-signal-hi); }
 .mn .mn-circ.src .gh { width:42%; height:auto; }
@@ -169,11 +174,14 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
 .mn-links a:hover { color:var(--mn-ink); }
 .mn-links .gh { color:var(--mn-ink); }
 
+/* The short labels fit beside the wordmark; only a narrow phone folds the quiet buttons to their icons. */
+@container page (max-width: 400px) {
+  .mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.linux), html.os-windows .mn-nav .mn-btn:not(.win) { width:36px; padding:0; }
+  .mn-nav .mn-btn.alt span, html.os-linux .mn-nav .mn-btn:not(.linux) span, html.os-windows .mn-nav .mn-btn:not(.win) span { display:none; }
+  html.os-linux .mn-nav .mn-btn.linux, html.os-windows .mn-nav .mn-btn.win { width:auto; padding:0 16px; }
+  html.os-linux .mn-nav .mn-btn.linux span, html.os-windows .mn-nav .mn-btn.win span { display:inline; }
+}
 @container page (max-width: 900px) {
-  .mn-nav .mn-btn.alt, html.os-linux .mn-nav .mn-btn:not(.alt) { width:36px; padding:0; }
-  .mn-nav .mn-btn.alt span, html.os-linux .mn-nav .mn-btn:not(.alt) span { display:none; }
-  html.os-linux .mn-nav .mn-btn.alt { width:auto; padding:0 16px; }
-  html.os-linux .mn-nav .mn-btn.alt span { display:inline; }
   .mn-sec { gap:32px; }
   .mn-hero + .mn-sec { margin-top:clamp(80px, 18cqi, 96px); }
 }
@@ -192,6 +200,8 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
   .mn-mw { position:static; }
   .mn-menu { left:max(8px, env(safe-area-inset-left, 0px)); }
   .mn-paper { width:min(calc(100% - 24px), 400px); aspect-ratio:1280 / 620; }
+  /* the three systems keep one row on a phone */
+  .mn-btn.paper { min-width:0; padding:0 14px; }
   .mn-front { padding:28px 20px 64px; }
   .mn-req { white-space:normal; }
   .mn-end-folder { --tab-h:40px; --band:20px; }
@@ -219,15 +229,16 @@ html.os-linux .mn-nav .mn-btn.alt { --b:var(--mn-signal); --b-hi:var(--mn-signal
   .page.mn:not([hidden]) .mn-hero > :nth-child(2) { animation-delay:300ms; }
   .page.mn:not([hidden]) .mn-hero > :nth-child(3) { animation-delay:360ms; }
   .page.mn:not([hidden]) .mn-hero > :nth-child(4) { animation-delay:420ms; }
+  .page.mn:not([hidden]) .mn-hero > :nth-child(5) { animation-delay:480ms; }
 }
 @keyframes mn-paper { from { transform:translateY(56%); } to { transform:none; } }
 @keyframes mn-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 `;
 
-export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WORDMARK, MARK, views }) {
+export function mnMarkup({ shot, macBtn, winBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, WIN, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WINDOWS, WORDMARK, MARK, views }) {
   // A menu keeps an icon column only when one of its items has an icon.
   const menu = (id, label, items, icons = items.some((it) => it && it.icon)) => `<span class="mn-mw"><button class="mi" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" data-menu>${label}</button><div class="mn-menu" id="${id}" role="menu" aria-label="${label}" hidden>${items.map((it) => (it ? `<a class="mn-menu-i" role="menuitem" href="${it.href}" ${ext}${it.dl ? ` data-dl="${it.dl}"` : ""}>${icons ? `<span class="ic">${it.icon || ""}</span>` : ""}<span class="lb">${it.label}</span>${it.hint ? `<span class="hint">${it.hint}</span>` : ""}</a>` : '<div class="mn-menu-sep" role="separator"></div>')).join("")}</div></span>`;
-  const downloadMenu = menu("mn-menu-dl", "Download", [{ href: DL, dl: "mac", icon: APPLE, label: "Download for Mac", hint: "Apple silicon" }, { href: LINUX_REL, dl: "linux", icon: LINUX, label: "Linux Preview", hint: "x64" }, null, { href: REL, label: "All Releases" }]);
+  const downloadMenu = menu("mn-menu-dl", "Download", [{ href: DL, dl: "mac", icon: APPLE, label: "Download for Mac", hint: "Apple silicon" }, { href: WIN, dl: "windows", icon: WINDOWS, label: "Download for Windows", hint: "Microsoft Store" }, { href: LINUX_REL, dl: "linux", icon: LINUX, label: "Linux Preview", hint: "x64" }, null, { href: REL, label: "All Releases" }]);
   const helpMenu = menu("mn-menu-help", "Help", [{ href: DOCS, label: "AmpleFile Docs" }, { href: CONTRIB, label: "Contribute" }, null, { href: PRIV, label: "Privacy" }, { href: LICENSE, label: "MIT License" }]);
   const { viewOrganizeLive, viewConnect, viewAutomationRun, viewAsk, viewSkills, viewBrowser, viewHistory, viewAgent, viewNested } = views;
   // A view with a close-up: on a phone the whole window sits above the close-up, and the two play as one scene.
@@ -244,11 +255,11 @@ export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, L
 <div class="mn-head">
 <div class="mn-back" aria-hidden="true"></div>
 <div class="mn-tab"><a class="mn-wm" href="#top" data-top aria-label="AmpleFile, back to the top">${WORDMARK}</a></div>
-<nav class="mn-nav" aria-label="AmpleFile">${gh("mn-gh")}${linuxBtn("mn-btn sm alt")}${macBtn("mn-btn sm")}</nav>
+<nav class="mn-nav" aria-label="AmpleFile">${gh("mn-gh")}${linuxBtn("mn-btn sm alt")}${winBtn("mn-btn sm alt")}${macBtn("mn-btn sm")}</nav>
 <div class="mn-paper">${shot("live", "p-live nofx", viewOrganizeLive())}</div>
 </div>
 <main class="mn-front">
-<section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p><div class="mn-cta">${macBtn("mn-btn paper")}${linuxBtn("mn-btn paper")}</div><p class="mn-facts"><span>Free and open source</span><span>For Apple silicon Macs</span><span>Linux in preview</span></p></section>
+<section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p><h2 class="mn-get">Get It Now</h2><div class="mn-cta">${macBtn("mn-btn paper")}${winBtn("mn-btn paper")}${linuxBtn("mn-btn paper")}</div><p class="mn-facts"><span>Free and open source</span><span>For Mac, Windows, and Linux</span></p></section>
 <section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p><p class="fine"><span class="ln">Files stay on your computer.</span> <span class="ln">What a Worker reads goes to the AI model provider you choose.</span> <a href="${PRIV}" ${ext}>Privacy</a></p></div>${shot("connect", "p-full", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Runs on Its Own</h2><p><span class="ln">Turn on a ready-made Automation,</span> <span class="ln">or tell your Worker to set up a custom one for&nbsp;you.</span></p></div>${closeUp("automation", "p-chat", viewAutomationRun, 720)}</section>
 <section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers are full AI agents on the model you choose.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${closeUp("ask", "p-chat", viewAsk, 620)}</section>
@@ -259,8 +270,8 @@ export function mnMarkup({ shot, macBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, L
 </main>
 </div>
 <footer class="mn-end"><div class="mn-folder mn-end-folder"><div class="mn-back" aria-hidden="true"></div><div class="mn-tab" aria-hidden="true"></div>
-<div class="mn-front mn-end-front"><div><h2 class="mn-end-wm" aria-label="AmpleFile">${WORDMARK.replace('class="wm-dot"', 'class="wm-dot still"')}</h2><span class="mn-req">Mac: Apple silicon, macOS 12 or later</span><span class="mn-req">Linux preview: x64, as a .deb, .rpm, or AppImage</span></div>
-<div class="mn-end-acts"><a class="mn-circ mac" href="${DL}" ${ext} data-dl="mac" aria-label="Download for Mac" title="Download for Mac">${APPLE}</a><a class="mn-circ linux" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}</a><a class="mn-circ src" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a></div>
+<div class="mn-front mn-end-front"><div><h2 class="mn-end-wm" aria-label="AmpleFile">${WORDMARK.replace('class="wm-dot"', 'class="wm-dot still"')}</h2><span class="mn-req">Mac: Apple silicon, macOS 12 or later</span><span class="mn-req">Windows: from the Microsoft Store</span><span class="mn-req">Linux preview: x64, as a .deb, .rpm, or AppImage</span></div>
+<div class="mn-end-acts"><a class="mn-circ mac" href="${DL}" ${ext} data-dl="mac" aria-label="Download for Mac" title="Download for Mac">${APPLE}</a><a class="mn-circ win" href="${WIN}" ${ext} data-dl="windows" aria-label="Download for Windows" title="Download for Windows">${WINDOWS}</a><a class="mn-circ linux" href="${LINUX_REL}" ${ext} data-dl="linux" aria-label="Linux Preview" title="Linux Preview">${LINUX}</a><a class="mn-circ src" href="${SRC}" ${ext} aria-label="AmpleFile on GitHub" title="GitHub">${GITHUB}</a></div>
 <nav class="mn-links" aria-label="More"><a href="${REL}" ${ext}>Releases</a><a href="${DOCS}" ${ext}>Docs</a><a href="${CONTRIB}" ${ext}>Contribute</a><a href="${PRIV}" ${ext}>Privacy</a><a href="${LICENSE}" ${ext}>MIT License</a></nav></div></div></footer>
 </div>`;
 }
