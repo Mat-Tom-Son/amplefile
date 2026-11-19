@@ -2026,7 +2026,7 @@ export function ChatPanel({
             <FolderMentionMenu id={mentionMenuId} folders={mentionSuggestions} activeIndex={activeMentionIndex} onHover={setActiveMentionIndex} onChoose={chooseMentionFolder} />
           ) : null}
           {commandMenuOpen ? (
-            <div className="composer-command-menu" role="listbox" aria-label="Commands and Skills">
+            <div className="composer-command-menu composer-command-list" role="listbox" aria-label="Commands and Skills">
               <div className="composer-command-menu-heading">
                 <span>Commands and Skills</span>
                 <kbd>Enter</kbd>

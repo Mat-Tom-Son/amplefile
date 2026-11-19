@@ -3710,6 +3710,25 @@ button.context-chip.message-attachment:focus-visible {
   background: rgba(59, 130, 246, 0.11);
 }
 
+/* The command list is a width container: when it is narrow, as in the panel,
+   each command's description takes a line of its own under its name instead
+   of the sliver left between the name and its source. */
+.composer-command-list {
+  container: composer-command-list / inline-size;
+}
+
+@container composer-command-list (max-width: 420px) {
+  .composer-command-list > button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+
+  .composer-command-list .composer-command-description {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
 .composer-capability-bar {
   position: static;
   padding: 0 60px 8px 10px;
