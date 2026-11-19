@@ -212,6 +212,13 @@ Apple submission.
   toolbar into the Action menu. The signed candidate was exercised on a
   temporary profile before publication; an installed update from `0.1.6` to
   `0.1.7` is not recorded here.
+- **0.1.8** was published to `Mat-Tom-Son/amplefile` on November 19, 2026,
+  from the annotated source tag `v0.1.8` (commit `360d78e`): the message
+  box's menus kept inside the panel, the reasoning levels reachable from the
+  keyboard, and a narrow command list that gives each description its own
+  line. The signed candidate launched on a temporary profile and read the
+  source repository's feed before publication; an installed update from
+  `0.1.7` to `0.1.8` is not recorded here.
 
 ## Release procedure
 
@@ -805,6 +812,7 @@ app named, the feed the higher app names, and the output of
 - A feed move that goes wrong is recovered as [If the bridge is bad](#if-the-bridge-is-bad) describes, never by publishing to the separate repository in the `separate-repository` stage again.
 - Inspect `npm run desktop:release:mac:check -- --status` for the exact-commit local receipt and `npm run desktop:release:mac:status` for the build before retrying. If its checkpoint is compatible, use the matching `:resume` build/release command instead of rebuilding the app and repeating notarization.
 - If a build fails inside DMG finalization before its checkpoint is written, the resumable lane reruns the finalizer. It detects an already valid signed/stapled DMG and refreshes only updater metadata.
+- If notarization fails with `HTTP status code: 403. A required agreement is missing or has expired`, Apple has published an agreement the team has not accepted. The team's Account Holder accepts it at developer.apple.com/account, where it may take a few minutes to appear. Apple can take several more minutes to honor it: `xcrun notarytool history --keychain-profile <profile>` reports "Successfully received submission history." once it does. Then resume with `npm run desktop:make:mac:release:resume`. The local receipt stays valid because nothing in the checkout changed.
 - Never rename or install `AmpleFile Local Smoke.app` over the production app. A user-data override does not isolate Keychain; use the signed candidate or a disposable macOS account for interactive testing.
 - If repeated Keychain prompts occur after replacing an old ad hoc build, quit AmpleFile and run `npm run desktop:reset:mac-safe-storage -- --yes --reopen`. Do not read the secret with `security ... -g`.
 - The current public lane is arm64 only. Do not publish x64 until an Intel Mac passes launch and updater smoke.
