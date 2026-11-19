@@ -2316,6 +2316,8 @@ function useComposerMenuBounds(open: boolean, containerRef: React.RefObject<HTML
       control.style.setProperty("--composer-menu-available-height", `${Math.max(above, below)}px`);
       // Room for a menu that opens from the control's left edge toward the right.
       control.style.setProperty("--composer-menu-room-rightward", `${Math.max(0, bounds.right - anchor.left - 8)}px`);
+      // And for one that opens from the control's right edge toward the left.
+      control.style.setProperty("--composer-menu-room-leftward", `${Math.max(0, anchor.right - bounds.left - 8)}px`);
     };
     update();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);

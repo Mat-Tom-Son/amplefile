@@ -233,6 +233,7 @@ test("composer menus choose the available side and follow window resizing", asyn
   assert.equal(control.dataset.menuPlacement, "below", "the centered composer has more room below");
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "371px");
   assert.equal(control.style.getPropertyValue("--composer-menu-room-rightward"), "768px", "a menu opening rightward stops short of the Chat's right edge");
+  assert.equal(control.style.getPropertyValue("--composer-menu-room-leftward"), "44px", "a menu opening leftward stops short of the Chat's left edge");
   anchorTop = 740;
   await dom.act(() => { window.dispatchEvent(new Event("resize")); });
   assert.equal(control.dataset.menuPlacement, "above", "a composer at the bottom opens upward");

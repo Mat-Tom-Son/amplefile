@@ -2060,6 +2060,15 @@
   flex: none;
 }
 
+/*
+ * The context circle sits at the row's right, so its menu opens toward the
+ * panel's middle. At the panel's narrowest it takes the room the panel has
+ * instead of being cut off at the panel's left edge.
+ */
+:root[data-theme] .app-shell .composer-panel-meta .composer-context-menu {
+  max-width: var(--composer-menu-room-leftward, calc(100vw - 32px));
+}
+
 :root[data-theme] .app-shell .composer-panel-meta .conversation-context-meter {
   width: 20px;
   height: 20px;
