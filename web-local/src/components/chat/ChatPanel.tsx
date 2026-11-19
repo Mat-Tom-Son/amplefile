@@ -2479,6 +2479,23 @@ function ComposerModelPicker({
     if (pendingFocusRef.current && focusOption(pendingFocusRef.current)) pendingFocusRef.current = null;
   }, [open, models.length]);
 
+  // The levels are one Tab stop, on the chosen level. Arrow keys move among
+  // them and Space or Enter chooses one: choosing saves it and closes the
+  // menu, so moving alone must not choose.
+  const levelTabStop = reasoning?.levels.includes(reasoning.level) ? reasoning.level : reasoning?.levels[0];
+
+  function navigateLevels(event: React.KeyboardEvent<HTMLDivElement>): void {
+    const key: MenuNavigationKey | null = event.key === "ArrowRight" || event.key === "ArrowDown" ? "ArrowDown"
+      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? "ArrowUp"
+        : event.key === "Home" || event.key === "End" ? event.key : null;
+    if (!key) return;
+    const levels = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="radio"]'));
+    const next = nextMenuItemIndex(levels.indexOf(document.activeElement as HTMLButtonElement), levels.length, key);
+    if (next === null) return;
+    event.preventDefault();
+    levels[next]?.focus({ preventScroll: true });
+  }
+
   function navigateOptions(event: React.KeyboardEvent<HTMLDivElement>): void {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const options = Array.from(optionsRef.current?.querySelectorAll<HTMLButtonElement>('button[role="option"]:not(:disabled)') ?? []);
@@ -2622,13 +2639,14 @@ function ComposerModelPicker({
               <div className="composer-command-menu-heading" id={`${menuId}-reasoning`}>
                 <span>{reasoning.forThisChat ? "Reasoning for This Chat" : "Reasoning"}</span>
               </div>
-              <div className="composer-reasoning-levels" role="radiogroup" aria-labelledby={`${menuId}-reasoning`}>
+              <div className="composer-reasoning-levels" role="radiogroup" aria-labelledby={`${menuId}-reasoning`} onKeyDown={navigateLevels}>
                 {reasoning.levels.map((level) => (
                   <button
                     key={level}
                     type="button"
                     role="radio"
                     aria-checked={level === reasoning.level}
+                    tabIndex={level === levelTabStop ? 0 : -1}
                     className={level === reasoning.level ? "active" : undefined}
                     onClick={() => {
                       setOpen(false);

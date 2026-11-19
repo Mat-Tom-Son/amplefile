@@ -240,6 +240,33 @@ test("composer menus choose the available side and follow window resizing", asyn
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "651px");
 });
 
+test("reasoning levels are one Tab stop that arrow keys move through without choosing", async (t) => {
+  const levels: ConversationRuntime = { ...runtime, thinkingLevel: "low", thinkingLevels: ["off", "low", "high"] };
+  const writes: string[] = [];
+  const { dom, emit } = await chatHarness(t, undefined, (path, options) => {
+    if (path.endsWith("/runtime")) return { runtime: levels };
+    if (path.startsWith("/api/agent/models")) return { models: [], status: { ready: true, configured: true } };
+    if (options.method === "POST") { writes.push(path); return {}; }
+  });
+  await emit({ type: "runtime", runtime: levels });
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".composer-model-chip")!.click());
+  const radios = [...dom.container.querySelectorAll<HTMLButtonElement>('.composer-reasoning-levels [role="radio"]')];
+  assert.deepEqual(radios.map((radio) => radio.tabIndex), [-1, 0, -1], "only the chosen level is a Tab stop");
+  const focused = () => dom.container.ownerDocument.activeElement;
+  const press = (key: string) => dom.act(() => { focused()!.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true })); });
+  radios[1]!.focus();
+  await press("ArrowRight");
+  assert.equal(focused(), radios[2]);
+  await press("ArrowRight");
+  assert.equal(focused(), radios[0], "moving past the last level wraps to the first");
+  await press("End");
+  assert.equal(focused(), radios[2]);
+  await press("ArrowLeft");
+  assert.equal(focused(), radios[1]);
+  assert.ok(dom.container.querySelector(".composer-model-menu"), "moving does not close the menu");
+  assert.deepEqual(writes, [], "moving does not choose a level");
+});
+
 test("a long multi-line command reaches its step as a one-line record marked as cut short, shown to read and not to copy", async (t) => {
   // The command goes through the runtime's own projection of a tool call and
   // then through the Chat's own handling of the event it emits.
