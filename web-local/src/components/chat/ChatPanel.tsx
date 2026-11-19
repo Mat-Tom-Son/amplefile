@@ -2413,6 +2413,7 @@ function ComposerModelPicker({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [focusedLevel, setFocusedLevel] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -2426,6 +2427,7 @@ function ComposerModelPicker({
     if (open) return;
     setError(null);
     setQuery("");
+    setFocusedLevel(null);
   }, [open]);
   useEffect(() => {
     if (!open || fixtureMode) return;
@@ -2479,10 +2481,12 @@ function ComposerModelPicker({
     if (pendingFocusRef.current && focusOption(pendingFocusRef.current)) pendingFocusRef.current = null;
   }, [open, models.length]);
 
-  // The levels are one Tab stop, on the chosen level. Arrow keys move among
-  // them and Space or Enter chooses one: choosing saves it and closes the
-  // menu, so moving alone must not choose.
-  const levelTabStop = reasoning?.levels.includes(reasoning.level) ? reasoning.level : reasoning?.levels[0];
+  // The levels are one Tab stop: the chosen level, or while focus is among
+  // them, the level it is on, so Tab and Shift+Tab leave the group from any
+  // level. Arrow keys move among them and Space or Enter chooses one:
+  // choosing saves it and closes the menu, so moving alone must not choose.
+  const levelTabStop = focusedLevel && reasoning?.levels.includes(focusedLevel) ? focusedLevel
+    : reasoning?.levels.includes(reasoning.level) ? reasoning.level : reasoning?.levels[0];
 
   function navigateLevels(event: React.KeyboardEvent<HTMLDivElement>): void {
     const key: MenuNavigationKey | null = event.key === "ArrowRight" || event.key === "ArrowDown" ? "ArrowDown"
@@ -2639,7 +2643,15 @@ function ComposerModelPicker({
               <div className="composer-command-menu-heading" id={`${menuId}-reasoning`}>
                 <span>{reasoning.forThisChat ? "Reasoning for This Chat" : "Reasoning"}</span>
               </div>
-              <div className="composer-reasoning-levels" role="radiogroup" aria-labelledby={`${menuId}-reasoning`} onKeyDown={navigateLevels}>
+              <div
+                className="composer-reasoning-levels"
+                role="radiogroup"
+                aria-labelledby={`${menuId}-reasoning`}
+                onKeyDown={navigateLevels}
+                onBlur={(event) => {
+                  if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setFocusedLevel(null);
+                }}
+              >
                 {reasoning.levels.map((level) => (
                   <button
                     key={level}
@@ -2647,6 +2659,7 @@ function ComposerModelPicker({
                     role="radio"
                     aria-checked={level === reasoning.level}
                     tabIndex={level === levelTabStop ? 0 : -1}
+                    onFocus={() => setFocusedLevel(level)}
                     className={level === reasoning.level ? "active" : undefined}
                     onClick={() => {
                       setOpen(false);

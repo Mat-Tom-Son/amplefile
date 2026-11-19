@@ -254,17 +254,22 @@ test("reasoning levels are one Tab stop that arrow keys move through without cho
   assert.deepEqual(radios.map((radio) => radio.tabIndex), [-1, 0, -1], "only the chosen level is a Tab stop");
   const focused = () => dom.container.ownerDocument.activeElement;
   const press = (key: string) => dom.act(() => { focused()!.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true })); });
-  radios[1]!.focus();
+  const tabStops = () => radios.map((radio) => radio.tabIndex);
+  await dom.act(() => radios[1]!.focus());
   await press("ArrowRight");
   assert.equal(focused(), radios[2]);
   await press("ArrowRight");
   assert.equal(focused(), radios[0], "moving past the last level wraps to the first");
+  assert.deepEqual(tabStops(), [0, -1, -1], "the Tab stop follows focus, so Tab leaves the group from any level");
   await press("End");
   assert.equal(focused(), radios[2]);
   await press("ArrowLeft");
   assert.equal(focused(), radios[1]);
   assert.ok(dom.container.querySelector(".composer-model-menu"), "moving does not close the menu");
   assert.deepEqual(writes, [], "moving does not choose a level");
+  await press("End");
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".composer-model-settings")!.focus());
+  assert.deepEqual(tabStops(), [-1, 0, -1], "leaving the group returns the Tab stop to the chosen level");
 });
 
 test("a long multi-line command reaches its step as a one-line record marked as cut short, shown to read and not to copy", async (t) => {

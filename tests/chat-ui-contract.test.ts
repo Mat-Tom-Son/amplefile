@@ -232,7 +232,7 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /setConversationRuntime\(result\.runtime\)/);
   // Reasoning shares the model chip and its menu.
   assert.match(chatPanel, /className="composer-model-reasoning">\{thinkingLevelLabel\(reasoning\.level\)\}/);
-  assert.match(chatPanel, /role="radiogroup" aria-labelledby=\{`\$\{menuId\}-reasoning`\}/);
+  assert.match(chatPanel, /role="radiogroup"\s+aria-labelledby=\{`\$\{menuId\}-reasoning`\}/);
   assert.match(chatPanel, /reasoning\.forThisChat \? "Reasoning for This Chat" : "Reasoning"/);
   assert.doesNotMatch(chatPanel, /ThinkingLevelControl/);
   assert.match(chatPanel, /conversationRuntime \?\? composerState/);
