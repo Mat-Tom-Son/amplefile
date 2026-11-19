@@ -232,7 +232,7 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /setConversationRuntime\(result\.runtime\)/);
   // Reasoning shares the model chip and its menu.
   assert.match(chatPanel, /className="composer-model-reasoning">\{thinkingLevelLabel\(reasoning\.level\)\}/);
-  assert.match(chatPanel, /role="radiogroup" aria-labelledby=\{`\$\{menuId\}-reasoning`\}/);
+  assert.match(chatPanel, /role="radiogroup"\s+aria-labelledby=\{`\$\{menuId\}-reasoning`\}/);
   assert.match(chatPanel, /reasoning\.forThisChat \? "Reasoning for This Chat" : "Reasoning"/);
   assert.doesNotMatch(chatPanel, /ThinkingLevelControl/);
   assert.match(chatPanel, /conversationRuntime \?\? composerState/);
@@ -240,6 +240,11 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /body: \{ scope: "connected-folder", connectedFolderId: connectedFolder\.id, level \}/);
   assert.doesNotMatch(chatPanel, /No extended reasoning|A brief think before answering|Balanced reasoning|Deeper reasoning/);
   assert.match(styles, /\.composer-reasoning-levels button \{[\s\S]*?font: inherit;/);
+  // The levels draw like the window's segmented control, and in dark the
+  // track recesses into the lighter menu so the selected level stands out.
+  assert.match(styles, /\.composer-reasoning-levels \{[^}]*background: var\(--fm-cap, /);
+  assert.match(styles, /\.composer-reasoning-levels button\.active:hover \{[^}]*background: var\(--fm-btn, [^}]*box-shadow: var\(--fm-btn-shadow, /);
+  assert.match(styles, /:root\[data-theme="dark"\] \.app-shell \.composer-reasoning-levels \{\s*background: rgb\(0 0 0 \/ \.2\);/);
   assert.match(styles, /\.composer-model-chip \{[\s\S]*?font-family: inherit;[\s\S]*?font-size: var\(--amplefile-type-2xs\);[\s\S]*?font-weight: 700;/);
   // The context ring is its own button with a popover that compacts,
   // and the reasoning levels stay on one row.
@@ -247,7 +252,30 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /\{compacting \? "Compacting" : "Compact Chat"\}/);
   assert.match(styles, /\.composer-reasoning-levels \{[\s\S]*?flex-wrap: nowrap;/);
   assert.match(styles, /\.composer-model-menu \{\s*min-width: min-content;/);
+  // Under the panel's message box the model sits at the left, so its menu
+  // opens rightward and stays inside the panel instead of under the folder's contents.
+  assert.match(chatPanel, /closest<HTMLElement>\("\.chat-panel, \.fm-panel"\)/);
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-model-menu \{\s*left: 0;\s*right: auto;\s*width: max-content;[\s\S]*?max-width: var\(--composer-menu-room-rightward/);
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-reasoning-levels \{\s*flex-wrap: wrap;/);
+  // Five levels fit on one line at the default 320px panel, in a Chat too.
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-reasoning-levels button \{\s*padding-inline: 7px;/);
+  // The context circle sits at the row's right, so its menu opens leftward; at
+  // the panel's narrowest it takes the panel's room instead of being cut off there.
+  assert.match(chatPanel, /"--composer-menu-room-leftward", `\$\{Math\.max\(0, anchor\.right - bounds\.left - 8\)\}px`/);
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-context-menu \{\s*max-width: var\(--composer-menu-room-leftward/);
   assert.match(localServer, /await client\.setThinkingLevel\(body\.level\)/);
+});
+
+test("a command's source label stays on one line in the panel's narrow command menu", () => {
+  // The label is the row's last column; squeezed, "Built-In" broke at its hyphen into a two-line pill.
+  assert.match(styles, /\.composer-command-source \{[^}]*white-space: nowrap;/);
+});
+
+test("a narrow command list gives each description a line of its own under its name", () => {
+  // In the panel the three columns left a description a sliver, or nothing at 270px.
+  assert.match(chatPanel, /className="composer-command-menu composer-command-list" role="listbox" aria-label="Commands and Skills"/);
+  assert.match(styles, /\.composer-command-list \{\s*container: composer-command-list \/ inline-size;/);
+  assert.match(styles, /@container composer-command-list \(max-width: 420px\) \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?\.composer-command-description \{\s*grid-column: 1 \/ -1;\s*grid-row: 2;[\s\S]*?-webkit-line-clamp: 2;\s*white-space: normal;/);
 });
 
 test("reasoning and real tool calls form one chronological steps strip", () => {

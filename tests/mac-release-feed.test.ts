@@ -419,6 +419,7 @@ test("download links and policy text name the feeds of the checked-in stage", ()
   assert.ok(page.includes(`"https://api.github.com/repos/${sourceSlug}/releases?per_page=30"`), "the page asks the source repository for its Linux previews");
   assert.match(page, /x\.prerelease && !x\.draft && \/\^linux-\/\.test\(x\.tag_name\)/, "a Linux link never opens a release that is not a prerelease");
   assert.match(page, /data-dl="linux"[^>]*aria-label="Linux Preview"/);
+  assert.match(page, /href="https:\/\/apps\.microsoft\.com\/detail\/9P84VNDK202N[^"]*"[^>]*data-dl="windows"/, "Windows links open the Microsoft Store listing");
   assert.match(page, /href="https:\/\/github\.com\/[^"]+\/releases\/latest"[^>]*data-dl="mac"/, "Mac links still open the latest release");
 
   // What an installed copy contacts, and where public releases are published.

@@ -41,8 +41,13 @@ GitHub answers, a Linux link opens the list of releases. A visitor on Linux
 sees the Linux button as the blue one at the top of the page, and the Linux
 preview first in the menu bar's Download menu.
 
+Windows links open AmpleFile's Microsoft Store listing, which installs and
+updates the Windows build, so the page asks nothing of GitHub for them. A
+visitor on Windows sees the Windows button as the blue one at the top of the
+page, and the Store listing first in the Download menu.
+
 The menu bar that arrives on scroll has two menus: **Download**, with the Mac
-release, the Linux preview, and all releases, and **Help**, with the docs,
+release, the Windows Store listing, the Linux preview, and all releases, and **Help**, with the docs,
 Contributing, Privacy, and the license. The page shows the app's four
 included tools in the order the Skills & Extensions dialog lists them.
 

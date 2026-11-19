@@ -2011,6 +2011,34 @@
   max-width: 100%;
 }
 
+/*
+ * The model sits at the row's left, so its menu opens from the model's left
+ * edge toward the panel's middle. It takes the width its reasoning levels
+ * need, up to the room the panel has; past that the levels wrap onto a
+ * second line instead of being cut off at the panel's edge.
+ */
+:root[data-theme] .app-shell .composer-panel-meta .composer-model-menu {
+  left: 0;
+  right: auto;
+  width: max-content;
+  min-width: min(280px, var(--composer-menu-room-rightward, 280px));
+  max-width: var(--composer-menu-room-rightward, calc(100vw - 32px));
+}
+
+:root[data-theme] .app-shell .composer-panel-meta .composer-model-error {
+  contain: inline-size;
+}
+
+:root[data-theme] .app-shell .composer-panel-meta .composer-reasoning-levels {
+  flex-wrap: wrap;
+}
+
+/* Slightly tighter pills keep five levels on one line at the panel's default
+   width, in a Chat too, where the model sits further from the panel's edge. */
+:root[data-theme] .app-shell .composer-panel-meta .composer-reasoning-levels button {
+  padding-inline: 7px;
+}
+
 :root[data-theme] .app-shell .composer-panel-meta .composer-model-chip {
   height: 20px;
   min-height: 20px;
@@ -2056,6 +2084,15 @@
 
 :root[data-theme] .app-shell .composer-panel-meta .composer-context-control {
   flex: none;
+}
+
+/*
+ * The context circle sits at the row's right, so its menu opens toward the
+ * panel's middle. At the panel's narrowest it takes the room the panel has
+ * instead of being cut off at the panel's left edge.
+ */
+:root[data-theme] .app-shell .composer-panel-meta .composer-context-menu {
+  max-width: var(--composer-menu-room-leftward, calc(100vw - 32px));
 }
 
 :root[data-theme] .app-shell .composer-panel-meta .conversation-context-meter {

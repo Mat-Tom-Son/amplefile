@@ -224,7 +224,7 @@ test("composer menus choose the available side and follow window resizing", asyn
   let anchorTop = 390;
   HTMLElement.prototype.getBoundingClientRect = function () {
     if (this.matches(".chat-panel")) return new window.DOMRect(0, 80, 800, 720);
-    if (this.matches(".composer-attach-control")) return new window.DOMRect(0, anchorTop, 28, 30);
+    if (this.matches(".composer-attach-control")) return new window.DOMRect(24, anchorTop, 28, 30);
     return original.call(this);
   };
   t.after(() => { elementPrototype.getBoundingClientRect = original; });
@@ -232,10 +232,44 @@ test("composer menus choose the available side and follow window resizing", asyn
   const control = dom.container.querySelector<HTMLElement>(".composer-attach-control")!;
   assert.equal(control.dataset.menuPlacement, "below", "the centered composer has more room below");
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "371px");
+  assert.equal(control.style.getPropertyValue("--composer-menu-room-rightward"), "768px", "a menu opening rightward stops short of the Chat's right edge");
+  assert.equal(control.style.getPropertyValue("--composer-menu-room-leftward"), "44px", "a menu opening leftward stops short of the Chat's left edge");
   anchorTop = 740;
   await dom.act(() => { window.dispatchEvent(new Event("resize")); });
   assert.equal(control.dataset.menuPlacement, "above", "a composer at the bottom opens upward");
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "651px");
+});
+
+test("reasoning levels are one Tab stop that arrow keys move through without choosing", async (t) => {
+  const levels: ConversationRuntime = { ...runtime, thinkingLevel: "low", thinkingLevels: ["off", "low", "high"] };
+  const writes: string[] = [];
+  const { dom, emit } = await chatHarness(t, undefined, (path, options) => {
+    if (path.endsWith("/runtime")) return { runtime: levels };
+    if (path.startsWith("/api/agent/models")) return { models: [], status: { ready: true, configured: true } };
+    if (options.method === "POST") { writes.push(path); return {}; }
+  });
+  await emit({ type: "runtime", runtime: levels });
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".composer-model-chip")!.click());
+  const radios = [...dom.container.querySelectorAll<HTMLButtonElement>('.composer-reasoning-levels [role="radio"]')];
+  assert.deepEqual(radios.map((radio) => radio.tabIndex), [-1, 0, -1], "only the chosen level is a Tab stop");
+  const focused = () => dom.container.ownerDocument.activeElement;
+  const press = (key: string) => dom.act(() => { focused()!.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true })); });
+  const tabStops = () => radios.map((radio) => radio.tabIndex);
+  await dom.act(() => radios[1]!.focus());
+  await press("ArrowRight");
+  assert.equal(focused(), radios[2]);
+  await press("ArrowRight");
+  assert.equal(focused(), radios[0], "moving past the last level wraps to the first");
+  assert.deepEqual(tabStops(), [0, -1, -1], "the Tab stop follows focus, so Tab leaves the group from any level");
+  await press("End");
+  assert.equal(focused(), radios[2]);
+  await press("ArrowLeft");
+  assert.equal(focused(), radios[1]);
+  assert.ok(dom.container.querySelector(".composer-model-menu"), "moving does not close the menu");
+  assert.deepEqual(writes, [], "moving does not choose a level");
+  await press("End");
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".composer-model-settings")!.focus());
+  assert.deepEqual(tabStops(), [-1, 0, -1], "leaving the group returns the Tab stop to the chosen level");
 });
 
 test("a long multi-line command reaches its step as a one-line record marked as cut short, shown to read and not to copy", async (t) => {
