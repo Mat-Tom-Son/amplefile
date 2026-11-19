@@ -2013,6 +2013,12 @@
   flex-wrap: wrap;
 }
 
+/* Slightly tighter pills keep five levels on one line at the panel's default
+   width, in a Chat too, where the model sits further from the panel's edge. */
+:root[data-theme] .app-shell .composer-panel-meta .composer-reasoning-levels button {
+  padding-inline: 7px;
+}
+
 :root[data-theme] .app-shell .composer-panel-meta .composer-model-chip {
   height: 20px;
   min-height: 20px;
