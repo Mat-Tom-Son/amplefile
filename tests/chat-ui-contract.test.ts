@@ -259,6 +259,11 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(localServer, /await client\.setThinkingLevel\(body\.level\)/);
 });
 
+test("a command's source label stays on one line in the panel's narrow command menu", () => {
+  // The label is the row's last column; squeezed, "Built-In" broke at its hyphen into a two-line pill.
+  assert.match(styles, /\.composer-command-source \{[^}]*white-space: nowrap;/);
+});
+
 test("reasoning and real tool calls form one chronological steps strip", () => {
   // Rows keep the order events arrived in; the strip folds into a plain
   // summary once a native final reply is known; hidden reasoning keeps its duration.

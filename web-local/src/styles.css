@@ -3691,6 +3691,8 @@ button.context-chip.message-attachment:focus-visible {
   background: rgba(100, 116, 139, 0.09);
   font-size: var(--amplefile-type-2xs);
   font-weight: 700;
+  /* One line even in the panel at its narrowest, where "Built-In" would break at its hyphen. */
+  white-space: nowrap;
 }
 
 .composer-command-source.skill {
