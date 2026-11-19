@@ -2026,7 +2026,7 @@ export function ChatPanel({
             <FolderMentionMenu id={mentionMenuId} folders={mentionSuggestions} activeIndex={activeMentionIndex} onHover={setActiveMentionIndex} onChoose={chooseMentionFolder} />
           ) : null}
           {commandMenuOpen ? (
-            <div className="composer-command-menu" role="listbox" aria-label="Commands and Skills">
+            <div className="composer-command-menu composer-command-list" role="listbox" aria-label="Commands and Skills">
               <div className="composer-command-menu-heading">
                 <span>Commands and Skills</span>
                 <kbd>Enter</kbd>
@@ -2298,11 +2298,14 @@ function ConversationModel({ runtime, status, connectedFolderName, picker, reaso
 // so no menu is left open (or half-closed) behind the one being used.
 const openComposerChipMenus = new Set<() => void>();
 
-/** Keep chip menus inside the Chat, including the centered New Chat composer. */
+/**
+ * Keep chip menus inside the Chat, including the centered New Chat composer,
+ * and inside the panel for the message box under Info, which has no Chat.
+ */
 function useComposerMenuBounds(open: boolean, containerRef: React.RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
     const control = containerRef.current;
-    const panel = control?.closest<HTMLElement>(".chat-panel");
+    const panel = control?.closest<HTMLElement>(".chat-panel, .fm-panel");
     if (!open || !control || !panel) return;
     const update = () => {
       const bounds = panel.getBoundingClientRect();
@@ -2311,6 +2314,10 @@ function useComposerMenuBounds(open: boolean, containerRef: React.RefObject<HTML
       const below = Math.max(0, bounds.bottom - anchor.bottom - 9);
       control.dataset.menuPlacement = below > above ? "below" : "above";
       control.style.setProperty("--composer-menu-available-height", `${Math.max(above, below)}px`);
+      // Room for a menu that opens from the control's left edge toward the right.
+      control.style.setProperty("--composer-menu-room-rightward", `${Math.max(0, bounds.right - anchor.left - 8)}px`);
+      // And for one that opens from the control's right edge toward the left.
+      control.style.setProperty("--composer-menu-room-leftward", `${Math.max(0, anchor.right - bounds.left - 8)}px`);
     };
     update();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
@@ -2406,6 +2413,7 @@ function ComposerModelPicker({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [focusedLevel, setFocusedLevel] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -2419,6 +2427,7 @@ function ComposerModelPicker({
     if (open) return;
     setError(null);
     setQuery("");
+    setFocusedLevel(null);
   }, [open]);
   useEffect(() => {
     if (!open || fixtureMode) return;
@@ -2471,6 +2480,25 @@ function ComposerModelPicker({
     if (!open) { pendingFocusRef.current = null; return; }
     if (pendingFocusRef.current && focusOption(pendingFocusRef.current)) pendingFocusRef.current = null;
   }, [open, models.length]);
+
+  // The levels are one Tab stop: the chosen level, or while focus is among
+  // them, the level it is on, so Tab and Shift+Tab leave the group from any
+  // level. Arrow keys move among them and Space or Enter chooses one:
+  // choosing saves it and closes the menu, so moving alone must not choose.
+  const levelTabStop = focusedLevel && reasoning?.levels.includes(focusedLevel) ? focusedLevel
+    : reasoning?.levels.includes(reasoning.level) ? reasoning.level : reasoning?.levels[0];
+
+  function navigateLevels(event: React.KeyboardEvent<HTMLDivElement>): void {
+    const key: MenuNavigationKey | null = event.key === "ArrowRight" || event.key === "ArrowDown" ? "ArrowDown"
+      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? "ArrowUp"
+        : event.key === "Home" || event.key === "End" ? event.key : null;
+    if (!key) return;
+    const levels = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="radio"]'));
+    const next = nextMenuItemIndex(levels.indexOf(document.activeElement as HTMLButtonElement), levels.length, key);
+    if (next === null) return;
+    event.preventDefault();
+    levels[next]?.focus({ preventScroll: true });
+  }
 
   function navigateOptions(event: React.KeyboardEvent<HTMLDivElement>): void {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -2615,13 +2643,23 @@ function ComposerModelPicker({
               <div className="composer-command-menu-heading" id={`${menuId}-reasoning`}>
                 <span>{reasoning.forThisChat ? "Reasoning for This Chat" : "Reasoning"}</span>
               </div>
-              <div className="composer-reasoning-levels" role="radiogroup" aria-labelledby={`${menuId}-reasoning`}>
+              <div
+                className="composer-reasoning-levels"
+                role="radiogroup"
+                aria-labelledby={`${menuId}-reasoning`}
+                onKeyDown={navigateLevels}
+                onBlur={(event) => {
+                  if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setFocusedLevel(null);
+                }}
+              >
                 {reasoning.levels.map((level) => (
                   <button
                     key={level}
                     type="button"
                     role="radio"
                     aria-checked={level === reasoning.level}
+                    tabIndex={level === levelTabStop ? 0 : -1}
+                    onFocus={() => setFocusedLevel(level)}
                     className={level === reasoning.level ? "active" : undefined}
                     onClick={() => {
                       setOpen(false);

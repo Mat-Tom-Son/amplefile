@@ -3691,6 +3691,8 @@ button.context-chip.message-attachment:focus-visible {
   background: rgba(100, 116, 139, 0.09);
   font-size: var(--amplefile-type-2xs);
   font-weight: 700;
+  /* One line even in the panel at its narrowest, where "Built-In" would break at its hyphen. */
+  white-space: nowrap;
 }
 
 .composer-command-source.skill {
@@ -3706,6 +3708,30 @@ button.context-chip.message-attachment:focus-visible {
 .composer-command-source.prompt {
   color: #1d4ed8;
   background: rgba(59, 130, 246, 0.11);
+}
+
+/* The command list is a width container: when it is narrow, as in the panel,
+   each command's description takes a line of its own under its name instead
+   of the sliver left between the name and its source. */
+.composer-command-list {
+  container: composer-command-list / inline-size;
+}
+
+@container composer-command-list (max-width: 420px) {
+  .composer-command-list > button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+
+  .composer-command-list .composer-command-description {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    /* With a line of its own, a long description wraps to a second line. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
 }
 
 .composer-capability-bar {
@@ -12252,7 +12278,9 @@ textarea:focus-visible,
   margin: 0 4px 6px;
   padding: 3px;
   border-radius: 8px;
-  background: var(--ui-surface-subtle);
+  /* The window's segmented control (Info | History): its track, and below its
+     selected segment, so the choice stands out in light and dark alike. */
+  background: var(--fm-cap, var(--ui-surface-subtle));
 }
 
 .composer-reasoning-levels button {
@@ -12272,8 +12300,14 @@ textarea:focus-visible,
 :root[data-theme] .app-shell .composer-reasoning-levels button.active,
 :root[data-theme] .app-shell .composer-reasoning-levels button.active:hover {
   color: var(--ui-text);
-  background: var(--ui-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / .14);
+  background: var(--fm-btn, var(--ui-surface));
+  box-shadow: var(--fm-btn-shadow, 0 1px 2px rgb(0 0 0 / .14));
+}
+
+/* In dark the menu is lighter than the window, so the window's track would
+   lift to nearly the selected segment's shade; recessing it keeps them apart. */
+:root[data-theme="dark"] .app-shell .composer-reasoning-levels {
+  background: rgb(0 0 0 / .2);
 }
 
 :root[data-theme] .app-shell .send-button {

@@ -474,7 +474,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }, [activeConnectedFolder.id, place, connectedFolder]);
 
   const entries = listing.entries;
-  const kindLabel = (entry: TreeEntry) => entry.nestedFolder ? "connected-folder" : fileKindLabel(entry);
+  // The Kind column names a Connected Folder nested here the way the rest of the window does.
+  const kindLabel = (entry: TreeEntry) => entry.nestedFolder ? "Connected Folder" : fileKindLabel(entry);
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     const shown = entries.filter((entry) => !hiddenPaths.has(hiddenKey(place, entry.path)) && (!needle || entry.name.toLocaleLowerCase().includes(needle)));

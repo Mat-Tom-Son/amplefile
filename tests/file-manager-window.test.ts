@@ -92,6 +92,18 @@ test("Enter on a sort header sorts instead of renaming the selected item", async
   await dom.waitFor(() => Boolean(document.querySelector('[role="dialog"]')));
 });
 
+test("the Kind column names a nested Connected Folder in the window's words, not by its identifier", async (t) => {
+  const folder = (name: string, nestedFolder?: true): TreeEntry => ({ kind: "folder", path: name, name, updatedAt: "2026-09-27T12:00:00Z", ...(nestedFolder ? { nestedFolder } : {}) } as TreeEntry);
+  const { dom, module } = await createFileManagerHarness(t, answers(undefined, [folder("Inner", true), folder("Plain"), file("a.md")]));
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="Inner"]')));
+  const kind = (path: string) => dom.container.querySelector<HTMLElement>(`[data-fm-path="${path}"] .fm-col-kind`)!;
+  assert.equal(kind("Inner").textContent, "Connected Folder");
+  assert.equal(kind("Inner").title, "Connected Folder");
+  assert.equal(kind("Plain").textContent, "Folder");
+  assert.equal(kind("a.md").textContent, "Markdown document");
+});
+
 test("every list names its active row, and icon view keeps grid, row and cell roles in order", async (t) => {
   const { dom, module } = await createFileManagerHarness(t, answers((path) => path === "/api/recents"
     ? { recents: [{ place: { kind: "connected-folder", id: "lab" }, path: "Notes/a.md", name: "a.md", kind: "file", updatedAt: "2026-09-27T12:00:00Z", where: "Lab" }] }

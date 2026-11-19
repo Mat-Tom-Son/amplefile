@@ -68,6 +68,15 @@
   transform-origin: top right;
 }
 
+/* Under the panel's message box the model sits at the left, so its menu opens from there. */
+:where(.composer-panel-meta .composer-model-menu) {
+  transform-origin: bottom left;
+}
+
+:where(.composer-panel-meta .composer-model-control[data-menu-placement="below"] .composer-model-menu) {
+  transform-origin: top left;
+}
+
 :where(.jump-to-latest) {
   --amplefile-menu-rise: 6px;
   animation: amplefile-menu-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
