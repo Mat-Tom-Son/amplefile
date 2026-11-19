@@ -275,7 +275,7 @@ test("a narrow command list gives each description a line of its own under its n
   // In the panel the three columns left a description a sliver, or nothing at 270px.
   assert.match(chatPanel, /className="composer-command-menu composer-command-list" role="listbox" aria-label="Commands and Skills"/);
   assert.match(styles, /\.composer-command-list \{\s*container: composer-command-list \/ inline-size;/);
-  assert.match(styles, /@container composer-command-list \(max-width: 420px\) \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?\.composer-command-description \{\s*grid-column: 1 \/ -1;\s*grid-row: 2;/);
+  assert.match(styles, /@container composer-command-list \(max-width: 420px\) \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?\.composer-command-description \{\s*grid-column: 1 \/ -1;\s*grid-row: 2;[\s\S]*?-webkit-line-clamp: 2;\s*white-space: normal;/);
 });
 
 test("reasoning and real tool calls form one chronological steps strip", () => {

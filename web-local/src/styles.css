@@ -3726,6 +3726,11 @@ button.context-chip.message-attachment:focus-visible {
   .composer-command-list .composer-command-description {
     grid-column: 1 / -1;
     grid-row: 2;
+    /* With a line of its own, a long description wraps to a second line. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
   }
 }
 
