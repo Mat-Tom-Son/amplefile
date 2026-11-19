@@ -2298,11 +2298,14 @@ function ConversationModel({ runtime, status, connectedFolderName, picker, reaso
 // so no menu is left open (or half-closed) behind the one being used.
 const openComposerChipMenus = new Set<() => void>();
 
-/** Keep chip menus inside the Chat, including the centered New Chat composer. */
+/**
+ * Keep chip menus inside the Chat, including the centered New Chat composer,
+ * and inside the panel for the message box under Info, which has no Chat.
+ */
 function useComposerMenuBounds(open: boolean, containerRef: React.RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
     const control = containerRef.current;
-    const panel = control?.closest<HTMLElement>(".chat-panel");
+    const panel = control?.closest<HTMLElement>(".chat-panel, .fm-panel");
     if (!open || !control || !panel) return;
     const update = () => {
       const bounds = panel.getBoundingClientRect();
@@ -2311,6 +2314,8 @@ function useComposerMenuBounds(open: boolean, containerRef: React.RefObject<HTML
       const below = Math.max(0, bounds.bottom - anchor.bottom - 9);
       control.dataset.menuPlacement = below > above ? "below" : "above";
       control.style.setProperty("--composer-menu-available-height", `${Math.max(above, below)}px`);
+      // Room for a menu that opens from the control's left edge toward the right.
+      control.style.setProperty("--composer-menu-room-rightward", `${Math.max(0, bounds.right - anchor.left - 8)}px`);
     };
     update();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);

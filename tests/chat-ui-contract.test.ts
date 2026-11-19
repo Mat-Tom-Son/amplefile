@@ -247,6 +247,11 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /\{compacting \? "Compacting" : "Compact Chat"\}/);
   assert.match(styles, /\.composer-reasoning-levels \{[\s\S]*?flex-wrap: nowrap;/);
   assert.match(styles, /\.composer-model-menu \{\s*min-width: min-content;/);
+  // Under the panel's message box the model sits at the left, so its menu
+  // opens rightward and stays inside the panel instead of under the folder's contents.
+  assert.match(chatPanel, /closest<HTMLElement>\("\.chat-panel, \.fm-panel"\)/);
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-model-menu \{\s*left: 0;\s*right: auto;\s*width: max-content;[\s\S]*?max-width: var\(--composer-menu-room-rightward/);
+  assert.match(panelStyles, /\.composer-panel-meta \.composer-reasoning-levels \{\s*flex-wrap: wrap;/);
   assert.match(localServer, /await client\.setThinkingLevel\(body\.level\)/);
 });
 

@@ -224,7 +224,7 @@ test("composer menus choose the available side and follow window resizing", asyn
   let anchorTop = 390;
   HTMLElement.prototype.getBoundingClientRect = function () {
     if (this.matches(".chat-panel")) return new window.DOMRect(0, 80, 800, 720);
-    if (this.matches(".composer-attach-control")) return new window.DOMRect(0, anchorTop, 28, 30);
+    if (this.matches(".composer-attach-control")) return new window.DOMRect(24, anchorTop, 28, 30);
     return original.call(this);
   };
   t.after(() => { elementPrototype.getBoundingClientRect = original; });
@@ -232,6 +232,7 @@ test("composer menus choose the available side and follow window resizing", asyn
   const control = dom.container.querySelector<HTMLElement>(".composer-attach-control")!;
   assert.equal(control.dataset.menuPlacement, "below", "the centered composer has more room below");
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "371px");
+  assert.equal(control.style.getPropertyValue("--composer-menu-room-rightward"), "768px", "a menu opening rightward stops short of the Chat's right edge");
   anchorTop = 740;
   await dom.act(() => { window.dispatchEvent(new Event("resize")); });
   assert.equal(control.dataset.menuPlacement, "above", "a composer at the bottom opens upward");
