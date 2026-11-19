@@ -240,6 +240,11 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /body: \{ scope: "connected-folder", connectedFolderId: connectedFolder\.id, level \}/);
   assert.doesNotMatch(chatPanel, /No extended reasoning|A brief think before answering|Balanced reasoning|Deeper reasoning/);
   assert.match(styles, /\.composer-reasoning-levels button \{[\s\S]*?font: inherit;/);
+  // The levels draw like the window's segmented control, and in dark the
+  // track recesses into the lighter menu so the selected level stands out.
+  assert.match(styles, /\.composer-reasoning-levels \{[^}]*background: var\(--fm-cap, /);
+  assert.match(styles, /\.composer-reasoning-levels button\.active:hover \{[^}]*background: var\(--fm-btn, [^}]*box-shadow: var\(--fm-btn-shadow, /);
+  assert.match(styles, /:root\[data-theme="dark"\] \.app-shell \.composer-reasoning-levels \{\s*background: rgb\(0 0 0 \/ \.2\);/);
   assert.match(styles, /\.composer-model-chip \{[\s\S]*?font-family: inherit;[\s\S]*?font-size: var\(--amplefile-type-2xs\);[\s\S]*?font-weight: 700;/);
   // The context ring is its own button with a popover that compacts,
   // and the reasoning levels stay on one row.

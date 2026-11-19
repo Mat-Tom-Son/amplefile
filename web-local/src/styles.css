@@ -12254,7 +12254,9 @@ textarea:focus-visible,
   margin: 0 4px 6px;
   padding: 3px;
   border-radius: 8px;
-  background: var(--ui-surface-subtle);
+  /* The window's segmented control (Info | History): its track, and below its
+     selected segment, so the choice stands out in light and dark alike. */
+  background: var(--fm-cap, var(--ui-surface-subtle));
 }
 
 .composer-reasoning-levels button {
@@ -12274,8 +12276,14 @@ textarea:focus-visible,
 :root[data-theme] .app-shell .composer-reasoning-levels button.active,
 :root[data-theme] .app-shell .composer-reasoning-levels button.active:hover {
   color: var(--ui-text);
-  background: var(--ui-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / .14);
+  background: var(--fm-btn, var(--ui-surface));
+  box-shadow: var(--fm-btn-shadow, 0 1px 2px rgb(0 0 0 / .14));
+}
+
+/* In dark the menu is lighter than the window, so the window's track would
+   lift to nearly the selected segment's shade; recessing it keeps them apart. */
+:root[data-theme="dark"] .app-shell .composer-reasoning-levels {
+  background: rgb(0 0 0 / .2);
 }
 
 :root[data-theme] .app-shell .send-button {
