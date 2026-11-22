@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
-import { resolveFolderLocation, scanComputerFolder } from "../src/local/folder-locations.js";
+import { resolveFolderLocation, resolvePlaceSymbolicLink, scanComputerFolder } from "../src/local/folder-locations.js";
 import { startLocalApi } from "../src/local/server.js";
 import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 import {
   accessError,
+  addSidebarFolder,
   assertStandardFolderPathUnowned,
   computerFolderId,
   createStandardFolderFolder,
@@ -246,4 +247,46 @@ test("the window's routes work in the computer place as in a Standard Folder", a
   // Go to Folder opens any folder and completes names outside the places too.
   const goTo = await json(`/api/go-to-folder?path=${encodeURIComponent(`${work}/In`)}`);
   assert.deepEqual((goTo.body.suggestions as Array<{ name: string }>).map((item) => item.name), ["Inbox", "Inbox.zip"]);
+});
+
+test("the disk's top lists its links and hidden entries on request, as every other listing does", async () => {
+  const top = await scanComputerFolder("", undefined, { includeLinks: true, includeHidden: true });
+  const plain = await scanComputerFolder("");
+  assert.ok(top.tree.every((entry) => entry.path === entry.name));
+  assert.ok(!top.tree.some((entry) => entry.name === ".amplefile" || entry.name === ".pi"));
+  for (const entry of top.tree) {
+    assert.equal(Boolean(entry.hidden), entry.name.startsWith("."), entry.name);
+    if (entry.link) assert.ok(!plain.tree.some((item) => item.name === entry.name), `${entry.name} is a link, left out unless asked for`);
+  }
+  // Linux keeps /bin and the like as links into /usr; where the disk does, the window shows them.
+  const bin = await lstat("/bin").catch(() => null);
+  if (bin?.isSymbolicLink()) {
+    const listed = top.tree.find((entry) => entry.name === "bin");
+    assert.equal(listed?.kind, "folder");
+    assert.deepEqual(listed?.link, { target: "folder", targetPath: await realpath("/bin") });
+    assert.equal(listed?.hasChildren, false, "a linked folder is never opened in place");
+  }
+});
+
+test("a listed link resolves to where it points, in a Standard Folder and in the computer place, and a broken one says so", async (t) => {
+  const root = await sandbox(t);
+  const added = join(root, "Added");
+  await mkdir(join(added, "Projects"), { recursive: true });
+  await writeFile(join(added, "notes.txt"), "notes");
+  await symlink("notes.txt", join(added, "notes link"));
+  await symlink("Projects", join(added, "Projects link"));
+  await symlink("gone.txt", join(added, "broken link"));
+  const sidebar = addSidebarFolder(added, root);
+  const place = { kind: "standard", id: sidebar.id } as const;
+  assert.deepEqual(await resolvePlaceSymbolicLink(place, "notes link", root), { linkPath: join(added, "notes link"), targetPath: join(added, "notes.txt"), target: "file" });
+  assert.deepEqual(await resolvePlaceSymbolicLink(computer, onDisk(join(added, "Projects link")), root), { linkPath: join(added, "Projects link"), targetPath: join(added, "Projects"), target: "folder" });
+  await assert.rejects(resolvePlaceSymbolicLink(place, "broken link", root), /isn’t there/);
+  await assert.rejects(resolvePlaceSymbolicLink(place, "notes.txt", root), /isn’t a symbolic link/);
+  await assert.rejects(resolvePlaceSymbolicLink(place, "Projects link/inner", root), /symbolic links/, "never through a link");
+  await assert.rejects(resolvePlaceSymbolicLink(computer, "", root), /link inside/);
+  await assert.rejects(resolvePlaceSymbolicLink(computer, ".amplefile", root), /link inside|reserved/);
+  await assert.rejects(resolvePlaceSymbolicLink({ kind: "standard", id: "nowhere" }, "notes link", root), /sidebar/);
+  // A link at the disk's top is the computer place's first folder.
+  const bin = await lstat("/bin").catch(() => null);
+  if (bin?.isSymbolicLink()) assert.deepEqual(await resolvePlaceSymbolicLink(computer, "bin", root), { linkPath: "/bin", targetPath: await realpath("/bin"), target: "folder" });
 });
