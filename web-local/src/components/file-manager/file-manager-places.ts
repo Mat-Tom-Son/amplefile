@@ -80,10 +80,19 @@ export function placeApiBase(place: FileManagerPlace): string {
     : `/api/standard-folders/${encodeURIComponent(place.id)}`;
 }
 
-export function placeEventsUrl(place: FileManagerPlace, path: string): string {
+/**
+ * A place's file events. A Standard Folder's events leave out hidden entries
+ * unless `includeHidden` asks for them, as its listing does; a Connected
+ * Folder's cover everything already.
+ */
+export function placeEventsUrl(place: FileManagerPlace, path: string, options: { includeHidden?: boolean } = {}): string {
   const base = placeApiBase(place);
   if (place.kind === "connected-folder") return `${base}/file-events`;
-  return `${base}/events${path ? `?path=${encodeURIComponent(path)}` : ""}`;
+  const query = new URLSearchParams();
+  if (path) query.set("path", path);
+  if (options.includeHidden) query.set("includeHidden", "1");
+  const search = query.toString();
+  return `${base}/events${search ? `?${search}` : ""}`;
 }
 
 /**

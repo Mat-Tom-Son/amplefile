@@ -8,7 +8,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -46,7 +46,7 @@ import {
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
-import { resolveFolderLocation, type FolderLocation } from "../../src/local/folder-locations.js";
+import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
 import type { AmpleFileActFacade } from "../../src/local/cli/act-facade.js";
 import {
@@ -54,7 +54,7 @@ import {
   writeAmpleFileCliActTokenFile,
 } from "../../src/local/cli/act-token.js";
 import { configureAmpleFileStateRoot, managedConnectedFolderRoot, ampleFileAgentRoot } from "../../src/local/state-paths.js";
-import { getConnectedFolder, listConnectedFolders } from "../../src/local/connected-folder.js";
+import { getConnectedFolder, listConnectedFolders, resolveConnectedFolderPath } from "../../src/local/connected-folder.js";
 import { AmpleFileCliKernelAdapter } from "../../src/local/amplefile-cli-adapter.js";
 import { AmpleFileKernel } from "../../src/local/amplefile-kernel.js";
 import {
@@ -262,7 +262,7 @@ let rendererRecoveryInFlight = false;
 let rendererRecoveryAttempts = 0;
 let rendererRecoveryFailurePromptShown = false;
 let createWindowPromise: Promise<void> | null = null;
-let rendererMenuState: RendererMenuState = { connectedFolderOpen: false };
+let rendererMenuState: RendererMenuState = { connectedFolderOpen: false, showHiddenFiles: false };
 let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
@@ -1010,16 +1010,16 @@ function registerIpc(): void {
       launch: launchOpenWith,
     });
   });
+  // Dragging out of the window: every item dragged, files and folders, to any app that takes them.
   ipcMain.handle("amplefile:connected-folder:start-drag", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    const request = connectedFolderPathRequest(value, false);
-    const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
-    const info = await stat(filePath);
-    if (!info.isFile()) throw new Error("Only files can be dragged out of a Connected Folder.");
-    const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
-    if (icon.isEmpty()) return false;
-    event.sender.startDrag({ file: filePath, icon });
-    return true;
+    const request = placeDragRequest(value, "connectedFolderId");
+    const connectedFolder = await getConnectedFolder(request.id);
+    const items: string[] = [];
+    for (const path of request.paths) {
+      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), () => resolveConnectedFolderItem(request.id, path)));
+    }
+    return startItemDrag(event.sender, items);
   });
   ipcMain.handle("amplefile:connected-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1068,13 +1068,31 @@ function registerIpc(): void {
   });
   ipcMain.handle("amplefile:standard-folder:start-drag", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    const request = standardFolderPathRequest(value);
-    const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
-    if (!(await stat(filePath)).isFile()) throw new Error("Only files can be dragged out.");
-    const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
-    if (icon.isEmpty()) return false;
-    event.sender.startDrag({ file: filePath, icon });
-    return true;
+    const request = placeDragRequest(value, "standardFolderId");
+    if (!isStandardFolderId(request.id)) throw new Error("That standard folder isn’t on this computer.");
+    const items: string[] = [];
+    for (const path of request.paths) {
+      items.push(await draggableItem(resolveStandardFolderPath(request.id, path), () => resolveStandardFolderItem(request.id, path)));
+    }
+    return startItemDrag(event.sender, items);
+  });
+  // A symbolic link a listing showed: open what it points to, or show the link itself in the system file manager.
+  // A linked folder is never opened here; the window goes to where it really is instead.
+  ipcMain.handle("amplefile:place:open-link", async (event, value: unknown) => {
+    assertTrustedMainRenderer(event);
+    if (!isRecord(value) || !isRecord(value.place) || typeof value.path !== "string" || !value.path || value.path.includes("\0") || isAbsolute(value.path)) throw new Error("Choose a link inside the folder.");
+    const kind = value.place.kind;
+    const id = value.place.id;
+    if ((kind !== "connected-folder" && kind !== "standard") || typeof id !== "string" || !id) throw new Error("Choose where the link is.");
+    const action = value.action === "reveal" ? "reveal" : "open";
+    const link = await resolvePlaceSymbolicLink({ kind, id }, value.path);
+    if (action === "reveal") {
+      shell.showItemInFolder(link.linkPath);
+      return;
+    }
+    if (link.target !== "file") throw new Error("This link points to a folder. Open it in the window.");
+    const result = await shell.openPath(link.targetPath);
+    if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:standard-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1424,12 +1442,15 @@ type RendererMenuCommand =
   | "open-command-palette"
   | "open-keyboard-shortcuts"
   | "toggle-sidebar"
-  | "toggle-agent-panel";
+  | "toggle-agent-panel"
+  | "toggle-hidden-files";
 
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 interface RendererMenuState {
   connectedFolderOpen: boolean;
+  /** The file manager window's Show Hidden Files, which the View menu checks. */
+  showHiddenFiles: boolean;
 }
 
 function configureMenu(): void {
@@ -1524,6 +1545,18 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
       ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: (_item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => { void toggleAmpleFileAgentPopover(windowPopoverAnchor(window)); } }] : []),
       { type: "separator" },
+      // The window owns the key (Shift-Command-Period, Ctrl+H) so it works while the folder list has the keyboard
+      // and in the browser preview; the menu shows the key and the check without registering it twice.
+      {
+        id: "show-hidden-files",
+        label: "Show Hidden Files",
+        type: "checkbox",
+        checked: rendererMenuState.showHiddenFiles,
+        accelerator: process.platform === "darwin" ? "Shift+Command+." : "Control+H",
+        registerAccelerator: false,
+        enabled: rendererMenuState.connectedFolderOpen,
+        click: () => sendRendererMenuCommand("toggle-hidden-files"),
+      },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
       { type: "separator" },
@@ -1637,13 +1670,17 @@ function sendRendererMenuCommand(command: RendererMenuCommand): void {
   window.webContents.send("amplefile:menu-command", command);
 }
 
+/** The renderer sends only what changed; a key it leaves out keeps its value. */
 function updateApplicationMenuState(value: unknown): void {
+  const record = isRecord(value) ? value : {};
   rendererMenuState = {
-    connectedFolderOpen: isRecord(value)
-      ? value.connectedFolderOpen === true
-      : rendererMenuState.connectedFolderOpen,
+    connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : rendererMenuState.connectedFolderOpen,
+    showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : rendererMenuState.showHiddenFiles,
   };
   const menu = Menu.getApplicationMenu();
+  const showHidden = menu?.getMenuItemById("show-hidden-files");
+  if (showHidden) showHidden.checked = rendererMenuState.showHiddenFiles;
+  setMenuItemEnabled(menu, "show-hidden-files", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
@@ -1901,6 +1938,40 @@ async function resolveConnectedFolderItem(connectedFolderId: string, itemPath: s
   const resolvedCandidate = await realpath(candidate);
   assertPathInsideRoot(connectedFolderRoot, resolvedCandidate);
   return resolvedCandidate;
+}
+
+/** The items one drag carries, by place: at least one, at most as many as a paste takes. */
+function placeDragRequest(value: unknown, idKey: "connectedFolderId" | "standardFolderId"): { id: string; paths: string[] } {
+  if (!isRecord(value)) throw new Error("Choose items to drag.");
+  const id = typeof value[idKey] === "string" ? value[idKey] as string : "";
+  const paths = Array.isArray(value.paths) ? value.paths : typeof value.path === "string" ? [value.path] : [];
+  if (!id || !paths.length || paths.length > 5_000) throw new Error("Choose items to drag.");
+  return {
+    id,
+    paths: paths.map((path) => {
+      if (typeof path !== "string" || !path || path.includes("\0") || isAbsolute(path)) throw new Error("A relative path inside the folder is required.");
+      return path;
+    }),
+  };
+}
+
+/**
+ * One dragged item: a file or folder, held to the place's path policy (no
+ * symbolic link anywhere in its path, the item itself included, even a
+ * broken one), then resolved where it really is.
+ */
+async function draggableItem(policyPath: string, resolveItem: () => Promise<string>): Promise<string> {
+  const info = await lstat(policyPath).catch(() => null);
+  if (!info) throw new Error(`“${basename(policyPath)}” isn’t there anymore.`);
+  if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) throw new Error("Only files and folders can be dragged out.");
+  return resolveItem();
+}
+
+function startItemDrag(sender: Electron.WebContents, items: string[]): boolean {
+  const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
+  if (icon.isEmpty() || !items.length) return false;
+  sender.startDrag({ file: items[0]!, files: items, icon });
+  return true;
 }
 
 async function setActiveNativeConnectedFolder(connectedFolderId: string | null): Promise<void> {

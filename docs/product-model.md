@@ -144,7 +144,9 @@ other surface.
   Nothing is registered and nothing is kept about it: with nothing selected,
   Info offers **Connect This Folder** for the folder shown (never for the
   disk itself). The path policy is the same as everywhere: no path through
-  a symbolic link, and `.amplefile/` and `.pi/` stay hidden. A folder the
+  a symbolic link, and `.amplefile/` and `.pi/` stay hidden. The disk's top
+  lists its links (Linux keeps `/bin` and `/lib` as links into `/usr`) as
+  **Symbolic links** describes. A folder the
   account may not read says so (on a Mac, as for Desktop or Documents, with
   where to allow it).
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
@@ -152,11 +154,46 @@ other surface.
   Quick Look, Command-Down to open, Command-Up for the enclosing folder
   (from the top of a place, the folder above it, down to the disk),
   Command-Delete, Return to rename, typing to jump to a name). Double-click
-  opens a folder here and a file in its default app. Files drag out to other
-  apps; files dragged in from Finder are added to the folder shown, or to the
-  folder row they are dropped on, and a file dragged onto a folder row in the
-  list moves there, each kept by History (a Standard Folder is changed in
-  Finder). Right-click uses the native menu. Where the desktop has no Quick
+  opens a folder here and a file in its default app. Dragging from empty
+  space, or in the list from a row outside its icon and name, draws a
+  selection rectangle that selects what it touches; Shift or Command adds
+  to the selection, and the list scrolls while the pointer is near its top
+  or bottom edge. Right-click uses the native menu.
+- **Big folders:** a folder lists completely up to 200,000 items; one that
+  holds more shows 200,000 of them with a note that some items are not
+  shown. Only the
+  rows (or rows of tiles) in view are drawn, so a folder of 100,000 items
+  opens in about the time the host takes to list it and scrolls smoothly;
+  selection, the keys, the selection rectangle, and screen readers' row
+  counts cover every item, drawn or not.
+- **Dragging:** files and folders drag alike. Dragging a selected item
+  drags the whole selection, and an unselected item drags alone: out to
+  other apps, or onto a folder row or a sidebar place in the window, where
+  they move as a move by paste does (a move between places follows the
+  rules under **Finder's file actions**, with the same refusals and History
+  restore points). Items dragged in from Finder are copied into the folder
+  shown, or the folder row they are dropped on; in a Standard Folder or an
+  other folder that needs the desktop app, which knows where they are.
+  Nothing drops into itself or a folder inside itself, and a link or a
+  nested Connected Folder never drags.
+- **Show Hidden Files:** the View menu's **Show Hidden Files**, ⇧⌘. on a
+  Mac and Ctrl+H on Linux, shows what the system file manager hides (names
+  starting with a period, Finder's custom-icon file, and on a Mac the home
+  folder's Library), dimmed, in every Connected Folder, Standard Folder, and
+  other folder, the disk's top included; turning it off hides them again. It
+  is one setting for the window, kept on this computer like the view, and
+  the menu's check mark follows it. `.amplefile/` and `.pi/` never appear.
+- **Symbolic links:** a link is listed by its own name with a small arrow on
+  its icon, and its Kind says what it points to (**Link to Folder**, **Link
+  to PDF document**, or **Broken Link**); Info shows the item it points to as
+  **Original** (or **Missing**). Opening a link to a folder goes where that
+  folder really is, as if its path were typed in Go to Folder; opening a
+  link to a file opens that file in its default app; a broken link says so
+  and opens nothing. Its menu offers only Open, Show in Finder (which shows
+  the link itself), and Copy Link Path. Nothing else changes a link here:
+  renaming, deleting, copying, moving, compressing, attaching it to a Chat,
+  or dragging it is not offered, and the host refuses each, a broken link
+  included. Where the desktop has no Quick
   Look (Linux), Space opens the window's own **Preview** of the selected
   file instead: a panel over the window that follows the selection as the
   arrow keys move it and closes with Space, Esc, or its close button. It

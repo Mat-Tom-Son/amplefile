@@ -40,6 +40,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: ["Enter"], action: "Rename the selected item." },
         { keys: [modifier, "Backspace"], action: macOS || platform === "linux" ? "Delete. Undo it from History, or from the Trash in a Standard Folder." : "Delete. Undo it from History." },
         { keys: ["Esc"], action: "Clear the selection." },
+        { keys: macOS ? ["Shift", modifier, "."] : [modifier, "H"], action: "Show or hide hidden files." },
       ],
     },
     {

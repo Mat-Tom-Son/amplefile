@@ -16,6 +16,7 @@ import { automationCardRows, type AutomationCardRow } from "./file-manager-autom
 import type { ConversationSummary, FileVersionEntry, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
 import { fileKindLabel, fileManagerIcon, formatFileManagerDate, historyTimeLabel } from "./file-manager-model";
 import { isComputerPlace, placeApiBase, type FileManagerPlace } from "./file-manager-places";
+import { linkKindLabel } from "./file-manager-layout";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 
@@ -145,7 +146,7 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
       <div key={tab} className="fm-pane" data-from={paneFromRef.current}>
         {tab === "info" || !connectedFolder
           ? <>{receipt}{info}</>
-          : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
+          : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" && !single.link ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
       </div>
     </div>}
     {chat ? <div className="fm-chat" hidden={!chatShown}>{chat.content}</div> : null}
@@ -225,39 +226,41 @@ function ItemInfo({ apiBase, entry, where, fixtureMode, itemCount }: { apiBase: 
   const [modifiedAt, setModifiedAt] = useState<string | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  // A link's own details come from the listing; the place's routes never read through one.
+  const link = entry.link ?? null;
   useEffect(() => {
     setModifiedAt(null);
-    if (fixtureMode || !apiBase) return;
+    if (fixtureMode || !apiBase || link) return;
     let cancelled = false;
     // Info shows only the date, so the host need not hash the file.
     void api<{ modifiedAt: string }>(`${apiBase}/file-info?path=${encodeURIComponent(entry.path)}&hash=0`)
       .then((result) => { if (!cancelled) setModifiedAt(result.modifiedAt); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [apiBase, entry.path, fixtureMode]);
+  }, [apiBase, entry.path, fixtureMode, link]);
   // A selected folder says how many items it holds, as the design does.
   useEffect(() => {
     setCount(null);
-    if (entry.kind !== "folder" || itemCount !== undefined || fixtureMode || !apiBase) return;
+    if (entry.kind !== "folder" || itemCount !== undefined || fixtureMode || !apiBase || link) return;
     let cancelled = false;
     void api<{ tree: TreeEntry[] }>(`${apiBase}/tree?maxDepth=0&path=${encodeURIComponent(entry.path)}`)
       .then((result) => { if (!cancelled) setCount(result.tree.length); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [apiBase, entry.kind, entry.path, fixtureMode, itemCount]);
+  }, [apiBase, entry.kind, entry.path, fixtureMode, itemCount, link]);
   useEffect(() => {
     setImageUrl(null);
-    if (fixtureMode || !apiBase || entry.kind !== "file" || !previewableImage.test(entry.name)) return;
+    if (fixtureMode || !apiBase || link || entry.kind !== "file" || !previewableImage.test(entry.name)) return;
     const controller = new AbortController();
     let url: string | null = null;
     void rawFileObjectUrlAt(apiBase, entry.path, controller.signal)
       .then((created) => { url = created; if (!controller.signal.aborted) setImageUrl(created); else URL.revokeObjectURL(created); })
       .catch(() => undefined);
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [apiBase, entry.kind, entry.name, entry.path, fixtureMode]);
+  }, [apiBase, entry.kind, entry.name, entry.path, fixtureMode, link]);
   const icon = fileManagerIcon(entry);
   const folderCount = itemCount ?? count;
-  const meta = entry.kind === "folder"
+  const meta = link ? linkKindLabel(link) : entry.kind === "folder"
     ? folderCount === null ? "Folder" : folderCount === 1 ? "1 item" : `${folderCount} items`
     : `${fileKindLabel(entry)}${typeof entry.sizeBytes === "number" ? ` · ${formatBytes(entry.sizeBytes)}` : ""}`;
   return <>
@@ -270,6 +273,7 @@ function ItemInfo({ apiBase, entry, where, fixtureMode, itemCount }: { apiBase: 
       <h2 className="fm-sec-h">Information</h2>
       <div className="fm-card">
         <div className="fm-crow"><span className="fm-crow-l">Where</span><span className="fm-crow-v" title={where}>{where}</span></div>
+        {link ? <div className="fm-crow"><span className="fm-crow-l">{link.target === "missing" ? "Missing" : "Original"}</span><span className="fm-crow-v" title={link.targetPath}>{link.targetPath}</span></div> : null}
         {modifiedAt ?? entry.updatedAt ? <div className="fm-crow"><span className="fm-crow-l">Modified</span><span className="fm-crow-v">{formatFileManagerDate(modifiedAt ?? entry.updatedAt)}</span></div> : null}
         {entry.kind === "file" && typeof entry.sizeBytes === "number" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v">{formatBytes(entry.sizeBytes)}</span></div> : null}
       </div>
