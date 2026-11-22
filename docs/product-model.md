@@ -521,12 +521,19 @@ not the same as direct Google Drive API integration.
 ## Settings
 
 Settings has **Appearance**, **AI Models**, **Automations**, **Command
-Line**, **Recently Deleted**, **Shortcut Keys**, and **About**. Automations
+Line**, **File Manager** (Linux only), **Recently Deleted**, **Shortcut
+Keys**, and **About**. Automations
 carries **Limits**, collapsed by default under a disclosure; **Closing the
 window** lives in Appearance → Interface; updates live in About. **Command
 Line** adds the `amplefile` command to Terminal and writes the Skill for
 Claude Code or Codex, so other AI agents can use AmpleFile
 ([details](amplefile-agent-and-cli.md#other-ai-agents-settings--command-line)).
+**File Manager** lets other Linux apps use AmpleFile as the file manager, as
+two separate choices: **Show Files from Other Apps** (AmpleFile answers
+"show in folder" requests and is started for them) and **Open Folders with
+AmpleFile** (the default folder app). Each shows the system's real state and
+turns off from the same place, giving back what was there
+([details](linux-build.md#amplefile-as-the-file-manager)).
 
 **AI Models** separates model defaults, shared provider connections, and
 Worker instructions. Its scope is chosen with two large buttons, **This

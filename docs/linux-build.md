@@ -239,17 +239,114 @@ AmpleFile does not add Connected Folders to the desktop's recent files
 (`recently-used.xbel`): there is no command for it, and only GLib's own
 writer keeps that shared file intact while other apps update it.
 The application menu lists AmpleFile as a file manager, and file managers offer
-**Open With AmpleFile** for folders. That never makes AmpleFile the default
-folder handler: the packages declare `inode/directory` but run no `xdg-mime`
-command and change no `mimeapps.list`. As with a folder opened from Finder on a
-Mac, a folder passed to AmpleFile (a launcher's argument, or a second launch's)
-opens in the window where it lives: in the deepest Connected Folder holding it,
-at that folder; else in the Standard Folder holding it; else as an other folder
-under the Standard Folder rules ([Other folders](product-model.md#the-file-manager-window)).
-A file opens its folder with the file selected. Nothing is connected, because
-connecting a folder is its own explicit act; Info offers **Connect This Folder**.
-Desktops with no default folder handler configured may still pick any declaring
-app themselves.
+**Open With AmpleFile** for folders; the packages declare `inode/directory`
+but run no `xdg-mime` command and change no `mimeapps.list`. As with a folder
+opened from Finder on a Mac, a folder passed to AmpleFile (a launcher's
+argument, or a second launch's) opens in the window where it lives: in the
+deepest Connected Folder holding it, at that folder; else in the Standard
+Folder holding it; else as an other folder under the Standard Folder rules
+([Other folders](product-model.md#the-file-manager-window)). A file opens its
+folder with the file selected. Nothing is connected, because connecting a
+folder is its own explicit act; Info offers **Connect This Folder**.
+
+## AmpleFile as the file manager
+
+AmpleFile becomes the file manager other apps use only when the person
+chooses it, in **Settings → File Manager**, a page shown on Linux alone. It
+has two independent choices, each showing what the system says now (never a
+remembered flag), saying what it changes, turned off from the same place, and
+reporting a failure in plain words beside it. Installing a package changes
+neither.
+
+**Show Files from Other Apps** answers the freedesktop
+[file manager interface](https://www.freedesktop.org/wiki/Specifications/file-manager-interface/),
+`org.freedesktop.FileManager1` on the session bus, which a browser's
+downloads list, a chat app or the desktop portal calls to "show in folder".
+Turning it on does two things:
+
+- While AmpleFile runs, it owns the name and answers `ShowFolders`,
+  `ShowItems` and `ShowItemProperties` through the same path as a folder
+  handed to the app: `ShowFolders` opens the folder; `ShowItems` and
+  `ShowItemProperties` show the item selected in its folder, a folder too.
+  One window shows one folder, so the first usable item is shown. Every URI
+  is untrusted: only `file:` URIs with no host (or `localhost`), no query or
+  fragment, strict percent-escapes that decode to UTF-8 without NUL, and an
+  absolute path of at most 4,096 characters are used; the first 64 URIs of a
+  call are read and the rest ignored, and more than ten calls in ten seconds
+  are answered and ignored. The window comes forward as it does for a second
+  launch. Electron offers no way to hand the caller's startup id or activation
+  token to the window manager, so the id is checked and otherwise unused, and a
+  desktop's focus-stealing prevention may show an attention hint instead.
+- It writes a per-user D-Bus service file,
+  `$XDG_DATA_HOME/dbus-1/services/org.freedesktop.FileManager1.service`
+  (normally under `~/.local/share`), whose `Exec` starts this copy of
+  AmpleFile, so an app's call starts AmpleFile when nothing answers. The file
+  begins with a comment saying AmpleFile wrote it, and it is the remembered
+  choice: AmpleFile answers at startup only when that file starts this very
+  copy. If the person already had their own file there, its bytes are kept,
+  base64-encoded, in a `# amplefile-replaced:` comment line of AmpleFile's
+  file, and turning the choice off writes them back exactly; otherwise turning
+  it off removes the file. Anyone else's file is never removed. After each
+  change AmpleFile asks the bus to reload its service files.
+
+Which program the bus starts follows its service directories: both
+dbus-daemon (Debian, Ubuntu, Kubuntu) and dbus-broker (Fedora, Arch) read
+`$XDG_DATA_HOME/dbus-1/services` before each `$XDG_DATA_DIRS` directory and
+`/usr/share`, and the first file to name a bus name wins, whatever the file is
+called; dbus-broker logs the later ones as ignored duplicates. So a per-user
+file takes precedence on GNOME over Nautilus's
+`org.freedesktop.FileManager1.service`, on KDE over Dolphin's
+`org.kde.dolphin.FileManager1.service`, and on a bare compositor (niri, Sway)
+over whichever file manager package is installed, or is the only provider when
+none is. dbus-broker reads service files only at startup and on `ReloadConfig`,
+which AmpleFile calls; dbus-daemon also notices the change itself. It starts
+an activated program in a transient systemd unit that stops only the first
+process, so AmpleFile's one-time restart under X11 (above) keeps running.
+These rules were checked on Fedora 44 with dbus-broker 37 (the live user bus,
+niri session) and with dbus-daemon 1.16 on a private bus, using a KDE-style
+file name; the tests repeat the dbus-daemon check. GNOME and KDE sessions
+themselves were not run.
+
+The service file decides who is started, not who answers while running. If
+the system's file manager is running and holds the name, as Nautilus does
+while it runs in the background after use, AmpleFile asks to replace it, which
+succeeds only when that program allows replacement; otherwise AmpleFile waits
+in line, Settings names who is answering and that AmpleFile takes over when it
+closes, and the bus hands AmpleFile the name then. Without a session bus, or
+when the bus refuses, the choice stays on but Settings says AmpleFile can't
+answer, and why.
+
+A native package's file starts `/opt/AmpleFile/amplefile-desktop`; an
+AppImage's starts the AppImage file itself (`$APPIMAGE`), and an unpacked
+development build starts its Electron with the app folder. When the file
+starts another copy, such as an AppImage since moved or a development build,
+Settings says so and turning the choice on points it at this copy. Paths with
+a single quote or a control character are refused rather than escaped.
+
+**Open Folders with AmpleFile** makes AmpleFile this user's default
+`inode/directory` handler with `xdg-mime default` (or `gio mime` without
+xdg-utils), after remembering in `file-manager-integration.json`, in the app's
+data directory, what `$XDG_CONFIG_HOME/mimeapps.list` named for folders and
+which app the desktop resolved. If the desktop still resolves another app
+afterwards (a setting AmpleFile doesn't change takes precedence), AmpleFile
+puts the person's entry back and says so. Turning it off restores that exact
+entry, a list included, or removes AmpleFile's line when there was none;
+`xdg-mime` and `gio` can set a default but not remove one, so AmpleFile edits
+that one line of `mimeapps.list` itself, leaving every other line, and writes
+through a symbolic link to its target. When folders no longer open with
+AmpleFile, because the person chose another app, turning it off changes
+nothing. The choice needs AmpleFile's desktop entry,
+`amplefile-desktop.desktop`, which the DEB and RPM install and an AppImage
+does not, so on an AppImage without it the choice is unavailable and says why.
+
+Uninstalling changes neither choice. The packages install no system-wide
+service file, and their scripts, which run as root for every user, do not
+edit anyone's home folder, so turn both choices off before uninstalling. A
+service file left behind keeps the system's file manager from being started
+on demand until it is removed (`~/.local/share/dbus-1/services/org.freedesktop.FileManager1.service`;
+a file it replaced is in its `# amplefile-replaced:` line, base64-encoded), and
+a folder default left behind still names `amplefile-desktop.desktop` in
+`~/.config/mimeapps.list` until another app is chosen.
 
 ## Live file updates
 
@@ -378,6 +475,16 @@ itself. It does not qualify Sway, which still lacks a lock signal. Real niri cap
 was also checked on a 1920×1200 display at 125%, including exact PNG pixels and
 selected-output coordinate mapping. These fixtures do not establish hardware GPU, physical
 sleep, IME, paid-provider or public signed-repository qualification.
+
+The `linux-file-manager-bus`, `linux-file-manager-integration` and
+`linux-file-manager-settings` tests cover the file manager choices: the D-Bus
+wire format, a private dbus-daemon on which GLib's `gdbus` calls AmpleFile's
+FileManager1 service (owning, waiting in line and taking over, ignoring
+unusable URIs and bursts) and the written service file wins activation over a
+KDE-named system file (skipped without `dbus-daemon` or `gdbus`), URI parsing
+and its limits, the service file's content, replacement and removal, and
+setting and restoring the folder default against a fake `XDG_CONFIG_HOME` and
+`XDG_DATA_HOME`, with the real `xdg-mime` when installed.
 
 The `linux-clipboard-helper` tests run the built clipboard helper on a private
 Xvfb display (skipped when it or Xvfb is missing): every offered target and its
