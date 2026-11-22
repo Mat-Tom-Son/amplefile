@@ -52,6 +52,8 @@ type AmpleFileDesktopMenuCommand =
 
 type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
 type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
+/** Where a folder or file handed to AmpleFile opens: a place, the folder shown in it, and an item to select. */
+type AmpleFileDesktopOpenLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null };
 type AmpleFileDesktopFileMenuCommand = "open" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
   | "copy" | "paste" | "duplicate" | "compress" | "new-folder-with-selection";
 
@@ -151,7 +153,8 @@ declare global {
         /** The Connected Folder header's right-click menu (macOS). */
         popupHeaderMenu?: (request: AmpleFileDesktopHeaderMenuRequest) => Promise<AmpleFileDesktopHeaderMenuCommand | null>;
         setActiveConnectedFolder: (connectedFolderId: string | null) => Promise<void>;
-        onOpenConnectedFolder: (listener: (connectedFolderId: string) => void) => () => void;
+        /** A folder or file the system asked AmpleFile to open, as the host resolved it. */
+        onOpenLocation: (listener: (location: AmpleFileDesktopOpenLocation) => void) => () => void;
         onOpenFolder: (listener: () => void) => () => void;
       };
       /** Standard Folders in the file manager (absent in older desktop builds). */

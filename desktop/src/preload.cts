@@ -75,26 +75,30 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-header-menu", request),
     } : {}),
     setActiveConnectedFolder: (connectedFolderId: string | null) => ipcRenderer.invoke("amplefile:connected-folder:set-active-connected-folder", connectedFolderId),
-    onOpenConnectedFolder: (callback: (connectedFolderId: string) => void) => {
+    /** A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select. */
+    onOpenLocation: (callback: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null }) => void) => {
       let disposed = false;
       const deliveredTokens = new Set<string>();
       const deliver = (value: unknown) => {
         if (disposed || !value || typeof value !== "object" || Array.isArray(value)) return;
-        const request = value as { token?: unknown; connectedFolderId?: unknown };
-        if (typeof request.token !== "string" || !request.token || request.token.length > 128
-          || typeof request.connectedFolderId !== "string" || !request.connectedFolderId || request.connectedFolderId.length > 512) return;
+        const request = value as { token?: unknown; location?: { place?: { kind?: unknown; id?: unknown }; path?: unknown; select?: unknown } };
+        const location = request.location;
+        if (typeof request.token !== "string" || !request.token || request.token.length > 128 || !location || typeof location !== "object") return;
+        const place = location.place;
+        if (!place || (place.kind !== "connected-folder" && place.kind !== "standard") || typeof place.id !== "string" || !place.id || place.id.length > 512) return;
+        if (typeof location.path !== "string" || location.path.length > 4096 || (location.select !== null && (typeof location.select !== "string" || location.select.length > 4096))) return;
         if (deliveredTokens.has(request.token)) return;
         deliveredTokens.add(request.token);
         if (deliveredTokens.size > 32) deliveredTokens.delete(deliveredTokens.values().next().value as string);
-        callback(request.connectedFolderId);
-        ipcRenderer.send("amplefile:connected-folder:ack-open-connected-folder", request.token);
+        callback({ place: { kind: place.kind, id: place.id }, path: location.path, select: location.select });
+        ipcRenderer.send("amplefile:file-manager:ack-open-location", request.token);
       };
       const listener = (_event: unknown, value: unknown) => deliver(value);
-      ipcRenderer.on("amplefile:connected-folder:open-connected-folder", listener);
-      void ipcRenderer.invoke("amplefile:connected-folder:take-open-connected-folder").then(deliver).catch(() => undefined);
+      ipcRenderer.on("amplefile:file-manager:open-location", listener);
+      void ipcRenderer.invoke("amplefile:file-manager:take-open-location").then(deliver).catch(() => undefined);
       return () => {
         disposed = true;
-        ipcRenderer.removeListener("amplefile:connected-folder:open-connected-folder", listener);
+        ipcRenderer.removeListener("amplefile:file-manager:open-location", listener);
       };
     },
     onOpenFolder: (callback: () => void) => {

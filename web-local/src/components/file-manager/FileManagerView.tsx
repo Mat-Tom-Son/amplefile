@@ -62,13 +62,19 @@ import {
 import { FilePreview } from "./FilePreview";
 import { previewSpaceAction } from "./file-preview-model";
 import {
+  computerName,
+  computerRoot,
+  enclosingNativeFolder,
+  isComputerPlace,
   placeApiBase,
   placeKey,
+  placeNativePath,
   sameLocation,
   samePlace,
   sidebarStandardFolders,
   standardFolderNames,
   type FileManagerLocation,
+  type FileManagerOpenRequest,
   type FileManagerPlace,
   type StandardFolderSummary,
 } from "./file-manager-places";
@@ -123,9 +129,11 @@ interface PlaceFileBridge {
 /**
  * The file manager layout (docs/product-model.md, "The file manager
  * window"): a Finder-style window over the same local API and desktop bridge
- * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
+ * Files uses. The sidebar opens the Standard Folders and every Connected Folder;
+ * any other folder opens in the computer place (Go to Folder, the path bar,
+ * Command-Up, or a folder handed to AmpleFile).
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, openLocationRequest = null, onOpenedLocation, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -136,6 +144,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** Bumped when a model choice changes in Settings or elsewhere, so model rows re-read it. */
   modelConfigurationRevision?: number;
   onSwitchConnectedFolder: (connectedFolder: ConnectedFolderSummary) => void;
+  /** A folder or file handed to AmpleFile, as the host resolved it: the window goes there and selects the item. */
+  openLocationRequest?: FileManagerOpenRequest | null;
+  /** The window has shown that request. */
+  onOpenedLocation?: (id: number) => void;
   onOpenSettings: (page?: SettingsPage, modelScope?: ModelScope, focusAiModel?: boolean, workerConnectedFolderId?: string, focusWorkerInstructions?: boolean, backToCustomization?: () => void) => void;
   /** The desktop updater's status, shown at the foot of the sidebar when it needs the person. */
   updateStatus?: DesktopUpdateStatus | null;
@@ -210,14 +222,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (closed.length) setSidebarOpen([...sidebarOpen, ...closed]);
   }, [connectedFolder?.id, connectedFolders]); // eslint-disable-line react-hooks/exhaustive-deps
   const standardFolder = place.kind === "standard" ? standard.folders.find((item) => item.id === place.id) ?? null : null;
+  const inComputerPlace = isComputerPlace(place);
   const placeName = connectedFolder?.name
     ?? standardFolder?.name
+    ?? (inComputerPlace ? computerName() : null)
     ?? standardFolderNames[place.id] ?? place.id;
-  const placeRoot = connectedFolder?.connectedFolderRoot ?? standardFolder?.root ?? "";
+  const placeRoot = connectedFolder?.connectedFolderRoot ?? standardFolder?.root ?? (inComputerPlace ? computerRoot : "");
   /** Any place's name, for messages about files moved from it. */
   const nameOfPlace = (target: FileManagerPlace): string => target.kind === "connected-folder"
     ? connectedFolders.find((item) => item.id === target.id)?.name ?? "the original Connected Folder"
-    : standard.folders.find((item) => item.id === target.id)?.name ?? standardFolderNames[target.id] ?? target.id;
+    : isComputerPlace(target) ? computerName() : standard.folders.find((item) => item.id === target.id)?.name ?? standardFolderNames[target.id] ?? target.id;
   const apiBase = placeApiBase(place);
   const fixtureTree = fixture
     ? place.kind === "connected-folder" ? fixture.trees[place.id] ?? [] : place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : []
@@ -526,11 +540,45 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     navigate(next, "forward");
   }
   function goToEnclosingFolder() {
-    if (!location.path) return;
+    if (!location.path) {
+      // At a place's top, the enclosing folder is wherever the host says the folder above lives, down to the disk.
+      if (placeRoot && enclosingNativeFolder(placeRoot)) void openNativeFolder(placeRoot, true);
+      return;
+    }
     const from = location.path;
     navigate({ place, path: parentPath(location.path) });
     window.setTimeout(() => select([from]), 0);
   }
+  /**
+   * Shows a folder on this computer by its path, at the place the host says
+   * holds it (a Connected Folder, a Standard Folder, or the computer place).
+   * With `reveal`, the folder's enclosing folder opens with it selected.
+   */
+  async function openNativeFolder(nativePath: string, reveal = false) {
+    if (fixtureMode) return;
+    try {
+      const query = new URLSearchParams({ path: nativePath });
+      if (reveal) query.set("reveal", "1");
+      const { location: found } = await api<{ location: { place: FileManagerPlace; path: string; select: string | null } }>(`/api/folder-location?${query.toString()}`);
+      showLocation({ place: found.place, path: found.path }, found.select);
+    } catch (caught) {
+      onError(errorText(caught));
+    }
+  }
+  /** Goes to a location the host resolved, selecting an item there once its folder is shown. */
+  function showLocation(next: FileManagerLocation, selectPath: string | null) {
+    const switchTo = next.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === next.place.id) : undefined;
+    const moved = !sameLocation(next, location);
+    navigate(next, "push", switchTo);
+    if (selectPath) window.setTimeout(() => select([selectPath]), moved ? 300 : 0);
+    window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
+  }
+  // A folder or file handed to AmpleFile (a launcher, Finder, a second launch) opens where the host resolved it.
+  useEffect(() => {
+    if (!openLocationRequest) return;
+    showLocation(openLocationRequest.location, openLocationRequest.select);
+    onOpenedLocation?.(openLocationRequest.id);
+  }, [openLocationRequest?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function select(paths: string[], anchor = paths.at(-1) ?? null) {
     setSelection(paths);
@@ -561,6 +609,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (entry.kind === "folder") {
       const nested = nestedConnectedFolder(entry);
       if (nested) { navigate({ place: { kind: "connected-folder", id: nested.id }, path: "" }); return; }
+      // A folder that is a Standard Folder opens as that one, so the sidebar shows where you are.
+      const sidebarFolder = place.kind === "standard" && placeRoot
+        ? standard.folders.find((item) => !item.connectedFolderId && sameFolder(item.root, placeNativePath(placeRoot, entry.path)))
+        : undefined;
+      if (sidebarFolder) { navigate({ place: { kind: "standard", id: sidebarFolder.id }, path: "" }); return; }
       navigate({ place, path: entry.path });
       return;
     }
@@ -1012,7 +1065,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       await Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
       onOfferSetUp?.(created.id);
       const open = () => navigate({ place: { kind: "connected-folder", id: created.id }, path: "" }, "push", created);
-      if (target.kind === "standard" && !path) {
+      if (target.kind === "standard" && (!path || (samePlace(target, place) && path === location.path))) {
         // The folder itself is a Connected Folder now, and the sidebar lists it there.
         open();
         showToast({ text: `${created.name} is now a Connected Folder.`, tone: "success" });
@@ -1141,7 +1194,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         .map((entry) => ({ name: entry.name, kind: entry.kind, path: `${listed}/${entry.name}` }))
       : [];
     const target = holder(clean);
-    if (!target) return { target: null, suggestions, message: "AmpleFile opens folders in your home folder, iCloud Drive, a Connected Folder, or a folder in the sidebar." };
+    if (!target) return { target: null, suggestions, message: "The preview opens only its sample folders." };
     const relativePath = clean.slice(target.root.length + 1);
     if (!relativePath) return { target: { place: target.place, path: "", select: null }, suggestions, message: null };
     const parent = relativePath.includes("/") ? relativePath.slice(0, relativePath.lastIndexOf("/")) : "";
@@ -1965,9 +2018,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               type="button"
               className="fm-crumb"
               disabled={!crumb.nativePath}
-              title={crumb.nativePath ? `${crumb.hidden ? crumb.hidden.join(" › ") : crumb.nativePath}\nClick to copy the path${crumb.path !== null && !searchMode ? " · Double-click to open" : ""}` : undefined}
+              title={crumb.nativePath ? `${crumb.hidden ? crumb.hidden.join(" › ") : crumb.nativePath}\nClick to copy the path${!searchMode && (crumb.path !== null || (!crumb.hidden && !recentsOpen)) ? " · Double-click to open" : ""}` : undefined}
               onClick={() => void copyNativePath(crumb.nativePath)}
-              onDoubleClick={() => { if (crumb.path !== null && !searchMode) navigate({ place, path: crumb.path }); }}
+              onDoubleClick={() => {
+                if (searchMode) return;
+                if (crumb.path !== null) navigate({ place, path: crumb.path });
+                // A folder above the place's top opens wherever it lives.
+                else if (crumb.nativePath && !crumb.hidden && !recentsOpen) void openNativeFolder(crumb.nativePath);
+              }}
             >{crumb.label}</button>
           </span>)}
         </nav>

@@ -9,6 +9,7 @@
 import { createLocalEventSink } from "../local-event-stream.js";
 import {
   assertStandardFolderPathUnowned,
+  computerFolderId,
   createStandardFolderFolder,
   isStandardFolderId,
   listStandardFolders,
@@ -18,15 +19,17 @@ import {
   scanStandardFolder,
   standardFolderEntryInfo,
   standardFolderFilePreview,
+  standardFolderPathBase,
   standardFolderRegistrationTarget,
   standardFolderRoot,
   type StandardFolderId,
 } from "../standard-folders.js";
 import { goToFolder } from "../go-to-folder.js";
+import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
 import { compressInto, copyHoldsAll, copyInto, isInside, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "../file-transfer.js";
 import { homedir as userHomedir } from "node:os";
 import { lstat, rm, stat } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint, type ConnectedFolderCheckpoint } from "../history.js";
 import type { AmpleFileRecentlyDeletedUncoveredPath } from "../recently-deleted-store.js";
 import { AmpleFileCliError } from "../cli/protocol.js";
@@ -89,6 +92,16 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     sendJson(res, await goToFolder(url.searchParams.get("path") ?? "", await listConnectedFolders()));
     return true;
   }
+  // Where a folder on this computer opens (the path bar above a place's top,
+  // Command-Up from it): the place holding it, as Go to Folder resolves one.
+  if (method === "GET" && url.pathname === "/api/folder-location") {
+    const path = url.searchParams.get("path") ?? "";
+    if (!isAbsolute(path) || path.includes("\0")) throw badRequest("A full path is required.");
+    const location = await resolveFolderLocation(path, await listConnectedFolders(), userHomedir(), { reveal: url.searchParams.get("reveal") === "1" });
+    if (!location) throw notFound("There’s no folder or file at that path.");
+    sendJson(res, { location });
+    return true;
+  }
   // Remove from Sidebar: a folder the person added with + leaves the list; the folder stays as it is.
   const sidebarFolderMatch = match(url.pathname, /^\/api\/standard-folders\/(added-[0-9a-f]{16})$/);
   if (method === "DELETE" && sidebarFolderMatch) {
@@ -103,7 +116,8 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     const route = standardFolderMatch[2];
     const path = url.searchParams.get("path") ?? "";
     if (method === "GET" && route === "tree") {
-      sendJson(res, await scanStandardFolder(standardFolderId, path));
+      // The computer place's top is the disk's root, which the Standard Folder scan never takes as a folder.
+      sendJson(res, standardFolderId === computerFolderId ? await scanComputerFolder(path) : await scanStandardFolder(standardFolderId, path));
       return true;
     }
     if (method === "GET" && route === "file-info") {
@@ -118,7 +132,9 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     }
     if (method === "GET" && route === "raw-file") {
       if (!path) throw badRequest("File path is required.");
-      await sendConnectedFolderRawFile(res, standardFolderRoot(standardFolderId), path);
+      const base = standardFolderPathBase(standardFolderId, path);
+      if (!base) throw badRequest("File path is required.");
+      await sendConnectedFolderRawFile(res, base.root, base.path);
       return true;
     }
     if (method === "GET" && route === "events") {

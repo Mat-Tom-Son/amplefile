@@ -46,6 +46,7 @@ import {
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
+import { resolveFolderLocation, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
 import type { AmpleFileActFacade } from "../../src/local/cli/act-facade.js";
 import {
@@ -272,7 +273,7 @@ let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot
 let recentConnectedFolderEntries: RecentConnectedFolderEntry[] = [];
 let recentConnectedFoldersUpdate: Promise<void> = Promise.resolve();
 let activeNativeConnectedFolderGeneration = 0;
-let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string } | null = null;
+let pendingOpenLocationRequest: { token: string; location: FolderLocation } | null = null;
 const pendingOpenPaths: string[] = [];
 let openPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
@@ -1170,15 +1171,15 @@ function registerIpc(): void {
     }
     await setActiveNativeConnectedFolder(value === null ? null : value.trim());
   });
-  ipcMain.handle("amplefile:connected-folder:take-open-connected-folder", (event) => {
+  ipcMain.handle("amplefile:file-manager:take-open-location", (event) => {
     assertTrustedMainRenderer(event);
-    const request = pendingOpenConnectedFolderRequest;
-    pendingOpenConnectedFolderRequest = null;
+    const request = pendingOpenLocationRequest;
+    pendingOpenLocationRequest = null;
     return request;
   });
-  ipcMain.on("amplefile:connected-folder:ack-open-connected-folder", (event, value: unknown) => {
+  ipcMain.on("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value === "string" && pendingOpenConnectedFolderRequest?.token === value) pendingOpenConnectedFolderRequest = null;
+    if (typeof value === "string" && pendingOpenLocationRequest?.token === value) pendingOpenLocationRequest = null;
   });
   ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1877,7 +1878,8 @@ async function resolveStandardFolderItem(standardFolderId: string, itemPath: str
   const root = await realpath(standardFolderRoot(standardFolderId));
   const candidate = itemPath ? resolveStandardFolderPath(standardFolderId, itemPath) : standardFolderRoot(standardFolderId);
   const resolvedCandidate = await realpath(candidate);
-  assertPathInsideRoot(root, resolvedCandidate);
+  // The folder itself (Show in Finder with nothing selected) is its own root.
+  if (resolvedCandidate !== root) assertPathInsideRoot(root, resolvedCandidate);
   return resolvedCandidate;
 }
 
@@ -2108,8 +2110,12 @@ async function openRecentConnectedFolder(connectedFolderId: string): Promise<voi
 }
 
 // Folders the system asked AmpleFile to open: Finder's open-file on macOS, a
-// desktop launcher's arguments on Linux. Each opens only an already
-// registered Connected Folder; connecting a folder stays an explicit act.
+// desktop launcher's arguments on Linux, a second launch's arguments. Each
+// opens in the window at the place that holds it (folder-locations.ts): a
+// registered Connected Folder, deepest first, at the right folder; else a
+// Standard Folder; else the computer place, under the Standard Folder rules.
+// A file opens its folder with the file selected. Nothing is registered:
+// connecting a folder stays an explicit act.
 async function drainPendingOpenPaths(): Promise<void> {
   if (process.platform !== "darwin" && process.platform !== "linux") return;
   if (openPathDrainPromise) {
@@ -2124,17 +2130,17 @@ async function drainPendingOpenPaths(): Promise<void> {
       if (!path) continue;
       await ensureMainWindow();
       showWindow();
-      const connectedFolderId = await registeredConnectedFolderIdForOpenPath(path);
-      if (!connectedFolderId) {
-        console.warn(`${productName} ignored a folder that is not a Connected Folder: ${path}`);
+      const location = await folderLocationForOpenPath(path);
+      if (!location) {
+        console.warn(`${productName} could not open a folder that is not on this computer: ${path}`);
         continue;
       }
-      await setActiveNativeConnectedFolder(connectedFolderId);
-      const request = { token: randomUUID(), connectedFolderId };
-      pendingOpenConnectedFolderRequest = request;
+      if (location.place.kind === "connected-folder") await setActiveNativeConnectedFolder(location.place.id);
+      const request = { token: randomUUID(), location };
+      pendingOpenLocationRequest = request;
       const window = mainWindow;
       if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("amplefile:connected-folder:open-connected-folder", request);
+        window.webContents.send("amplefile:file-manager:open-location", request);
       }
     }
   })().finally(() => {
@@ -2145,24 +2151,14 @@ async function drainPendingOpenPaths(): Promise<void> {
   if (pendingOpenPaths.length) await drainPendingOpenPaths();
 }
 
-async function registeredConnectedFolderIdForOpenPath(path: string): Promise<string | null> {
+/** Where a path the system handed over opens, or null when nothing is there (Finder may pass a path that moved before AmpleFile was ready). */
+async function folderLocationForOpenPath(path: string): Promise<FolderLocation | null> {
   try {
-    const info = await stat(path);
-    if (!info.isDirectory()) return null;
-    const openedRoot = await realpath(path);
-    for (const connectedFolder of await listConnectedFolders()) {
-      try {
-        const registeredRoot = await realpath(connectedFolder.connectedFolderRoot);
-        if (samePath(openedRoot, registeredRoot)) return connectedFolder.id;
-      } catch {
-        // Missing registered folders are already excluded from normal bootstrap;
-        // one stale registration must not block another exact match.
-      }
-    }
-  } catch {
-    // Finder may pass a path that moved before AmpleFile was ready.
+    return await resolveFolderLocation(path, await listConnectedFolders(), homedir());
+  } catch (error) {
+    console.warn(`${productName} could not open ${path}: ${errorMessage(error)}`);
+    return null;
   }
-  return null;
 }
 
 function assertPathInsideRoot(connectedFolderRoot: string, candidate: string): void {
