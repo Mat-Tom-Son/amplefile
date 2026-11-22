@@ -1,0 +1,304 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { gzipSync } from "node:zlib";
+
+import JSZip from "jszip";
+
+import { abandonedCompressAfterMs, compressInto } from "../src/local/file-transfer.js";
+import { archiveEntrySegments, extractArchive, extractFolderName } from "../src/local/archive-extract.js";
+import { cancelFileOperation, runFileOperation, setFileOperationBoundaryHookForTests } from "../src/local/file-operations.js";
+
+/**
+ * Extract (src/local/archive-extract.ts): an archive becomes a folder beside
+ * it, and every archive is treated as hostile.
+ */
+
+async function folder(t: test.TestContext): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "archive-extract-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  return root;
+}
+
+/** A zip from JSZip, with each placeholder name swapped for a same-length hostile one in both its headers. */
+async function zipWith(files: Record<string, { content?: string | Buffer; unixPermissions?: number; dir?: boolean }>, rename: Record<string, string> = {}): Promise<Buffer> {
+  const zip = new JSZip();
+  for (const [name, file] of Object.entries(files)) {
+    if (file.dir) zip.folder(name);
+    else zip.file(name, file.content ?? "", { unixPermissions: file.unixPermissions, binary: true });
+  }
+  let bytes = await zip.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE" });
+  for (const [from, to] of Object.entries(rename)) {
+    assert.equal(Buffer.byteLength(from), Buffer.byteLength(to));
+    const fromBytes = Buffer.from(from);
+    const toBytes = Buffer.from(to);
+    for (let at = bytes.indexOf(fromBytes); at >= 0; at = bytes.indexOf(fromBytes, at + 1)) toBytes.copy(bytes, at);
+  }
+  bytes = Buffer.from(bytes);
+  return bytes;
+}
+
+/** One tar header and its data, as `tar` writes them. */
+function tarEntry(name: string, options: { type?: string; content?: Buffer | string; linkName?: string; mode?: number } = {}): Buffer {
+  const content = Buffer.from(options.content ?? "");
+  const header = Buffer.alloc(512);
+  header.write(name, 0, 100, "utf8");
+  header.write(`${(options.mode ?? 0o644).toString(8).padStart(7, "0")}\0`, 100, "latin1");
+  header.write("0000000\0", 108, "latin1");
+  header.write("0000000\0", 116, "latin1");
+  header.write(`${content.length.toString(8).padStart(11, "0")}\0`, 124, "latin1");
+  header.write(`${Math.floor(Date.now() / 1000).toString(8).padStart(11, "0")}\0`, 136, "latin1");
+  header.write(options.type ?? "0", 156, "latin1");
+  if (options.linkName) header.write(options.linkName, 157, 100, "utf8");
+  header.write("ustar\0", 257, "latin1");
+  header.write("00", 263, "latin1");
+  header.fill(0x20, 148, 156);
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "latin1");
+  const padding = Buffer.alloc((512 - (content.length % 512)) % 512);
+  return Buffer.concat([header, content, padding]);
+}
+
+function tar(...entries: Buffer[]): Buffer {
+  return Buffer.concat([...entries, Buffer.alloc(1024)]);
+}
+
+/** A pax extended header naming the next entry's path. */
+function paxPath(path: string): Buffer {
+  const body = (length: number) => `${length} path=${path}\n`;
+  let length = Buffer.byteLength(body(0));
+  while (Buffer.byteLength(body(length)) !== length) length = Buffer.byteLength(body(length));
+  return tarEntry("PaxHeader", { type: "x", content: body(length) });
+}
+
+async function listTree(path: string, prefix = ""): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of (await readdir(path)).sort()) {
+    const info = await lstat(join(path, entry));
+    found.push(`${prefix}${entry}${info.isDirectory() ? "/" : ""}`);
+    if (info.isDirectory()) found.push(...await listTree(join(path, entry), `${prefix}${entry}/`));
+  }
+  return found;
+}
+
+test("an archive extracts into a new folder beside it, named after it, never replacing one", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "Photos.zip"), await zipWith({ "a.jpg": { content: "a" }, "Trip/b.jpg": { content: "b" }, "Empty/": { dir: true } }));
+  const first = await extractArchive(join(root, "Photos.zip"));
+  assert.equal(first.folder, join(root, "Photos"));
+  assert.deepEqual(await listTree(first.folder), ["Empty/", "Trip/", "Trip/b.jpg", "a.jpg"]);
+  assert.equal(await readFile(join(first.folder, "Trip", "b.jpg"), "utf8"), "b");
+  assert.equal(first.files, 2);
+  const second = await extractArchive(join(root, "Photos.zip"));
+  assert.equal(second.folder, join(root, "Photos copy"), "a taken name gets “copy”");
+  assert.equal(await readFile(join(root, "Photos", "a.jpg"), "utf8"), "a", "the first folder stays");
+  assert.deepEqual((await readdir(root)).sort(), ["Photos", "Photos copy", "Photos.zip"], "no working folder is left");
+  assert.equal(extractFolderName("backup.tar.gz"), "backup");
+  assert.equal(extractFolderName("backup.TGZ"), "backup");
+});
+
+test("a compressed folder extracts back to the folder, not a folder inside one", async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "Trip", "Day 1"), { recursive: true });
+  await writeFile(join(root, "Trip", "Day 1", "plan.md"), "plan");
+  const archive = await compressInto([join(root, "Trip")], root);
+  await rm(join(root, "Trip"), { recursive: true });
+  const extracted = await extractArchive(archive);
+  assert.equal(extracted.folder, join(root, "Trip"));
+  assert.equal(await readFile(join(root, "Trip", "Day 1", "plan.md"), "utf8"), "plan");
+});
+
+test("tar and gzipped tar archives extract, with long names", async (t) => {
+  const root = await folder(t);
+  const longName = `${"deep/".repeat(30)}file.txt`;
+  const body = tar(
+    tarEntry("docs/", { type: "5" }),
+    tarEntry("docs/readme.txt", { content: "hello" }),
+    paxPath(longName),
+    tarEntry("ignored-name", { content: "long" }),
+    tarEntry("big.bin", { content: Buffer.alloc(3000, 9) }),
+  );
+  await writeFile(join(root, "bundle.tar"), body);
+  await writeFile(join(root, "bundle2.tgz"), gzipSync(body));
+  for (const [archive, name] of [["bundle.tar", "bundle"], ["bundle2.tgz", "bundle2"]] as const) {
+    const result = await extractArchive(join(root, archive));
+    assert.equal(result.folder, join(root, name));
+    assert.equal(await readFile(join(result.folder, "docs", "readme.txt"), "utf8"), "hello");
+    assert.equal(await readFile(join(result.folder, ...longName.split("/")), "utf8"), "long");
+    assert.equal((await stat(join(result.folder, "big.bin"))).size, 3000);
+    assert.ok(!existsSync(join(result.folder, "ignored-name")));
+  }
+});
+
+test("an entry that would land outside its folder refuses the whole archive and leaves nothing", async (t) => {
+  const root = await folder(t);
+  const hostile = ["../evil.txt", "/etc/x.txt", "C:/win.txt", "ok/../../x.txt", "a\\..\\..\\x.txt"];
+  for (const [index, name] of hostile.entries()) {
+    const placeholder = "pqrst"[index]!.repeat(Buffer.byteLength(name));
+    await writeFile(join(root, "bad.zip"), await zipWith({ "fine.txt": { content: "fine" }, [placeholder]: { content: "evil" } }, { [placeholder]: name }));
+    await assert.rejects(extractArchive(join(root, "bad.zip")), (error: Error & { statusCode?: number }) => {
+      assert.equal(error.statusCode, 400, name);
+      assert.match(error.message, /outside its folder/);
+      return true;
+    });
+    assert.deepEqual(await readdir(root), ["bad.zip"], `${name}: nothing is left beside the archive`);
+  }
+  assert.ok(!existsSync(join(root, "..", "evil.txt")));
+  for (const name of ["../x", "/x", "C:\\x", "a/../../x", "x\0y"]) assert.throws(() => archiveEntrySegments(name), /outside its folder/, name);
+  assert.deepEqual(archiveEntrySegments("./a//b/./c"), { segments: ["a", "b", "c"] });
+
+  await writeFile(join(root, "bad.tar"), tar(tarEntry("fine.txt", { content: "fine" }), tarEntry("../../escape.txt", { content: "evil" })));
+  await assert.rejects(extractArchive(join(root, "bad.tar")), /outside its folder/);
+  await writeFile(join(root, "bad2.tar"), tar(paxPath("/abs/escape.txt"), tarEntry("x", { content: "evil" })));
+  await assert.rejects(extractArchive(join(root, "bad2.tar")), /outside its folder/);
+  assert.deepEqual((await readdir(root)).sort(), ["bad.tar", "bad.zip", "bad2.tar"]);
+});
+
+test("links, special files, and Connected Folder or Pi configuration are left out", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "mixed.zip"), await zipWith({
+    "keep.txt": { content: "keep" },
+    "link": { content: "/etc/passwd", unixPermissions: 0o120777 },
+    "fifo": { content: "", unixPermissions: 0o010644 },
+    ".amplefile/connected-folder.json": { content: "{}" },
+    "Sub/.pi/extensions/run.ts": { content: "export default () => {}" },
+    "Sub/.AmpleFile/x.json": { content: "{}" },
+    "__MACOSX/._keep.txt": { content: "fork" },
+  }));
+  const zipped = await extractArchive(join(root, "mixed.zip"));
+  assert.deepEqual(await listTree(zipped.folder), ["Sub/", "keep.txt"]);
+  assert.deepEqual(zipped.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
+    "configuration:.amplefile/connected-folder.json",
+    "configuration:Sub/.AmpleFile/x.json",
+    "configuration:Sub/.pi/extensions/run.ts",
+    "link:link",
+    "special:fifo",
+  ]);
+
+  await writeFile(join(root, "mixed.tar"), tar(
+    tarEntry("keep.txt", { content: "keep" }),
+    tarEntry("symlink", { type: "2", linkName: "/etc/passwd" }),
+    tarEntry("hardlink", { type: "1", linkName: "/etc/passwd" }),
+    tarEntry("device", { type: "3" }),
+    tarEntry("pipe", { type: "6" }),
+    tarEntry(".pi/settings.json", { content: "{}" }),
+  ));
+  const tarred = await extractArchive(join(root, "mixed.tar"));
+  assert.deepEqual(await listTree(tarred.folder), ["keep.txt"]);
+  assert.deepEqual(tarred.skipped.map((item) => item.reason).sort(), ["configuration", "link", "link", "special", "special"]);
+});
+
+test("nothing extracted is made runnable", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "tools.zip"), await zipWith({ "run.sh": { content: "#!/bin/sh\n", unixPermissions: 0o104777 }, "bin/": { dir: true, unixPermissions: 0o041777 } }));
+  const zipped = await extractArchive(join(root, "tools.zip"));
+  const script = await stat(join(zipped.folder, "run.sh"));
+  assert.equal(script.mode & 0o7111, 0, "no executable, set-id, or sticky bit");
+  assert.equal(script.mode & 0o022, 0, "not writable by others");
+  assert.equal((await stat(join(zipped.folder, "bin"))).mode & 0o7022, 0);
+
+  await writeFile(join(root, "tools.tar"), tar(tarEntry("run.sh", { content: "#!/bin/sh\n", mode: 0o6777 })));
+  const tarred = await extractArchive(join(root, "tools.tar"));
+  assert.equal((await stat(join(tarred.folder, "run.sh"))).mode & 0o7111, 0);
+});
+
+test("a zip bomb stops at the bound on bytes actually written, and says so", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "bomb.zip"), await zipWith({ "a.bin": { content: Buffer.alloc(600_000) }, "b.bin": { content: Buffer.alloc(600_000) } }));
+  assert.ok((await stat(join(root, "bomb.zip"))).size < 10_000, "the archive is small");
+  await assert.rejects(extractArchive(join(root, "bomb.zip"), { maxBytes: 1_000_000, maxEntries: 100 }), (error: Error & { statusCode?: number }) => {
+    assert.equal(error.statusCode, 413);
+    assert.match(error.message, /more than .* once extracted/);
+    return true;
+  });
+  assert.deepEqual(await readdir(root), ["bomb.zip"], "what it wrote is gone");
+
+  // An entry that inflates past the size it declares is refused, whatever the bound.
+  const honest = await zipWith({ "c.bin": { content: Buffer.alloc(50_000) } });
+  const lying = Buffer.from(honest);
+  const central = lying.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  lying.writeUInt32LE(1000, central + 24);
+  await writeFile(join(root, "lying.zip"), lying);
+  await assert.rejects(extractArchive(join(root, "lying.zip")), /damaged/);
+
+  await writeFile(join(root, "bomb.tgz"), gzipSync(tar(tarEntry("a.bin", { content: Buffer.alloc(2_000_000) }))));
+  await assert.rejects(extractArchive(join(root, "bomb.tgz"), { maxBytes: 1_000_000, maxEntries: 100 }), /more than .* once extracted/);
+  // Data an entry is skipped with counts too, so a skipped entry cannot be a bomb.
+  await writeFile(join(root, "skipped.tgz"), gzipSync(tar(tarEntry("sparse", { type: "S", content: Buffer.alloc(80 * 1024 * 1024) }))));
+  await assert.rejects(extractArchive(join(root, "skipped.tgz"), { maxBytes: 1_000_000, maxEntries: 100 }), /more than .* once extracted/);
+  assert.deepEqual((await readdir(root)).sort(), ["bomb.tgz", "bomb.zip", "lying.zip", "skipped.tgz"]);
+});
+
+test("too many items stop at the bound, and says so", async (t) => {
+  const root = await folder(t);
+  const files: Record<string, { content: string }> = {};
+  for (let index = 0; index < 30; index += 1) files[`f${index}.txt`] = { content: "x" };
+  await writeFile(join(root, "many.zip"), await zipWith(files));
+  await assert.rejects(extractArchive(join(root, "many.zip"), { maxBytes: 1_000_000, maxEntries: 20 }), /too many items to extract here \(more than 20\)/);
+  // A zip that declares far more entries than the bound is refused before its directory is read.
+  await assert.rejects(extractArchive(join(root, "many.zip"), { maxBytes: 1_000_000, maxEntries: 10 }), /too many items/);
+  // Entries that are left out count too, so a flood of links is bounded.
+  await writeFile(join(root, "links.tar"), tar(...Array.from({ length: 30 }, (_, index) => tarEntry(`l${index}`, { type: "2", linkName: "x" }))));
+  await assert.rejects(extractArchive(join(root, "links.tar"), { maxBytes: 1_000_000, maxEntries: 20 }), /too many items/);
+  assert.deepEqual((await readdir(root)).sort(), ["links.tar", "many.zip"]);
+});
+
+test("damaged, protected, and unknown archives are refused plainly", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "notes.zip"), "this is not a zip");
+  await assert.rejects(extractArchive(join(root, "notes.zip")), /isn’t a zip archive/);
+  const good = await zipWith({ "a.txt": { content: "hello hello hello" } });
+  await writeFile(join(root, "cut.zip"), good.subarray(0, 40));
+  await assert.rejects(extractArchive(join(root, "cut.zip")));
+  const protectedZip = Buffer.from(good);
+  const central = protectedZip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  protectedZip.writeUInt16LE(protectedZip.readUInt16LE(central + 8) | 1, central + 8);
+  await writeFile(join(root, "locked.zip"), protectedZip);
+  await assert.rejects(extractArchive(join(root, "locked.zip")), /protected with a password/);
+  const corrupt = Buffer.from(good);
+  corrupt.writeUInt32LE((corrupt.readUInt32LE(central + 16) ^ 1) >>> 0, central + 16);
+  await writeFile(join(root, "corrupt.zip"), corrupt);
+  await assert.rejects(extractArchive(join(root, "corrupt.zip")), /damaged/);
+  await writeFile(join(root, "notes.rar"), "rar");
+  await assert.rejects(extractArchive(join(root, "notes.rar")), /can extract \.zip, \.tar, \.tar\.gz, and \.tgz/);
+  await writeFile(join(root, "bad.tar"), Buffer.alloc(512, 0x41));
+  await assert.rejects(extractArchive(join(root, "bad.tar")), /damaged/);
+  assert.deepEqual((await readdir(root)).sort(), ["bad.tar", "corrupt.zip", "cut.zip", "locked.zip", "notes.rar", "notes.zip"]);
+});
+
+test("an Extract cancelled partway leaves no folder and no working folder, and reports progress", async (t) => {
+  const root = await folder(t);
+  const files: Record<string, { content: Buffer }> = {};
+  for (let index = 0; index < 5; index += 1) files[`part${index}.bin`] = { content: Buffer.alloc(400_000, index) };
+  await writeFile(join(root, "parts.zip"), await zipWith(files));
+  const seen: number[] = [];
+  setFileOperationBoundaryHookForTests(({ operationId, point, progress }) => {
+    seen.push(progress.itemsDone);
+    if (point === "entry" && progress.itemsDone === 2) cancelFileOperation(operationId);
+  });
+  t.after(() => setFileOperationBoundaryHookForTests(null));
+  await assert.rejects(runFileOperation("extract", "extract", (operation) => extractArchive(join(root, "parts.zip"), undefined, operation)), /Stopped/);
+  assert.deepEqual(await readdir(root), ["parts.zip"]);
+  assert.ok(seen.includes(2));
+
+  setFileOperationBoundaryHookForTests(({ operationId, point, progress }) => {
+    if (point === "chunk" && progress.itemsDone === 1) cancelFileOperation(operationId);
+  });
+  await assert.rejects(runFileOperation("extract-mid", "extract", (operation) => extractArchive(join(root, "parts.zip"), undefined, operation)), /Stopped/);
+  assert.deepEqual(await readdir(root), ["parts.zip"], "a cancel inside an entry leaves nothing either");
+});
+
+test("Extract clears working folders an interrupted Extract left", async (t) => {
+  const root = await folder(t);
+  const stale = join(root, ".AmpleFile-extract-0123456789abcdef.partial");
+  await mkdir(join(stale, "half"), { recursive: true });
+  const old = new Date(Date.now() - abandonedCompressAfterMs - 60_000);
+  await utimes(stale, old, old);
+  await writeFile(join(root, "a.zip"), await zipWith({ "a.txt": { content: "a" } }));
+  await extractArchive(join(root, "a.zip"));
+  assert.deepEqual((await readdir(root)).sort(), ["a", "a.zip"]);
+});
