@@ -123,6 +123,65 @@ their entry point. The capability catalog carries its metadata, and invalid
 manifests stay diagnostics on the owning capability; the file manager window
 does not draw surfaces ([Extension surfaces](extension-surfaces.md)).
 
+### Drives and the system Trash
+
+The local API knows which drives are mounted and what the system Trash holds,
+for the file manager window; the window does not show either yet. The routes
+are in `src/local/api/volume-trash-routes.ts`, over `src/local/volumes.ts` and
+`src/local/system-trash.ts`. A drive or Trash item is named only by the
+opaque id its listing minted; the host finds it again for every act.
+
+- `GET /api/volumes` lists the drives a system file manager would show, each
+  with a name, mount path, total and free bytes, file system, and whether
+  AmpleFile offers Eject. The startup disk is the computer place, not a drive.
+  On Linux the list comes from `/proc/self/mountinfo`: mounts under
+  `/run/media/<user>`, `/media`, `/mnt`, or a visible folder in the home
+  folder, and other real block-device mounts outside the system's own folders.
+  Kernel and pseudo filesystems, loop mounts such as snaps, bind mounts, and
+  every other mount of the root disk (Fedora's btrfs `/home` subvolume) are
+  left out. Labels come from `/dev/disk/by-label`. Eject is offered for mounts
+  udisks made under `/run/media/<user>` or `/media`, and for removable disks.
+  On macOS the list is `/Volumes` without the startup disk and without links.
+- `GET /api/volumes/events` streams the whole list again whenever a drive
+  appears, goes, or is renamed. The first event is the current list. It is also
+  a subscription path on `POST /api/events`. A monitor runs only while someone
+  listens. On Linux it is `findmnt --poll`, which waits on the kernel's
+  mount-table notification; without it, AmpleFile watches the folders drives
+  appear in and checks every 30 seconds. On macOS it watches `/Volumes`.
+- `GET /api/volume-space?placeKind=&placeId=&path=` reports the total and free
+  bytes of the volume holding a place's folder.
+- `POST /api/volumes/eject` ejects a listed drive with the system's own tool,
+  run without a shell: `gio mount -e`, then `gio mount -u`, then `udisksctl
+  unmount` on Linux, and `diskutil eject`, then `diskutil unmount` on macOS. It
+  refuses a drive the listing does not mark ejectable. For a drive holding a
+  registered Connected Folder, it holds that Connected Folder's History and
+  the shared Connected Folder reservation through the eject. It refuses, as a
+  deletion does, while a turn or compaction runs there, a request is
+  unsettled, or a background job or Automation run may be writing there. A busy
+  drive and a missing tool each get a plain message.
+- `GET /api/trash` lists the system Trash: each item's name, original path,
+  deletion date, kind, size, and whether Put Back can return it.
+  `POST /api/trash/put-back` returns one item to its original path. On Linux
+  both follow the FreeDesktop Trash specification: the home trash at
+  `$XDG_DATA_HOME/Trash`, and each volume's `.Trash/<uid>` (only under a sticky,
+  non-link `.Trash`) and `.Trash-<uid>`. Trash records are untrusted: info files
+  are opened without following links and read only up to 64 KiB, and `Path` is
+  percent-decoded strictly. A record that names `.` or `..` or holds a control
+  character is refused. A drive's item goes back only onto that drive. Folders
+  are measured within a bound, without following links. Put Back never replaces
+  anything; a taken name gets Finder's " copy" names. It recreates a missing
+  parent folder only below an existing folder in the home folder, a Connected
+  Folder, or the item's own drive. It refuses a recorded folder now reached
+  through a link the person owns. Into a registered Connected Folder it records
+  a History restore point that removes the item again. If that point cannot be
+  recorded, the item returns to the Trash. On macOS the Trash is listed only:
+  AmpleFile cannot read where Finder recorded an item came from, and reading
+  `~/.Trash` needs Full Disk Access, so a refusal says so.
+
+There is no Empty Trash and no permanent delete. These routes have no CLI
+verbs: the act lane's verbs are Connected Folder files and the AmpleFile
+Agent's families, and Standard Folder routes have none either.
+
 Technical types, routes, and storage paths use `connected-folder`, `project`,
 or `resource` where those are the precise domain or Pi terms. User-facing
 copy says **Connected Folder** for the working context. Pi's own "resource"

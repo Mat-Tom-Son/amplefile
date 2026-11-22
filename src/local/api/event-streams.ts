@@ -17,6 +17,7 @@ import {
 import { localEventStreamLimits, type LocalEventEnvelope } from "../../shared/local-event-stream.js";
 import { watch } from "node:fs";
 import { subscribeFileOperations } from "../file-operations.js";
+import { subscribeVolumes } from "../volumes.js";
 import {
   accessError as standardFolderAccessError,
   isShownStandardEntry,
@@ -76,6 +77,10 @@ export async function handleEventStreamRoutes({ state, req, res, url, method }: 
         } else if (target.kind === "file-operations") {
           // Copy, move, Compress, and Extract progress (src/local/file-operations.ts).
           const stop = subscribeFileOperations((event) => { channel.send(event); });
+          channel.onClose(stop);
+        } else if (target.kind === "volumes") {
+          // The drives list, again whenever it changes (src/local/volumes.ts).
+          const stop = subscribeVolumes((event) => { channel.send(event); });
           channel.onClose(stop);
         } else if (target.kind === "agent") {
           assertAmpleFileAgentReadyForRoutes(state);
