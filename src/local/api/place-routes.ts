@@ -26,8 +26,26 @@ import {
 } from "../standard-folders.js";
 import { goToFolder } from "../go-to-folder.js";
 import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
-import { compressInto, copyHoldsAll, copyInto, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt, removeOwnedItem } from "../file-transfer.js";
-import { extractArchive } from "../archive-extract.js";
+import { compressInto, copyHoldsAll, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "../file-transfer.js";
+import { assertExtractable, extractFolderName, stageExtract, type StagedExtract } from "../archive-extract.js";
+import {
+  commitUnit,
+  findConflicts,
+  parseConflictRequest,
+  planPlacements,
+  removeEmptiedMergeSources,
+  stageUnit,
+  summarize,
+  takeBackUnit,
+  type ConflictPolicy,
+  type PlacementPlan,
+  type PlacementRun,
+  type PlacementUnit,
+  type ReplacedItem,
+  type StagedUnit,
+  type TransferConflict,
+} from "../file-conflicts.js";
+import { moveToSystemTrash } from "../system-trash.js";
 import {
   cancelFileOperation,
   isFileOperationCancelled,
@@ -38,7 +56,7 @@ import {
   type FileOperationControl,
 } from "../file-operations.js";
 import { homedir as userHomedir } from "node:os";
-import { lstat, stat } from "node:fs/promises";
+import { lstat, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint, type ConnectedFolderCheckpoint } from "../history.js";
 import type { AmpleFileRecentlyDeletedUncoveredPath } from "../recently-deleted-store.js";
@@ -49,6 +67,7 @@ import {
   listConnectedFolders,
   outermostConnectedFolderPaths,
   resolveConnectedFolderDeleteTarget,
+  touchConnectedFolderRoot,
   resolveConnectedFolderPath,
   scanConnectedFolderTree,
   nestedRegisteredConnectedFolderPaths,
@@ -84,7 +103,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
   // Copy, paste, duplicate, and move across the file manager's places. An
   // optional `operationId` reports progress and makes the transfer cancellable.
   if (method === "POST" && url.pathname === "/api/file-transfer") {
-    const body = await readJsonBody<{ mode?: unknown; sources?: unknown; target?: unknown; operationId?: unknown }>(state, req);
+    const body = await readJsonBody<{ mode?: unknown; sources?: unknown; target?: unknown; operationId?: unknown; conflicts?: unknown }>(state, req);
     sendJson(res, await transferFileEntries(body, state));
     return true;
   }
@@ -97,9 +116,9 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
   }
   // Extract: an archive becomes a new folder beside it, named after it.
   if (method === "POST" && url.pathname === "/api/file-transfer/extract") {
-    const body = await readJsonBody<{ place?: unknown; path?: unknown; operationId?: unknown }>(state, req);
-    const result = await extractEntry(body);
-    sendJson(res, result, "cancelled" in result ? 200 : 201);
+    const body = await readJsonBody<{ place?: unknown; path?: unknown; operationId?: unknown; conflicts?: unknown }>(state, req);
+    const result = await extractEntry(state, body);
+    sendJson(res, result, "conflicts" in result || "cancelled" in result || result.path === null ? 200 : 201);
     return true;
   }
   // Cancel: a running copy, move, Compress, or Extract stops at its next safe boundary.
@@ -276,23 +295,35 @@ async function resolveTransferItem(place: TransferPlaceRef, path: string, purpos
  * items it finished, takes back the one in hand, answers `cancelled: true`
  * with the sources it did not get to in `notDone`, and keeps a restore point
  * for what it did write.
+ *
+ * `conflicts` (src/local/file-conflicts.ts) asks which names clash
+ * (`{ check: true }`, nothing written) or chooses what happens to each clash.
+ * Without it a taken name gets the " copy" naming, as before.
  */
 export async function transferFileEntries(
-  body: { mode?: unknown; sources?: unknown; target?: unknown; operationId?: unknown },
+  body: { mode?: unknown; sources?: unknown; target?: unknown; operationId?: unknown; conflicts?: unknown },
   state: LocalApiState | undefined = openLocalApiStates.at(-1),
 ) {
   const operationId = parseFileOperationId(body.operationId);
   const mode = body.mode === "move" || body.mode === "duplicate" ? body.mode : body.mode === "copy" ? "copy" : null;
   if (!mode) throw badRequest("Choose copy, duplicate, or move.");
-  return runFileOperation(operationId, mode, (operation) => transferResolvedEntries(body, mode, state, operation), (result) => "cancelled" in result && result.cancelled ? "cancelled" : "succeeded");
+  const conflicts = parseConflictRequest(body.conflicts);
+  if (conflicts.check) {
+    const { target, sources } = await resolveTransferRequest(body, mode);
+    return { conflicts: await findConflicts(sources.map((item) => ({ source: item.abs, key: sourceKey(item) })), target.abs, { duplicate: mode === "duplicate" }) };
+  }
+  return runFileOperation(operationId, mode, async (operation) => {
+    const { target, sources } = await resolveTransferRequest(body, mode);
+    return transferResolvedEntries(target, sources, mode, state, operation, conflicts.policy);
+  }, (result) => "cancelled" in result && result.cancelled ? "cancelled" : "succeeded");
 }
 
-async function transferResolvedEntries(
-  body: { sources?: unknown; target?: unknown },
-  mode: "copy" | "duplicate" | "move",
-  state: LocalApiState | undefined,
-  operation: FileOperationControl,
-) {
+/** A source as the request named it: its path in its place, or its path on disk. */
+function sourceKey(item: ResolvedTransferItem): string {
+  return item.place ? item.relativePath : item.abs;
+}
+
+async function resolveTransferRequest(body: { sources?: unknown; target?: unknown }, mode: "copy" | "duplicate" | "move") {
   if (!Array.isArray(body.sources) || !body.sources.length || body.sources.length > 5_000) throw badRequest("Choose items to copy or move.");
   const targetRecord = body.target as { place?: unknown; path?: unknown } | null;
   const target = await resolveTransferItem(transferPlace(targetRecord?.place), typeof targetRecord?.path === "string" ? targetRecord.path : "", "target");
@@ -315,13 +346,27 @@ async function transferResolvedEntries(
   for (const source of sources) {
     if (isInside(source.abs, target.abs)) throw badRequest(`“${basename(source.abs)}” can’t go inside itself.`);
   }
-  // A source as the request named it: its path in its place, or its path on disk.
-  const named = (item: ResolvedTransferItem) => item.place ? item.relativePath : item.abs;
+  return { target, sources };
+}
 
+async function transferResolvedEntries(
+  target: ResolvedTransferItem,
+  sources: readonly ResolvedTransferItem[],
+  mode: "copy" | "duplicate" | "move",
+  state: LocalApiState | undefined,
+  operation: FileOperationControl,
+  policy: ConflictPolicy | null,
+) {
+  const items = sources.map((item) => ({ source: item.abs, key: sourceKey(item) }));
   const sameConnectedFolder = (item: ResolvedTransferItem) => Boolean(item.connectedFolder && target.connectedFolder && item.connectedFolder.id === target.connectedFolder.id);
   const placeKey = (item: ResolvedTransferItem) => item.place ? `${item.place.kind}:${item.place.id}` : "";
+  const targetRoot = transferTargetRoot(target);
 
   if (mode === "move" && sources.every(sameConnectedFolder)) {
+    // With choices for clashes, the move is planned here; else it is History's own move.
+    if (policy && (await findConflicts(items, target.abs)).length) {
+      return moveWithinConnectedFolder(state, target.connectedFolder!, sources, target, policy, operation);
+    }
     // History's own move renames each item; it is quick and is not stopped partway.
     operation.setTotals(sources.length, null);
     operation.stage("moving", { cancellable: false });
@@ -335,6 +380,17 @@ async function transferResolvedEntries(
     };
   }
   if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => placeKey(item) === placeKey(target))) {
+    if (policy) {
+      const plan = await planPlacements(items, target.abs, policy, { withIdentity: true, move: true, mayChange: standardMayChange(target.place.id as StandardFolderId) });
+      operation.stage("moving");
+      const executed = await executePlacement(plan, { run: { mode: "move", withIdentity: true, operation }, target: { root: targetRoot, connectedFolder: null }, state, history: "none", reason: "", label: "" });
+      const result = placementResult(plan, executed, targetRoot, sources.map(sourceKey));
+      const moves = plan.tops.flatMap((top, index) => {
+        const at = topUnitAt(plan, executed, index);
+        return at && top.action !== "merge" ? [{ from: sources[index]!.relativePath, to: relativeTo(targetRoot, at) }] : [];
+      });
+      return { mode, written: result.written, moves, restorePoints: [], ...result.extras, ...result.stop };
+    }
     operation.setTotals(sources.length, null);
     operation.stage("moving");
     const moves: Array<{ from: string; to: string }> = [];
@@ -357,7 +413,7 @@ async function transferResolvedEntries(
       written: moves.map((item) => item.to),
       moves,
       restorePoints: [],
-      ...(cancelled ? { cancelled: true as const, notDone: sources.slice(moves.length).map(named) } : {}),
+      ...(cancelled ? { cancelled: true as const, notDone: sources.slice(moves.length).map(sourceKey) } : {}),
     };
   }
   const sourceConnectedFolder = sources[0]?.connectedFolder ?? null;
@@ -365,50 +421,328 @@ async function transferResolvedEntries(
     && sources.every((item) => item.connectedFolder?.id === sourceConnectedFolder!.id);
   if (crossConnectedFolderMove) {
     if (!state) throw unavailable("AmpleFile isn’t ready to move items between Connected Folders yet.");
-    return moveBetweenConnectedFolders(state, sourceConnectedFolder!, sources, target, operation);
+    return moveBetweenConnectedFolders(state, sourceConnectedFolder!, sources, target, operation, policy);
   }
   const copiedInstead = mode === "move";
-  const label = (verb: string) => `Before ${verb} ${sources.length === 1 ? basename(sources[0]!.abs) : `${sources.length} items`}`;
+  const label = `Before ${mode === "duplicate" ? "duplicating" : "pasting"} ${sources.length === 1 ? basename(sources[0]!.abs) : `${sources.length} items`}`;
+  const plan = await planPlacements(items, target.abs, policy, {
+    duplicate: mode === "duplicate",
+    mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : target.place?.kind === "standard" ? standardMayChange(target.place.id as StandardFolderId) : undefined,
+  });
+  const copy = async () => {
+    const executed = await executePlacement(plan, {
+      run: { mode: "copy", operation },
+      target: { root: targetRoot, connectedFolder: target.connectedFolder },
+      state,
+      history: "additive",
+      reason: "pre_copy",
+      label,
+    });
+    const result = placementResult(plan, executed, targetRoot, sources.map(sourceKey));
+    return {
+      mode: copiedInstead ? "copy" : mode,
+      written: result.written,
+      restorePoints: executed.restorePoints,
+      ...(copiedInstead ? { copiedInstead: true } : {}),
+      ...(policy ? result.extras : {}),
+      ...result.stop,
+    };
+  };
+  return target.connectedFolder && planReplaces(plan) ? withSettledReplace(state, target.connectedFolder, copy) : copy();
+}
 
-  const written: string[] = [];
-  let cancelled = false;
+/** Where a target's relative paths are measured from. */
+function transferTargetRoot(target: ResolvedTransferItem): string {
+  return target.connectedFolder?.connectedFolderRoot ?? (target.place?.kind === "standard" ? standardFolderRoot(target.place.id as StandardFolderId) : target.abs);
+}
+
+function planReplaces(plan: PlacementPlan): boolean {
+  return plan.units.some((unit) => unit.action === "replace");
+}
+
+/** An item in a Connected Folder may be replaced or merged into where it could be deleted: never a nested Connected Folder or what is inside one. */
+function connectedFolderMayChange(connectedFolder: ConnectedFolderSummary): (path: string) => Promise<boolean> {
+  return async (path) => {
+    try {
+      await resolveConnectedFolderDeleteTarget(connectedFolder.connectedFolderRoot, relativeTo(connectedFolder.connectedFolderRoot, path));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/** An item in a Standard Folder may be replaced or merged into unless it is, or holds, a Connected Folder. */
+function standardMayChange(id: StandardFolderId): (path: string) => Promise<boolean> {
+  return async (path) => {
+    try {
+      await assertStandardFolderPathUnowned(id, relativeTo(standardFolderRoot(id), path));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
+ * Replacing an item in a Connected Folder deletes it, so it waits for that
+ * Connected Folder's outstanding work as a delete does, with its History
+ * claimed and its capabilities reserved for the whole operation.
+ */
+async function withSettledReplace<T>(state: LocalApiState | undefined, connectedFolder: ConnectedFolderSummary, operation: () => Promise<T>): Promise<T> {
+  if (!state) throw unavailable("AmpleFile isn’t ready to replace items in a Connected Folder yet.");
+  return withConnectedFolderHistoryOperations([connectedFolder.connectedFolderRoot], async () => {
+    reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
+    try {
+      return await runSettledConnectedFolderDeletion(state, connectedFolder.id, operation);
+    } finally {
+      state.capabilityMutations.delete(connectedFolder.id);
+    }
+  });
+}
+
+interface PlacementTarget {
+  /** Where target-relative paths are measured from. */
+  root: string;
+  connectedFolder: ConnectedFolderSummary | null;
+}
+
+interface ExecutedPlacement {
+  /** Each unit's staging, by its place in the plan; null when it was not reached or was taken back. */
+  staged: Array<StagedUnit | null>;
+  cancelled: boolean;
+  failed?: { path: string; error: string };
+  replaced: ReplacedItem[];
+  /** In the order to restore them. */
+  restorePoints: TransferRestorePoint[];
+}
+
+/**
+ * Carries out a plan: every unit is staged (a cancel keeps what finished and
+ * takes back a replacement not yet committed; a failure takes back what a copy
+ * wrote, as a copy always has), then, in a Connected Folder, a restore point
+ * is taken, and last each replacement is committed. The restore point is
+ * taken before any item is replaced, so it captures each item to be
+ * replaced. For `additive` it also lists everything written to be removed,
+ * so restoring it undoes the whole operation. For `moves` it moves back the
+ * items already moved, and a second restore point, taken once the
+ * replacements are committed, moves back exactly the ones that were; it
+ * comes first, so restoring both in order undoes the whole move.
+ */
+async function executePlacement(plan: PlacementPlan, options: {
+  run: PlacementRun;
+  target: PlacementTarget;
+  state: LocalApiState | undefined;
+  history: "additive" | "moves" | "none";
+  reason: string;
+  label: string;
+}): Promise<ExecutedPlacement> {
+  const { run, target } = options;
+  const operation = run.operation!;
+  const staged: Array<StagedUnit | null> = plan.units.map(() => null);
+  const executed: ExecutedPlacement = { staged, cancelled: false, replaced: [], restorePoints: [] };
+  const takeBackAll = async (which: (unit: StagedUnit) => boolean) => {
+    for (const [index, unit] of staged.entries()) {
+      if (!unit?.at || !which(unit)) continue;
+      await takeBackUnit(unit).catch(() => undefined);
+      staged[index] = null;
+    }
+  };
   try {
-    // Only a named operation measures first: its totals are what it reports.
-    if (operation.operationId) {
-      for (const source of sources) {
-        const measured = await measureCopy(source.abs, { operation });
+    const units = plan.units.filter((unit) => unit.action !== "skip");
+    if (operation.operationId && run.mode === "copy") {
+      for (const unit of units) {
+        const measured = await measureCopy(unit.source, { withIdentity: run.withIdentity, operation });
         operation.addTotals(measured.items, measured.bytes);
       }
+    } else {
+      operation.setTotals(units.length, null);
     }
-    operation.stage("copying");
-    for (const source of sources) {
-      const sameFolder = dirname(source.abs) === target.abs;
-      written.push(await copyInto(source.abs, target.abs, { duplicate: mode === "duplicate" || sameFolder, operation }));
+    operation.stage(run.mode === "copy" ? "copying" : "moving");
+    for (const [index, unit] of plan.units.entries()) {
+      if (unit.action === "skip") continue;
+      await operation.boundary("item");
+      operation.current(basename(unit.source));
+      staged[index] = await stageUnit(unit, run);
+      if (run.mode === "move") operation.itemsDone();
     }
   } catch (error) {
-    if (isFileOperationCancelled(error)) {
-      // What was finished stays; the item in hand was already taken back.
-      cancelled = true;
-    } else {
-      await Promise.all(written.map((path) => removeOwnedItem(path).catch(() => undefined)));
+    if (!isFileOperationCancelled(error)) {
+      // A copy that fails takes back all it wrote; a move keeps what it moved.
+      await takeBackAll((unit) => run.mode === "copy" || !unit.committed);
       throw error;
     }
+    executed.cancelled = true;
+    await takeBackAll((unit) => !unit.committed);
   }
   operation.stage("finishing");
-  const targetRoot = target.connectedFolder?.connectedFolderRoot ?? (target.place?.kind === "standard" ? standardFolderRoot(target.place.id as StandardFolderId) : target.abs);
-  const writtenPaths = written.map((path) => relativeTo(targetRoot, path));
-  const restorePoints: TransferRestorePoint[] = [];
-  if (target.connectedFolder) {
-    const targetSafety = await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, writtenPaths, { reason: "pre_copy", label: label(mode === "duplicate" ? "duplicating" : "pasting") });
-    if (targetSafety) restorePoints.push({ connectedFolderId: target.connectedFolder.id, checkpointId: targetSafety.checkpointId });
+
+  const done = staged.filter((unit): unit is StagedUnit => Boolean(unit?.at));
+  const pending = done.filter((unit) => !unit.committed);
+  const connectedFolder = target.connectedFolder;
+  let checkpoint: ConnectedFolderCheckpoint | null = null;
+  const cfRoot = connectedFolder?.connectedFolderRoot ?? "";
+  const moveBack = (unit: StagedUnit) => ({ fromPath: relativeTo(cfRoot, unit.at!), toPath: relativeTo(cfRoot, unit.unit.source) });
+  if (connectedFolder && options.history !== "none" && done.length) {
+    const finalPath = (unit: StagedUnit) => relativeTo(cfRoot, unit.committed ? unit.at! : unit.unit.destination);
+    const replacedPaths = pending.map((unit) => relativeTo(cfRoot, unit.unit.destination));
+    try {
+      if (options.history === "moves") {
+        checkpoint = await createConnectedFolderMutationCheckpoint(cfRoot, {
+          paths: replacedPaths,
+          movesOnRestore: done.filter((unit) => unit.committed).map(moveBack),
+          reason: options.reason,
+          label: options.label,
+        });
+      } else if (pending.length) {
+        checkpoint = await createConnectedFolderMutationCheckpoint(cfRoot, { paths: replacedPaths, deleteOnRestore: done.map(finalPath), reason: options.reason, label: options.label });
+      } else {
+        checkpoint = await checkpointAdditiveWritesOrUndo(cfRoot, done.map(finalPath), { reason: options.reason, label: options.label });
+      }
+    } catch (error) {
+      // No restore point, no change: what was written goes, what was moved goes back.
+      await takeBackAll(() => true);
+      throw error;
+    }
+    if (checkpoint) executed.restorePoints.push({ connectedFolderId: connectedFolder.id, checkpointId: checkpoint.checkpointId });
   }
+
+  for (const [index, unit] of plan.units.entries()) {
+    const current = staged[index];
+    if (!current?.at || current.committed) continue;
+    try {
+      const dispose = connectedFolder
+        ? (path: string) => disposeInConnectedFolder(options.state, connectedFolder, checkpoint!, path)
+        : disposeToSystemTrash;
+      const committed = await commitUnit(current, dispose, run);
+      if (committed.replaced) executed.replaced.push(committed.replaced);
+    } catch (error) {
+      executed.failed = { path: relativeTo(target.root, unit.destination), error: errorMessage(error) };
+      await takeBackAll((other) => !other.committed);
+      break;
+    }
+  }
+  const replacedNow = pending.filter((unit) => unit.committed);
+  if (connectedFolder && options.history === "moves" && replacedNow.length) {
+    // The replacements that happened, moved back first when restoring.
+    const after = await createConnectedFolderMutationCheckpoint(cfRoot, { movesOnRestore: replacedNow.map(moveBack), reason: options.reason, label: options.label });
+    executed.restorePoints.unshift({ connectedFolderId: connectedFolder.id, checkpointId: after.checkpointId });
+  }
+  if (run.mode === "move") await removeEmptiedMergeSources(plan);
+  return executed;
+}
+
+/** The item a Connected Folder's replacement takes the place of goes through that Connected Folder's delete, with its receipt and recovery. */
+async function disposeInConnectedFolder(
+  state: LocalApiState | undefined,
+  connectedFolder: ConnectedFolderSummary,
+  checkpoint: ConnectedFolderCheckpoint,
+  path: string,
+): Promise<ReplacedItem> {
+  if (!state) throw unavailable("AmpleFile isn’t ready to replace items in a Connected Folder yet.");
+  const relativePath = relativeTo(connectedFolder.connectedFolderRoot, path);
+  const capturedAs = relative(ensureSafeConnectedFolderRoot(connectedFolder.connectedFolderRoot), path).split(sep).join("/");
+  // What History could not keep of it goes whole into Recently Deleted.
+  const uncovered = checkpoint.skippedFiles
+    .filter((file) => file.path === capturedAs || file.path.startsWith(`${capturedAs}/`))
+    .map((file) => ({ path: file.path, reason: file.reason }));
+  const { value } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+    const deleted = await applyConnectedFolderDelete(state, connectedFolder, relativePath, uncovered, checkpoint.checkpointId, { receiptId: requestId });
+    return {
+      value: deleted,
+      detail: deleted.recovery.kind === "recently-deleted"
+        ? `Connected Folder ${connectedFolder.id}; replaced; trash ${deleted.recovery.entryId}`
+        : `Connected Folder ${connectedFolder.id}; replaced; checkpoint ${deleted.safetyCheckpointId}`,
+    };
+  });
+  return value.recovery.kind === "recently-deleted"
+    ? { path, recovery: "recently-deleted", entryId: value.recovery.entryId, restoreBy: value.recovery.restoreBy }
+    : { path, recovery: "history" };
+}
+
+/** Outside a Connected Folder a replaced item goes to the system Trash, or, with no Trash the host can use, is removed and said to be gone. */
+async function disposeToSystemTrash(path: string): Promise<ReplacedItem> {
+  if (await moveToSystemTrash(path)) return { path, recovery: "trash" };
+  await rm(path, { recursive: true, force: false });
+  return { path, recovery: "gone" };
+}
+
+/** Where top-level item `index` ended up, or null when it did not (skipped, taken back, not reached). */
+function topUnitAt(plan: PlacementPlan, executed: ExecutedPlacement, index: number): string | null {
+  const top = plan.tops[index]!;
+  const units = plan.units.map((unit, at) => ({ unit, staged: executed.staged[at] })).filter((item) => item.unit.top === index);
+  if (top.action === "merge") return units.some((item) => item.staged?.at && item.staged.committed) ? top.destination : null;
+  const own = units[0];
+  return own?.staged?.at && own.staged.committed ? own.staged.at : null;
+}
+
+/**
+ * What a planned operation answers: the top-level items written (a merged
+ * folder by its name), the sources it did not finish when it stopped, and,
+ * with conflict choices, what was replaced, skipped, and merged.
+ */
+function placementResult(plan: PlacementPlan, executed: ExecutedPlacement, targetRoot: string, names: readonly string[]) {
+  const written: string[] = [];
+  const notDone: string[] = [];
+  for (const [index, top] of plan.tops.entries()) {
+    const at = topUnitAt(plan, executed, index);
+    if (at) written.push(relativeTo(targetRoot, at));
+    const unfinished = plan.units.some((unit, position) => unit.top === index && unit.action !== "skip" && !(executed.staged[position]?.at && executed.staged[position]!.committed));
+    if (top.action !== "skip" && unfinished) notDone.push(names[index]!);
+  }
+  const skipped = plan.units.filter((unit) => unit.action === "skip").map((unit) => ({ path: relativeTo(targetRoot, unit.destination), reason: unit.reason ?? "chosen" }));
+  const merged = plan.tops.flatMap((top, index) => top.action === "merge" && topUnitAt(plan, executed, index) ? [relativeTo(targetRoot, top.destination)] : []);
   return {
-    mode: copiedInstead ? "copy" : mode,
-    written: writtenPaths,
-    restorePoints,
-    ...(copiedInstead ? { copiedInstead: true } : {}),
-    ...(cancelled ? { cancelled: true as const, notDone: sources.slice(written.length).map(named) } : {}),
+    written,
+    extras: {
+      replaced: executed.replaced.map((item) => ({ ...item, path: relativeTo(targetRoot, item.path) })),
+      skipped,
+      merged,
+    },
+    stop: {
+      ...(executed.cancelled ? { cancelled: true as const, notDone } : {}),
+      ...(executed.failed ? { failed: executed.failed, notDone } : {}),
+    },
   };
+}
+
+/**
+ * A move inside one Connected Folder with choices for its clashes: each item
+ * passes a delete's checks (never the Connected Folder itself or a nested
+ * Connected Folder), and one restore point moves everything back and puts
+ * each replaced item back.
+ */
+async function moveWithinConnectedFolder(
+  state: LocalApiState | undefined,
+  connectedFolder: ConnectedFolderSummary,
+  sources: readonly ResolvedTransferItem[],
+  target: ResolvedTransferItem,
+  policy: ConflictPolicy,
+  operation: FileOperationControl,
+) {
+  const root = connectedFolder.connectedFolderRoot;
+  for (const source of sources) await resolveConnectedFolderDeleteTarget(root, source.relativePath);
+  if (target.relativePath && target.relativePath !== ".") await resolveConnectedFolderDeleteTarget(root, target.relativePath);
+  const plan = await planPlacements(sources.map((item) => ({ source: item.abs, key: sourceKey(item) })), target.abs, policy, {
+    withIdentity: true,
+    move: true,
+    mayChange: connectedFolderMayChange(connectedFolder),
+  });
+  const label = sources.length === 1 ? `Before moving ${sources[0]!.relativePath}` : `Before moving ${sources.length} items`;
+  const move = () => withConnectedFolderTouchBatch(async () => {
+    const executed = await executePlacement(plan, {
+      run: { mode: "move", withIdentity: true, operation },
+      target: { root, connectedFolder },
+      state,
+      history: "moves",
+      reason: "pre_move",
+      label,
+    });
+    await touchConnectedFolderRoot(root).catch(() => undefined);
+    const result = placementResult(plan, executed, root, sources.map(sourceKey));
+    return { mode: "move" as const, written: result.written, restorePoints: executed.restorePoints, ...result.extras, ...result.stop };
+  });
+  return planReplaces(plan) ? withSettledReplace(state, connectedFolder, move) : withConnectedFolderHistoryOperations([root], move);
 }
 
 /**
@@ -427,6 +761,12 @@ async function transferResolvedEntries(
  * takes back the copies of the rest (which stay in the source), and narrows
  * the target's restore point to what moved. Either way the source's
  * reservation is released.
+ *
+ * With conflict choices, each item that clashes is planned first: a skipped
+ * one stays in the source, a merged folder moves its contents item by item,
+ * and a replacement is copied under a working name and takes its name (the
+ * item there going through the target's delete) only as its source leaves.
+ * Replacing waits for the target's outstanding work too.
  */
 async function moveBetweenConnectedFolders(
   state: LocalApiState,
@@ -434,6 +774,7 @@ async function moveBetweenConnectedFolders(
   sources: readonly ResolvedTransferItem[],
   target: ResolvedTransferItem,
   operation: FileOperationControl,
+  policy: ConflictPolicy | null,
 ) {
   const to = target.connectedFolder!;
   for (const source of sources) {
@@ -456,192 +797,260 @@ async function moveBetweenConnectedFolders(
         for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
           entries.push(await resolveConnectedFolderDeleteTarget(root, path));
         }
-        const nothingMoved = () => ({ mode: "move" as const, written: [] as string[], restorePoints: [] as TransferRestorePoint[], cancelled: true as const, notDone: entries.map((entry) => entry.path) });
-        try {
-          if (operation.operationId) {
-            for (const entry of entries) {
-              const measured = await measureCopy(entry.absolutePath, { withIdentity: true, operation });
-              operation.addTotals(measured.items, measured.bytes);
-            }
-          }
-        } catch (error) {
-          if (isFileOperationCancelled(error)) return nothingMoved();
-          throw error;
-        }
-        const label = entries.length === 1 ? `Before moving ${basename(entries[0]!.absolutePath)}` : `Before moving ${entries.length} items`;
-        const safety = await createConnectedFolderMutationCheckpoint(root, {
-          paths: entries.map((entry) => entry.path),
-          reason: "pre_move",
-          label: `${label} to ${to.name}`,
+        const plan = await planPlacements(entries.map((entry) => ({ source: entry.absolutePath, key: entry.path })), target.abs, policy, {
+          withIdentity: true,
+          move: true,
+          mayChange: connectedFolderMayChange(to),
         });
-        // History names the files it could not keep the way it names its
-        // capture roots; each one belongs to exactly one source.
-        const historyRoot = ensureSafeConnectedFolderRoot(root);
-        const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-        const notKept = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
-        for (const file of safety.skippedFiles) {
-          const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
-          if (row < 0) {
-            await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-            throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
-          }
-          notKept[row]!.push({ path: file.path, reason: file.reason });
-        }
-
-        const written: string[] = [];
+        if (!planReplaces(plan)) return moveRows(state, from, to, entries, plan, target, operation, policy);
+        // Replacing deletes items in the target, so it waits for the target's work too.
+        reserveCapabilityMutation(state, to.id, "project", to.id);
         try {
-          operation.stage("copying");
-          // A moved folder keeps its `.amplefile` identity and Chats: registered
-          // nested Connected Folders were refused above, so this is only ever a
-          // disconnected one, and the original is about to go.
-          for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs, { withIdentity: true, operation }));
-        } catch (error) {
-          await Promise.all(written.map((path) => removeOwnedItem(path).catch(() => undefined)));
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          if (isFileOperationCancelled(error)) return nothingMoved();
-          throw error;
-        }
-        const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
-        // What History could not keep is safe when the copy holds all of it (a
-        // `.git`, an ignored build folder, a large file, a link), checked file
-        // by file. Anything else, and any `.amplefile` identity, keeps the item
-        // out of a plain delete: it leaves the source whole, by moving into
-        // Recently Deleted.
-        const uncovered = await Promise.all(entries.map(async (entry, row) => {
-          const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
-          for (const file of notKept[row]!) {
-            const inside = (file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1)).split("/").filter(Boolean);
-            const identity = inside.some((segment) => segment === ".amplefile");
-            if (identity || !await copyHoldsAll(join(entry.absolutePath, ...inside), join(written[row]!, ...inside))) missing.push(file);
-          }
-          return missing;
-        }));
-        let targetSafety: ConnectedFolderCheckpoint | null;
-        try {
-          targetSafety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, writtenPaths, { reason: "pre_move", label });
-        } catch (error) {
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw error;
-        }
-        const restorePoints: TransferRestorePoint[] = [
-          ...(targetSafety ? [{ connectedFolderId: to.id, checkpointId: targetSafety.checkpointId }] : []),
-          { connectedFolderId: from.id, checkpointId: safety.checkpointId },
-        ];
-        const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
-        operation.stage("removing");
-        for (const [index, entry] of entries.entries()) {
-          try {
-            await operation.boundary("remove");
-          } catch (error) {
-            if (!isFileOperationCancelled(error)) throw error;
-            return await stopMoveBeforeRemoving(index);
-          }
-          operation.current(basename(entry.absolutePath));
-          try {
-            // Each item leaving the source is that Connected Folder's delete,
-            // with the delete's own receipt, as the delete routes record it.
-            const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-              const value = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
-              return {
-                value,
-                detail: value.recovery.kind === "recently-deleted"
-                  ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
-                  : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
-              };
-            });
-            if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
-          } catch (error) {
-            // A release across volumes that failed partway still left a whole
-            // copy in Recently Deleted; it is listed with the rest.
-            const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
-            if (kept) recentlyDeleted.push({ path: entry.path, entryId: kept.entryId, restoreBy: kept.restoreBy });
-            // Everything is already in the target; what could not leave the
-            // source stays there, and both restore points still apply. A copied
-            // identity whose original is still whole in the source goes from
-            // the copy, so no identity exists twice; one whose original did not
-            // survive stays in the copy. One that could not be removed from the
-            // copy is named, not hidden.
-            const duplicateIdentities: string[] = [];
-            for (const [offset, copy] of written.slice(index).entries()) {
-              const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
-              duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
-            }
-            return {
-              mode: "move" as const,
-              written: writtenPaths,
-              restorePoints,
-              ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
-              failed: { path: entry.path, error: errorMessage(error) },
-              notRemoved: entries.slice(index).map((item) => item.path),
-              ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
-            };
-          }
-        }
-        return { mode: "move" as const, written: writtenPaths, restorePoints, ...(recentlyDeleted.length ? { recentlyDeleted } : {}) };
-
-        /**
-         * A cancel before item `index` leaves its source: that item and the
-         * rest stay where they are and their copies go, so nothing is in two
-         * places. The target's restore point is narrowed to what moved (a new
-         * one first, so the old one is discarded only once it is replaced);
-         * with nothing moved, both restore points go.
-         */
-        async function stopMoveBeforeRemoving(index: number) {
-          // A copy that cannot be taken back stays, named, and keeps the
-          // target's first restore point, which covers it; its identity goes
-          // as when an item cannot leave its source.
-          const leftInTarget: string[] = [];
-          const duplicateIdentities: string[] = [];
-          for (const [offset, copy] of written.slice(index).entries()) {
-            try {
-              await removeOwnedItem(copy);
-            } catch {
-              leftInTarget.push(relativeTo(to.connectedFolderRoot, copy));
-              const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
-              duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
-            }
-          }
-          const moved = writtenPaths.slice(0, index);
-          const notDone = entries.slice(index).map((item) => item.path);
-          if (leftInTarget.length) {
-            return {
-              mode: "move" as const,
-              written: moved,
-              restorePoints,
-              ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
-              cancelled: true as const,
-              notDone,
-              leftInTarget,
-              ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
-            };
-          }
-          if (!moved.length) {
-            if (targetSafety) await discardConnectedFolderCheckpoint(to.connectedFolderRoot, targetSafety.checkpointId).catch(() => undefined);
-            await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-            return { mode: "move" as const, written: [] as string[], restorePoints: [] as TransferRestorePoint[], cancelled: true as const, notDone };
-          }
-          let kept = restorePoints;
-          if (targetSafety) {
-            const narrowed = await createConnectedFolderMutationCheckpoint(to.connectedFolderRoot, { deleteOnRestore: moved, reason: "pre_move", label }).catch(() => null);
-            if (narrowed) {
-              await discardConnectedFolderCheckpoint(to.connectedFolderRoot, targetSafety.checkpointId).catch(() => undefined);
-              kept = [{ connectedFolderId: to.id, checkpointId: narrowed.checkpointId }, { connectedFolderId: from.id, checkpointId: safety.checkpointId }];
-            }
-          }
-          return {
-            mode: "move" as const,
-            written: moved,
-            restorePoints: kept,
-            ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
-            cancelled: true as const,
-            notDone,
-          };
+          return await runSettledConnectedFolderDeletion(state, to.id, () => moveRows(state, from, to, entries, plan, target, operation, policy));
+        } finally {
+          state.capabilityMutations.delete(to.id);
         }
       }));
     } finally {
       state.capabilityMutations.delete(from.id);
     }
   });
+}
+
+/** The copy, then the delete of each moved item, for a move between two Connected Folders. */
+async function moveRows(
+  state: LocalApiState,
+  from: ConnectedFolderSummary,
+  to: ConnectedFolderSummary,
+  entries: ReadonlyArray<{ absolutePath: string; path: string }>,
+  plan: PlacementPlan,
+  target: ResolvedTransferItem,
+  operation: FileOperationControl,
+  policy: ConflictPolicy | null,
+) {
+  const root = from.connectedFolderRoot;
+  const toRoot = to.connectedFolderRoot;
+  const names = entries.map((entry) => entry.path);
+  // The items that leave the source: each top-level item, or for a merged
+  // folder each item inside it that is placed or replaces one.
+  const rows = plan.units.map((unit, index) => ({ unit, index })).filter((row) => row.unit.action !== "skip");
+  const rowPath = (unit: PlacementUnit) => relativeTo(root, unit.source);
+  const extras = (executed: ExecutedPlacement) => policy ? placementResult(plan, executed, toRoot, names).extras : {};
+  const nothingMoved = () => ({
+    mode: "move" as const,
+    written: [] as string[],
+    restorePoints: [] as TransferRestorePoint[],
+    cancelled: true as const,
+    notDone: entries.map((entry) => entry.path),
+    ...(policy ? { replaced: [], skipped: [], merged: [] } : {}),
+  });
+  const executed: ExecutedPlacement = { staged: plan.units.map(() => null), cancelled: false, replaced: [], restorePoints: [] };
+  if (!rows.length) return { mode: "move" as const, written: [] as string[], restorePoints: [] as TransferRestorePoint[], ...extras(executed) };
+  try {
+    if (operation.operationId) {
+      for (const row of rows) {
+        const measured = await measureCopy(row.unit.source, { withIdentity: true, operation });
+        operation.addTotals(measured.items, measured.bytes);
+      }
+    }
+  } catch (error) {
+    if (isFileOperationCancelled(error)) return nothingMoved();
+    throw error;
+  }
+  const label = entries.length === 1 ? `Before moving ${basename(entries[0]!.absolutePath)}` : `Before moving ${entries.length} items`;
+  const safety = await createConnectedFolderMutationCheckpoint(root, {
+    paths: rows.map((row) => rowPath(row.unit)),
+    reason: "pre_move",
+    label: `${label} to ${to.name}`,
+  });
+  // History names the files it could not keep the way it names its
+  // capture roots; each one belongs to exactly one item.
+  const historyRoot = ensureSafeConnectedFolderRoot(root);
+  const capturedAs = rows.map((row) => relative(historyRoot, row.unit.source).split(sep).join("/"));
+  const notKept = rows.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
+  for (const file of safety.skippedFiles) {
+    const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
+    if (row < 0) {
+      await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+      throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
+    }
+    notKept[row]!.push({ path: file.path, reason: file.reason });
+  }
+
+  const staged = executed.staged;
+  const stagedAt = (row: { index: number }) => staged[row.index]!;
+  try {
+    operation.stage("copying");
+    // A moved folder keeps its `.amplefile` identity and Chats: registered
+    // nested Connected Folders were refused above, so this is only ever a
+    // disconnected one, and the original is about to go.
+    for (const row of rows) {
+      await operation.boundary("item");
+      staged[row.index] = await stageUnit(row.unit, { mode: "copy", withIdentity: true, operation });
+    }
+  } catch (error) {
+    for (const row of rows) if (staged[row.index]) await takeBackUnit(staged[row.index]!).catch(() => undefined);
+    await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+    if (isFileOperationCancelled(error)) return nothingMoved();
+    throw error;
+  }
+  // Where each item is in the target: its name, or for a replacement still to commit, the name it will take.
+  const finalPath = (row: { unit: PlacementUnit; index: number }) => relativeTo(toRoot, stagedAt(row).committed ? stagedAt(row).at! : row.unit.destination);
+  // What History could not keep is safe when the copy holds all of it (a
+  // `.git`, an ignored build folder, a large file, a link), checked file
+  // by file. Anything else, and any `.amplefile` identity, keeps the item
+  // out of a plain delete: it leaves the source whole, by moving into
+  // Recently Deleted.
+  const uncovered = await Promise.all(rows.map(async (row, position) => {
+    const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
+    for (const file of notKept[position]!) {
+      const inside = (file.path === capturedAs[position] ? "" : file.path.slice(capturedAs[position]!.length + 1)).split("/").filter(Boolean);
+      const identity = inside.some((segment) => segment === ".amplefile");
+      if (identity || !await copyHoldsAll(join(row.unit.source, ...inside), join(stagedAt(row).at!, ...inside))) missing.push(file);
+    }
+    return missing;
+  }));
+  const replacing = rows.filter((row) => row.unit.action === "replace");
+  let targetSafety: ConnectedFolderCheckpoint | null;
+  try {
+    // With replacements, the target's restore point is taken before any item
+    // there is replaced, so it captures each of them.
+    targetSafety = replacing.length
+      ? await createConnectedFolderMutationCheckpoint(toRoot, {
+        paths: replacing.map((row) => relativeTo(toRoot, row.unit.destination)),
+        deleteOnRestore: rows.map(finalPath),
+        reason: "pre_move",
+        label,
+      })
+      : await checkpointAdditiveWritesOrUndo(toRoot, rows.map(finalPath), { reason: "pre_move", label });
+  } catch (error) {
+    if (replacing.length) for (const row of rows) await takeBackUnit(stagedAt(row)).catch(() => undefined);
+    await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+    throw error;
+  }
+  const restorePoints: TransferRestorePoint[] = [
+    ...(targetSafety ? [{ connectedFolderId: to.id, checkpointId: targetSafety.checkpointId }] : []),
+    { connectedFolderId: from.id, checkpointId: safety.checkpointId },
+  ];
+  const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
+  // Which items have left their source: only those count as moved.
+  const moved = new Set<number>();
+  const result = (stop: Record<string, unknown>) => {
+    // An item not moved is not in the target either, unless it could not be taken back.
+    const view: ExecutedPlacement = { ...executed, staged: staged.map((unit, index) => unit && (moved.has(index) || stop.keepCopies) ? unit : null) };
+    const outcome = placementResult(plan, view, toRoot, names);
+    return {
+      mode: "move" as const,
+      written: outcome.written,
+      restorePoints,
+      ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
+      ...(policy ? outcome.extras : {}),
+      ...Object.fromEntries(Object.entries(stop).filter(([key]) => key !== "keepCopies")),
+    };
+  };
+  operation.stage("removing");
+  for (const [position, row] of rows.entries()) {
+    try {
+      await operation.boundary("remove");
+    } catch (error) {
+      if (!isFileOperationCancelled(error)) throw error;
+      return stopMoveBeforeRemoving(position);
+    }
+    operation.current(basename(row.unit.source));
+    try {
+      if (row.unit.action === "replace") {
+        const committed = await commitUnit(stagedAt(row), (path) => disposeInConnectedFolder(state, to, targetSafety!, path), { mode: "copy" });
+        if (committed.replaced) executed.replaced.push(committed.replaced);
+      }
+      // Each item leaving the source is that Connected Folder's delete,
+      // with the delete's own receipt, as the delete routes record it.
+      const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+        const value = await applyConnectedFolderDelete(state, from, rowPath(row.unit), uncovered[position]!, safety.checkpointId, { receiptId: requestId });
+        return {
+          value,
+          detail: value.recovery.kind === "recently-deleted"
+            ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
+            : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
+        };
+      });
+      moved.add(row.index);
+      if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: rowPath(row.unit), entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
+    } catch (error) {
+      // A release across volumes that failed partway still left a whole
+      // copy in Recently Deleted; it is listed with the rest.
+      const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
+      if (kept) recentlyDeleted.push({ path: rowPath(row.unit), entryId: kept.entryId, restoreBy: kept.restoreBy });
+      // Everything placed is already in the target; what could not leave the
+      // source stays there, and both restore points still apply. A
+      // replacement not yet committed is taken back. A copied identity whose
+      // original is still whole in the source goes from the copy, so no
+      // identity exists twice; one whose original did not survive stays in
+      // the copy. One that could not be removed from the copy is named, not
+      // hidden.
+      const duplicateIdentities: string[] = [];
+      for (const rest of rows.slice(position)) {
+        const copy = stagedAt(rest);
+        if (!copy.committed) { await takeBackUnit(copy).catch(() => undefined); staged[rest.index] = null; continue; }
+        const left = await removeIdentityFoldersKeptAt(copy.at!, rest.unit.source).catch(() => [copy.at!]);
+        duplicateIdentities.push(...left.map((path) => relativeTo(toRoot, path)));
+      }
+      return result({
+        keepCopies: true,
+        failed: { path: rowPath(row.unit), error: errorMessage(error) },
+        notRemoved: rows.slice(position).map((rest) => rowPath(rest.unit)),
+        ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
+      });
+    }
+  }
+  await removeEmptiedMergeSources(plan);
+  return result({});
+
+  /**
+   * A cancel before item `position` leaves its source: that item and the
+   * rest stay where they are and their copies go, so nothing is in two
+   * places. With no replacement made yet, the target's restore point is
+   * narrowed to what moved (a new one first, so the old one is discarded only
+   * once it is replaced); with nothing moved, both restore points go. Once an
+   * item was replaced the target's restore point stays as taken: it captured
+   * every item to be replaced, and those not replaced are unchanged.
+   */
+  async function stopMoveBeforeRemoving(position: number) {
+    // A copy that cannot be taken back stays, named, and keeps the target's
+    // first restore point, which covers it; its identity goes as when an
+    // item cannot leave its source.
+    const leftInTarget: string[] = [];
+    const duplicateIdentities: string[] = [];
+    for (const rest of rows.slice(position)) {
+      const copy = stagedAt(rest);
+      try {
+        await takeBackUnit(copy);
+        staged[rest.index] = null;
+      } catch {
+        leftInTarget.push(relativeTo(toRoot, copy.at!));
+        const left = await removeIdentityFoldersKeptAt(copy.at!, rest.unit.source).catch(() => [copy.at!]);
+        duplicateIdentities.push(...left.map((path) => relativeTo(toRoot, path)));
+      }
+    }
+    const notDone = entries.filter((_, top) => rows.some((rest) => rest.unit.top === top && !moved.has(rest.index))).map((entry) => entry.path);
+    if (leftInTarget.length) {
+      return result({ cancelled: true, notDone, leftInTarget, ...(duplicateIdentities.length ? { duplicateIdentities } : {}) });
+    }
+    const movedPaths = rows.filter((rest) => moved.has(rest.index)).map(finalPath);
+    if (!movedPaths.length) {
+      if (targetSafety) await discardConnectedFolderCheckpoint(toRoot, targetSafety.checkpointId).catch(() => undefined);
+      await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+      restorePoints.splice(0, restorePoints.length);
+      return result({ cancelled: true, notDone });
+    }
+    if (targetSafety && !executed.replaced.length) {
+      const narrowed = await createConnectedFolderMutationCheckpoint(toRoot, { deleteOnRestore: movedPaths, reason: "pre_move", label }).catch(() => null);
+      if (narrowed) {
+        await discardConnectedFolderCheckpoint(toRoot, targetSafety.checkpointId).catch(() => undefined);
+        restorePoints.splice(0, 1, { connectedFolderId: to.id, checkpointId: narrowed.checkpointId });
+      }
+    }
+    return result({ cancelled: true, notDone });
+  }
 }
 
 async function compressEntries(body: { place?: unknown; paths?: unknown; operationId?: unknown }) {
@@ -674,37 +1083,105 @@ async function compressEntries(body: { place?: unknown; paths?: unknown; operati
  * Extract (src/local/archive-extract.ts): a `.zip`, `.tar`, `.tar.gz`, or
  * `.tgz` in a Connected Folder or Standard Folder becomes a new folder beside
  * it, with a restore point in a Connected Folder. A cancelled or refused
- * Extract writes nothing.
+ * Extract writes nothing. `conflicts` works as for a transfer, keyed by the
+ * new folder's name: a skipped Extract reads nothing, and a replaced or
+ * merged one is extracted first and placed last.
  */
-async function extractEntry(body: { place?: unknown; path?: unknown; operationId?: unknown }) {
+async function extractEntry(state: LocalApiState, body: { place?: unknown; path?: unknown; operationId?: unknown; conflicts?: unknown }) {
   const operationId = parseFileOperationId(body.operationId);
-  return runFileOperation(operationId, "extract", async (operation) => {
+  const conflicts = parseConflictRequest(body.conflicts);
+  const resolveArchive = async () => {
     const place = transferPlace(body.place);
     if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose an archive to extract.");
     const item = await resolveTransferItem(place, body.path, "read");
+    await assertExtractable(item.abs);
     const folderRelative = item.relativePath.includes("/") ? item.relativePath.slice(0, item.relativePath.lastIndexOf("/")) : "";
     const target = await resolveTransferItem(place, folderRelative, "target");
-    let extracted: Awaited<ReturnType<typeof extractArchive>>;
+    const name = extractFolderName(basename(item.abs));
+    return { place, item, target, name, destination: join(dirname(item.abs), name) };
+  };
+  if (conflicts.check) {
+    const { item, name, destination } = await resolveArchive();
+    const archive = await lstat(item.abs);
+    const existing = await lstat(destination).catch(() => null);
+    if (!existing) return { conflicts: [] as TransferConflict[] };
+    return {
+      conflicts: [{
+        key: name,
+        name,
+        source: { kind: "folder" as const, sizeBytes: null, modifiedAt: archive.mtime.toISOString() },
+        existing: await summarize(destination, existing),
+        canMerge: existing.isDirectory(),
+      }],
+    };
+  }
+  return runFileOperation(operationId, "extract", async (operation) => {
+    const { place, item, target, name, destination } = await resolveArchive();
+    const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
+    const policy = conflicts.policy;
+    const choice = policy ? policy.items?.[name] ?? policy.apply ?? "keep-both" : "keep-both";
+    // A skipped Extract reads nothing.
+    if (choice === "skip" && await lstat(destination).catch(() => null)) {
+      return { path: null, restorePoints: [] as TransferRestorePoint[], replaced: [], merged: [], skippedClashes: [{ path: relativeTo(root, destination), reason: "chosen" as const }] };
+    }
+    let staged: StagedExtract;
     try {
-      extracted = await extractArchive(item.abs, operation);
+      staged = await stageExtract(item.abs, operation);
     } catch (error) {
       if (isFileOperationCancelled(error)) return { path: null, restorePoints: [] as TransferRestorePoint[], cancelled: true as const };
       throw error;
     }
-    const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
-    const path = relativeTo(root, extracted.folder);
-    const safety = target.connectedFolder
-      ? await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, [path], { reason: "pre_extract", label: `Before extracting ${basename(item.abs)}` })
-      : null;
-    return {
-      path,
-      restorePoints: safety ? [{ connectedFolderId: target.connectedFolder!.id, checkpointId: safety.checkpointId }] : [],
-      files: extracted.files,
-      folders: extracted.folders,
-      bytes: extracted.bytes,
-      ...(extracted.skipped.length ? { skipped: extracted.skipped } : {}),
-    };
+    try {
+      const plan = await planPlacements([{ source: staged.folder, key: name, name }], staged.parent, policy, {
+        mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
+      });
+      const label = `Before extracting ${basename(item.abs)}`;
+      const placeExtracted = async () => {
+        const executed = await executePlacement(plan, {
+          run: { mode: "move", operation: untrackedProgress(operation) },
+          target: { root, connectedFolder: target.connectedFolder },
+          state,
+          history: "additive",
+          reason: "pre_extract",
+          label,
+        });
+        if (executed.failed) throw Object.assign(new Error(executed.failed.error), { status: 500, statusCode: 500 });
+        const result = placementResult(plan, executed, root, [name]);
+        return {
+          path: result.written[0] ?? null,
+          restorePoints: executed.restorePoints,
+          files: staged.files,
+          folders: staged.folders,
+          links: staged.links,
+          bytes: staged.bytes,
+          ...(staged.skipped.length ? { skipped: staged.skipped } : {}),
+          ...(policy ? { replaced: result.extras.replaced, merged: result.extras.merged, skippedClashes: result.extras.skipped } : {}),
+        };
+      };
+      operation.stage("finishing");
+      return target.connectedFolder && planReplaces(plan) ? await withSettledReplace(state, target.connectedFolder, placeExtracted) : await placeExtracted();
+    } finally {
+      await staged.discard();
+    }
   }, (result) => "cancelled" in result ? "cancelled" : "succeeded");
+}
+
+/**
+ * Placing what an Extract wrote is quick renames under the finishing stage:
+ * the operation's stage and totals stay as the extraction left them.
+ */
+function untrackedProgress(operation: FileOperationControl): FileOperationControl {
+  return {
+    get operationId() { return operation.operationId; },
+    get cancelRequested() { return false; },
+    stage: () => undefined,
+    addTotals: () => undefined,
+    setTotals: () => undefined,
+    current: () => undefined,
+    itemsDone: () => undefined,
+    bytesDone: () => undefined,
+    boundary: async () => undefined,
+  };
 }
 
 /**
