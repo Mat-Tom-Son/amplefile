@@ -7,6 +7,8 @@ import { fileManagerIcon, formatFileManagerDate } from "./file-manager-model";
 import { drawnIndexes, gridColumns, isDraggableEntry, visibleRange, type GridGeometry, type ListGeometry } from "./file-manager-layout";
 import { TintedFolder } from "./file-manager-folder";
 import { isMarkedPath } from "./useWorkerChanges";
+import { thumbnailSize, useThumbnail } from "./file-manager-thumbnails";
+import type { FileManagerPlace } from "./file-manager-places";
 
 /**
  * A folder's items in list or icon view (docs/product-model.md, "The file
@@ -39,7 +41,7 @@ const tileColumnGap = 6;
 /** What a view whose height is not known yet (not laid out) is taken to show. */
 const fallbackViewport = 1_000;
 
-export function FileEntries({ view, entries, selected, focusPath, dropTarget, markedPaths, kindLabel, day, tintFor, handlers, scrollRef, layoutRef }: {
+export function FileEntries({ view, entries, selected, focusPath, dropTarget, markedPaths, kindLabel, day, tintFor, handlers, scrollRef, layoutRef, thumbnailPlace = null, folderSizes = null }: {
   view: "list" | "icons";
   entries: readonly TreeEntry[];
   selected: ReadonlySet<string>;
@@ -54,6 +56,10 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
   /** The scrolled contents (`.fm-content`), whose scroll and size choose what is drawn. */
   scrollRef: RefObject<HTMLDivElement | null>;
   layoutRef: MutableRefObject<EntriesLayout | null>;
+  /** The place whose thumbnail route draws icon view's pictures and PDFs; null draws icons only (the sample window). */
+  thumbnailPlace?: FileManagerPlace | null;
+  /** Folder sizes measured in this session, by path, for the list's Size column. */
+  folderSizes?: ReadonlyMap<string, string> | null;
 }) {
   const viewport = useViewport(scrollRef);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +122,7 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
           marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
           kind={kindLabel(entry)}
           day={day}
+          folderSize={entry.kind === "folder" ? folderSizes?.get(entry.path) : undefined}
           tintColor={tint?.color}
           tintSymbol={tint?.symbol}
           handlers={handlers}
@@ -144,6 +151,7 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
           tintColor={tint?.color}
           tintSymbol={tint?.symbol}
           handlers={handlers}
+          thumbnailPlace={thumbnailPlace}
         />;
       })}
     </div>)}
@@ -182,8 +190,8 @@ export function rowDomId(path: string): string {
   return `fm-item-${encodeURIComponent(path).replace(/%/g, "_")}`;
 }
 
-function sizeText(entry: TreeEntry): string {
-  if (entry.kind === "folder") return "--";
+function sizeText(entry: TreeEntry, folderSize?: string): string {
+  if (entry.kind === "folder") return folderSize ?? "--";
   return typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : "--";
 }
 
@@ -224,10 +232,12 @@ function entryClasses(entry: TreeEntry, selected: boolean, dropTarget: boolean):
 const changedDot = <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" />;
 
 /** One list row; memoised, since a folder can show thousands. */
-const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & {
+const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget, marked, kind, folderSize, tintColor, tintSymbol, handlers }: EntryViewProps & {
   index: number;
   top: number;
   kind: string;
+  /** A folder's size, once measured in this session. */
+  folderSize?: string;
   /** Today's date; a new day redraws the row's relative date. */
   day: string;
 }) {
@@ -251,13 +261,15 @@ const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget,
       {marked ? changedDot : null}
     </span>
     <span role="gridcell" className="fm-cell fm-col-modified">{formatFileManagerDate(entry.updatedAt)}</span>
-    <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry)}</span>
+    <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry, folderSize)}</span>
     <span role="gridcell" className="fm-cell fm-col-kind" title={kind}>{kind}</span>
   </div>;
 });
 
 /** One icon-view tile; memoised like FileRow. */
-const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, marked, tintColor, tintSymbol, handlers }: EntryViewProps & { column: number }) {
+const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, marked, tintColor, tintSymbol, handlers, thumbnailPlace }: EntryViewProps & { column: number; thumbnailPlace: FileManagerPlace | null }) {
+  // Only drawn tiles ask, so in a large folder that is the tiles near the view; the tile stays one height either way.
+  const thumbnail = useThumbnail(thumbnailPlace ?? "", entry, thumbnailSize("tile"), Boolean(thumbnailPlace));
   return <div
     id={rowDomId(entry.path)}
     role="gridcell"
@@ -271,7 +283,7 @@ const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, m
     onContextMenu={(event) => handlers.contextMenu(entry, event)}
     onDragStart={(event) => handlers.dragStart(entry, event)}
   >
-    <span className="fm-tile-icon"><EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} /></span>
+    <span className={`fm-tile-icon${thumbnail ? " has-thumbnail" : ""}`}>{thumbnail ? <img className="fm-tile-thumb" src={thumbnail} alt="" draggable={false} /> : <EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} />}</span>
     <span className="fm-tile-name" title={entry.name}>{marked ? changedDot : null}{middleTruncate(entry.name)}</span>
   </div>;
 });

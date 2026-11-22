@@ -77,6 +77,7 @@ import {
   computerName,
   computerRoot,
   enclosingNativeFolder,
+  homePlace,
   isComputerPlace,
   placeApiBase,
   placeKey,
@@ -106,11 +107,19 @@ import { UpdateIndicator } from "./UpdateIndicator";
 import { useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
 import { moveResultMessage } from "./move-result";
-import { StandardFolderGlyph } from "./file-manager-glyphs";
+import { StandardFolderGlyph, TrashGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 import { useFolderAutomations } from "../../hooks/useFolderAutomations";
 import { useCalendarDay } from "../../hooks/useCalendarDay";
+// Drives, the Trash, thumbnails, folder sizes, plain-folder search, and the window with no Connected Folder.
+import { currentDriveKey, driveRows, ejectMessage, locationIsOnDrive, statusWithSpace, type DriveRow } from "./file-manager-drives";
+import { useDrives, useVolumeSpace } from "./useDrives";
+import { SidebarDrives, SidebarTrashRow } from "./FileManagerSidebarPlaces";
+import { TrashView } from "./TrashView";
+import { trashChangedEvent, type TrashItem } from "./file-manager-trash";
+import { useRememberedFolderSizes } from "./file-manager-folder-size";
+import { stoppedEarlyText, usePlainFolderSearch } from "./usePlainFolderSearch";
 
 const viewStorageKey = "amplefile.file-manager.view.v1";
 const panelStorageKey = "amplefile.file-manager.panel.v1";
@@ -150,7 +159,8 @@ interface PlaceFileBridge {
  * Command-Up, or a folder handed to AmpleFile).
  */
 export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, openLocationRequest = null, onOpenedLocation, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
-  connectedFolder: ConnectedFolderSummary;
+  /** The Connected Folder the window opened in; null when none is registered (the window opens at the home folder). */
+  connectedFolder: ConnectedFolderSummary | null;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
   /** Menu-bar commands meant for the window in front, and Settings' Customize button. */
@@ -200,7 +210,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const customizingConnectedFolder = customizing ? connectedFolders.find((item) => item.id === customizing.connectedFolderId) ?? null : null;
   const standard = useStandardFolders(fixtureMode);
 
-  const [location, setLocation] = useState<FileManagerLocation>(() => ({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" }));
+  // With no Connected Folder the window is still a file manager: it opens at the home folder.
+  const startLocation = (): FileManagerLocation => activeConnectedFolder ? { place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" } : { place: homePlace, path: "" };
+  const [location, setLocation] = useState<FileManagerLocation>(startLocation);
   const [back, setBack] = useState<FileManagerLocation[]>([]);
   const [forward, setForward] = useState<FileManagerLocation[]>([]);
   const place = location.place;
@@ -286,7 +298,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     setPanelOpen(true);
     setInfoRequest((value) => value + 1);
   }, [setUpOffers, connectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder.id, fixtureMode);
+  const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder?.id ?? "", fixtureMode);
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<FileManagerSearchScope>("here");
   const [searchSelection, setSearchSelection] = useState<string | null>(null);
@@ -334,6 +346,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recents, setRecents] = useState<RecentItem[] | null>(null);
   const [recentSelection, setRecentSelection] = useState<string | null>(null);
+  // The system Trash, shown in the list area like Recents; the items chosen there, for Info.
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashSelection, setTrashSelection] = useState<TrashItem[]>([]);
+  const [trashCount, setTrashCount] = useState<number | null>(null);
+  // Mounted drives, kept current by the host's events, and the one being ejected.
+  const drives = useDrives(fixtureMode);
+  const [ejecting, setEjecting] = useState<string | null>(null);
   // The window's key handler is installed once; it reaches the current undo through this.
   const undoFileChangeRef = useRef<(redo: boolean) => Promise<void>>(async () => undefined);
   // Where a drag would land: "" for the folder shown, a folder row's path, or null.
@@ -498,9 +517,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
   useEffect(() => {
-    if (place.kind === "connected-folder" && place.id === activeConnectedFolder.id) return;
+    if (!activeConnectedFolder || (place.kind === "connected-folder" && place.id === activeConnectedFolder.id)) return;
     navigate({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
-  }, [activeConnectedFolder.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeConnectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Files dropped on the message box belong to the folder shown.
   useEffect(() => { setAttachedPaths([]); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -512,8 +531,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   // A Connected Folder removed elsewhere leaves nothing to show; fall back to the active one.
   useEffect(() => {
-    if (place.kind === "connected-folder" && !connectedFolder) setLocation({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
-  }, [activeConnectedFolder.id, place, connectedFolder]);
+    if (place.kind === "connected-folder" && !connectedFolder) setLocation(startLocation());
+  }, [activeConnectedFolder?.id, place, connectedFolder]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hidden items (dotfiles, and what the system file manager hides) only while Show Hidden Files is on.
   const entries = useMemo(() => shownEntries(listing.entries, showHidden), [listing.entries, showHidden]);
@@ -551,13 +570,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
+    setTrashOpen(false);
     // Going somewhere brings the folder back when the browser had the whole area.
     setBrowserLayout((current) => current === "full" ? "split" : current);
     if (sameLocation(next, location)) return;
     navMotionRef.current = { key: `${placeKey(next.place)}\0${next.path}`, from: navigationSide({ placeKey: placeKey(location.place), path: location.path }, { placeKey: placeKey(next.place), path: next.path }, history) };
     if (history === "push") { setBack((items) => [...items, location]); setForward([]); }
     setLocation(next);
-    if (next.place.kind === "connected-folder" && next.place.id !== activeConnectedFolder.id) {
+    if (next.place.kind === "connected-folder" && next.place.id !== activeConnectedFolder?.id) {
       const nextId = next.place.id;
       const target = switchTo ?? connectedFolders.find((item) => item.id === nextId);
       if (target) onSwitchConnectedFolder(target);
@@ -1246,6 +1266,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         if (target.kind === "standard") {
           const result = await trash!(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
+          window.dispatchEvent(new Event(trashChangedEvent));
         } else if (target.kind === "connected-folder" && entriesToDelete.length === 1) {
           const pending: PendingDelete = { connectedFolderId: target.id, path: entriesToDelete[0]!.path, name: entriesToDelete[0]!.name, selectedPath: null, deletedTabPaths: new Set() };
           const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string };
@@ -1393,7 +1414,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   useEffect(() => {
     if (!desktopAction) return;
     const { command } = desktopAction;
-    if (["open-capabilities", "open-skills", "open-extensions"].includes(command)) setSkillsFor(connectedFolder ?? activeConnectedFolder);
+    if (["open-capabilities", "open-skills", "open-extensions"].includes(command)) {
+      const target = connectedFolder ?? activeConnectedFolder;
+      // Skills & Extensions is pinned to a Connected Folder; with none, there is nothing to open it for yet.
+      if (target) setSkillsFor(target);
+      else showToast({ text: "Skills & Extensions belong to a Connected Folder. Connect a folder first.", tone: "info" });
+    }
     else if (command === "new-chat" && connectedFolder) {
       setPanelOpen(true);
       setPanelChat((current) => current ? { ...current, open: false } : current);
@@ -1551,7 +1577,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   async function removeStandardFolder(folder: StandardFolderSummary) {
     try {
       await api(`/api/standard-folders/${encodeURIComponent(folder.id)}`, { method: "DELETE" });
-      if (place.kind === "standard" && place.id === folder.id) navigate({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
+      if (place.kind === "standard" && place.id === folder.id) navigate(startLocation());
       await standard.refresh();
       showToast({ text: `${folder.name} was removed from the sidebar. The folder is still on your computer.`, tone: "success" });
     } catch (caught) { onError(errorText(caught)); }
@@ -1752,6 +1778,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   async function openRecents() {
     setQuery("");
+    setTrashOpen(false);
     setRecentsOpen(true);
     setRecentSelection(null);
     if (fixtureMode) { setRecents(fixtureRecents()); return; }
@@ -1762,6 +1789,32 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       setRecents([]);
       onError(errorText(caught));
     }
+  }
+
+  /** The sidebar's Trash: the system Trash in the list area, read again each time it is shown. */
+  function openTrash() {
+    setQuery("");
+    setRecentsOpen(false);
+    setTrashSelection([]);
+    setTrashCount(null);
+    setTrashOpen(true);
+    setBrowserLayout((current) => current === "full" ? "split" : current);
+  }
+
+  /** A drive in the sidebar opens in the computer place at its mount path. */
+  function openDrive(row: DriveRow) {
+    navigate(row.location);
+  }
+
+  /** Eject: the host's plain reason when the drive is busy or refused; leaving it first when it is the folder shown. */
+  async function ejectDrive(row: DriveRow) {
+    if (!row.volume) return;
+    if (fixtureMode) { showToast({ text: "Ejecting is disabled in the preview", tone: "info" }); return; }
+    setEjecting(row.key);
+    const outcome = await drives.eject(row.volume);
+    setEjecting(null);
+    if (outcome.ok && locationIsOnDrive(location, row.volume)) navigate(startLocation());
+    showToast(ejectMessage(row.name, outcome));
   }
 
   function fixtureRecents(): RecentItem[] {
@@ -1836,8 +1889,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
-  /** The Worker that looks when search asks: the Connected Folder shown, else the one this window opened in. */
-  const askConnectedFolder = connectedFolder ?? activeConnectedFolder;
+  /** The Worker that looks when search asks: the Connected Folder shown, else, searching every Connected Folder, the one this window opened in. A plain folder has no Worker to ask. */
+  const askConnectedFolder = connectedFolder ?? (searchScope === "all" ? activeConnectedFolder : null);
 
   /** Ask in search: a Chat in the panel asking the Worker to find the file by what the person remembers. */
   function askToFind(text: string) {
@@ -1857,6 +1910,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /** Open a search result: a folder here, a file in its default app. */
   async function openSearchResult(result: FileManagerSearchResult) {
+    // A result in a Standard Folder or the computer place: a folder opens there, a file in its default app.
+    if (result.place) {
+      if (result.kind === "folder") { setQuery(""); navigate({ place: result.place, path: result.path }); return; }
+      await openLocal(result.path, nativeOpenLabel({ name: result.name, path: result.path, kind: "file" }).office ? "open-native" : "open");
+      return;
+    }
     const target = connectedFolders.find((item) => item.id === result.connectedFolderId);
     if (!target) return;
     if (result.kind === "folder") {
@@ -1966,28 +2025,40 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     swapMotionRef.current = { recentsOpen, searching };
     if (previous.recentsOpen !== recentsOpen || previous.searching !== searching) settleIn([contentRef.current]);
   }, [recentsOpen, searching]);
-  const searchMode = searching && (searchScope === "all" || place.kind === "connected-folder");
+  // A Standard Folder or the computer place searches names and text below it through the host's folder search.
+  const plainSearch = place.kind === "standard" && searchScope === "here";
+  const searchMode = searching && !trashOpen && (searchScope === "all" || place.kind === "connected-folder" || plainSearch);
   const previewEntry = builtInPreview && previewOpen && !searchMode && !recentsOpen && focusPath ? byPath.get(focusPath) ?? null : null;
   const previewShown = Boolean(previewEntry);
   // Nothing left to show (the selection was cleared, a search or Recents took the list): the Preview is put away.
   useEffect(() => { if (previewOpen && !previewShown) setPreviewOpen(false); }, [previewOpen, previewShown]);
   const closePreview = () => { setPreviewOpen(false); contentRef.current?.focus({ preventScroll: true }); };
-  const search = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
+  const connectedFolderSearch = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode && !plainSearch, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
+  const plainFolderSearch = usePlainFolderSearch({ query, place, path: location.path, includeHidden: showHidden, enabled: searchMode && plainSearch, fixtureTree: fixture && place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : null });
+  const search = plainSearch
+    ? { results: plainFolderSearch.results, status: plainFolderSearch.status === "done" || plainFolderSearch.status === "error" ? "done" as const : "searching" as const }
+    : connectedFolderSearch;
   const searchChosen = searchMode && searchSelection ? search.results.find((result) => result.key === searchSelection) ?? null : null;
   const searchChosenConnectedFolder = searchChosen ? connectedFolders.find((item) => item.id === searchChosen.connectedFolderId) ?? null : null;
   useEffect(() => { setSearchSelection(null); }, [query, searchScope]);
   const recentChosen = recentsOpen && recentSelection ? (recents ?? []).find((item) => recentKey(item) === recentSelection) ?? null : null;
-  const crumbs = recentsOpen && !searchMode
+  const crumbs = trashOpen
+    ? [{ label: "Trash", path: null, nativePath: "" }]
+    : recentsOpen && !searchMode
     ? recentChosen
       ? fileManagerPathBar(recentRoot(recentChosen), parentPath(recentChosen.path), recentChosen.name).map((crumb) => ({ ...crumb, path: null }))
       : [{ label: "Recents", path: null, nativePath: "" }]
     : searchMode
-    ? searchChosen && searchChosenConnectedFolder
+    ? searchChosen && searchChosen.place
+      ? fileManagerPathBar(placeRoot, parentPath(searchChosen.path), searchChosen.name).map((crumb) => ({ ...crumb, path: null }))
+      : searchChosen && searchChosenConnectedFolder
       ? fileManagerPathBar(searchChosenConnectedFolder.connectedFolderRoot, parentPath(searchChosen.path), searchChosen.name).map((crumb) => ({ ...crumb, path: null }))
       : [{ label: searchScope === "here" ? `Searching “${folderName}”` : "Searching all Connected Folders", path: null, nativePath: "" }]
     : fileManagerPathBar(placeRoot, location.path, single?.name);
   const status = listing.status;
-  const statusText = recentsOpen && !searchMode
+  const statusText = trashOpen
+    ? trashCount === null ? "Loading…" : fileManagerStatusText(trashCount, trashSelection.length)
+    : recentsOpen && !searchMode
     ? recents ? fileManagerStatusText(recents.length, recentChosen ? 1 : 0) : "Loading…"
     : searchMode
     ? search.status === "done" ? fileManagerStatusText(search.results.length, searchChosen ? 1 : 0) : "Searching…"
@@ -1999,7 +2070,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     { key: "size", label: "Size" },
     { key: "kind", label: "Kind" },
   ];
-  const isCurrent = (candidate: FileManagerPlace) => !recentsOpen && samePlace(candidate, place);
+  const isCurrent = (candidate: FileManagerPlace) => !recentsOpen && !trashOpen && samePlace(candidate, place);
+  // The path bar adds the free space on the folder's drive, as Finder's status bar does.
+  const volumeSpace = useVolumeSpace(trashOpen || recentsOpen ? null : place, location.path, listing.changeCount, fixtureMode);
+  const statusLine = trashOpen || recentsOpen || searchMode || status !== "ready" ? statusText : statusWithSpace(statusText, volumeSpace);
+  const sidebarDrives = useMemo(() => driveRows(drives.volumes, computerName()), [drives.volumes]);
+  const currentDrive = recentsOpen || trashOpen ? null : currentDriveKey(sidebarDrives, location);
+  const folderSizes = useRememberedFolderSizes(place, order);
   const activity = useFileManagerActivity(connectedFolders, fixtureMode, panelChat?.open && panelChat.activeId ? chatActivityKey(panelChat.connectedFolderId, panelChat.activeId) : null);
   // Another Connected Folder's folder inside this one belongs to its own Worker.
   // A reply that ran in the background (an Automation, another window) settles here too.
@@ -2051,6 +2128,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             <span className="fm-sidebar-icon"><RecentsGlyph /></span>
             <span className="fm-sidebar-name">Recents</span>
           </button></li>
+          <SidebarTrashRow current={trashOpen} onOpen={openTrash} />
         </ul>
         <div className="fm-sidebar-heading"><span id="fm-standard-heading">Standard Folders</span><button type="button" className="fm-heading-add" aria-label="Add a Folder to the Sidebar" title="Add a Folder" onClick={() => void addStandardFolder()}><Add16Regular /></button></div>
         {sidebarStandard.length ? <>
@@ -2104,6 +2182,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             </li>;
           })}
         </ul>
+        <SidebarDrives rows={sidebarDrives} currentKey={currentDrive} ejecting={ejecting} onOpen={openDrive} onEject={(row) => void ejectDrive(row)} />
       </div>
       {onUpdateAction ? <UpdateIndicator status={updateStatus} onUpdateAction={onUpdateAction} onOpenAbout={() => onOpenSettings("about")} /> : null}
     </nav>
@@ -2116,8 +2195,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <button type="button" className="fm-tool" onClick={goForward} disabled={!forward.length} aria-label="Forward" title="Forward"><ChevronRight size={16} /></button>
         </div>
         <h1 className="fm-title">
-          {recentsOpen ? <span className="fm-title-glyph" aria-hidden="true"><RecentsGlyph /></span> : !location.path && connectedFolder ? <TintedFolder {...folderLook(connectedFolder)} /> : <span className="fm-ic fm-ic-folder" aria-hidden="true" />}
-          <span className="fm-title-text">{recentsOpen ? "Recents" : folderName}</span>
+          {trashOpen ? <span className="fm-title-glyph" aria-hidden="true"><TrashGlyph /></span> : recentsOpen ? <span className="fm-title-glyph" aria-hidden="true"><RecentsGlyph /></span> : !location.path && connectedFolder ? <TintedFolder {...folderLook(connectedFolder)} /> : <span className="fm-ic fm-ic-folder" aria-hidden="true" />}
+          <span className="fm-title-text">{trashOpen ? "Trash" : recentsOpen ? "Recents" : folderName}</span>
         </h1>
         <div className="fm-toolbar-space" />
         <div className="fm-capsule" role="group" aria-label="View">
@@ -2142,15 +2221,17 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       </header>
       {/* The folder's half of the main area. With the browser given the whole area it folds away, still mounted. */}
       <div className="fm-files" inert={browserLayout === "full"}>
-      {searching ? <div className="fm-scope" role="group" aria-label="Search">
+      {searching && !trashOpen ? <div className="fm-scope" role="group" aria-label="Search">
         <span>Search:</span>
-        <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button>
+        {connectedFolders.length ? <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button> : null}
         <button type="button" className={`fm-pill${searchScope === "here" ? " is-on" : ""}`} aria-pressed={searchScope === "here"} onClick={() => setSearchScope("here")} title={folderName}>“{folderName}”</button>
       </div> : null}
 
+      {trashOpen ? <TrashView fixtureMode={fixtureMode} query={query} onShow={(next, selectPath) => showLocation(next, selectPath)} onSelectionChange={setTrashSelection} onCount={setTrashCount} onError={onError} /> : null}
       <div
         className={`fm-content${searchMode ? " is-search" : ""}${dropTarget === location.path ? " is-drop-target" : ""}`}
         ref={contentRef}
+        hidden={trashOpen}
         onDragOver={dragOverList}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
         onDrop={(event) => void dropOnList(event)}
@@ -2200,13 +2281,15 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <div className="fm-list-head" role="row">
             <span role="columnheader" className="fm-col fm-col-name">Name</span>
             <span role="columnheader" className="fm-col fm-col-match">Match</span>
-            <span role="columnheader" className="fm-col fm-col-where">Connected Folder</span>
+            <span role="columnheader" className="fm-col fm-col-where">{plainSearch ? "Where" : "Connected Folder"}</span>
           </div>
-          {search.status === "done" && !search.results.length ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
+          {plainSearch && plainFolderSearch.status === "error" ? <div className="fm-empty">
+            <span className="fm-empty-text">{plainFolderSearch.error ?? "Couldn’t search this folder."}</span>
+          </div> : search.status === "done" && !search.results.length && !(plainSearch && plainFolderSearch.stoppedEarly) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
           <div className="fm-rows" role="rowgroup">
             {search.results.map((result, index) => {
               const entry: TreeEntry = { name: result.name, path: result.path, kind: result.kind, ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}) };
-              const where = connectedFolders.find((item) => item.id === result.connectedFolderId);
+              const where = result.place ? { name: [placeName, ...result.path.split("/").slice(0, -1)].join(" › ") } : connectedFolders.find((item) => item.id === result.connectedFolderId);
               return <div
                 key={result.key}
                 id={listItemDomId("result", result.key)}
@@ -2228,6 +2311,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               </div>;
             })}
           </div>
+          {/* A plain folder's search reads a bounded amount at a time: it says when it stopped early, and goes on when asked. */}
+          {plainSearch && plainFolderSearch.stoppedEarly ? <p className="fm-search-note" role="status">
+            <span>{stoppedEarlyText(plainFolderSearch.stoppedEarly, plainFolderSearch.scannedFiles)}</span>
+            <button type="button" className="fm-text-button" disabled={plainFolderSearch.status === "searching"} onClick={plainFolderSearch.continueSearch}>{plainFolderSearch.status === "searching" ? "Searching…" : "Keep Searching"}</button>
+          </p> : null}
+          {plainSearch && plainFolderSearch.status === "done" && plainFolderSearch.incomplete ? <p className="fm-search-note">Some folders couldn’t be read, so they weren’t searched.</p> : null}
+          {plainSearch && plainFolderSearch.connectedFoldersInside.length ? <p className="fm-search-note">
+            <span>{plainFolderSearch.connectedFoldersInside.length === 1 ? "A Connected Folder inside is searched with its own rules." : "Connected Folders inside are searched with their own rules."}</span>
+            <button type="button" className="fm-text-button" onClick={() => setSearchScope("all")}>Search All Connected Folders</button>
+          </p> : null}
           {/* Ask in search: the Worker looks for it by meaning, not only by name or text. */}
           {search.status === "done" && askConnectedFolder ? <button type="button" className="fm-ask-row" onClick={() => askToFind(query.trim())}>
             <span className="fm-ask-icon" aria-hidden="true"><Sparkle16Regular /></span>
@@ -2273,6 +2366,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           handlers={entryHandlers}
           scrollRef={contentRef}
           layoutRef={entriesLayoutRef}
+          thumbnailPlace={fixtureMode ? null : place}
+          folderSizes={folderSizes}
         /> : null}
         </>}
         <div className="fm-band" ref={bandRef} aria-hidden="true" />
@@ -2300,7 +2395,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             >{crumb.label}</button>
           </span>)}
         </nav>
-        <span className="fm-status">{statusText}</span>
+        <span className="fm-status">{statusLine}</span>
       </footer>
       </div>
       {/* The band between the folder and the browser: the slider beside the folder, a plain band over the folded strip. */}
@@ -2329,7 +2424,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       folderName={folderName}
       folderColor={!location.path && placeIdentity ? placeIdentity.color : null}
       folderSymbol={!location.path && connectedFolder ? folderLook(connectedFolder).symbol : null}
-      receipt={setUpOffered && connectedFolder ? <SetUpOffer
+      receipt={trashOpen ? null : setUpOffered && connectedFolder ? <SetUpOffer
         name={connectedFolder.name}
         onSetUp={() => setUp(connectedFolder)}
         onDismiss={() => onCloseSetUpOffer?.(connectedFolder.id)}
@@ -2380,16 +2475,23 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           onAgentFinished={() => Promise.all([listing.refresh(), onRefreshBootstrap()]).then(() => undefined)}
         />,
       } : null}
-      searchItem={recentChosen && !searchMode ? {
+      trashSelection={trashOpen ? trashSelection : null}
+      aiConnected={fixtureMode || Boolean(agent?.configured)}
+      onSetUpAi={() => requestConnectAi()}
+      searchItem={trashOpen ? null : recentChosen && !searchMode ? {
         apiBase: recentChosen.place.kind === "connected-folder" ? `/api/connected-folders/${encodeURIComponent(recentChosen.place.id)}` : `/api/standard-folders/${encodeURIComponent(recentChosen.place.id)}`,
         entry: { name: recentChosen.name, path: recentChosen.path, kind: "file", ...(recentChosen.sizeBytes !== undefined ? { sizeBytes: recentChosen.sizeBytes } : {}), updatedAt: recentChosen.updatedAt },
         where: [recentChosen.where, ...recentChosen.path.split("/").slice(0, -1)].join(" › "),
+      } : searchChosen && searchChosen.place ? {
+        apiBase: placeApiBase(searchChosen.place),
+        entry: { name: searchChosen.name, path: searchChosen.path, kind: searchChosen.kind, ...(searchChosen.sizeBytes !== undefined ? { sizeBytes: searchChosen.sizeBytes } : {}), ...(searchChosen.updatedAt ? { updatedAt: searchChosen.updatedAt } : {}) },
+        where: [placeName, ...searchChosen.path.split("/").slice(0, -1)].join(" › "),
       } : searchChosen && searchChosenConnectedFolder ? {
         apiBase: `/api/connected-folders/${encodeURIComponent(searchChosenConnectedFolder.id)}`,
         entry: { name: searchChosen.name, path: searchChosen.path, kind: searchChosen.kind, ...(searchChosen.sizeBytes !== undefined ? { sizeBytes: searchChosen.sizeBytes } : {}), ...(searchChosen.updatedAt ? { updatedAt: searchChosen.updatedAt } : {}) },
         where: [searchChosenConnectedFolder.name, ...searchChosen.path.split("/").slice(0, -1)].join(" › "),
       } : null}
-      composer={connectedFolder ? ({ showSuggestions }) => <SuggestingComposer
+      composer={connectedFolder && !trashOpen ? ({ showSuggestions }) => <SuggestingComposer
         connectedFolderId={connectedFolder.id}
         path={location.path}
         writtenSuggestions={!fixtureMode && Boolean(agent?.configured)}
