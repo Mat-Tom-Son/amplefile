@@ -174,13 +174,30 @@ opaque id its listing minted; the host finds it again for every act.
   Folder, or the item's own drive. It refuses a recorded folder now reached
   through a link the person owns. Into a registered Connected Folder it records
   a History restore point that removes the item again. If that point cannot be
-  recorded, the item returns to the Trash. On macOS the Trash is listed only:
-  AmpleFile cannot read where Finder recorded an item came from, and reading
-  `~/.Trash` needs Full Disk Access, so a refusal says so.
+  recorded, the item returns to the Trash. On macOS there is no Put Back:
+  AmpleFile cannot read where Finder recorded an item came from. Reading
+  `~/.Trash` needs Full Disk Access, and a refusal says so.
 
-There is no Empty Trash and no permanent delete. These routes have no CLI
-verbs: the act lane's verbs are Connected Folder files and the AmpleFile
-Agent's families, and Standard Folder routes have none either.
+- `POST /api/trash/delete` (Delete Immediately) and `POST /api/trash/empty`
+  (Empty Trash) remove items from the system Trash for good. They are
+  irreversible, so the window asks first. Delete Immediately acts only on ids a
+  current listing minted. Empty Trash takes everything in the home and drive
+  trashes, recorded or not, plus leftover records and the folder-size cache.
+  At the moment of each removal the host checks again that the item's trash
+  folder is a real folder that resolves where it did, so a link swapped in is
+  refused. A linked item is removed as the link, and a folder whatever its
+  modes, without following anything inside it. The item goes before its
+  record. The answer lists what was removed, what failed and why, and the ids
+  no listing holds. Both stop between items when a file-operation control
+  cancels, but they are not named file operations yet: `FileOperationKind` has
+  no deletion kind, so they send no progress events. On macOS they need Full
+  Disk Access for `~/.Trash`, leave Finder's `.DS_Store`, and cannot remove
+  a locked item.
+
+AmpleFile's own Recently Deleted keeps its rules; only the system Trash can be
+emptied. These routes have no CLI verbs: the act lane's verbs are Connected
+Folder files and the AmpleFile Agent's families, and Standard Folder routes
+have none either.
 
 Technical types, routes, and storage paths use `connected-folder`, `project`,
 or `resource` where those are the precise domain or Pi terms. User-facing

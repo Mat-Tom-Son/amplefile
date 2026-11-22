@@ -6,14 +6,15 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { copyInto, freeDestination, placeFolderWithoutReplacing, removeOwnedItem } from "./file-transfer.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { isFileOperationCancelled, untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
 import { parseMountInfo } from "./volumes.js";
 
 /**
  * The system Trash, read and put back (docs/architecture.md, "Drives and the
  * system Trash"). Deleting in a Standard Folder or any other folder is the
  * desktop's own Move to Trash; this module lets the window list what is there
- * and return an item to where it was. There is no Empty Trash and no
- * permanent delete here.
+ * return an item to where it was, and, behind the window's confirmation,
+ * empty it or delete items immediately (below, "Permanent deletion").
  *
  * Linux follows the FreeDesktop Trash specification: the home trash at
  * `$XDG_DATA_HOME/Trash` and, on each mounted volume, `$topdir/.Trash/$uid`
@@ -26,7 +27,7 @@ import { parseMountInfo } from "./volumes.js";
  *
  * macOS keeps no original location AmpleFile can read (Finder records it in
  * its own private metadata), and listing `~/.Trash` needs the person's
- * permission, so there the Trash is listed only and Put Back stays in Finder.
+ * permission, so there Put Back stays in Finder.
  *
  * Items are named by ids this process mints from where they sit; a caller
  * never supplies a path.
@@ -746,4 +747,227 @@ function pathInside(parent: string, child: string): boolean {
   const left = resolve(parent).replace(/\/+$/, "") || "/";
   const right = resolve(child);
   return right === left || right.startsWith(left === "/" ? "/" : `${left}/`);
+}
+
+// Permanent deletion ------------------------------------------------------------
+
+/**
+ * Empty Trash and Delete Immediately remove items from the system Trash for
+ * good. They are irreversible, so the window asks first; the host acts only
+ * on ids a current listing mints (Empty Trash on everything there now),
+ * checks again at the moment of each removal that the item still sits in a
+ * trash folder reached without a link, never follows a link (a linked item is
+ * removed as the link), removes the item before its record, and reports
+ * exactly what went and what did not.
+ *
+ * Both take a file-operation control so a caller can report progress and
+ * stop between items; the local API does not register them as named
+ * operations yet, because `FileOperationKind` has no deletion kind.
+ */
+export interface TrashDeletionResult {
+  /** Items removed for good, with the name and original path the listing showed. */
+  removed: Array<{ id: string; name: string; originalPath: string | null }>;
+  /** Items that could not be removed, and why; a folder may have been removed in part. */
+  failed: Array<{ id: string; name: string; error: string }>;
+  /** Requested ids no current listing holds (already gone, or never minted). */
+  notFound: string[];
+  /** Leftover records (an info file without its item) Empty Trash removed. */
+  strayRecordsRemoved: number;
+  /** Stopped before every item was handled; `notDone` lists the ids left in the Trash. */
+  cancelled?: true;
+  notDone?: string[];
+}
+
+/** One item in a trash folder, as deletion finds it. */
+interface TrashSlot {
+  id: string;
+  name: string;
+  originalPath: string | null;
+  /** The trash folder (Linux: holding files/ and info/; macOS: the item's own folder). */
+  root: string;
+  /** The folder the item sits in, as resolved when it was found. */
+  holder: string;
+  holderReal: string;
+  itemName: string;
+  infoPath: string | null;
+}
+
+/** Working folders Put Back uses inside a trash folder; deletion leaves them alone. */
+const putBackWorkingPrefix = ".AmpleFile-put-back-";
+
+async function linuxSlots(options: TrashOptions, includeUnrecorded: boolean): Promise<{ slots: TrashSlot[]; strayRecords: string[] }> {
+  const slots: TrashSlot[] = [];
+  const strayRecords: string[] = [];
+  for (const directory of await linuxTrashDirectories(options)) {
+    const holder = join(directory.root, "files");
+    const holderReal = await realpath(holder).catch(() => null);
+    if (!holderReal) continue;
+    const recorded = new Set<string>();
+    for (const entry of (await trashEntries(directory, Number.MAX_SAFE_INTEGER)).entries) {
+      const infoPath = join(directory.root, "info", `${entry.trashName}.trashinfo`);
+      if (!await lstat(join(holder, entry.trashName)).then(() => true, () => false)) {
+        strayRecords.push(infoPath);
+        continue;
+      }
+      recorded.add(entry.trashName);
+      const text = await readInfoFile(infoPath);
+      const parsed = text === null ? null : parseTrashInfo(text, directory.base);
+      const originalPath = parsed?.problem ? null : parsed?.originalPath ?? null;
+      slots.push({ id: entry.id, name: originalPath ? basename(originalPath) : entry.trashName, originalPath, root: directory.root, holder, holderReal, itemName: entry.trashName, infoPath });
+    }
+    if (!includeUnrecorded) continue;
+    // Emptying takes everything in files/, recorded or not, and any record a reader could not pair.
+    for (const name of await readdir(holder).catch(() => [] as string[])) {
+      if (recorded.has(name) || name.startsWith(putBackWorkingPrefix) || name.includes("�")) continue;
+      slots.push({ id: trashItemId(directory.root, name), name, originalPath: null, root: directory.root, holder, holderReal, itemName: name, infoPath: null });
+      const record = join(directory.root, "info", `${name}.trashinfo`);
+      if (await lstat(record).then(() => true, () => false)) slots[slots.length - 1]!.infoPath = record;
+    }
+    for (const entry of await readdir(join(directory.root, "info"), { withFileTypes: true }).catch(() => [])) {
+      if (!entry.name.endsWith(".trashinfo") || entry.isDirectory()) continue;
+      const trashName = entry.name.slice(0, -".trashinfo".length);
+      const path = join(directory.root, "info", entry.name);
+      if (!recorded.has(trashName) && !slots.some((slot) => slot.infoPath === path) && !strayRecords.includes(path)) strayRecords.push(path);
+    }
+  }
+  return { slots, strayRecords };
+}
+
+async function macSlots(options: TrashOptions): Promise<TrashSlot[]> {
+  const home = resolve(options.home ?? homedir());
+  const uid = currentUid(options);
+  const roots = [join(home, ".Trash")];
+  const tops = options.macVolumeTops ?? await readdir("/Volumes").then((names) => names.filter((name) => !name.startsWith(".")).map((name) => join("/Volumes", name)), () => []);
+  for (const top of tops) roots.push(join(top, ".Trashes", String(uid)));
+  const slots: TrashSlot[] = [];
+  for (const [index, root] of roots.entries()) {
+    if (!await realDirectory(root)) continue;
+    let names: string[];
+    try {
+      names = await readdir(root);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (index === 0 && (code === "EPERM" || code === "EACCES")) {
+        throw new TrashError(403, "AmpleFile isn’t allowed to change the Trash. Allow Full Disk Access for AmpleFile in System Settings → Privacy & Security, or empty the Trash in Finder.");
+      }
+      continue;
+    }
+    const holderReal = await realpath(root).catch(() => null);
+    if (!holderReal) continue;
+    for (const name of names) {
+      if (name === ".DS_Store" || name.includes("�")) continue;
+      slots.push({ id: trashItemId(root, name), name, originalPath: null, root, holder: root, holderReal, itemName: name, infoPath: null });
+    }
+  }
+  return slots;
+}
+
+/**
+ * At the moment of removal: the trash folder and the folder holding the item
+ * are still real folders (no link swapped in), resolve where they did when
+ * the item was found, and the item is still there.
+ */
+async function stillInTrash(slot: TrashSlot): Promise<boolean> {
+  if (!await realDirectory(slot.root) || !await realDirectory(slot.holder)) return false;
+  if (await realpath(slot.holder).catch(() => null) !== slot.holderReal) return false;
+  if (dirname(join(slot.holder, slot.itemName)) !== slot.holder) return false;
+  return lstat(join(slot.holder, slot.itemName)).then(() => true, () => false);
+}
+
+async function removeSlot(slot: TrashSlot): Promise<void> {
+  const path = join(slot.holder, slot.itemName);
+  // Removes a link as a link, and a folder whatever its modes; nothing below it is followed.
+  await removeOwnedItem(path);
+  if (await lstat(path).then(() => true, () => false)) throw new TrashError(500, "Part of it could not be removed.");
+  // The record goes after its item, so an interrupted removal never leaves an item without one.
+  if (slot.infoPath) await unlink(slot.infoPath).catch((error: { code?: string }) => { if (error.code !== "ENOENT") throw error; });
+}
+
+function deletionMessage(error: unknown): string {
+  const code = (error as { code?: string })?.code;
+  if (code === "EACCES" || code === "EPERM") return "AmpleFile isn’t allowed to remove it.";
+  if (code === "EBUSY") return "It is in use.";
+  if (code === "EROFS") return "The drive it is on is read-only.";
+  return error instanceof Error && error.message ? error.message : "It could not be removed.";
+}
+
+async function deleteSlots(slots: readonly TrashSlot[], operation: FileOperationControl, result: TrashDeletionResult): Promise<void> {
+  operation.setTotals(slots.length, null);
+  operation.stage("removing");
+  for (const [index, slot] of slots.entries()) {
+    try {
+      await operation.boundary("item");
+    } catch (error) {
+      if (!isFileOperationCancelled(error)) throw error;
+      result.cancelled = true;
+      result.notDone = slots.slice(index).map((left) => left.id);
+      return;
+    }
+    operation.current(slot.name);
+    try {
+      if (!await stillInTrash(slot)) {
+        result.notFound.push(slot.id);
+      } else {
+        await removeSlot(slot);
+        result.removed.push({ id: slot.id, name: slot.name, originalPath: slot.originalPath });
+      }
+    } catch (error) {
+      result.failed.push({ id: slot.id, name: slot.name, error: deletionMessage(error) });
+    }
+    operation.itemsDone();
+  }
+}
+
+/** Delete Immediately: removes the listed items with these ids for good. */
+export async function deleteTrashItemsImmediately(
+  ids: readonly string[],
+  givenOptions: TrashOptions = {},
+  operation: FileOperationControl = untrackedFileOperation,
+): Promise<TrashDeletionResult> {
+  const options = withTestOptions(givenOptions);
+  const platform = options.platform ?? process.platform;
+  const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
+  const wanted = [...new Set(ids)];
+  const slots = platform === "linux" ? (await linuxSlots(options, false)).slots : platform === "darwin" ? await macSlots(options) : [];
+  const byId = new Map(slots.map((slot) => [slot.id, slot]));
+  const chosen: TrashSlot[] = [];
+  for (const id of wanted) {
+    const slot = /^trash-[A-Za-z0-9_-]{27}$/.test(id) ? byId.get(id) : undefined;
+    if (slot) chosen.push(slot);
+    else result.notFound.push(id);
+  }
+  await deleteSlots(chosen, operation, result);
+  return result;
+}
+
+/**
+ * Empty Trash: removes everything in the system Trash for good. On Linux that
+ * is every item in the home trash and each volume's trash, recorded or not,
+ * with its record, then any leftover records and the folder-size cache. On
+ * macOS it is every item in `~/.Trash` and each volume's `.Trashes/<uid>`.
+ */
+export async function emptySystemTrash(givenOptions: TrashOptions = {}, operation: FileOperationControl = untrackedFileOperation): Promise<TrashDeletionResult> {
+  const options = withTestOptions(givenOptions);
+  const platform = options.platform ?? process.platform;
+  const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
+  if (platform === "darwin") {
+    await deleteSlots(await macSlots(options), operation, result);
+    return result;
+  }
+  if (platform !== "linux") return result;
+  const { slots, strayRecords } = await linuxSlots(options, true);
+  await deleteSlots(slots, operation, result);
+  if (result.cancelled) return result;
+  for (const record of strayRecords) {
+    const info = await lstat(record).catch(() => null);
+    if (!info || info.isDirectory()) continue;
+    if (await unlink(record).then(() => true, () => false)) result.strayRecordsRemoved += 1;
+  }
+  // The folder-size cache describes items that are gone now.
+  for (const directory of new Set(slots.map((slot) => slot.root))) {
+    const cache = join(directory, "directorysizes");
+    const info = await lstat(cache).catch(() => null);
+    if (info && !info.isDirectory()) await unlink(cache).catch(() => undefined);
+  }
+  return result;
 }

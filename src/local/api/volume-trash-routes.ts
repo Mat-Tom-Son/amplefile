@@ -2,8 +2,9 @@
  * Drives and the system Trash for the file manager window
  * (docs/architecture.md, "Drives and the system Trash"): the drives a system
  * file manager shows and when that list changes, the space on the volume
- * holding a place's folder, Eject, and the system Trash with Put Back. There
- * is no Empty Trash and no permanent delete here.
+ * holding a place's folder, Eject, and the system Trash with Put Back, Delete
+ * Immediately, and Empty Trash. The last two are irreversible and sit behind
+ * the window's confirmation.
  *
  * The window names a drive or a Trash item only by the opaque id a listing
  * gave; the host finds it again and decides everything else.
@@ -24,6 +25,8 @@ import { createConnectedFolderMutationCheckpoint } from "../history.js";
 import { resolveFolderLocation, type FolderLocation } from "../folder-locations.js";
 import { accessError as standardFolderAccessError, isStandardFolderId, resolveStandardFolderPath } from "../standard-folders.js";
 import {
+  deleteTrashItemsImmediately,
+  emptySystemTrash,
   findTrashItem,
   listSystemTrash,
   performPutBack,
@@ -87,6 +90,21 @@ export async function handleVolumeAndTrashRoutes({ state, req, res, url, method 
     const body = await readJsonBody<{ itemId?: unknown }>(state, req);
     if (typeof body.itemId !== "string" || !body.itemId) throw badRequest("Choose an item to put back.");
     sendJson(res, await putBackTrashItem(body.itemId));
+    return true;
+  }
+  // Irreversible: the window asks first. Delete Immediately acts only on ids a listing minted.
+  if (method === "POST" && url.pathname === "/api/trash/delete") {
+    const body = await readJsonBody<{ itemIds?: unknown }>(state, req);
+    const ids = body.itemIds;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 10_000 || ids.some((id) => typeof id !== "string" || !id || id.length > 64)) {
+      throw badRequest("Choose items to delete.");
+    }
+    sendJson(res, await deleteTrashItemsImmediately(ids as string[]));
+    return true;
+  }
+  if (method === "POST" && url.pathname === "/api/trash/empty") {
+    await readJsonBody<unknown>(state, req);
+    sendJson(res, await emptySystemTrash());
     return true;
   }
   return false;

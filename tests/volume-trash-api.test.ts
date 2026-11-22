@@ -237,3 +237,32 @@ test("Put Back into a Connected Folder goes through its History, which can take 
   assert.equal(restored.status, 200, JSON.stringify(restored.body));
   assert.ok(!existsSync(join(connectedFolder.connectedFolderRoot, "Spring")), "restoring takes the put-back folder out again");
 });
+
+test("Delete Immediately and Empty Trash remove items for good and report exactly what went", async (t) => {
+  const { call, home, trash } = await sandboxApi(t);
+  await trashFile(trash, "draft.docx", join(home, "draft.docx"), "draft");
+  await trashFile(trash, "old.zip", join(home, "old.zip"), "zip");
+  await trashFile(trash, "photo.jpg", join(home, "photo.jpg"), "jpg");
+  const items = (await call("/api/trash")).body!.items as Array<{ id: string; name: string }>;
+  const id = (name: string) => items.find((item) => item.name === name)!.id;
+
+  assert.equal((await call("/api/trash/delete", { method: "POST", body: {} })).status, 400);
+  assert.equal((await call("/api/trash/delete", { method: "POST", body: { itemIds: [] } })).status, 400);
+  assert.equal((await call("/api/trash/delete", { method: "POST", body: { itemIds: [42] } })).status, 400);
+  const deleted = await call("/api/trash/delete", { method: "POST", body: { itemIds: [id("draft.docx"), "trash-unknownunknownunknownunk"] } });
+  assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+  assert.deepEqual(deleted.body, {
+    removed: [{ id: id("draft.docx"), name: "draft.docx", originalPath: join(home, "draft.docx") }],
+    failed: [],
+    notFound: ["trash-unknownunknownunknownunk"],
+    strayRecordsRemoved: 0,
+  });
+  assert.ok(!existsSync(join(trash, "files", "draft.docx")));
+  assert.ok(!existsSync(join(trash, "info", "draft.docx.trashinfo")));
+
+  const emptied = await call("/api/trash/empty", { method: "POST" });
+  assert.equal(emptied.status, 200, JSON.stringify(emptied.body));
+  assert.deepEqual((emptied.body!.removed as Array<{ name: string }>).map((item) => item.name).sort(), ["old.zip", "photo.jpg"]);
+  assert.deepEqual((await call("/api/trash")).body!.items, []);
+  assert.equal((await call("/api/trash/put-back", { method: "POST", body: { itemId: id("old.zip") } })).status, 404, "an emptied item is gone");
+});

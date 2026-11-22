@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { FileOperationCancelledError, untrackedFileOperation, type FileOperationControl } from "../src/local/file-operations.js";
 import {
+  deleteTrashItemsImmediately,
+  emptySystemTrash,
   findTrashItem,
   listSystemTrash,
   parseTrashDeletionDate,
@@ -312,6 +315,131 @@ test("macOS lists the Trash without Put Back, and says plainly when it isn't all
     await chmod(macTrash, 0o000);
     try {
       await assert.rejects(listSystemTrash(options), (error: { statusCode?: number; message: string }) =>
+        error.statusCode === 403 && /Full Disk Access/.test(error.message));
+    } finally {
+      await chmod(macTrash, 0o700);
+    }
+  }
+});
+
+test("Delete Immediately removes only the listed items it names, with their records, and never follows a link out", async (t) => {
+  const box = await sandbox(t);
+  const outside = join(box.root, "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "precious.txt"), "keep me");
+  await trashFile(box.trash, "a.txt", join(box.home, "a.txt"), "a");
+  await trashFile(box.trash, "b.txt", join(box.home, "b.txt"), "b");
+  await mkdir(join(box.trash, "files", "Locked"));
+  await mkdir(join(box.trash, "files", "Locked", "inner"));
+  await writeFile(join(box.trash, "files", "Locked", "inner", "c.txt"), "c");
+  await symlink(outside, join(box.trash, "files", "Locked", "inner", "escape"));
+  await chmod(join(box.trash, "files", "Locked", "inner"), 0o500);
+  await trashFile(box.trash, "Locked", join(box.home, "Locked"), null);
+  await symlink(outside, join(box.trash, "files", "linked-folder"));
+  await trashFile(box.trash, "linked-folder", join(box.home, "linked-folder"), null);
+
+  const listing = await listSystemTrash(box.options);
+  const id = (name: string) => listing.items.find((item) => item.name === name)!.id;
+  const result = await deleteTrashItemsImmediately([id("a.txt"), id("Locked"), id("linked-folder"), id("a.txt"), "trash-not-a-real-id-at-all-xxxxxxx", join(box.trash, "files", "b.txt")], box.options);
+  assert.deepEqual(result.removed.map((item) => item.name).sort(), ["Locked", "a.txt", "linked-folder"]);
+  assert.equal(result.removed.find((item) => item.name === "a.txt")?.originalPath, join(box.home, "a.txt"));
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.notFound, ["trash-not-a-real-id-at-all-xxxxxxx", join(box.trash, "files", "b.txt")], "a path is never an id");
+  assert.equal(result.strayRecordsRemoved, 0);
+  for (const name of ["a.txt", "Locked", "linked-folder"]) {
+    assert.ok(!existsSync(join(box.trash, "files", name)), name);
+    assert.ok(!existsSync(join(box.trash, "info", `${name}.trashinfo`)), `${name}'s record`);
+  }
+  assert.equal(await readFile(join(outside, "precious.txt"), "utf8"), "keep me", "links were removed as links");
+  assert.ok(existsSync(join(box.trash, "files", "b.txt")), "an item not named stays");
+  assert.deepEqual((await deleteTrashItemsImmediately([id("a.txt")], box.options)).notFound, [id("a.txt")], "a second delete finds nothing");
+});
+
+test("Delete Immediately refuses an item whose trash folder was swapped for a link after it was found", async (t) => {
+  const box = await sandbox(t);
+  await trashFile(box.trash, "note.txt", join(box.home, "note.txt"), "note");
+  const id = (await itemNamed(box.options, "note.txt")).id;
+  const elsewhere = join(box.root, "elsewhere");
+  await mkdir(elsewhere);
+  await writeFile(join(elsewhere, "note.txt"), "not in the Trash");
+  let swapped = false;
+  const operation: FileOperationControl = {
+    ...untrackedFileOperation,
+    async boundary() {
+      if (swapped) return;
+      swapped = true;
+      await rm(join(box.trash, "files"), { recursive: true });
+      await symlink(elsewhere, join(box.trash, "files"));
+    },
+  };
+  const result = await deleteTrashItemsImmediately([id], box.options, operation);
+  assert.deepEqual(result.removed, []);
+  assert.deepEqual(result.notFound, [id]);
+  assert.equal(await readFile(join(elsewhere, "note.txt"), "utf8"), "not in the Trash");
+});
+
+test("Empty Trash removes every item in the home and drive trashes, recorded or not, leftover records, and the size cache", async (t) => {
+  const box = await sandbox(t);
+  await trashFile(box.trash, "a.txt", join(box.home, "a.txt"), "a");
+  await mkdir(join(box.trash, "files", "Folder", "deep"), { recursive: true });
+  await writeFile(join(box.trash, "files", "Folder", "deep", "x"), "x");
+  await trashFile(box.trash, "Folder", join(box.home, "Folder"), null);
+  await writeFile(join(box.trash, "files", "unrecorded.bin"), "?");
+  await trashFile(box.trash, "gone.txt", join(box.home, "gone.txt"), null);
+  await writeFile(join(box.trash, "directorysizes"), "1 2 Folder\n");
+  await mkdir(join(box.trash, "files", ".AmpleFile-put-back-0123456789ab"));
+  const volumeTrash = join(box.volume, `.Trash-${uid}`);
+  await mkdir(join(volumeTrash, "files"), { recursive: true });
+  await mkdir(join(volumeTrash, "info"), { recursive: true });
+  await writeFile(join(volumeTrash, "files", "clip.mov"), "movie");
+  await writeFile(join(volumeTrash, "info", "clip.mov.trashinfo"), "[Trash Info]\nPath=clip.mov\n");
+
+  const result = await emptySystemTrash(box.options);
+  assert.deepEqual(result.removed.map((item) => item.name).sort(), ["Folder", "a.txt", "clip.mov", "unrecorded.bin"]);
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.strayRecordsRemoved, 1);
+  assert.deepEqual((await listSystemTrash(box.options)).items, []);
+  assert.deepEqual(await readdir(join(box.trash, "info")), []);
+  assert.deepEqual(await readdir(join(volumeTrash, "files")), []);
+  assert.ok(!existsSync(join(box.trash, "directorysizes")));
+  assert.ok(existsSync(join(box.trash, "files", ".AmpleFile-put-back-0123456789ab")), "a Put Back in progress is left alone");
+  assert.ok(existsSync(join(box.trash, "files")) && existsSync(join(volumeTrash, "info")), "the trash folders themselves stay");
+});
+
+test("Empty Trash stops between items when cancelled and says which it did not reach", async (t) => {
+  const box = await sandbox(t);
+  for (const name of ["1.txt", "2.txt", "3.txt"]) await trashFile(box.trash, name, join(box.home, name), name);
+  let seen = 0;
+  const operation: FileOperationControl = {
+    ...untrackedFileOperation,
+    async boundary() { seen += 1; if (seen === 3) throw new FileOperationCancelledError(); },
+  };
+  const result = await emptySystemTrash(box.options, operation);
+  assert.equal(result.removed.length, 2);
+  assert.equal(result.cancelled, true);
+  assert.equal(result.notDone?.length, 1);
+  assert.equal((await listSystemTrash(box.options)).items.length, 1, "the item not reached stays in the Trash");
+});
+
+test("macOS deletes listed Trash items and empties the Trash, and says plainly when it isn't allowed", async (t) => {
+  const box = await sandbox(t);
+  const macTrash = join(box.home, ".Trash");
+  await mkdir(join(macTrash, "Old Folder"), { recursive: true });
+  await writeFile(join(macTrash, "photo.heic"), "1");
+  await writeFile(join(macTrash, "movie.mov"), "2");
+  await writeFile(join(macTrash, ".DS_Store"), "finder");
+  const options: TrashOptions = { platform: "darwin", home: box.home, uid, macVolumeTops: [] };
+  const photo = (await listSystemTrash(options)).items.find((item) => item.name === "photo.heic")!;
+  const deleted = await deleteTrashItemsImmediately([photo.id], options);
+  assert.deepEqual(deleted.removed.map((item) => item.name), ["photo.heic"]);
+  assert.ok(!existsSync(join(macTrash, "photo.heic")));
+  const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.removed.map((item) => item.name).sort(), ["Old Folder", "movie.mov"]);
+  assert.ok(existsSync(join(macTrash, ".DS_Store")), "Finder's own file stays");
+  if (uid !== 0) {
+    await chmod(macTrash, 0o000);
+    try {
+      await assert.rejects(emptySystemTrash(options), (error: { statusCode?: number; message: string }) =>
         error.statusCode === 403 && /Full Disk Access/.test(error.message));
     } finally {
       await chmod(macTrash, 0o700);
