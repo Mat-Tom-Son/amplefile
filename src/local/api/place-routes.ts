@@ -24,6 +24,7 @@ import {
 } from "../standard-folders.js";
 import { goToFolder } from "../go-to-folder.js";
 import { compressInto, copyHoldsAll, copyInto, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt, removeOwnedItem } from "../file-transfer.js";
+import { extractArchive } from "../archive-extract.js";
 import {
   cancelFileOperation,
   isFileOperationCancelled,
@@ -90,7 +91,14 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     sendJson(res, result, "cancelled" in result ? 200 : 201);
     return true;
   }
-  // Cancel: a running copy, move, or Compress stops at its next safe boundary.
+  // Extract: an archive becomes a new folder beside it, named after it.
+  if (method === "POST" && url.pathname === "/api/file-transfer/extract") {
+    const body = await readJsonBody<{ place?: unknown; path?: unknown; operationId?: unknown }>(state, req);
+    const result = await extractEntry(body);
+    sendJson(res, result, "cancelled" in result ? 200 : 201);
+    return true;
+  }
+  // Cancel: a running copy, move, Compress, or Extract stops at its next safe boundary.
   if (method === "POST" && url.pathname === "/api/file-transfer/cancel") {
     const body = await readJsonBody<{ operationId?: unknown }>(state, req);
     const operationId = parseFileOperationId(body.operationId);
@@ -641,6 +649,43 @@ async function compressEntries(body: { place?: unknown; paths?: unknown; operati
       ? await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, [path], { reason: "pre_compress", label: `Before compressing ${items.length === 1 ? basename(items[0]!.abs) : `${items.length} items`}` })
       : null;
     return { path, restorePoints: safety ? [{ connectedFolderId: target.connectedFolder!.id, checkpointId: safety.checkpointId }] : [] };
+  }, (result) => "cancelled" in result ? "cancelled" : "succeeded");
+}
+
+/**
+ * Extract (src/local/archive-extract.ts): a `.zip`, `.tar`, `.tar.gz`, or
+ * `.tgz` in a Connected Folder or Standard Folder becomes a new folder beside
+ * it, with a restore point in a Connected Folder. A cancelled or refused
+ * Extract writes nothing.
+ */
+async function extractEntry(body: { place?: unknown; path?: unknown; operationId?: unknown }) {
+  const operationId = parseFileOperationId(body.operationId);
+  return runFileOperation(operationId, "extract", async (operation) => {
+    const place = transferPlace(body.place);
+    if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose an archive to extract.");
+    const item = await resolveTransferItem(place, body.path, "read");
+    const folderRelative = item.relativePath.includes("/") ? item.relativePath.slice(0, item.relativePath.lastIndexOf("/")) : "";
+    const target = await resolveTransferItem(place, folderRelative, "target");
+    let extracted: Awaited<ReturnType<typeof extractArchive>>;
+    try {
+      extracted = await extractArchive(item.abs, undefined, operation);
+    } catch (error) {
+      if (isFileOperationCancelled(error)) return { path: null, restorePoints: [] as TransferRestorePoint[], cancelled: true as const };
+      throw error;
+    }
+    const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
+    const path = relativeTo(root, extracted.folder);
+    const safety = target.connectedFolder
+      ? await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, [path], { reason: "pre_extract", label: `Before extracting ${basename(item.abs)}` })
+      : null;
+    return {
+      path,
+      restorePoints: safety ? [{ connectedFolderId: target.connectedFolder!.id, checkpointId: safety.checkpointId }] : [],
+      files: extracted.files,
+      folders: extracted.folders,
+      bytes: extracted.bytes,
+      ...(extracted.skipped.length ? { skipped: extracted.skipped } : {}),
+    };
   }, (result) => "cancelled" in result ? "cancelled" : "succeeded");
 }
 

@@ -5,12 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import JSZip from "jszip";
+
 import { setFileOperationBoundaryHookForTests, type FileOperationBoundary, type FileOperationProgress } from "../src/local/file-operations.js";
 import { setFileCopyStrategyForTests } from "../src/local/file-transfer.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /**
- * Progress and cancel over the local API's file-transfer routes
+ * Progress, cancel, and Extract over the local API's file-transfer routes
  * (src/local/file-operations.ts, src/local/api/place-routes.ts).
  */
 
@@ -288,4 +290,47 @@ test("Compress cancelled over the API writes nothing", async (t) => {
   const whole = await call("/api/file-transfer/compress", { method: "POST", body: { place: { kind: "connected-folder", id: folder.id }, paths: ["video.mov"] } });
   assert.equal(whole.status, 201);
   assert.deepEqual(Object.keys(whole.body!).sort(), ["path", "restorePoints"], "an unnamed Compress answers as before");
+});
+
+test("Extract makes a folder beside the archive with a restore point, and a cancel or refusal leaves nothing", async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  const zip = new JSZip();
+  zip.file("Trip/plan.md", "plan");
+  zip.file("Trip/photo.jpg", Buffer.alloc(300_000, 2), { binary: true });
+  zip.file(".amplefile/connected-folder.json", "{\"id\":\"space-0123456789abcdef\"}");
+  await mkdir(join(folder.connectedFolderRoot, "Downloads"));
+  await writeFile(join(folder.connectedFolderRoot, "Downloads", "Trip.zip"), await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  const place = { kind: "connected-folder", id: folder.id };
+
+  const extracted = await call("/api/file-transfer/extract", { method: "POST", body: { place, path: "Downloads/Trip.zip" } });
+  assert.equal(extracted.status, 201, JSON.stringify(extracted.body));
+  assert.equal(extracted.body!.path, "Downloads/Trip");
+  assert.equal(extracted.body!.files, 2);
+  assert.deepEqual(extracted.body!.skipped, [{ path: ".amplefile/connected-folder.json", reason: "configuration" }]);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "Downloads", "Trip", "plan.md"), "utf8"), "plan");
+  assert.ok(!existsSync(join(folder.connectedFolderRoot, "Downloads", "Trip", ".amplefile")));
+  assert.equal(extracted.body!.restorePoints.length, 1);
+  assert.ok((await checkpointIds(call, folder.id)).includes(extracted.body!.restorePoints[0].checkpointId));
+
+  const before = await checkpointIds(call, folder.id);
+  cancelAt(t, call, (point, progress) => point === "chunk" && progress.stage === "extracting");
+  const cancelled = await call("/api/file-transfer/extract", { method: "POST", body: { place, path: "Downloads/Trip.zip", operationId: "unzip" } });
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+  assert.deepEqual(cancelled.body, { path: null, restorePoints: [], cancelled: true });
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "Downloads"))).sort(), ["Trip", "Trip.zip"], "no second folder and no working folder");
+  assert.deepEqual(await checkpointIds(call, folder.id), before);
+
+  setFileOperationBoundaryHookForTests(null);
+  const hostile = new JSZip();
+  hostile.file("zz/escape.txt", "evil");
+  const bytes = await hostile.generateAsync({ type: "nodebuffer" });
+  for (let at = bytes.indexOf("zz/escape"); at >= 0; at = bytes.indexOf("zz/escape", at + 1)) bytes.write("../escape", at);
+  await writeFile(join(folder.connectedFolderRoot, "Downloads", "bad.zip"), bytes);
+  const refused = await call("/api/file-transfer/extract", { method: "POST", body: { place, path: "Downloads/bad.zip", operationId: "bad" } });
+  assert.equal(refused.status, 400, JSON.stringify(refused.body));
+  assert.match(refused.body!.error, /outside its folder/);
+  assert.ok(!existsSync(join(folder.connectedFolderRoot, "escape.txt")));
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "Downloads"))).sort(), ["Trip", "Trip.zip", "bad.zip"]);
+  assert.equal((await call("/api/file-transfer/extract", { method: "POST", body: { place, path: "Downloads" } })).status, 400, "a folder is not an archive");
 });
