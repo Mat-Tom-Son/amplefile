@@ -20,6 +20,8 @@ export interface FileManagerOpenRequest { id: number; location: FileManagerLocat
 
 /** The computer place: its top is the disk, so every folder on the computer is a path inside it. It has no sidebar row. */
 export const computerPlace: FileManagerPlace = { kind: "standard", id: "computer" };
+/** The home folder, where the window opens when no Connected Folder is registered. */
+export const homePlace: FileManagerPlace = { kind: "standard", id: "home" };
 /** The disk's root, the computer place's top (AmpleFile runs on macOS and Linux). */
 export const computerRoot = "/";
 

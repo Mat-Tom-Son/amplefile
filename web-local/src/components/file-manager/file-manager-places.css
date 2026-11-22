@@ -1,0 +1,186 @@
+/* The window's Drives, Trash, thumbnails, folder sizes, plain-folder search notes, and the panel's foot outside a Connected Folder. */
+
+/* A drive row keeps room on its right for Eject, which sits over the row's end. */
+.fm-drive {
+  position: relative;
+}
+
+.fm-drive.is-ejectable > .fm-sidebar-item {
+  padding-right: 30px;
+}
+
+.fm-eject {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fm-text2);
+  transform: translateY(-50%);
+}
+
+.fm-eject:hover:not(:disabled) {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
+.fm-eject:disabled {
+  opacity: 0.45;
+}
+
+.fm-eject svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The Trash in the list area: one line about what it is, its actions, then its items. */
+.fm-trash {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fm-trash-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px 8px;
+}
+
+.fm-trash-about {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  color: var(--fm-text3);
+  font-size: calc(12px * var(--fm-scale));
+  line-height: 1.4;
+}
+
+.fm-trash-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.fm-btn.is-danger:not(:disabled) {
+  color: var(--ui-danger, #d70015);
+}
+
+.fm-trash-progress,
+.fm-trash-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-trash-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--fm-line);
+  border-top-color: var(--fm-accent);
+  border-radius: 50%;
+  animation: fm-trash-spin 0.8s linear infinite;
+}
+
+@keyframes fm-trash-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-trash-spinner { animation: none; }
+}
+
+.fm-content.is-trash {
+  --fm-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) 170px 84px;
+}
+
+.fm-content.is-trash .fm-col-size {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+@container (max-width: 620px) {
+  .fm-content.is-trash { --fm-columns: minmax(0, 1fr) 150px 74px; }
+  .fm-content.is-trash .fm-col-where { display: none; }
+}
+
+/* A picture or PDF in its icon tile: the tile keeps its size, so windowing keeps its math. */
+.fm-tile-icon.has-thumbnail {
+  overflow: hidden;
+}
+
+.fm-tile-thumb {
+  display: block;
+  max-width: 72px;
+  max-height: 68px;
+  object-fit: contain;
+  border-radius: 3px;
+  box-shadow: 0 0 0 0.5px var(--fm-line), 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Search in a plain folder: when a page stopped early, and the Connected Folders it leaves to their own search. */
+.fm-search-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 10px 24px;
+  color: var(--fm-text3);
+  font-size: calc(12px * var(--fm-scale));
+}
+
+/* Info's folder size, and its partial marker. */
+.fm-size-note {
+  padding: 0 0 6px;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  line-height: 1.4;
+}
+
+.fm-crow .fm-text-button {
+  margin-left: auto;
+  font-size: calc(11px * var(--fm-scale));
+}
+
+/* Where the message box would be, outside a Connected Folder: Connect This Folder, and Set Up AI when none is connected. */
+.fm-plain-foot {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--fm-line);
+}
+
+.fm-plain-foot-t {
+  margin: 0;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+  line-height: 1.4;
+}
+
+.fm-plain-foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The folder's list stays mounted while the Trash takes its place. */
+.fm-content[hidden] {
+  display: none;
+}
+
+/* First run's Browse Files sits at the far left, before Back; the welcome can always be left for the file manager. */
+.fm-welcome-browse:not(:has(+ .fm-welcome-back)) {
+  margin-right: auto;
+}
