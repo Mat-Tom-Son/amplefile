@@ -17,7 +17,7 @@ import { api, apiForm, errorText } from "../../lib/api";
 import { collectDroppedUploadFiles } from "../../lib/dropped-files";
 import { copyToClipboard } from "../../lib/clipboard";
 import { canOpenDirectly, nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
-import { formatBytes, formatItemCount } from "../../lib/format";
+import { formatItemCount } from "../../lib/format";
 import { untitledChatLabel } from "../../constants";
 import { desktopPlatform, isMacOS, connectedFolderEntryNativePath, systemFileManagerName } from "../../lib/platform";
 import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
@@ -40,7 +40,6 @@ import {
   defaultFileManagerSort,
   navigationSide,
   fileKindLabel,
-  fileManagerIcon,
   collapseCrumbs,
   fileManagerPathBar,
   historyTimeLabel,
@@ -104,7 +103,7 @@ import { useBrowserPages } from "../../hooks/useBrowserPages";
 import { browserHost, browserWorkerChat, clampBrowserFraction, effectiveBrowserLayout, type BrowserPaneLayout } from "../../lib/browser-pages";
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
 import { UpdateIndicator } from "./UpdateIndicator";
-import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
+import { useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
 import { moveResultMessage } from "./move-result";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
