@@ -45,6 +45,7 @@ import {
 } from "../../src/local/agent/registered-connected-folder-runtime.js";
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
+import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
@@ -637,6 +638,8 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     const userData = app.getPath("userData");
     const host = await ensureDesktopHost();
     apiSessionToken = randomUUID();
+    // An item a Replace takes out of a plain folder goes to the operating system's own Trash.
+    setSystemTrashHandler((path) => shell.trashItem(path));
     const api = await startLocalApi({
       appMode: "desktop",
       port: 0,
@@ -1027,7 +1030,7 @@ function registerIpc(): void {
     const connectedFolder = await getConnectedFolder(request.id);
     const items: string[] = [];
     for (const path of request.paths) {
-      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), () => resolveConnectedFolderItem(request.id, path)));
+      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink: true }), () => resolveConnectedFolderItem(request.id, path)));
     }
     return startItemDrag(event.sender, items);
   });
@@ -1082,7 +1085,7 @@ function registerIpc(): void {
     if (!isStandardFolderId(request.id)) throw new Error("That standard folder isn’t on this computer.");
     const items: string[] = [];
     for (const path of request.paths) {
-      items.push(await draggableItem(resolveStandardFolderPath(request.id, path), () => resolveStandardFolderItem(request.id, path)));
+      items.push(await draggableItem(resolveStandardFolderPath(request.id, path, homedir(), { finalLink: true }), () => resolveStandardFolderItem(request.id, path)));
     }
     return startItemDrag(event.sender, items);
   });
@@ -1165,8 +1168,11 @@ function registerIpc(): void {
       try {
         const request = standardFolderPathRequest({ standardFolderId, path });
         // Anything a Connected Folder owns is changed through that Connected Folder, where History keeps it.
-        await assertStandardFolderPathUnowned(standardFolderId, request.path);
-        await shell.trashItem(await resolveStandardFolderItem(standardFolderId, request.path));
+        await assertStandardFolderPathUnowned(standardFolderId, request.path, homedir(), { finalLink: true });
+        // A symbolic link goes to the Trash as itself; what it points to stays.
+        const linkPath = resolveStandardFolderPath(standardFolderId, request.path, homedir(), { finalLink: true });
+        const isLink = Boolean((await lstat(linkPath).catch(() => null))?.isSymbolicLink());
+        await shell.trashItem(isLink ? linkPath : await resolveStandardFolderItem(standardFolderId, request.path));
         trashed.push(request.path);
       } catch (error) {
         return { trashed, failed: { path: typeof path === "string" ? path : "", error: error instanceof Error ? error.message : String(error) } };
@@ -1966,14 +1972,15 @@ function placeDragRequest(value: unknown, idKey: "connectedFolderId" | "standard
 }
 
 /**
- * One dragged item: a file or folder, held to the place's path policy (no
- * symbolic link anywhere in its path, the item itself included, even a
- * broken one), then resolved where it really is.
+ * One dragged item: a file, folder, or symbolic link, held to the place's
+ * path policy (no symbolic link in the folders above it), then resolved where
+ * it really is. A link drags as the link itself, never what it points to.
  */
 async function draggableItem(policyPath: string, resolveItem: () => Promise<string>): Promise<string> {
   const info = await lstat(policyPath).catch(() => null);
   if (!info) throw new Error(`“${basename(policyPath)}” isn’t there anymore.`);
-  if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) throw new Error("Only files and folders can be dragged out.");
+  if (info.isSymbolicLink()) return policyPath;
+  if (!info.isFile() && !info.isDirectory()) throw new Error("Only files and folders can be dragged out.");
   return resolveItem();
 }
 

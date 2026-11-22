@@ -270,15 +270,20 @@ function transferPlace(value: unknown): TransferPlaceRef {
   return { kind: record.kind, id: record.id };
 }
 
+/**
+ * A source (read or change) may itself be a symbolic link: it is copied,
+ * moved, or compressed as a link, never followed. A target is a real folder.
+ */
 async function resolveTransferItem(place: TransferPlaceRef, path: string, purpose: "read" | "change" | "target"): Promise<ResolvedTransferItem> {
+  const finalLink = purpose !== "target";
   if (place.kind === "connected-folder") {
     const connectedFolder = await getConnectedFolder(place.id);
-    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
+    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink }), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
   }
   if (!isStandardFolderId(place.id)) throw notFound("That folder isn’t in the sidebar anymore.");
   const abs = purpose === "read"
-    ? resolveStandardFolderPath(place.id, path)
-    : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target" });
+    ? resolveStandardFolderPath(place.id, path, userHomedir(), { finalLink })
+    : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target", finalLink });
   return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
 }
 
@@ -1094,6 +1099,8 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     const place = transferPlace(body.place);
     if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose an archive to extract.");
     const item = await resolveTransferItem(place, body.path, "read");
+    // A link to an archive is extracted from the archive itself, where it really is.
+    if ((await lstat(item.abs).catch(() => null))?.isSymbolicLink()) throw badRequest("This is a link. Show the original to extract the archive it points to.");
     await assertExtractable(item.abs);
     const folderRelative = item.relativePath.includes("/") ? item.relativePath.slice(0, item.relativePath.lastIndexOf("/")) : "";
     const target = await resolveTransferItem(place, folderRelative, "target");

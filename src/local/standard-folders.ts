@@ -199,9 +199,9 @@ export async function standardFolderFilePreview(id: StandardFolderId, relativePa
 }
 
 /** The file for a path inside a standard folder, under the same path policy as a Connected Folder's. */
-export function resolveStandardFolderPath(id: StandardFolderId, relativePath: string, home = homedir()): string {
+export function resolveStandardFolderPath(id: StandardFolderId, relativePath: string, home = homedir(), options: { finalLink?: boolean } = {}): string {
   const base = standardFolderPathBase(id, relativePath, home);
-  return base ? resolveConnectedFolderPath(base.root, base.path) : standardFolderRoot(id, home);
+  return base ? resolveConnectedFolderPath(base.root, base.path, options) : standardFolderRoot(id, home);
 }
 
 /**
@@ -222,6 +222,7 @@ export function standardFolderPathBase(id: StandardFolderId, relativePath: strin
   if (isAlwaysHiddenConnectedFolderEntry(first)) throw badRequest("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
   const root = join(standardFolderRoot(id, home), first);
   // The first folder is the policy's root, which it checks only for being a link; say so the way a deeper link is refused.
+  // A link at the disk's top itself (`/bin`) is only opened, revealed, or copied as a path.
   if (lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink()) throw badRequest("Paths cannot traverse symbolic links or junctions.");
   return { root, path: parts.slice(1).join("/"), prefix: first };
 }
@@ -238,9 +239,9 @@ export async function assertStandardFolderPathUnowned(
   id: StandardFolderId,
   relativePath: string,
   home = homedir(),
-  options: { allowContaining?: boolean } = {},
+  options: { allowContaining?: boolean; finalLink?: boolean } = {},
 ): Promise<string> {
-  const target = resolveStandardFolderPath(id, relativePath, home);
+  const target = resolveStandardFolderPath(id, relativePath, home, { finalLink: options.finalLink === true });
   for (const connectedFolder of await listConnectedFolders()) {
     if (pathContains(connectedFolder.connectedFolderRoot, target) || (!options.allowContaining && pathContains(target, connectedFolder.connectedFolderRoot))) {
       throw Object.assign(
@@ -254,11 +255,12 @@ export async function assertStandardFolderPathUnowned(
 
 export async function renameStandardFolderEntry(id: StandardFolderId, relativePath: string, newName: string, home = homedir()): Promise<{ path: string }> {
   if (!relativePath.trim()) throw badRequest(`${standardFolderName(id, home)} itself can’t be renamed.`);
-  const source = await assertStandardFolderPathUnowned(id, relativePath, home);
+  // A symbolic link is renamed as itself.
+  const source = await assertStandardFolderPathUnowned(id, relativePath, home, { finalLink: true });
   const name = validEntryName(newName);
   if (name === basename(source)) return { path: toRelative(id, source, home) };
   const destination = join(dirname(source), name);
-  await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true });
+  await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true, finalLink: true });
   const existing = await lstat(destination).catch(() => null);
   // A case-only rename on a case-insensitive disk finds the source itself.
   const sameItem = existing && name.toLocaleLowerCase() === basename(source).toLocaleLowerCase();
