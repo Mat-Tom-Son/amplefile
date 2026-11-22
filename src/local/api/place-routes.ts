@@ -364,7 +364,6 @@ async function transferResolvedEntries(
 ) {
   const items = sources.map((item) => ({ source: item.abs, key: sourceKey(item) }));
   const sameConnectedFolder = (item: ResolvedTransferItem) => Boolean(item.connectedFolder && target.connectedFolder && item.connectedFolder.id === target.connectedFolder.id);
-  const placeKey = (item: ResolvedTransferItem) => item.place ? `${item.place.kind}:${item.place.id}` : "";
   const targetRoot = transferTargetRoot(target);
 
   if (mode === "move" && sources.every(sameConnectedFolder)) {
@@ -384,7 +383,8 @@ async function transferResolvedEntries(
       ...(moved.failed ? { failed: moved.failed } : {}),
     };
   }
-  if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => placeKey(item) === placeKey(target))) {
+  // Between plain folders (Standard Folders, added folders, and the computer place) a move is a plain move, as Finder's.
+  if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => item.place?.kind === "standard")) {
     if (policy) {
       const plan = await planPlacements(items, target.abs, policy, { withIdentity: true, move: true, mayChange: standardMayChange(target.place.id as StandardFolderId) });
       operation.stage("moving");
@@ -392,20 +392,20 @@ async function transferResolvedEntries(
       const result = placementResult(plan, executed, targetRoot, sources.map(sourceKey));
       const moves = plan.tops.flatMap((top, index) => {
         const at = topUnitAt(plan, executed, index);
-        return at && top.action !== "merge" ? [{ from: sources[index]!.relativePath, to: relativeTo(targetRoot, at) }] : [];
+        return at && top.action !== "merge" ? [{ from: sources[index]!.relativePath, fromPlace: sources[index]!.place!, to: relativeTo(targetRoot, at) }] : [];
       });
       return { mode, written: result.written, moves, restorePoints: [], ...result.extras, ...result.stop };
     }
     operation.setTotals(sources.length, null);
     operation.stage("moving");
-    const moves: Array<{ from: string; to: string }> = [];
+    const moves: Array<{ from: string; fromPlace: TransferPlaceRef; to: string }> = [];
     let cancelled = false;
     for (const source of sources) {
       try {
         await operation.boundary("item");
         operation.current(basename(source.abs));
         const destination = await moveInto(source.abs, target.abs, operation);
-        moves.push({ from: source.relativePath, to: relativeTo(standardFolderRoot(target.place.id as StandardFolderId), destination) });
+        moves.push({ from: source.relativePath, fromPlace: source.place!, to: relativeTo(standardFolderRoot(target.place.id as StandardFolderId), destination) });
         operation.itemsDone();
       } catch (error) {
         if (!isFileOperationCancelled(error)) throw error;

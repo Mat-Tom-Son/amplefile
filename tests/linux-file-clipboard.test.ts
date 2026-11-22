@@ -115,7 +115,7 @@ test("writing puts one text/uri-list on the clipboard, the format Chromium publi
 test("the Linux desktop host uses these helpers for the file clipboard", async () => {
   const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
   // The clipboard helper reads first; Electron's read is the fallback wherever it cannot.
-  assert.match(main, /return \(files \?\? readLinuxClipboardFiles\(clipboard\)\)\.paths;/);
+  assert.match(main, /return files \?\? readLinuxClipboardFiles\(clipboard\);/);
   // Electron's single-format write remains the fallback wherever the clipboard helper cannot own the selection.
   assert.match(main, /writeLinuxClipboardFiles\(clipboard, paths\);\n\s*return;/);
 });

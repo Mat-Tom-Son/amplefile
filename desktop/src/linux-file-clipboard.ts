@@ -16,8 +16,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * per call, and each write replaces the clipboard, so where the helper cannot
  * run `writeLinuxClipboardFiles` writes only `text/uri-list`, which Chromium
  * publishes as its file-list format; GNOME Files and Dolphin paste it, and GTK
- * and the desktop portal read it as a file list. AmpleFile's own Copy is
- * always a copy: moving is chosen when pasting, not when copying.
+ * and the desktop portal read it as a file list. AmpleFile's Cut is marked the
+ * way those file managers mark theirs (`cut` in the GNOME body and KDE's
+ * cut-selection set to "1"), so they paste it as a move; the single-format
+ * fallback cannot carry that mark, and there a Cut pastes elsewhere as a copy.
  */
 
 export const gnomeCopiedFilesFormat = "x-special/gnome-copied-files";
