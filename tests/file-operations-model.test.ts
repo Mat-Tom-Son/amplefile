@@ -94,6 +94,11 @@ test("after Stop the window says what was done and what was not", () => {
   assert.equal(stoppedMessage("duplicate", { written: ["a copy"], restorePoints: [], cancelled: true, notDone: [] }), "Stopped. 1 item was duplicated.");
   assert.equal(stoppedMessage("compress", { path: null, written: [], restorePoints: [], cancelled: true }), "Stopped. No archive was made.");
   assert.equal(stoppedMessage("extract", { path: null, written: [], restorePoints: [], cancelled: true }), "Stopped. Nothing was extracted.");
+  // Empty Trash and Delete Immediately run as a "delete" operation.
+  assert.equal(operationTitle("delete", "3 items", null), "Deleting 3 items");
+  assert.equal(operationDetail({ ...operation("t", 0, { kind: "delete", stage: "removing", itemsDone: 4, itemsTotal: 10, current: "old.iso" }), kind: "delete" }), "Deleting 4 of 10 items — old.iso");
+  assert.equal(stoppedMessage("delete", { written: ["a", "b"], restorePoints: [], cancelled: true, notDone: ["c"] }), "Stopped. 2 items were deleted for good; 1 item is still in the Trash.");
+  assert.equal(stoppedMessage("delete", { written: [], restorePoints: [], cancelled: true, notDone: ["c"] }), "Stopped. Nothing was deleted; everything is still in the Trash.");
 });
 
 const fileClash: TransferConflict = { key: "notes.txt", name: "notes.txt", source: { kind: "file", sizeBytes: 2_048, modifiedAt: "2026-03-12T14:02:00Z" }, existing: { kind: "file", sizeBytes: 10, modifiedAt: "2026-01-01T09:00:00Z" }, canMerge: false };

@@ -10,7 +10,8 @@
  * local API request, and the window's event connection still sees it.
  */
 
-export type FileOperationKind = "copy" | "duplicate" | "move" | "compress" | "extract";
+/** `delete` is Empty Trash and Delete Immediately in the window's Trash. */
+export type FileOperationKind = "copy" | "duplicate" | "move" | "compress" | "extract" | "delete";
 
 /**
  * Where an operation is. `preparing` measures what it will do; `copying`,

@@ -95,7 +95,7 @@ test("a rectangle selects what it touches, or adds it with Shift or Command", ()
   assert.deepEqual(bandSelection(order, [7], [], false), []);
 });
 
-test("a drag carries the selection when it starts on a selected item, else just that item, never a link or a nested Connected Folder", () => {
+test("a drag carries the selection when it starts on a selected item, else just that item; a link drags as itself, never a nested Connected Folder", () => {
   const a = file("a.txt");
   const b = folder("Reports");
   const link = file("shortcut", { link: { target: "file", targetPath: "/elsewhere/x.txt" } });
@@ -103,10 +103,10 @@ test("a drag carries the selection when it starts on a selected item, else just 
   const byPath = new Map([a, b, link, nested].map((entry) => [entry.path, entry]));
   assert.deepEqual(dragPayload(b, ["a.txt", "Reports"], byPath).map((entry) => entry.path), ["a.txt", "Reports"], "folders drag as files do");
   assert.deepEqual(dragPayload(a, ["Reports"], byPath).map((entry) => entry.path), ["a.txt"], "an unselected item drags alone");
-  assert.deepEqual(dragPayload(a, ["a.txt", "shortcut", "Client", "Reports"], byPath).map((entry) => entry.path), ["a.txt", "Reports"]);
-  assert.deepEqual(dragPayload(link, ["a.txt", "shortcut"], byPath), []);
+  assert.deepEqual(dragPayload(a, ["a.txt", "shortcut", "Client", "Reports"], byPath).map((entry) => entry.path), ["a.txt", "shortcut", "Reports"]);
+  assert.deepEqual(dragPayload(link, ["a.txt", "shortcut"], byPath).map((entry) => entry.path), ["a.txt", "shortcut"]);
   assert.deepEqual(dragPayload(nested, [], byPath), []);
-  assert.equal(isDraggableEntry(link), false);
+  assert.equal(isDraggableEntry(link), true);
   assert.equal(isDraggableEntry(nested), false);
   assert.equal(isDraggableEntry(b), true);
 });

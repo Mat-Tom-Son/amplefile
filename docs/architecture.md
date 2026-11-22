@@ -188,9 +188,11 @@ opaque id its listing minted; the host finds it again for every act.
   refused. A linked item is removed as the link, and a folder whatever its
   modes, without following anything inside it. The item goes before its
   record. The answer lists what was removed, what failed and why, and the ids
-  no listing holds. Both stop between items when a file-operation control
-  cancels, but they are not named file operations yet: `FileOperationKind` has
-  no deletion kind, so they send no progress events. On macOS they need Full
+  no listing holds. With an `operationId` each runs as a `delete` file
+  operation: it reports progress (stage `removing`, items, the item in hand)
+  on `/api/file-transfer/events`, and `POST /api/file-transfer/cancel` stops it
+  between items, when the answer adds `cancelled` and the ids still in the
+  Trash as `notDone`. On macOS they need Full
   Disk Access for `~/.Trash`, leave Finder's `.DS_Store`, and cannot remove
   a locked item.
 

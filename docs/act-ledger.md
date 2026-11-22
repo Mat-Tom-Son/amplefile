@@ -23,15 +23,18 @@ without being a security boundary. So the product works on these rules:
 2. **Every effect leaves a receipt.** The journal-first, at-most-once,
    identity-pinned act path is attribution and recovery machinery, not a
    gate.
-3. **Every destruction a verb makes is reversible.** No product verb makes
-   anything permanent at the moment it happens. History covers ordinary
+3. **Every destruction a verb makes is reversible.** Nothing a product verb
+   does is permanent at the moment it happens. History covers ordinary
    deletion; everything History cannot cover goes to machine-local
-   [Recently Deleted](#recently-deleted) with a retention window. Outside a
-   Connected Folder, which has no History, the file manager window's Move to
-   Trash and an item a **Replace** takes the place of go to the system
-   Trash; when no Trash can take a replaced item, it is removed, and the
-   window says so before Undo is tried
-   ([Finder's file actions](product-model.md#the-file-manager-window)).
+   [Recently Deleted](#recently-deleted) with a retention window. The
+   computer's own Trash is not a verb's: outside a Connected Folder, which
+   has no History, the file manager window's Move to Trash and an item the
+   person's **Replace** takes the place of go there (when no Trash can take
+   a replaced item it is removed, and the window says so before Undo is
+   tried), and in the window the person can Put Back from the Trash, or
+   empty it or delete items from it for good after a dialog that says so
+   ([the file manager window](product-model.md#the-file-manager-window)).
+   No agent or CLI verb deletes from it.
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
    you" means an agent asked a question, never that an action waits for

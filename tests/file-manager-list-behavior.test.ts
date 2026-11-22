@@ -177,7 +177,7 @@ test("a folder of thousands draws only the rows in view, and selection, keys, an
   assert.equal(document.getElementById(grid.getAttribute("aria-activedescendant")!)?.dataset.fmPath, `item-${String(columns).padStart(5, "0")}.txt`);
 });
 
-test("a symbolic link says what it is, opens where it points, and offers only Open, Show, and Copy Path", async (t) => {
+test("a symbolic link says what it is, opens where it points, and its other actions act on the link itself", async (t) => {
   const tree = [
     folder("Docs"),
     folder("Docs link", { link: { target: "folder", targetPath: "/tmp/lab/Docs" }, hasChildren: false }),
@@ -194,7 +194,7 @@ test("a symbolic link says what it is, opens where it points, and offers only Op
   assert.equal(kind("notes link"), "Link to Plain text");
   assert.equal(kind("gone link"), "Broken Link");
   assert.ok(row(dom.container, "notes link")!.querySelector(".fm-link-badge"), "a link carries the link badge");
-  assert.equal(row(dom.container, "notes link")!.getAttribute("draggable"), "false");
+  assert.equal(row(dom.container, "notes link")!.getAttribute("draggable"), "true", "a link drags as itself");
   assert.equal(row(dom.container, "Docs")!.getAttribute("draggable"), "true", "a folder drags as a file does");
 
   const menuFor = async (path: string) => {
@@ -203,25 +203,35 @@ test("a symbolic link says what it is, opens where it points, and offers only Op
     await dom.act(() => { dom.container.querySelector<HTMLElement>(".fm-menu-back")?.click(); });
     return items;
   };
-  assert.deepEqual(await menuFor("Docs link"), ["Open Folder", "Show in File Manager", "Copy Link Path"]);
-  assert.deepEqual(await menuFor("notes link"), ["Open", "Show in File Manager", "Copy Link Path"]);
-  assert.deepEqual(await menuFor("gone link"), ["Show in File Manager", "Copy Link Path"]);
+  const onLink = (name: string) => [`Copy “${name}”`, `Cut “${name}”`, "Duplicate", `Compress “${name}”`, "Rename…", "Delete Link"];
+  assert.deepEqual(await menuFor("Docs link"), ["Open Folder", "Show Original", "Show in File Manager", "Copy Link Path", ...onLink("Docs link")]);
+  assert.deepEqual(await menuFor("notes link"), ["Open", "Show Original", "Show in File Manager", "Copy Link Path", ...onLink("notes link")]);
+  assert.deepEqual(await menuFor("gone link"), ["Show in File Manager", "Copy Link Path", ...onLink("gone link")], "a broken link has nothing to open or show");
 
-  // Return does not rename a link, and Command-Delete does not delete one.
+  // Return renames the link itself.
   await dom.act(() => row(dom.container, "notes link")!.click());
   contents(dom.container).focus();
   await dom.press("Enter");
-  assert.equal(document.querySelector('[role="dialog"]'), null);
-  const before = requests.length;
-  await dom.press("Backspace", { ctrlKey: true });
+  assert.ok(document.querySelector('[role="dialog"]'), "Return opens Rename for a link");
+  await dom.press("Escape");
   await dom.settle();
-  assert.equal(requests.slice(before).some((request) => request.method !== "GET"), false);
 
   // A linked folder opens where it really is: the host resolves the link again.
   await dom.act(() => { row(dom.container, "Docs link")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
   await dom.waitFor(() => Boolean(row(dom.container, "Docs/inside.md") ?? row(dom.container, "inside.md")));
   assert.ok(requests.some((request) => request.path === `/api/folder-location?path=${encodeURIComponent("/tmp/lab/Docs link").replace(/%20/g, "+")}`), "asked where the link's folder is");
 });
+
+/** The transfers the window ran, without their conflicts-first checks and with the progress id checked and left out. */
+function transferRuns(requests: ReadonlyArray<{ path: string; body?: unknown }>): unknown[] {
+  return requests
+    .filter((request) => request.path === "/api/file-transfer" && !(request.body as { conflicts?: { check?: boolean } }).conflicts?.check)
+    .map((request) => {
+      const { operationId, ...body } = request.body as { operationId?: string };
+      assert.match(operationId ?? "", /^fm-[A-Za-z0-9-]+$/, "each run carries a progress id");
+      return body;
+    });
+}
 
 /** A drag event with a data transfer jsdom does not have. */
 function dragEvent(type: string, data: Record<string, string> = {}, files: Array<{ name: string }> = []) {
@@ -261,13 +271,15 @@ test("dragging a selected item carries the whole selection onto a folder row; an
   await dom.act(() => { row(dom.container, "Archive")!.dispatchEvent(dragEvent("dragover", start.dataTransfer.stored)); });
   assert.ok(row(dom.container, "Archive")!.classList.contains("is-drop-target"));
   await dom.act(() => { row(dom.container, "Archive")!.dispatchEvent(dragEvent("drop", start.dataTransfer.stored)); });
-  await dom.waitFor(() => requests.some((request) => request.path === "/api/file-transfer"));
-  const transfer = requests.find((request) => request.path === "/api/file-transfer")!;
-  assert.deepEqual(transfer.body, {
+  // Taken names are asked about first (nothing is written), then the move runs with a progress id.
+  await dom.waitFor(() => transferRuns(requests).length === 1);
+  const expected = {
     mode: "move",
     sources: [{ place: { kind: "connected-folder", id: "lab" }, path: "a.md" }, { place: { kind: "connected-folder", id: "lab" }, path: "Reports" }],
     target: { place: { kind: "connected-folder", id: "lab" }, path: "Archive" },
-  });
+  };
+  assert.deepEqual(requests.find((request) => request.path === "/api/file-transfer")!.body, { ...expected, conflicts: { check: true } });
+  assert.deepEqual(transferRuns(requests), [expected]);
 
   // An unselected item drags alone, and becomes the selection.
   const alone = dragEvent("dragstart");
@@ -365,7 +377,7 @@ test("in a Standard Folder, items from another app are copied into the folder or
   await dom.act(() => downloads.click());
   await dom.waitFor(() => Boolean(row(dom.container, "Taxes")));
   const place = { kind: "standard", id: "downloads" };
-  const transfers = () => requests.filter((request) => request.path === "/api/file-transfer").map((request) => request.body);
+  const transfers = () => transferRuns(requests);
 
   // From another app, onto the empty list: copied into the folder shown, and the list takes the drop.
   const over = dragEvent("dragover", { Files: "" }, [{ name: "scan.png" }]);

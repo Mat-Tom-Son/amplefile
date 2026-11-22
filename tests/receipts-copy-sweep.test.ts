@@ -53,7 +53,7 @@ test("public documents promise receipts and undo instead of gates", async () => 
 
   const security = await read("SECURITY.md");
   assert.match(security, /\*\*Receipts, not gates\.\*\*/);
-  assert.match(security, /Destruction is reversible\./);
+  assert.match(security, /Destruction by a product verb is reversible\./);
   assert.match(security, /`amplefile recently-deleted list\|restore`/);
   assert.match(security, /The only human-only surface establishes secrets/);
 

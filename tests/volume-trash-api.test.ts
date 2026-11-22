@@ -266,3 +266,33 @@ test("Delete Immediately and Empty Trash remove items for good and report exactl
   assert.deepEqual((await call("/api/trash")).body!.items, []);
   assert.equal((await call("/api/trash/put-back", { method: "POST", body: { itemId: id("old.zip") } })).status, 404, "an emptied item is gone");
 });
+
+test("Empty Trash and Delete Immediately run as a stoppable delete operation when given a progress id", async (t) => {
+  const { api, call, trash } = await sandboxApi(t);
+  for (let index = 0; index < 200; index += 1) await trashFile(trash, `item-${index}.txt`, `/home/ana/item-${index}.txt`);
+  // Stop as soon as the operation shows up: what was not deleted stays in the Trash and is named.
+  let emptied: Promise<{ status: number; body: Record<string, any> | null }> | null = null;
+  const events = await readEvents(api, "/api/file-transfer/events", (seen) => seen.some((event) => event.type === "finished" && event.operationId === "empty-1"), async (seen) => {
+    if (!emptied) { emptied = call("/api/trash/empty", { method: "POST", body: { operationId: "empty-1" } }); return; }
+    const progress = seen.find((event) => event.type === "progress" && event.operation.operationId === "empty-1");
+    if (progress && seen.filter((event) => event.type === "progress").length === 1) {
+      assert.equal(progress.operation.kind, "delete");
+      assert.equal((await call("/api/file-transfer/cancel", { method: "POST", body: { operationId: "empty-1" } })).status, 200);
+    }
+  });
+  const answer = await emptied!;
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body!.cancelled, true);
+  assert.equal(answer.body!.removed.length + answer.body!.notDone.length, 200, "every item was either removed or is named as still there");
+  assert.ok(answer.body!.notDone.length > 0, "Stop came before the last item");
+  assert.deepEqual(events.find((event) => event.type === "finished" && event.operationId === "empty-1"), { type: "finished", operationId: "empty-1", kind: "delete", outcome: "cancelled" });
+  const left = await call("/api/trash");
+  assert.equal(left.body!.items.length, answer.body!.notDone.length);
+
+  // Delete Immediately with an id finishes as a delete operation too.
+  const ids = left.body!.items.slice(0, 2).map((item: { id: string }) => item.id);
+  const deleted = await call("/api/trash/delete", { method: "POST", body: { itemIds: ids, operationId: "delete-1" } });
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.body!.removed.length, 2);
+  assert.equal(deleted.body!.cancelled, undefined);
+});

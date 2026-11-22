@@ -13,11 +13,11 @@ file manager window's **Browser pane**: to watch what a Worker does in a page,
 to sign in to a site, and to answer a site's question. The desktop process
 owns the pages; the window only places them and shows their state.
 
-Pages show only in the file manager window, which needs a Connected Folder.
-On first run, or after the last Connected Folder is disconnected, there is no
-Browser pane: a page the AmpleFile Agent opens then runs unseen, and a
-question its site asks waits until the page leaves or a Connected Folder is
-connected and the pane shows it.
+Pages show only in the file manager window, which is there with or without a
+Connected Folder. Only while first run's welcome is up, on a fresh profile, is
+there no Browser pane: a page the AmpleFile Agent opens then runs unseen, and a
+question its site asks waits until the page leaves or the welcome is left and
+the pane shows it.
 
 ## The Browser pane
 

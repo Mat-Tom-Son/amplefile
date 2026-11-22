@@ -9,7 +9,8 @@ import type { FileManagerPlace } from "./file-manager-places";
  * "Finder's file actions").
  */
 
-export type FileOperationKind = "copy" | "duplicate" | "move" | "compress" | "extract";
+/** `delete` is Empty Trash and Delete Immediately in the Trash view. */
+export type FileOperationKind = "copy" | "duplicate" | "move" | "compress" | "extract" | "delete";
 export type FileOperationStage = "preparing" | "copying" | "moving" | "removing" | "compressing" | "extracting" | "finishing";
 
 export interface FileOperationProgress {
@@ -146,7 +147,8 @@ export function operationDetail(operation: WindowOperation): string {
   const progress = operation.progress;
   if (operation.stopping) return progress && !progress.cancellable ? "Finishing…" : "Stopping…";
   if (!progress) return "Waiting to start…";
-  const parts: string[] = [stageWords[progress.stage]];
+  // A deletion from the Trash is all removing: it says Deleting.
+  const parts: string[] = [progress.kind === "delete" && progress.stage === "removing" ? "Deleting" : stageWords[progress.stage]];
   if (progress.stage !== "preparing" && progress.stage !== "finishing") {
     // Extract counts the archive's bytes read, not its items.
     if (progress.kind !== "extract") parts.push(progress.itemsTotal !== null ? `${progress.itemsDone.toLocaleString()} of ${countWord(progress.itemsTotal, "item")}` : countWord(progress.itemsDone, "item"));
@@ -163,7 +165,7 @@ export function canStop(operation: WindowOperation): boolean {
 
 /** The title an operation shows while it runs. */
 export function operationTitle(kind: FileOperationKind, what: string, where: string | null): string {
-  const verb = { copy: "Copying", duplicate: "Duplicating", move: "Moving", compress: "Compressing", extract: "Extracting" }[kind];
+  const verb = { copy: "Copying", duplicate: "Duplicating", move: "Moving", compress: "Compressing", extract: "Extracting", delete: "Deleting" }[kind];
   return where ? `${verb} ${what} to ${where}` : `${verb} ${what}`;
 }
 
@@ -176,6 +178,11 @@ export function stoppedMessage(kind: FileOperationKind, answer: TransferAnswer):
   if (kind === "extract") return "Stopped. Nothing was extracted.";
   const done = answer.written.length;
   const notDone = answer.notDone?.length ?? 0;
+  if (kind === "delete") {
+    return done
+      ? `Stopped. ${countWord(done, "item", true)} ${done === 1 ? "was" : "were"} deleted for good; ${notDone ? `${countWord(notDone, "item")} ${notDone === 1 ? "is" : "are"} still in the Trash` : "nothing else was"}.`
+      : "Stopped. Nothing was deleted; everything is still in the Trash.";
+  }
   const verb = kind === "move" && !answer.copiedInstead ? "moved" : kind === "duplicate" ? "duplicated" : "copied";
   const sentences: string[] = [];
   if (!done) sentences.push(`Stopped. Nothing was ${verb}.`);

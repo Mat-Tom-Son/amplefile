@@ -89,7 +89,8 @@ function readFileSyncLike(relativePath: string): Promise<string> {
 test("Files exposes folder creation and naming uses in-app UI", () => {
   // Connected Folder creation lives in the right-click menu; Files has no toolbar buttons.
   assert.doesNotMatch(app, /aria-label="New [Ff]older"/);
-  assert.match(fileManager, /onNewFolder=\{\(parent\) => requestNewFolder\(parent\)\}/);
+  // One item menu for every desktop (src/shared/file-menu.ts) offers New Folder Here….
+  assert.match(fileManager, /fileMenuItems\(/);
   assert.match(fileManager, /else if \(command === "new-folder"\) requestNewFolder\(/);
   assert.doesNotMatch(app, /aria-label="New file"|onNewFile=/i);
   assert.doesNotMatch(`${app}\n${panes}\n${fileManager}`, /window\.prompt\s*\(/);
