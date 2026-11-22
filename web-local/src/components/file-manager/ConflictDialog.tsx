@@ -1,4 +1,5 @@
 import { useCallback, useId, useRef, useState } from "react";
+import "./file-manager-operations.css";
 
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { formatFileManagerDate } from "./file-manager-model";
@@ -55,7 +56,8 @@ function ConflictDialog({ question, onDone }: { question: ConflictQuestion; onDo
   const conflict = remaining[0];
   if (!conflict) return null;
   const more = remaining.length - 1;
-  const insideCount = conflict.canMerge ? conflict.insideClashes ?? null : 0;
+  // Same-named items inside are asked about when the engine counted some, or could not count them quickly (null).
+  const insideCount = conflict.canMerge && conflict.insideClashes !== undefined ? conflict.insideClashes : 0;
 
   function choose(choice: ConflictChoice) {
     const next = [...decisions, { key: conflict!.key, choice, applyToAll: applyToAll && more > 0, ...(choice === "merge" ? { inside } : {}) }];

@@ -1879,7 +1879,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       kind: target.kind,
       capabilities,
       ...(selectionCounts ? { selection: selectionCounts } : {}),
-    }, desktopPlatform() ?? (mac ? "darwin" : "linux")).map((item) => item.type === "separator" ? { label: "", command: "-" } : { label: item.label, command: item.command });
+    }, desktopPlatform() ?? (mac ? "darwin" : "linux"))
+      // Open With needs the desktop's app chooser.
+      .filter((item) => item.type === "separator" || item.command !== "open-with" || (!fixtureMode && Boolean(bridge?.openWith)))
+      .map((item) => item.type === "separator" ? { label: "", command: "-" } : { label: item.label, command: item.command });
     const height = items.reduce((total, item) => total + (item.command === "-" ? 11 : 24), 12);
     setQuickMenu({
       x: Math.min(point.x, window.innerWidth - 260),
@@ -2131,10 +2134,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       else select([path]);
     };
     // Finder's Copy, Cut, Paste, Move Item Here (⌥⌘V), and Duplicate; codes, since ⌥ changes the letter.
-    if (command && !event.shiftKey && event.code === "KeyC") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void copySelection(); return; }
-    if (command && !event.shiftKey && !event.altKey && event.code === "KeyX") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void cutSelection(); return; }
-    if (command && !event.shiftKey && event.code === "KeyV") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
-    if (command && !event.shiftKey && event.code === "KeyD") { event.preventDefault(); void duplicateSelection(); return; }
+    if (command && !event.shiftKey && letterKey(event, "c")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void copySelection(); return; }
+    if (command && !event.shiftKey && !event.altKey && letterKey(event, "x")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void cutSelection(); return; }
+    if (command && !event.shiftKey && letterKey(event, "v")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
+    if (command && !event.shiftKey && letterKey(event, "d")) { event.preventDefault(); void duplicateSelection(); return; }
     if (command && event.key === "ArrowDown") { event.preventDefault(); const entry = focusPath ? byPath.get(focusPath) : null; if (entry && selection.length === 1) void openEntry(entry); return; }
     if (command && event.key === "ArrowUp") { event.preventDefault(); goToEnclosingFolder(); return; }
     if (command && event.key === "[") { event.preventDefault(); goBack(); return; }
@@ -2803,6 +2806,11 @@ function ActivityDot({ status }: { status?: "running" | "attention" }) {
   return <span className={`fm-dot ${status === "running" ? "is-run" : "is-done"}`} aria-label={status === "running" ? "Working" : "New reply"} role="img" />;
 }
 
+
+/** A letter key by its physical key (⌥ changes the letter it types), or by the letter when no code is given. */
+function letterKey(event: KeyboardEvent<HTMLElement>, letter: string): boolean {
+  return event.code === `Key${letter.toUpperCase()}` || (!event.code && !event.altKey && event.key.toLowerCase() === letter);
+}
 
 function hiddenKey(place: FileManagerPlace, path: string): string {
   return `${placeKey(place)}\0${path}`;

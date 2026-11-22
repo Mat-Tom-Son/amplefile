@@ -130,8 +130,10 @@
 }
 
 /* The name-clash question: the two items, then the choices. */
-.fm-clash {
-  width: min(520px, calc(100vw - 32px));
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .confirm-dialog.fm-clash,
+:root .confirm-dialog.fm-clash {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
 }
 
 .fm-clash-items {
