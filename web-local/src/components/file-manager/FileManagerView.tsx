@@ -1410,13 +1410,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           if (result.failed) onError(result.failed.error);
         } else if (target.kind === "connected-folder" && entriesToDelete.length === 1) {
           const pending: PendingDelete = { connectedFolderId: target.id, path: entriesToDelete[0]!.path, name: entriesToDelete[0]!.name, selectedPath: null, deletedTabPaths: new Set() };
-          const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string };
-          // Once it has happened, ⌘Z brings it back through History.
-          replaceDeleteUndo(entriesToDelete[0]!.name, target.id, result.safetyCheckpointId);
+          const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string; recentlyDeleted?: { entryId: string } };
+          // Once it has happened, ⌘Z brings it back through History, and from Recently Deleted what History could not keep (a link, a large file).
+          replaceDeleteUndo(entriesToDelete[0]!.name, target.id, result.safetyCheckpointId, result.recentlyDeleted ? [result.recentlyDeleted.entryId] : []);
         } else if (target.kind === "connected-folder") {
           const result = await deleteLocalFilesRequest(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
-          replaceDeleteUndo(`${entriesToDelete.length} items`, target.id, result.safetyCheckpointId);
+          replaceDeleteUndo(`${entriesToDelete.length} items`, target.id, result.safetyCheckpointId, result.deleted.flatMap((row) => row.recentlyDeleted ? [row.recentlyDeleted.entryId] : []));
         }
       } catch (caught) {
         onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
@@ -1436,11 +1436,28 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     });
   }
 
-  /** The pending delete's undo, swapped for History's once the delete has happened. */
-  function replaceDeleteUndo(name: string, connectedFolderId: string, checkpointId: string | undefined) {
+  /**
+   * The pending delete's undo, swapped for the real one once the delete has
+   * happened: items History could not keep (a link, a large file) come back
+   * from Recently Deleted first, then History's restore point puts back the rest.
+   */
+  function replaceDeleteUndo(name: string, connectedFolderId: string, checkpointId: string | undefined, recentlyDeletedIds: readonly string[] = []) {
     const label = `Delete ${name}`;
     undoStackRef.current = undoStackRef.current.filter((entry) => entry.label !== label);
-    if (checkpointId) undoStackRef.current = [...undoStackRef.current.slice(-49), restorePointsUndo(label, [{ connectedFolderId, checkpointId }])];
+    const history = checkpointId ? restorePointsUndo(label, [{ connectedFolderId, checkpointId }]) : null;
+    if (!recentlyDeletedIds.length) {
+      if (history) undoStackRef.current = [...undoStackRef.current.slice(-49), history];
+      return;
+    }
+    undoStackRef.current = [...undoStackRef.current.slice(-49), {
+      label,
+      run: async () => {
+        for (const entryId of recentlyDeletedIds) await api(`/api/settings/recently-deleted/${encodeURIComponent(entryId)}/restore`, { method: "POST", body: {} });
+        // What came back from Recently Deleted is redone with a new delete, not a restore point.
+        if (history) await history.run();
+        return null;
+      },
+    }];
   }
 
   async function renameEntry(entry: TreeEntry, name: string) {
