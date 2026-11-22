@@ -39,7 +39,7 @@ const tileColumnGap = 6;
 /** What a view whose height is not known yet (not laid out) is taken to show. */
 const fallbackViewport = 1_000;
 
-export function FileEntries({ view, entries, selected, focusPath, dropTarget, markedPaths, kindLabel, day, tintFor, handlers, scrollRef, layoutRef }: {
+export function FileEntries({ view, entries, selected, focusPath, dropTarget, markedPaths, cutPaths = null, kindLabel, day, tintFor, handlers, scrollRef, layoutRef }: {
   view: "list" | "icons";
   entries: readonly TreeEntry[];
   selected: ReadonlySet<string>;
@@ -47,6 +47,8 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
   focusPath: string | null;
   dropTarget: string | null;
   markedPaths: ReadonlySet<string> | null;
+  /** Items cut and not yet pasted: drawn dimmed. */
+  cutPaths?: ReadonlySet<string> | null;
   kindLabel: (entry: TreeEntry) => string;
   day: string;
   tintFor: (entry: TreeEntry) => FolderLook | undefined;
@@ -114,6 +116,7 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
           selected={selected.has(entry.path)}
           dropTarget={dropTarget === entry.path}
           marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
+          cut={Boolean(cutPaths?.has(entry.path))}
           kind={kindLabel(entry)}
           day={day}
           tintColor={tint?.color}
@@ -141,6 +144,7 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
           selected={selected.has(entry.path)}
           dropTarget={dropTarget === entry.path}
           marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
+          cut={Boolean(cutPaths?.has(entry.path))}
           tintColor={tint?.color}
           tintSymbol={tint?.symbol}
           handlers={handlers}
@@ -208,6 +212,8 @@ interface EntryViewProps {
   dropTarget: boolean;
   /** Changed by the Worker's last reply. */
   marked: boolean;
+  /** Cut and not yet pasted. */
+  cut: boolean;
   tintColor?: string;
   tintSymbol?: FolderLook["symbol"];
   handlers: EntryHandlers;
@@ -217,14 +223,14 @@ function entryTint(color: string | undefined, symbol: FolderLook["symbol"] | und
   return color === undefined ? undefined : { color, symbol: symbol ?? null };
 }
 
-function entryClasses(entry: TreeEntry, selected: boolean, dropTarget: boolean): string {
-  return `${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${entry.hidden ? " is-hidden" : ""}${entry.link ? " is-link" : ""}${dropTarget ? " is-drop-target" : ""}`;
+function entryClasses(entry: TreeEntry, selected: boolean, dropTarget: boolean, cut = false): string {
+  return `${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${entry.hidden ? " is-hidden" : ""}${entry.link ? " is-link" : ""}${dropTarget ? " is-drop-target" : ""}${cut ? " is-cut" : ""}`;
 }
 
 const changedDot = <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" />;
 
 /** One list row; memoised, since a folder can show thousands. */
-const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & {
+const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget, marked, cut, kind, tintColor, tintSymbol, handlers }: EntryViewProps & {
   index: number;
   top: number;
   kind: string;
@@ -237,7 +243,7 @@ const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget,
     aria-rowindex={index + 2}
     aria-selected={selected}
     data-fm-path={entry.path}
-    className={`fm-row${index % 2 === 1 ? " is-odd" : ""}${entryClasses(entry, selected, dropTarget)}`}
+    className={`fm-row${index % 2 === 1 ? " is-odd" : ""}${entryClasses(entry, selected, dropTarget, cut)}`}
     style={{ transform: `translateY(${top}px)` }}
     draggable={isDraggableEntry(entry)}
     onClick={(event) => handlers.click(entry, event)}
@@ -257,14 +263,14 @@ const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget,
 });
 
 /** One icon-view tile; memoised like FileRow. */
-const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, marked, tintColor, tintSymbol, handlers }: EntryViewProps & { column: number }) {
+const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, marked, cut, tintColor, tintSymbol, handlers }: EntryViewProps & { column: number }) {
   return <div
     id={rowDomId(entry.path)}
     role="gridcell"
     aria-colindex={column + 1}
     aria-selected={selected}
     data-fm-path={entry.path}
-    className={`fm-tile${entryClasses(entry, selected, dropTarget)}`}
+    className={`fm-tile${entryClasses(entry, selected, dropTarget, cut)}`}
     draggable={isDraggableEntry(entry)}
     onClick={(event) => handlers.click(entry, event)}
     onDoubleClick={() => handlers.open(entry)}

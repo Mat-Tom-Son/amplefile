@@ -4,7 +4,6 @@ import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRigh
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
 import { ChevronLeft, ChevronRight, Search, X } from "../chrome/icons";
-import { FileContextMenu } from "../tree/FileContextMenu";
 import { TextInputModal } from "../modals/TextInputModal";
 import { NewFolderModal, type NewFolderTarget } from "../modals/NewFolderModal";
 import { FileVersionHistoryModal } from "../modals/FileVersionHistoryModal";
@@ -34,7 +33,7 @@ import { requestConfirm, showToast } from "../../ui/feedback";
 import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import type { ConnectedFolderAppearanceState } from "../../../../src/shared/connected-folder-appearance";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
-import type { AgentStatus, ChatSendRequest, ConversationSummary, DesktopUpdateStatus, FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { AgentStatus, ChatSendRequest, ConversationSummary, DesktopUpdateStatus, TreeEntry, ConnectedFolderSummary } from "../../types";
 import {
   closedSidebarParents,
   defaultFileManagerSort,
@@ -106,6 +105,11 @@ import { UpdateIndicator } from "./UpdateIndicator";
 import { useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
 import { moveResultMessage } from "./move-result";
+import { useFileOperations, OperationStoppedBeforeStart, type OperationHandle } from "./useFileOperations";
+import { FileOperationsTray } from "./FileOperationsTray";
+import { useConflictQuestion } from "./ConflictDialog";
+import { operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
+import { fileMenuItems, isExtractableArchive, type FileMenuCapabilities } from "../../../../src/shared/file-menu";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
@@ -321,8 +325,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     return () => { root.removeProperty("--fm-notice-left"); root.removeProperty("--fm-notice-right"); };
   }, [sidebarWidth, panelWidth, panelOpen]);
   const typeSelectRef = useRef<{ text: string; timer: number | null }>({ text: "", timer: null });
+  // When the folder list last handled ⌘C, ⌘X, or ⌘V itself, so the Edit menu's own command for the same key does not repeat it.
+  const clipboardKeyAtRef = useRef(0);
+  const clipboardActionsRef = useRef<{ copy: () => void; cut: () => void; paste: () => void }>({ copy: () => undefined, cut: () => undefined, paste: () => undefined });
 
-  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
   const [renaming, setRenaming] = useState<TreeEntry | null>(null);
   const [newFolderTarget, setNewFolderTarget] = useState<NewFolderTarget | null>(null);
   const [newStandardFolderParent, setNewStandardFolderParent] = useState<string | null>(null);
@@ -340,8 +346,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // The files dragged out of this list, so dropping them back on a folder row moves them rather than copying.
   const internalDragRef = useRef<{ place: FileManagerPlace; paths: string[]; at: number } | null>(null);
-  // What ⌘C copied here: the items by place (so ⌥⌘V can move them) and as paths on the system pasteboard.
-  const fileClipboardRef = useRef<{ place: FileManagerPlace; paths: string[]; nativePaths: string[] } | null>(null);
+  // What ⌘C copied or ⌘X cut here: the items by place (so a Cut or ⌥⌘V moves them) and as paths on the system pasteboard.
+  const fileClipboardRef = useRef<{ place: FileManagerPlace; paths: string[]; nativePaths: string[]; cut: boolean } | null>(null);
+  // Items cut and not yet pasted, drawn dimmed until they are pasted or the clipboard holds something else.
+  const [cutItems, setCutItems] = useState<{ place: FileManagerPlace; paths: ReadonlySet<string> } | null>(null);
+  // Copies, moves, Compresses, and Extracts running now, with their progress and Stop; and the name-clash question.
+  const fileOperations = useFileOperations(!fixtureMode);
+  const conflictQuestion = useConflictQuestion();
   // ⌘Z and ⇧⌘Z for file changes: each entry undoes one change and returns the entry that redoes it.
   const undoStackRef = useRef<FileUndo[]>([]);
   const redoStackRef = useRef<FileUndo[]>([]);
@@ -967,17 +978,21 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         // Items already in the target stay; none goes into itself or a folder inside it.
         const sources = moving.filter((path) => !(samePlace(movingPlace, target.place) && (parentPath(path) === target.path || !canDropInto(target.path, [path]))));
         if (!sources.length) return [];
-        const result = await transfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target });
+        const result = await startTransfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target }, targetName, transferLabel(sources));
+        if (!result) return [];
         await afterTransfer(result, target, `Move ${transferLabel(sources)}`, options.select ?? samePlace(target.place, place));
+        if (reportOutcome("move", result) && result.cancelled) return result.written;
         showToast(result.copiedInstead
           ? { text: `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.`, tone: "success" }
           : moveResultMessage(transferLabel(sources), targetName, nameOfPlace(movingPlace), result));
         return result.written;
       }
       if (nativePaths.length) {
-        const result = await transfer({ mode: "copy", sources: nativePaths.map((nativePath) => ({ nativePath })), target });
+        const result = await startTransfer({ mode: "copy", sources: nativePaths.map((nativePath) => ({ nativePath })), target }, targetName, transferLabel(nativePaths));
+        if (!result) return [];
         await afterTransfer(result, target, `Add ${transferLabel(nativePaths)}`, options.select ?? samePlace(target.place, place));
-        showToast({ text: `Added ${transferLabel(nativePaths)} to ${targetName}`, tone: "success" });
+        if (reportOutcome("copy", result) && result.cancelled) return result.written;
+        if (result.written.length) showToast({ text: `Added ${transferLabel(nativePaths)} to ${targetName}`, tone: "success" });
         return result.written;
       }
       // A browser without file paths can still upload into a Connected Folder.
@@ -1002,12 +1017,62 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // ---- Copy, paste, duplicate, compress, and ⌘Z ----
   undoFileChangeRef.current = (redo) => undoFileChange(redo);
 
-  interface TransferResult { mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }> }
+  type TransferResult = TransferAnswer;
+  type TransferBody = { mode: "copy" | "move" | "duplicate"; sources: Array<{ place: FileManagerPlace; path: string } | { nativePath: string }>; target: { place: FileManagerPlace; path: string } };
 
-  function transfer(body: { mode: "copy" | "move" | "duplicate"; sources: Array<{ place: FileManagerPlace; path: string } | { nativePath: string }>; target: { place: FileManagerPlace; path: string } }): Promise<TransferResult> {
-    const connectedFolderIds = [body.target.place, ...body.sources.map((source) => "place" in source ? source.place : null)]
+  function transfer(body: TransferBody & { operationId?: string; conflicts?: ConflictPolicy }, beforeSend?: () => void): Promise<TransferResult> {
+    return historyTurn(transferConnectedFolderIds(body), () => { beforeSend?.(); return api<TransferResult>("/api/file-transfer", { method: "POST", body }); });
+  }
+
+  function transferConnectedFolderIds(body: TransferBody): string[] {
+    return [body.target.place, ...body.sources.map((source) => "place" in source ? source.place : null)]
       .flatMap((item) => item?.kind === "connected-folder" ? [item.id] : []);
-    return historyTurn(connectedFolderIds, () => api<TransferResult>("/api/file-transfer", { method: "POST", body }));
+  }
+
+  /**
+   * One operation with progress and Stop (useFileOperations): it carries an
+   * `operationId`, shows in the operations area once it takes a moment, and
+   * a Stop that comes while it still waits its turn means it never starts.
+   */
+  async function runOperation(kind: FileOperationKind, title: string, work: (handle: OperationHandle) => Promise<TransferResult>): Promise<TransferResult> {
+    try {
+      return await fileOperations.run(kind, title, work);
+    } catch (caught) {
+      if (caught instanceof OperationStoppedBeforeStart) return { written: [], restorePoints: [], cancelled: true, notDone: [] };
+      throw caught;
+    }
+  }
+
+  /**
+   * Asks about taken names first (the engine's conflicts-first answer: nothing
+   * is written), then runs with the person's choices. Null when they chose Stop.
+   */
+  async function withConflictChoices(check: () => Promise<TransferResult>, verb: string, where: string): Promise<{ policy: ConflictPolicy | undefined } | null> {
+    const asked = await check();
+    if (asked.nothing) return { policy: undefined };
+    if (!asked.conflicts?.length) return { policy: undefined };
+    const policy = await conflictQuestion.ask(asked.conflicts, verb, where);
+    return policy ? { policy } : null;
+  }
+
+  /** A copy, move, or Duplicate with progress, Stop, and (except Duplicate, which keeps both) the name-clash question. */
+  async function startTransfer(body: TransferBody, where: string, what: string): Promise<TransferResult | null> {
+    const kind: FileOperationKind = body.mode;
+    if (body.mode !== "duplicate") {
+      const verb = body.mode === "move" ? "Moving" : "Copying";
+      const choices = await withConflictChoices(() => api<TransferResult>("/api/file-transfer", { method: "POST", body: { ...body, conflicts: { check: true } } }), verb, where);
+      if (!choices) return null;
+      return runOperation(kind, operationTitle(kind, what, where), (handle) => transfer({ ...body, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) }, handle.beforeSend));
+    }
+    return runOperation(kind, operationTitle(kind, what, null), (handle) => transfer({ ...body, operationId: handle.operationId }, handle.beforeSend));
+  }
+
+  /** What the window says after an operation: what Stop left undone, and where anything replaced went. */
+  function reportOutcome(kind: FileOperationKind, result: TransferResult): boolean {
+    if (result.cancelled) { showToast({ text: stoppedMessage(kind, result), tone: "info" }); return true; }
+    const replaced = replacedMessage(result);
+    if (replaced) showToast({ text: replaced, tone: "info", durationMs: 9000 });
+    return Boolean(replaced);
   }
 
   /**
@@ -1026,12 +1091,23 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     return only.slice(Math.max(only.lastIndexOf("/"), only.lastIndexOf("\\")) + 1);
   }
 
-  /** After any transfer: its undo, a fresh listing, and the new items selected when they are in the folder shown. */
+  /** Where a folder in a place is, by name, for messages. */
+  function folderLabel(target: { place: FileManagerPlace; path: string }): string {
+    return target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : nameOfPlace(target.place);
+  }
+
+  /**
+   * After any transfer: its undo, a fresh listing, and the new items selected
+   * when they are in the folder shown. When a Replace sent something to the
+   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back.
+   */
   async function afterTransfer(result: TransferResult, target: { place: FileManagerPlace; path: string }, label: string, selectWritten: boolean) {
-    if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
+    const covers = undoCovers(result);
+    if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
+    else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
     else if (result.moves?.length && target.place.kind === "standard") recordUndo(standardMovesUndo(label, target.place, result.moves));
     await Promise.all([listing.refresh(), standard.refresh()]);
-    if (selectWritten && samePlace(target.place, place) && target.path === location.path) select(result.written);
+    if (selectWritten && samePlace(target.place, place) && target.path === location.path && result.written.length) select(result.written);
   }
 
   function recordUndo(entry: FileUndo) {
@@ -1054,17 +1130,19 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     };
   }
 
-  /** A Standard Folder has no History: undoing a move there moves each item back. */
-  function standardMovesUndo(label: string, target: FileManagerPlace, moves: Array<{ from: string; to: string }>): FileUndo {
+  /** A plain folder has no History: undoing a move there moves each item back, to the place it came from. */
+  function standardMovesUndo(label: string, target: FileManagerPlace, moves: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>): FileUndo {
     return {
       label,
       run: async () => {
-        const back: Array<{ from: string; to: string }> = [];
+        const back: Array<{ from: string; to: string; fromPlace: FileManagerPlace }> = [];
         for (const move of moves) {
-          const result = await transfer({ mode: "move", sources: [{ place: target, path: move.to }], target: { place: target, path: parentPath(move.from) } });
-          back.push({ from: move.to, to: result.written[0] ?? move.from });
+          const home = move.fromPlace ?? target;
+          const result = await transfer({ mode: "move", sources: [{ place: target, path: move.to }], target: { place: home, path: parentPath(move.from) } });
+          back.push({ from: move.to, to: result.written[0] ?? move.from, fromPlace: target });
         }
-        return standardMovesUndo(label, target, back);
+        // The redo moves them out again, from where they went back to.
+        return standardMovesUndo(label, moves[0]?.fromPlace ?? target, back);
       },
     };
   }
@@ -1074,6 +1152,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const entry = stack.current.at(-1);
     if (!entry) { showToast({ text: redo ? "Nothing to redo" : "Nothing to undo", tone: "info" }); return; }
     stack.current = stack.current.slice(0, -1);
+    // A change History cannot put back (an item a Replace sent to the Trash) says so instead of half-undoing.
+    if (entry.cannot) { showToast({ text: entry.cannot, tone: "info", durationMs: 9000 }); return; }
     try {
       const reverse = await entry.run();
       if (reverse) {
@@ -1087,48 +1167,90 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
-  /** The selected items Copy, Duplicate, Compress, and the rest act on: never a nested Connected Folder or a link. */
+  /** The selected items Copy, Cut, Duplicate, Compress, and the rest act on: a link as itself, never a nested Connected Folder. */
   function selectedEntries(): TreeEntry[] {
-    return selection.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder && !entry!.link);
+    return selection.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder);
   }
 
   /** ⌘C: the selection, here and on the system pasteboard, so Finder can paste it too. */
   async function copySelection(entries = selectedEntries()) {
-    if (!entries.length) return;
-    const nativePaths = entries.map((entry) => connectedFolderEntryNativePath(placeRoot, entry.path));
-    fileClipboardRef.current = { place, paths: entries.map((entry) => entry.path), nativePaths };
-    await window.ampleFileDesktop?.fileClipboard?.write(nativePaths).catch(() => false);
+    await putOnClipboard(entries, false);
   }
 
   /**
-   * ⌘V pastes what was copied (here or in Finder) into a folder; ⌥⌘V moves what
-   * was copied here. The desktop process reads the pasteboard and pastes; the
-   * window never reads it, and learns only what landed.
+   * ⌘X: Cut. The items stay where they are, dimmed, until Paste moves them
+   * (through the same move rules as ⌥⌘V). On Linux the pasteboard carries the
+   * cut marker GNOME Files and Dolphin read, so they paste it as a move too; a
+   * Mac's pasteboard has none, so there a Cut is this window's own.
+   */
+  async function cutSelection(entries = selectedEntries()) {
+    await putOnClipboard(entries, true);
+  }
+
+  async function putOnClipboard(entries: readonly TreeEntry[], cut: boolean) {
+    if (!entries.length) return;
+    const nativePaths = entries.map((entry) => connectedFolderEntryNativePath(placeRoot, entry.path));
+    const paths = entries.map((entry) => entry.path);
+    fileClipboardRef.current = { place, paths, nativePaths, cut };
+    setCutItems(cut ? { place, paths: new Set(paths) } : null);
+    await window.ampleFileDesktop?.fileClipboard?.write(nativePaths, cut ? "cut" : "copy").catch(() => false);
+  }
+
+  /** Paste emptied the Cut, or the clipboard holds something else now: nothing is drawn as cut. */
+  function forgetCut() {
+    if (fileClipboardRef.current?.cut) fileClipboardRef.current = null;
+    setCutItems(null);
+  }
+
+  /**
+   * ⌘V pastes what was copied or cut (here, in Finder, or in a Linux file
+   * manager) into a folder; ⌥⌘V moves what was copied. A Cut pastes as a move.
+   * The desktop process reads the pasteboard and pastes; the window never
+   * reads it, and learns only what landed. Taken names are asked about first.
    */
   async function pasteInto(targetPath = location.path, mode: "copy" | "move" = "copy") {
     if (fixtureMode) { showToast({ text: "Pasting is disabled in the preview", tone: "info" }); return; }
     const internal = fileClipboardRef.current;
     const target = { place, path: targetPath };
+    const where = folderLabel(target);
     const paste = window.ampleFileDesktop?.fileClipboard?.paste;
     try {
-      let result: TransferResult & { nothing?: boolean; fromHere?: boolean; count?: number };
+      let result: TransferResult;
+      let kind: FileOperationKind;
       if (paste) {
+        const request = { target, mode, internal: internal ? { place: internal.place, paths: internal.paths, nativePaths: internal.nativePaths, cut: internal.cut } : null };
+        let asked: TransferResult = { written: [], restorePoints: [] };
+        const choices = await withConflictChoices(async () => (asked = await paste({ ...request, conflicts: { check: true } })), mode === "move" || internal?.cut ? "Moving" : "Copying", where);
+        if (asked.nothing) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
+        if (!choices) return;
+        kind = asked.moved ? "move" : "copy";
+        const what = asked.fromHere && internal ? transferLabel(internal.paths) : `${asked.count ?? 0} items`;
         const touched = [target.place, internal?.place].flatMap((item) => item?.kind === "connected-folder" ? [item.id] : []);
-        result = await historyTurn(touched, () => paste({ target, mode, internal: internal ? { place: internal.place, paths: internal.paths, nativePaths: internal.nativePaths } : null }));
+        result = await runOperation(kind, operationTitle(kind, what, where), (handle) => historyTurn(touched, () => {
+          handle.beforeSend();
+          return paste({ ...request, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) });
+        }));
       } else {
         if (!internal) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
-        result = { ...(await transfer({ mode, sources: internal.paths.map((path) => ({ place: internal.place, path })), target })), fromHere: true, count: internal.paths.length };
+        const moving = internal.cut || mode === "move";
+        kind = moving ? "move" : "copy";
+        const answer = await startTransfer({ mode: kind, sources: internal.paths.map((path) => ({ place: internal.place, path })), target }, where, transferLabel(internal.paths));
+        if (!answer) return;
+        result = { ...answer, fromHere: true, count: internal.paths.length, moved: moving, cut: internal.cut };
       }
       if (result.nothing) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
-      const moved = Boolean(result.fromHere) && mode === "move" && !result.copiedInstead;
+      const moved = Boolean(result.moved) && !result.copiedInstead;
       const label = result.fromHere && internal ? transferLabel(internal.paths) : result.count === 1 ? transferLabel(result.written) : `${result.count ?? result.written.length} items`;
       await afterTransfer(result, target, `${moved ? "Move" : "Paste"} ${label}`, true);
-      if (moved) fileClipboardRef.current = null;
+      if (result.cancelled) { reportOutcome(kind, result); return; }
+      // A Cut (or a move by ⌥⌘V) is pasted once; the items are no longer drawn as cut.
+      if (result.fromHere && (moved || result.cut)) { fileClipboardRef.current = null; setCutItems(null); }
+      const said = reportOutcome(kind, result);
       if (result.copiedInstead) showToast({ text: `Copied ${label}. The original stays where it was.`, tone: "info" });
       else if (moved) {
         // A plain move says nothing, as Finder's does; one that left something behind says so.
-        const message = moveResultMessage(label, target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : placeName, internal ? nameOfPlace(internal.place) : "the original folder", result);
-        if (message.tone !== "success" || message.text.includes("Recently Deleted")) showToast(message);
+        const message = moveResultMessage(label, where, internal && result.fromHere ? nameOfPlace(internal.place) : "the original folder", result);
+        if (!said && (message.tone !== "success" || message.text.includes("Recently Deleted"))) showToast(message);
       }
     } catch (caught) {
       onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
@@ -1140,8 +1262,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (fixtureMode) { showToast({ text: "Duplicating is disabled in the preview", tone: "info" }); return; }
     const target = { place, path: parentPath(entries[0]!.path) };
     try {
-      const result = await transfer({ mode: "duplicate", sources: entries.map((entry) => ({ place, path: entry.path })), target });
-      await afterTransfer(result, target, `Duplicate ${transferLabel(entries.map((entry) => entry.path))}`, true);
+      const paths = entries.map((entry) => entry.path);
+      const result = await startTransfer({ mode: "duplicate", sources: paths.map((path) => ({ place, path })), target }, folderLabel(target), transferLabel(paths));
+      if (!result) return;
+      await afterTransfer(result, target, `Duplicate ${transferLabel(paths)}`, true);
+      reportOutcome("duplicate", result);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -1150,11 +1275,47 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   async function compressSelection(entries = selectedEntries()) {
     if (!entries.length) return;
     if (fixtureMode) { showToast({ text: "Compressing is disabled in the preview", tone: "info" }); return; }
+    const paths = entries.map((entry) => entry.path);
+    const at = place;
     try {
-      const result = await historyTurn(place.kind === "connected-folder" ? [place.id] : [], () => api<{ path: string; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }> }>("/api/file-transfer/compress", { method: "POST", body: { place, paths: entries.map((entry) => entry.path) } }));
-      if (result.restorePoints.length) recordUndo(restorePointsUndo(`Compress ${transferLabel(entries.map((entry) => entry.path))}`, result.restorePoints));
+      const result = await runOperation("compress", operationTitle("compress", transferLabel(paths), null), (handle) => historyTurn(at.kind === "connected-folder" ? [at.id] : [], () => {
+        handle.beforeSend();
+        return api<TransferResult>("/api/file-transfer/compress", { method: "POST", body: { place: at, paths, operationId: handle.operationId } });
+      }));
+      if (reportOutcome("compress", result) && result.cancelled) return;
+      if (result.restorePoints.length) recordUndo(restorePointsUndo(`Compress ${transferLabel(paths)}`, result.restorePoints));
       await listing.refresh();
-      select([result.path]);
+      if (result.path && samePlace(at, place)) select([result.path]);
+    } catch (caught) {
+      onError(errorText(caught));
+    }
+  }
+
+  /**
+   * Extract: a `.zip`, `.tar`, `.tar.gz`, or `.tgz` becomes a new folder
+   * beside it, named after it, with progress, Stop, and the name-clash
+   * question when that name is taken; the new folder is selected when done.
+   */
+  async function extractArchive(entry: TreeEntry) {
+    if (entry.kind !== "file" || entry.link || !isExtractableArchive(entry.name)) return;
+    if (fixtureMode) { showToast({ text: "Extracting is disabled in the preview", tone: "info" }); return; }
+    const at = place;
+    const where = folderLabel({ place: at, path: parentPath(entry.path) });
+    try {
+      const choices = await withConflictChoices(() => api<TransferResult>("/api/file-transfer/extract", { method: "POST", body: { place: at, path: entry.path, conflicts: { check: true } } }), "Extracting", where);
+      if (!choices) return;
+      const result = await runOperation("extract", operationTitle("extract", entry.name, null), (handle) => historyTurn(at.kind === "connected-folder" ? [at.id] : [], () => {
+        handle.beforeSend();
+        return api<TransferResult>("/api/file-transfer/extract", { method: "POST", body: { place: at, path: entry.path, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) } });
+      }));
+      if (result.cancelled) { reportOutcome("extract", result); return; }
+      const label = `Extract ${entry.name}`;
+      const covers = undoCovers(result);
+      if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
+      else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
+      await listing.refresh();
+      reportOutcome("extract", result);
+      if (result.path && samePlace(at, place)) select([result.path]);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -1220,7 +1381,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   async function deletePaths(paths: readonly string[]) {
-    const entriesToDelete = paths.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder && !entry!.link);
+    // A link is deleted as itself (Move to Trash in a plain folder; in a Connected Folder it waits in Recently Deleted, since History keeps no copy of a link).
+    const entriesToDelete = paths.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder);
     if (!entriesToDelete.length) return;
     if (fixtureMode) { showToast({ text: "Deleting is disabled in the preview", tone: "info" }); return; }
     const trash = place.kind === "standard" ? window.ampleFileDesktop?.standardFolder?.trash : null;
@@ -1473,6 +1635,40 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     showToast({ text: "Path copied", tone: "success" });
   }
 
+  // The Edit menu's Cut, Copy, and Paste act on the selected items while the folder list has the keyboard.
+  clipboardActionsRef.current = { copy: () => void copySelection(), cut: () => void cutSelection(), paste: () => void pasteInto(location.path, "copy") };
+  useEffect(() => {
+    function clipboardCommand(event: ClipboardEvent) {
+      const list = contentRef.current;
+      if (!list || !(document.activeElement instanceof HTMLElement) || !list.contains(document.activeElement)) return;
+      if (document.activeElement.closest("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      if (Date.now() - clipboardKeyAtRef.current < 400) return;
+      clipboardActionsRef.current[event.type as "copy" | "cut" | "paste"]();
+    }
+    document.addEventListener("copy", clipboardCommand);
+    document.addEventListener("cut", clipboardCommand);
+    document.addEventListener("paste", clipboardCommand);
+    return () => {
+      document.removeEventListener("copy", clipboardCommand);
+      document.removeEventListener("cut", clipboardCommand);
+      document.removeEventListener("paste", clipboardCommand);
+    };
+  }, []);
+  // Items cut here stay dimmed until pasted or until the clipboard holds something else (another app copied).
+  useEffect(() => {
+    if (!cutItems) return;
+    const holds = window.ampleFileDesktop?.fileClipboard?.holds;
+    if (!holds) return;
+    const check = () => {
+      const current = fileClipboardRef.current;
+      if (!current?.cut) return;
+      void holds(current.nativePaths).then((still) => { if (!still && fileClipboardRef.current === current) forgetCut(); }).catch(() => undefined);
+    };
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, [cutItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ⌘F searches names and contents, and ⇧⌘G goes to a folder by its path, as in Finder.
   useEffect(() => {
     function keydown(event: globalThis.KeyboardEvent) {
@@ -1638,7 +1834,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const showChatFile = useCallback((path: string) => showChatFileRef.current(path), []);
 
   function requestRename(entry: TreeEntry | undefined) {
-    if (!entry || entry.nestedFolder || entry.link) return;
+    // A link is renamed as itself.
+    if (!entry || entry.nestedFolder) return;
     if (fixtureMode) { showToast({ text: "Renaming is disabled in the preview", tone: "info" }); return; }
     setRenaming(entry);
   }
@@ -1649,6 +1846,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (place.kind === "standard") setNewStandardFolderParent(parent);
   }
 
+  /**
+   * The item menu (src/shared/file-menu.ts): the native menu on the Mac, the
+   * window's own menu elsewhere, with the same items. A link offers Open and
+   * Show Original, which reach what it points to, and the ordinary actions,
+   * which act on the link itself.
+   */
   async function openContextMenu(entry: TreeEntry | null, event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -1659,72 +1862,74 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const target: TreeEntry = entry ?? { name: location.path.split("/").pop() || placeName, path: location.path, kind: "folder" };
     const several = entry && paths.length > 1 ? paths.map((path) => byPath.get(path)).filter((item): item is TreeEntry => Boolean(item)) : null;
     const owner = place.kind === "standard" ? { connectedFolderId: "", standardFolderId: place.id } : { connectedFolderId: place.id };
+    const capabilities = several ? selectionMenuCapabilities(several) : await itemMenuCapabilities(target, Boolean(entry));
+    const selectionCounts = several ? { files: several.filter((item) => item.kind === "file").length, folders: several.filter((item) => item.kind === "folder").length } : null;
+    const run = (command: string | null) => several ? runSelectionCommand(command, several) : runMenuCommand(command, target);
     const popupFileMenu = window.ampleFileDesktop?.connectedFolder.popupFileMenu;
-    // A link offers Open, Show in the system file manager, and Copy Path, which act on the link; nothing changes it here.
-    if (!several && entry?.link) {
-      const openable = entry.link.target !== "missing";
-      if (mac && popupFileMenu) {
-        try {
-          const command = await popupFileMenu({ ...owner, path: target.path, kind: target.kind, capabilities: { open: openable, attach: false, history: false, upload: false, rename: false, delete: false, link: true }, point });
-          await runMenuCommand(command, target);
-        } catch (caught) { onError(errorText(caught)); }
-        return;
-      }
-      setQuickMenu({
-        x: Math.min(point.x, window.innerWidth - 240),
-        y: Math.min(point.y, window.innerHeight - 160),
-        items: [
-          ...(openable ? [{ label: entry.kind === "folder" ? "Open Folder" : "Open", command: "open" }] : []),
-          { label: revealInFileManagerLabel(), command: "reveal" },
-          { label: "Copy Link Path", command: "copy-path" },
-        ],
-        run: (command) => { void runMenuCommand(command, target); },
-      });
-      return;
-    }
-    // Several items with a link or a nested Connected Folder among them offer only what applies to all of them.
-    const severalLocked = Boolean(several?.some((item) => item.nestedFolder || item.link));
     if (mac && popupFileMenu) {
       try {
-        if (several) {
-          const files = several.filter((item) => item.kind === "file").length;
-          const command = await popupFileMenu({ ...owner, path: target.path, kind: target.kind, capabilities: { open: false, attach: false, history: false, upload: false, rename: false, delete: !severalLocked, organize: !severalLocked }, selection: { files, folders: several.length - files }, point });
-          if (command === "copy-path") await copyPaths(several.map((item) => item.path));
-          else if (command === "delete") await deletePaths(several.map((item) => item.path));
-          else if (command === "copy") await copySelection(several);
-          else if (command === "duplicate") await duplicateSelection(several);
-          else if (command === "compress") await compressSelection(several);
-          else if (command === "new-folder-with-selection") await groupSelection(several);
-          return;
-        }
-        const command = await popupFileMenu({
-          ...owner,
-          path: target.path,
-          kind: target.kind,
-          capabilities: {
-            open: target.kind === "folder" || canOpenDirectly(target.path),
-            attach: false,
-            history: place.kind === "connected-folder" && target.kind === "file",
-            upload: false,
-            rename: Boolean(target.path) && !target.nestedFolder,
-            delete: Boolean(entry) && !target.nestedFolder,
-            worker: !fixtureMode && target.kind === "folder" && !target.nestedFolder && (place.kind === "standard" || Boolean(target.path)),
-            organize: Boolean(entry) && !target.nestedFolder,
-            paste: target.kind === "folder" && !target.nestedFolder && await canPaste(),
-          },
-          point,
-        });
-        await runMenuCommand(command, target);
+        const command = await popupFileMenu({ ...owner, path: target.path, kind: target.kind, capabilities, ...(selectionCounts ? { selection: selectionCounts } : {}), point });
+        await run(command);
       } catch (caught) { onError(errorText(caught)); }
       return;
     }
-    setContextMenu({ entry: target, ...(several ? { selection: several } : {}), x: Math.min(point.x, window.innerWidth - 250), y: Math.min(point.y, window.innerHeight - 380), returnFocusTarget: contentRef.current });
+    const items = fileMenuItems({
+      ...(place.kind === "standard" ? { standardFolderId: place.id } : {}),
+      path: target.path,
+      kind: target.kind,
+      capabilities,
+      ...(selectionCounts ? { selection: selectionCounts } : {}),
+    }, desktopPlatform() ?? (mac ? "darwin" : "linux")).map((item) => item.type === "separator" ? { label: "", command: "-" } : { label: item.label, command: item.command });
+    const height = items.reduce((total, item) => total + (item.command === "-" ? 11 : 24), 12);
+    setQuickMenu({
+      x: Math.min(point.x, window.innerWidth - 260),
+      y: Math.max(8, Math.min(point.y, window.innerHeight - height - 8)),
+      items,
+      run: (command) => { void run(command); },
+    });
+  }
+
+  /** What one row (or the folder shown) offers in its menu. */
+  async function itemMenuCapabilities(target: TreeEntry, isItem: boolean): Promise<FileMenuCapabilities> {
+    if (target.link) {
+      const there = target.link.target !== "missing";
+      return { open: there, original: there, attach: false, history: false, upload: false, rename: true, delete: true, organize: true, link: true };
+    }
+    return {
+      open: target.kind === "folder" || canOpenDirectly(target.path),
+      attach: false,
+      history: place.kind === "connected-folder" && target.kind === "file",
+      upload: false,
+      rename: Boolean(target.path) && !target.nestedFolder,
+      delete: isItem && !target.nestedFolder,
+      worker: !fixtureMode && target.kind === "folder" && !target.nestedFolder && (place.kind === "standard" || Boolean(target.path)),
+      organize: isItem && !target.nestedFolder,
+      paste: target.kind === "folder" && !target.nestedFolder && await canPaste(),
+      extract: isItem && target.kind === "file" && isExtractableArchive(target.name),
+    };
+  }
+
+  /** Several rows: only what applies to all of them; a nested Connected Folder among them is changed only from itself. */
+  function selectionMenuCapabilities(several: readonly TreeEntry[]): FileMenuCapabilities {
+    const locked = several.some((item) => item.nestedFolder);
+    return { open: false, attach: false, history: false, upload: false, rename: false, delete: !locked, organize: !locked };
+  }
+
+  async function runSelectionCommand(command: string | null, several: readonly TreeEntry[]) {
+    if (command === "copy-path") await copyPaths(several.map((item) => item.path));
+    else if (command === "delete") await deletePaths(several.map((item) => item.path));
+    else if (command === "copy") await copySelection([...several]);
+    else if (command === "cut") await cutSelection([...several]);
+    else if (command === "duplicate") await duplicateSelection([...several]);
+    else if (command === "compress") await compressSelection([...several]);
+    else if (command === "new-folder-with-selection") await groupSelection([...several]);
   }
 
   async function runMenuCommand(command: string | null, target: TreeEntry) {
     if (command === "open") await openEntry(target);
     else if (command === "open-with") await openLocal(target.path, "open-with");
     else if (command === "reveal") await openLocal(target.path, "reveal");
+    else if (command === "show-original") await showOriginal(target);
     else if (command === "copy-path") await copyPaths([target.path]);
     else if (command === "version-history" && connectedFolder) setVersionHistory(target);
     else if (command === "new-folder") requestNewFolder(target.kind === "folder" ? target.path : parentPath(target.path));
@@ -1733,13 +1938,24 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (command === "rename") requestRename(target);
     else if (command === "delete") await deletePaths([target.path]);
     else if (command === "copy") await copySelection([target]);
-    else if (command === "paste") await pasteInto(target.kind === "folder" ? target.path : parentPath(target.path));
+    else if (command === "cut") await cutSelection([target]);
+    else if (command === "paste") await pasteInto(target.kind === "folder" && !target.link ? target.path : parentPath(target.path));
     else if (command === "duplicate") await duplicateSelection([target]);
     else if (command === "compress") await compressSelection([target]);
+    else if (command === "extract") await extractArchive(target);
     else if (command === "new-folder-with-selection") await groupSelection([target]);
   }
 
-  /** Paste Here is offered once something was copied here; ⌘V also pastes what Finder copied. */
+  /** Show Original: the window goes to where the link's target really is, with it selected. */
+  async function showOriginal(entry: TreeEntry) {
+    const link = entry.link;
+    if (!link) return;
+    if (link.target === "missing") { showToast({ text: `“${entry.name}” is a broken link. What it points to isn’t there.`, tone: "info" }); return; }
+    if (fixtureMode) { showToast({ text: "Showing originals is disabled in the preview", tone: "info" }); return; }
+    await openNativeFolder(link.targetPath, true);
+  }
+
+  /** Paste Here is offered once something was copied or cut here; ⌘V also pastes what Finder or a Linux file manager copied. */
   async function canPaste(): Promise<boolean> {
     return Boolean(fileClipboardRef.current);
   }
@@ -1914,9 +2130,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       if (event.shiftKey) select(rangeSelection(order, anchorRef.current ?? focusPath ?? path, path), anchorRef.current ?? focusPath ?? path);
       else select([path]);
     };
-    // Finder's Copy, Paste, Move Item Here (⌥⌘V), and Duplicate; codes, since ⌥ changes the letter.
-    if (command && !event.shiftKey && event.code === "KeyC") { event.preventDefault(); void copySelection(); return; }
-    if (command && !event.shiftKey && event.code === "KeyV") { event.preventDefault(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
+    // Finder's Copy, Cut, Paste, Move Item Here (⌥⌘V), and Duplicate; codes, since ⌥ changes the letter.
+    if (command && !event.shiftKey && event.code === "KeyC") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void copySelection(); return; }
+    if (command && !event.shiftKey && !event.altKey && event.code === "KeyX") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void cutSelection(); return; }
+    if (command && !event.shiftKey && event.code === "KeyV") { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
     if (command && !event.shiftKey && event.code === "KeyD") { event.preventDefault(); void duplicateSelection(); return; }
     if (command && event.key === "ArrowDown") { event.preventDefault(); const entry = focusPath ? byPath.get(focusPath) : null; if (entry && selection.length === 1) void openEntry(entry); return; }
     if (command && event.key === "ArrowUp") { event.preventDefault(); goToEnclosingFolder(); return; }
@@ -2267,6 +2484,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           focusPath={focusPath}
           dropTarget={dropTarget !== location.path ? dropTarget : null}
           markedPaths={markedPaths}
+          cutPaths={cutItems && samePlace(cutItems.place, place) ? cutItems.paths : null}
           kindLabel={kindLabel}
           day={calendarDay}
           tintFor={nestedTint}
@@ -2279,6 +2497,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         {listing.truncated && !searchMode && !recentsOpen ? <p className="fm-note">Some items are not shown. This folder holds more than the {folderListingMaxEntries.toLocaleString()} items AmpleFile lists at once.</p> : null}
       </div>
 
+      {/* Copies, moves, Compresses, and Extracts that take a moment: progress and Stop, while the folder stays usable. */}
+      <FileOperationsTray operations={fileOperations.shown} onStop={(id) => { void fileOperations.stop(id).then((problem) => { if (problem) onError(problem); }); }} />
       {/* Finder's path bar: click an item to copy its path, double-click a folder to open it; ⇧⌘G goes anywhere by path. */}
       <footer className="fm-pathbar">
         <button type="button" className="fm-goto-button" title={`Go to Folder… (${desktopShortcutText([desktopShortcutModifierKey(), "Shift", "G"])})`} aria-label="Go to Folder" onClick={() => setGoToOpen(true)}><FolderArrowRight16Regular /></button>
@@ -2466,28 +2686,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     {quickMenu ? <>
       <div className="fm-menu-back" onClick={() => { quickMenu.run(null); setQuickMenu(null); }} onContextMenu={(event) => { event.preventDefault(); setQuickMenu(null); }} />
       <div className="fm-menu" role="menu" style={{ left: quickMenu.x, top: quickMenu.y }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setQuickMenu(null); } }}>
-        {quickMenu.items.map((item, index) => <button key={item.command} type="button" className="fm-menu-i" role="menuitem" autoFocus={index === 0} onClick={() => { const { run } = quickMenu; setQuickMenu(null); run(item.command); }}>{item.label}</button>)}
+        {quickMenu.items.map((item, index) => item.command === "-"
+          ? <div key={`-${index}`} className="fm-menu-sep" role="separator" />
+          : <button key={item.command} type="button" className="fm-menu-i" role="menuitem" autoFocus={index === 0} onClick={() => { const { run } = quickMenu; setQuickMenu(null); run(item.command); }}>{item.label}</button>)}
       </div>
     </> : null}
     {skillsFor ? <SkillsExtensionsModal connectedFolder={skillsFor} status={agent} initialView="installed" fixtureMode={fixtureMode} onError={onError} onClose={() => setSkillsFor(null)} /> : null}
-    {contextMenu ? <FileContextMenu
-      state={contextMenu}
-      onSelect={(path) => select([path])}
-      onOpenLocal={(path, action) => { const entry = byPath.get(path); if (action === "open" && entry) return openEntry(entry); return openLocal(path, action); }}
-      canOpenWith={!fixtureMode && Boolean(bridge?.openWith)}
-      onAddToChatContext={() => undefined}
-      onCopyPath={(path) => copyPaths([path])}
-      onCopyPaths={(paths) => copyPaths(paths)}
-      onShowVersionHistory={(path) => { const entry = byPath.get(path); if (entry && connectedFolder) setVersionHistory(entry); }}
-      onRename={(path) => requestRename(byPath.get(path))}
-      onNewFolder={(parent) => requestNewFolder(parent)}
-      onRefresh={() => void listing.refresh()}
-      onGiveWorker={fixtureMode ? undefined : (path) => void putToWork(path)}
-      onDelete={(path) => deletePaths([path])}
-      onDeleteSelection={(paths) => deletePaths(paths)}
-      canDelete={!contextMenu.entry.nestedFolder && !contextMenu.entry.link && !contextMenu.selection?.some((item) => item.nestedFolder || item.link) && Boolean(contextMenu.entry.path) && contextMenu.entry.path !== location.path}
-      onClose={() => setContextMenu(null)}
-    /> : null}
+    {conflictQuestion.element}
     {renaming ? <TextInputModal title="Rename" label="Name" initialValue={renaming.name} confirmLabel="Rename" onSubmit={(name) => renameEntry(renaming, name)} onClose={() => setRenaming(null)} /> : null}
     {newFolderTarget ? <NewFolderModal target={newFolderTarget} fixtureMode={fixtureMode} onCreated={(folder) => { setNewFolderTarget(null); void listing.refresh().then(() => select([folder.path])); }} onClose={() => setNewFolderTarget(null)} /> : null}
     {newStandardFolderParent !== null ? <TextInputModal title="New Folder" label="Name" initialValue="untitled folder" confirmLabel="Create" onSubmit={(name) => createStandardFolder(newStandardFolderParent, name)} onClose={() => setNewStandardFolderParent(null)} /> : null}
@@ -2556,7 +2761,8 @@ function RecentsGlyph() {
 }
 
 /** One file change ⌘Z can undo: running it undoes the change and returns the entry that redoes it. */
-interface FileUndo { label: string; run: () => Promise<FileUndo | null> }
+/** One ⌘Z step. `cannot` says plainly why Undo can't put a change back (an item a Replace sent to the Trash). */
+interface FileUndo { label: string; run: () => Promise<FileUndo | null>; cannot?: string }
 
 /** Titles a Chat carries before it has its own: the server's seed, the renderer's label, and an old default. */
 const placeholderChatTitles = new Set([untitledChatLabel, "New Chat", "amplefile chat"].map((title) => title.toLocaleLowerCase()));

@@ -143,7 +143,8 @@ export function bandSelection(order: readonly string[], hits: readonly number[],
 
 /** An item that can leave the list by dragging: not a Connected Folder nested here, and not a symbolic link. */
 export function isDraggableEntry(entry: TreeEntry): boolean {
-  return !entry.nestedFolder && !entry.link;
+  // A link drags as the link itself; a nested Connected Folder is changed only from itself.
+  return !entry.nestedFolder;
 }
 
 /**

@@ -181,12 +181,17 @@ declare global {
        * in the desktop process, which answers with what landed.
        */
       fileClipboard?: {
-        write: (paths: string[]) => Promise<boolean>;
+        /** A Copy, or with "cut" a Cut, which Linux file managers paste as a move. */
+        write: (paths: string[], operation?: "copy" | "cut") => Promise<boolean>;
         paste: (request: {
           target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string };
           mode: "copy" | "move";
-          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
-        }) => Promise<{ mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }>; nothing?: boolean; fromHere?: boolean; count?: number }>;
+          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[]; cut?: boolean } | null;
+          operationId?: string;
+          conflicts?: { check: true } | import("./components/file-manager/file-operations-model").ConflictPolicy;
+        }) => Promise<import("./components/file-manager/file-operations-model").TransferAnswer>;
+        /** Whether the pasteboard still holds exactly these files (what this window cut). */
+        holds?: (nativePaths: string[]) => Promise<boolean>;
       };
       agent: {
         /** The local path of a file dropped on the AmpleFile Agent panel. */
