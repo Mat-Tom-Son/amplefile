@@ -16,6 +16,7 @@ import {
 } from "../local-event-stream.js";
 import { localEventStreamLimits, type LocalEventEnvelope } from "../../shared/local-event-stream.js";
 import { watch } from "node:fs";
+import { subscribeFileOperations } from "../file-operations.js";
 import {
   accessError as standardFolderAccessError,
   isShownStandardEntry,
@@ -72,6 +73,10 @@ export async function handleEventStreamRoutes({ state, req, res, url, method }: 
         if (target.kind === "control") {
           if (state.controlStreams.size >= 64) throw httpError(429, "Too many control event connections.");
           openControlEventStream(state, channel);
+        } else if (target.kind === "file-operations") {
+          // Copy, move, Compress, and Extract progress (src/local/file-operations.ts).
+          const stop = subscribeFileOperations((event) => { channel.send(event); });
+          channel.onClose(stop);
         } else if (target.kind === "agent") {
           assertAmpleFileAgentReadyForRoutes(state);
           if (!await readConversationSummary(ampleFileAgentRoot(), target.conversationId)) throw notFound("Conversation not found.");
