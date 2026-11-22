@@ -17,6 +17,7 @@ import {
   type ConnectedFolderFilePreview,
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { isSystemHiddenEntry } from "./hidden-entries.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 import { linuxUserDirectories } from "./standard-folder-locations.js";
 
@@ -121,16 +122,43 @@ export async function listStandardFolders(
   return folders;
 }
 
-/** One level of a standard folder, without what Finder hides (dotfiles, and Library in the home folder). */
-export async function scanStandardFolder(id: StandardFolderId, relativePath: string, home = homedir(), platform: NodeJS.Platform = process.platform): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
+export interface StandardFolderScanOptions {
+  /** Keep what the system file manager hides, each entry marked `hidden: true`. */
+  includeHidden?: boolean;
+  /** List symbolic links as entries carrying `link` (never followed). */
+  includeLinks?: boolean;
+  /** A higher entry bound for this one-level listing, up to `maxOneLevelTreeEntries`. */
+  maxEntries?: number;
+}
+
+/**
+ * One level of a standard folder, without what Finder hides (dotfiles, and
+ * Library in the home folder) unless `includeHidden` asks for those, marked.
+ * `.amplefile/`, `.pi/`, and the other always-hidden entries never appear.
+ */
+export async function scanStandardFolder(
+  id: StandardFolderId,
+  relativePath: string,
+  home = homedir(),
+  platform: NodeJS.Platform = process.platform,
+  options: StandardFolderScanOptions = {},
+): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
   const root = standardFolderRoot(id, home);
   const atHomeRoot = samePath(root, resolve(home)) && !relativePath.split("/").some((part) => part && part !== ".");
   try {
-    const scan = await scanConnectedFolderTree(root, 0, relativePath, { includeIgnored: true, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root) });
+    const scan = await scanConnectedFolderTree(root, 0, relativePath, {
+      includeIgnored: true,
+      nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root),
+      ...(options.includeLinks ? { includeLinks: true } : {}),
+      ...(options.maxEntries !== undefined ? { maxEntries: options.maxEntries } : {}),
+    });
+    // Hidden means exactly what the default listing leaves out, so the
+    // window's Show Hidden Files only ever adds rows and removes them again.
+    const isHidden = (entry: TreeEntry) => !isShownStandardEntry(entry.name) || (platform === "darwin" && atHomeRoot && entry.name === "Library");
     return {
       tree: scan.entries
-        .filter((entry) => isShownStandardEntry(entry.name) && !(platform === "darwin" && atHomeRoot && entry.name === "Library"))
-        .map(({ children: _children, ...entry }) => entry),
+        .filter((entry) => options.includeHidden || !isHidden(entry))
+        .map(({ children: _children, ...entry }) => options.includeHidden && isHidden(entry) ? { ...entry, hidden: true as const } : entry),
       truncated: scan.truncated,
     };
   } catch (error) {
@@ -228,8 +256,9 @@ export async function standardFolderRegistrationTarget(id: StandardFolderId, rel
   return root;
 }
 
+/** Shown in a default Standard Folder listing: not hidden by the system file manager's rules (outside the home folder's Library), and never an always-hidden entry. */
 export function isShownStandardEntry(name: string): boolean {
-  return Boolean(name) && !name.startsWith(".") && name !== "Icon\r" && !isAlwaysHiddenConnectedFolderEntry(name);
+  return Boolean(name) && !isSystemHiddenEntry(name, { platform: process.platform, atHomeFolder: false }) && !isAlwaysHiddenConnectedFolderEntry(name);
 }
 
 /** macOS answers EPERM until the person allows AmpleFile into Desktop, Documents, Downloads, Pictures, or iCloud Drive. */

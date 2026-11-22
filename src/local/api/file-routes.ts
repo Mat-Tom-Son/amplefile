@@ -5,6 +5,7 @@
  */
 
 import { createLocalEventSink } from "../local-event-stream.js";
+import { treeListingQuery } from "./tree-listing-query.js";
 import type { ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -114,11 +115,18 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(treeMatch[1]);
     const maxDepthValue = Number(url.searchParams.get("maxDepth") ?? 20);
     const maxDepth = Number.isFinite(maxDepthValue) ? Math.min(Math.max(Math.floor(maxDepthValue), 0), 50) : 20;
+    const listing = treeListingQuery(url.searchParams, maxDepth === 0);
     const scan = await scanConnectedFolderTree(
       connectedFolder.connectedFolderRoot,
       maxDepth,
       url.searchParams.get("path") ?? "",
-      { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
+      {
+        includeIgnored: url.searchParams.get("includeIgnored") !== "0",
+        nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot),
+        ...(listing.includeLinks ? { includeLinks: true } : {}),
+        ...(listing.includeHidden ? { markHidden: true } : {}),
+        ...(listing.maxEntries !== undefined ? { maxEntries: listing.maxEntries } : {}),
+      },
     );
     // The file manager lists one level at a time; that level is on screen.
     if (maxDepth === 0) noteConnectedFolderDirectoryShown(treeMatch[1], url.searchParams.get("path") ?? "");

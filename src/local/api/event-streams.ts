@@ -308,8 +308,19 @@ export function noteConnectedFolderIgnoreRulesChanged(connectedFolderId: string)
   }
 }
 
-/** Live refresh for the one standard folder level on screen; a folder level is not watched recursively. */
-export async function openStandardFolderFileStream(state: LocalApiState, res: LocalEventSink, standardFolderId: StandardFolderId, relativePath: string): Promise<void> {
+/**
+ * Live refresh for the one standard folder level on screen; a folder level is
+ * not watched recursively. Changes to entries the listing hides are dropped
+ * unless the window lists hidden entries too (`includeHidden`); the
+ * always-hidden entries never send one.
+ */
+export async function openStandardFolderFileStream(
+  state: LocalApiState,
+  res: LocalEventSink,
+  standardFolderId: StandardFolderId,
+  relativePath: string,
+  options: { includeHidden?: boolean } = {},
+): Promise<void> {
   const directory = resolveStandardFolderPath(standardFolderId, relativePath);
   const info = await stat(directory).catch(() => null);
   if (!info?.isDirectory()) throw notFound("That folder isn’t there anymore.");
@@ -318,7 +329,7 @@ export async function openStandardFolderFileStream(state: LocalApiState, res: Lo
   try {
     watcher = watch(directory, (eventType, fileName) => {
       const name = Buffer.isBuffer(fileName) ? fileName.toString("utf8") : fileName ?? "";
-      if (name && !isShownStandardEntry(basename(name))) return;
+      if (name && (options.includeHidden ? isAlwaysHiddenConnectedFolderEntry(basename(name)) : !isShownStandardEntry(basename(name)))) return;
       res.send({ type: "file_event", eventType, path: name ? [relativePath, name].filter(Boolean).join("/") : null });
     });
   } catch (error) {
