@@ -365,9 +365,10 @@ test("drawing is bounded: a request that goes away leaves the queue, a full queu
   // A drawing past its time bound is answered as timed out, and not tried again at once.
   const slow = new ThumbnailService(await folder(t, "amplefile-thumbs-slow-"), { imageTimeoutMs: 1 });
   assert.equal(await refusal(slow.thumbnail({ path: join(place, "big.png"), size: 256 })), "timed-out");
-  const drawn = slow.stats.imagesDrawn;
+  // The first drawing cannot be interrupted, so it is counted when its decoder starts, which may be after its time-out was answered.
+  await until(() => slow.stats.imagesDrawn === 1);
   assert.equal(await refusal(slow.thumbnail({ path: join(place, "big.png"), size: 256 })), "timed-out");
-  assert.equal(slow.stats.imagesDrawn, drawn, "the second ask is answered from the remembered refusal");
+  assert.equal(slow.stats.imagesDrawn, 1, "the second ask is answered from the remembered refusal");
 });
 
 test("a PDF that takes too long ends its worker, and the next PDF starts a new one", async (t) => {
