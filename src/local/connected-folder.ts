@@ -2082,8 +2082,11 @@ function assertNoLinkSegments(root: string, path: string): void {
   let cursor = root;
   for (const segment of rel.split(sep).filter(Boolean)) {
     cursor = join(cursor, segment);
-    if (!existsSync(cursor)) return;
-    if (lstatSync(cursor).isSymbolicLink()) throw new Error("Connected Folder paths cannot traverse symbolic links or junctions.");
+    // The link itself, not what it names: a broken link is still a link, and
+    // `existsSync` (which follows it) would let its name through.
+    const info = lstatSync(cursor, { throwIfNoEntry: false });
+    if (!info) return;
+    if (info.isSymbolicLink()) throw new Error("Connected Folder paths cannot traverse symbolic links or junctions.");
   }
 }
 
