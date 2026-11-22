@@ -103,7 +103,7 @@ See the [XDG user directories contract](https://wiki.freedesktop.org/www/Softwar
 The window speaks Linux: Ctrl instead of ⌘ in shortcuts and hints, "this
 computer" instead of "this Mac", **Show in File Manager**, and "your file
 manager" where the Mac app names Finder. Deleting in a
-Standard Folder moves items to the desktop's Trash; in a Connected Folder,
+Standard Folder or any other folder moves items to the desktop's Trash; in a Connected Folder,
 History brings them back. With no Automations yet, Settings → Automations
 points to **View → AmpleFile Agent**.
 
@@ -229,8 +229,8 @@ As on the Mac, the window's title is the name of the Connected Folder shown
 
 **File → Open Recent** lists the Connected Folders shown most recently, as the
 Mac's Open Recent does, newest first, followed by **Clear Menu**. Choosing one
-opens it the way a folder passed to the app does, so only a Connected Folder
-still registered opens. Names come from the Connected Folder list each time,
+opens it the way a folder passed to the app opens; one no longer registered
+leaves the list instead. Names come from the Connected Folder list each time,
 so a renamed one shows its new name and a disconnected one disappears. The
 sidebar's **Recents** is a different list: files changed lately. Electron's
 recent-documents calls do nothing on Linux, so up to ten Connected Folder ids
@@ -242,10 +242,14 @@ The application menu lists AmpleFile as a file manager, and file managers offer
 **Open With AmpleFile** for folders. That never makes AmpleFile the default
 folder handler: the packages declare `inode/directory` but run no `xdg-mime`
 command and change no `mimeapps.list`. As with a folder opened from Finder on a
-Mac, a folder that is already a Connected Folder opens in the window; any other
-folder only brings the window forward, because connecting a folder is its own
-explicit act. Desktops with no default folder handler configured may still pick
-any declaring app themselves.
+Mac, a folder passed to AmpleFile (a launcher's argument, or a second launch's)
+opens in the window where it lives: in the deepest Connected Folder holding it,
+at that folder; else in the Standard Folder holding it; else as an other folder
+under the Standard Folder rules ([Other folders](product-model.md#the-file-manager-window)).
+A file opens its folder with the file selected. Nothing is connected, because
+connecting a folder is its own explicit act; Info offers **Connect This Folder**.
+Desktops with no default folder handler configured may still pick any declaring
+app themselves.
 
 ## Live file updates
 

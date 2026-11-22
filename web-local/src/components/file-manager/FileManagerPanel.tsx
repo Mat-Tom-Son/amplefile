@@ -15,7 +15,7 @@ import type { FolderAutomationView } from "../../../../src/shared/automation-pre
 import { automationCardRows, type AutomationCardRow } from "./file-manager-automations";
 import type { ConversationSummary, FileVersionEntry, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
 import { fileKindLabel, fileManagerIcon, formatFileManagerDate, historyTimeLabel } from "./file-manager-model";
-import { placeApiBase, type FileManagerPlace } from "./file-manager-places";
+import { isComputerPlace, placeApiBase, type FileManagerPlace } from "./file-manager-places";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 
@@ -33,8 +33,8 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
 /**
  * The file manager's right panel (docs/product-model.md, "The file
  * manager window"), as the design draws it. In a Connected Folder, Info says what
- * the selection is and History lists its Chats and changes. A standard folder
- * offers to put the folder to work.
+ * the selection is and History lists its Chats and changes. A Standard Folder's
+ * top, and any folder shown in the computer place, offers to connect it.
  */
 export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
   place: FileManagerPlace;
@@ -84,6 +84,8 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   const single = selection.length === 1 ? selection[0]! : null;
   const apiBase = placeApiBase(place);
   const fixtureMode = Boolean(fixture);
+  // A folder shown in the computer place stands on its own, as a Standard Folder's top does: it offers Connect This Folder.
+  const computerFolder = !connectedFolder && isComputerPlace(place);
   const where = (path: string) => [placeName, ...path.split("/").filter(Boolean).slice(0, -1)].join(" › ");
 
   let info;
@@ -93,10 +95,13 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
     info = <ItemInfo apiBase={apiBase} entry={single} where={where(single.path)} fixtureMode={fixtureMode} />;
   } else if (selection.length > 1) {
     info = <SelectionInfo selection={selection} sizeOf={(entry) => entry.kind === "folder" ? "--" : typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : ""} />;
-  } else if (folderPath) {
+  } else if (folderPath && !computerFolder) {
     info = <ItemInfo apiBase={apiBase} entry={{ name: folderName, path: folderPath, kind: "folder" }} where={where(folderPath)} fixtureMode={fixtureMode} itemCount={itemCount} />;
   } else if (connectedFolder) {
     info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
+  } else if (computerFolder && !folderPath) {
+    // The disk itself can't be connected; a folder on it can.
+    info = <FolderHeader name={folderName} color={null} itemCount={itemCount} />;
   } else {
     info = <>
       <FolderHeader name={folderName} color={null} itemCount={itemCount} />
