@@ -510,6 +510,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   // Selection belongs to the folder shown; leaving it starts fresh.
   useEffect(() => { setSelection([]); anchorRef.current = null; setQuery(""); setPreviewOpen(false); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  // An item to select once its folder's listing is here (Go to Folder's file, Command-Up's folder, a file handed to AmpleFile).
+  const pendingSelectRef = useRef<{ key: string; path: string } | null>(null);
+  useEffect(() => {
+    const pending = pendingSelectRef.current;
+    if (!pending || pending.key !== listing.key || listing.status === "loading") return;
+    pendingSelectRef.current = null;
+    if (listing.status === "ready") select([pending.path]);
+  }, [listing.key, listing.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
@@ -568,9 +576,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** Goes to a location the host resolved, selecting an item there once its folder is shown. */
   function showLocation(next: FileManagerLocation, selectPath: string | null) {
     const switchTo = next.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === next.place.id) : undefined;
-    const moved = !sameLocation(next, location);
+    if (selectPath && sameLocation(next, location)) select([selectPath]);
+    else if (selectPath) pendingSelectRef.current = { key: `${placeKey(next.place)}\0${next.path}`, path: selectPath };
     navigate(next, "push", switchTo);
-    if (selectPath) window.setTimeout(() => select([selectPath]), moved ? 300 : 0);
     window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
   }
   // A folder or file handed to AmpleFile (a launcher, Finder, a second launch) opens where the host resolved it.
@@ -1206,10 +1214,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   function goTo(target: NonNullable<GoToFolderLookup["target"]>) {
     setGoToOpen(false);
     setQuery("");
-    const switchTo = target.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === target.place.id) : undefined;
-    navigate({ place: target.place, path: target.path }, "push", switchTo);
-    if (target.select) window.setTimeout(() => select([target.select!]), 0);
-    window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
+    showLocation({ place: target.place, path: target.path }, target.select);
   }
 
   /** Clicking a path bar item copies its path; the last item is the folder shown, or the item selected. */
