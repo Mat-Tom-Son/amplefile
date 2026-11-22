@@ -102,7 +102,9 @@ test("Darwin file context menus use native command IDs while Windows keeps the R
   }
   assert.match(fileManager, /setContextMenu\(\{ entry: target,[\s\S]*?returnFocusTarget: contentRef\.current \}\)/, "non-Mac and bridge-less sessions retain the React menu");
   const nativeRequests = [...fileManager.matchAll(/const command = await popupFileMenu\(\{([\s\S]*?)\bpoint,?\s*\}\);/g)].map((match) => match[1]!);
-  assert.equal(nativeRequests.length, 2, "native popup requests must be present");
+  // One item, several selected together, and a symbolic link (Open, Show in Finder, Copy Link Path only).
+  assert.equal(nativeRequests.length, 3, "native popup requests must be present");
+  assert.ok(nativeRequests.some((request) => /link: true/.test(request)), "a link row asks for the link menu");
   for (const request of nativeRequests) {
     assert.doesNotMatch(request, /(?:label|callback|onSelect):/, "native popup requests must contain data and capabilities only");
   }

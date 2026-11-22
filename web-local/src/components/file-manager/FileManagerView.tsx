@@ -896,11 +896,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   /**
-   * Dropping onto the list:
-   * files from Finder are added to the folder shown, or to the folder row they
-   * land on; a file dragged out of this list onto a folder row moves there.
-   * Both keep History, as every change here does. A Standard Folder is
-   * changed in Finder, so a drop there says so.
+   * Dropping onto the list, in any place: items from another app are copied
+   * into the folder shown, or the folder row they land on; items dragged out
+   * of this list onto a folder row move there. Both go through the transfer
+   * route paste uses, so a Connected Folder keeps History for them, and
+   * anything a Connected Folder owns inside a Standard Folder or an other
+   * folder is refused there and changed through that Connected Folder.
    */
   function dropTargetFor(event: DragEvent<HTMLElement>): string {
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-fm-path]");

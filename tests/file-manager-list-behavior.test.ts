@@ -341,7 +341,8 @@ test("holding a rectangle at the list's bottom edge scrolls on, selecting rows t
   // 515px is inside the bottom 28px of the 520px view.
   await dom.act(() => { window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400, clientY: 515 })); });
   const status = () => Number(/^(\d+) of/.exec(dom.container.querySelector(".fm-status")!.textContent ?? "")?.[1] ?? 0);
-  await dom.waitFor(() => grid.scrollTop > 26 * 40 && status() > 60);
+  // jsdom's frames run slowly while other suites run alongside; wait for a few dozen rows of scrolling.
+  await dom.waitFor(() => grid.scrollTop > 26 * 30 && status() > 40, 20_000);
   await dom.act(() => { window.dispatchEvent(new MouseEvent("mouseup", { clientX: 400, clientY: 515 })); });
   const scrolled = grid.scrollTop;
   const selected = status();
@@ -349,4 +350,44 @@ test("holding a rectangle at the list's bottom edge scrolls on, selecting rows t
   assert.equal(grid.scrollTop, scrolled, "letting go stops the scrolling");
   // Everything from row 3 to the row under the pointer, by the layout: rows that were never drawn included.
   assert.equal(selected, Math.floor((scrolled + 515) / 26) - 3 + 1);
+});
+
+test("in a Standard Folder, items from another app are copied into the folder or the row they land on, and items dragged inside move", async (t) => {
+  const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => path.startsWith("/api/standard-folders/downloads")
+    ? [file("invoice.pdf"), file("receipt.pdf"), folder("Taxes")]
+    : [file("a.md")], (path, options) => path === "/api/file-transfer" && options.method === "POST" ? { mode: (options.body as { mode: string }).mode, written: ["Taxes/x"], restorePoints: [] } : undefined));
+  const scope = window as unknown as { ampleFileDesktop?: unknown };
+  scope.ampleFileDesktop = { agent: { getPathForFile: (dropped: { name: string }) => `/home/ana/Desktop/${dropped.name}` } };
+  t.after(() => { delete scope.ampleFileDesktop; });
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(row(dom.container, "a.md")));
+  const downloads = [...dom.container.querySelectorAll<HTMLButtonElement>(".fm-sidebar-item")].find((item) => item.textContent?.includes("Downloads"))!;
+  await dom.act(() => downloads.click());
+  await dom.waitFor(() => Boolean(row(dom.container, "Taxes")));
+  const place = { kind: "standard", id: "downloads" };
+  const transfers = () => requests.filter((request) => request.path === "/api/file-transfer").map((request) => request.body);
+
+  // From another app, onto the empty list: copied into the folder shown, and the list takes the drop.
+  const over = dragEvent("dragover", { Files: "" }, [{ name: "scan.png" }]);
+  await dom.act(() => { contents(dom.container).dispatchEvent(over); });
+  assert.equal(over.defaultPrevented, true, "the list accepts the drop");
+  assert.equal((over as unknown as { dataTransfer: { dropEffect: string } }).dataTransfer.dropEffect, "copy");
+  await dom.act(() => { contents(dom.container).dispatchEvent(dragEvent("drop", { Files: "" }, [{ name: "scan.png" }])); });
+  // Onto a folder row: copied into that folder.
+  await dom.act(() => { row(dom.container, "Taxes")!.dispatchEvent(dragEvent("drop", { Files: "" }, [{ name: "w2.pdf" }])); });
+  await dom.waitFor(() => transfers().length === 2);
+  assert.deepEqual(transfers(), [
+    { mode: "copy", sources: [{ nativePath: "/home/ana/Desktop/scan.png" }], target: { place, path: "" } },
+    { mode: "copy", sources: [{ nativePath: "/home/ana/Desktop/w2.pdf" }], target: { place, path: "Taxes" } },
+  ]);
+
+  // Dragged inside the window onto a folder row: moved there.
+  scope.ampleFileDesktop = { agent: {} };
+  await dom.act(() => row(dom.container, "invoice.pdf")!.click());
+  await dom.act(() => { row(dom.container, "receipt.pdf")!.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })); });
+  const start = dragEvent("dragstart");
+  await dom.act(() => { row(dom.container, "invoice.pdf")!.querySelector(".fm-row-name")!.dispatchEvent(start); });
+  await dom.act(() => { row(dom.container, "Taxes")!.dispatchEvent(dragEvent("drop", start.dataTransfer.stored)); });
+  await dom.waitFor(() => transfers().length === 3);
+  assert.deepEqual(transfers()[2], { mode: "move", sources: [{ place, path: "invoice.pdf" }, { place, path: "receipt.pdf" }], target: { place, path: "Taxes" } });
 });

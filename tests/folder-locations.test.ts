@@ -290,3 +290,47 @@ test("a listed link resolves to where it points, in a Standard Folder and in the
   const bin = await lstat("/bin").catch(() => null);
   if (bin?.isSymbolicLink()) assert.deepEqual(await resolvePlaceSymbolicLink(computer, "bin", root), { linkPath: "/bin", targetPath: await realpath("/bin"), target: "folder" });
 });
+
+test("a drop in a Standard Folder or an other folder copies items in or moves them, except into what a Connected Folder owns", async (t) => {
+  const root = await sandbox(t, "folder-locations-drop-");
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false });
+  t.after(async () => { await api.close(); configureAmpleFileStateRoot(undefined); });
+  const post = async (body: unknown) => {
+    const answer = await fetch(`${api.origin}/api/file-transfer`, { method: "POST", headers: { "content-type": "application/json", origin: "http://localhost:5173" }, body: JSON.stringify(body) });
+    return { status: answer.status, body: await answer.json() as { written?: string[]; error?: string } };
+  };
+  const elsewhere = join(root, "Elsewhere");
+  const work = join(root, "Work");
+  await mkdir(elsewhere, { recursive: true });
+  await mkdir(join(work, "Inbox"), { recursive: true });
+  await mkdir(join(work, "Client"), { recursive: true });
+  await writeFile(join(elsewhere, "photo.jpg"), "jpg");
+  await writeFile(join(work, "plan.md"), "# Plan");
+  const sidebar = addSidebarFolder(work, root);
+  const added = { kind: "standard", id: sidebar.id } as const;
+  const at = (path = "") => onDisk(path ? join(work, path) : work);
+
+  // From another app (the desktop hands the window each item's path): copied into the folder shown or the row dropped on.
+  assert.deepEqual((await post({ mode: "copy", sources: [{ nativePath: join(elsewhere, "photo.jpg") }], target: { place: added, path: "" } })).body.written, ["photo.jpg"]);
+  assert.deepEqual((await post({ mode: "copy", sources: [{ nativePath: join(elsewhere, "photo.jpg") }], target: { place: computer, path: at("Inbox") } })).body.written, [at("Inbox/photo.jpg")]);
+  assert.ok(existsSync(join(elsewhere, "photo.jpg")), "the original stays where it was");
+  // Dragged inside the window onto a folder row: moved there.
+  assert.deepEqual((await post({ mode: "move", sources: [{ place: added, path: "plan.md" }, { place: added, path: "photo.jpg" }], target: { place: added, path: "Inbox" } })).body.written, ["Inbox/plan.md", "Inbox/photo copy.jpg"], "a name already taken there gets “ copy”");
+  assert.ok(!existsSync(join(work, "plan.md")));
+  assert.deepEqual((await post({ mode: "move", sources: [{ place: computer, path: at("Inbox/plan.md") }], target: { place: computer, path: at() } })).body.written, [at("plan.md")]);
+
+  // Once a folder inside is a Connected Folder, it is changed only through that Connected Folder.
+  const registered = await fetch(`${api.origin}/api/connected-folders/local-folder`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ connectedFolderRoot: join(work, "Client") }) });
+  assert.equal(registered.status, 201);
+  for (const [label, body] of [
+    ["copy in", { mode: "copy", sources: [{ nativePath: join(elsewhere, "photo.jpg") }], target: { place: added, path: "Client" } }],
+    ["move in", { mode: "move", sources: [{ place: added, path: "plan.md" }], target: { place: computer, path: at("Client") } }],
+    ["move it away", { mode: "move", sources: [{ place: added, path: "Client" }], target: { place: added, path: "Inbox" } }],
+  ] as const) {
+    const refused = await post(body);
+    assert.ok(refused.status >= 400, `${label} answered ${refused.status}`);
+  }
+  assert.ok(!existsSync(join(work, "Client", "photo.jpg")));
+  assert.ok(!existsSync(join(work, "Client", "plan.md")));
+  assert.ok(existsSync(join(work, "Client")));
+});
