@@ -102,7 +102,13 @@ See the [XDG user directories contract](https://wiki.freedesktop.org/www/Softwar
 
 The window speaks Linux: Ctrl instead of ⌘ in shortcuts and hints, "this
 computer" instead of "this Mac", **Show in File Manager**, and "your file
-manager" where the Mac app names Finder. Deleting in a
+manager" where the Mac app names Finder. **View → Show Hidden Files** has
+GNOME Files' key, Ctrl+H; on Linux it shows names starting with a period
+(GNOME's `~` backups and `.hidden` lists are always shown). The window owns
+the key, so it works in the browser preview too, and the menu shows it with
+a check mark. A link's menu is the window's own: Open (not for a broken
+link), **Show in File Manager**, and **Copy Link Path**. Dragging items out
+hands the desktop every selected file and folder at once. Deleting in a
 Standard Folder or any other folder moves items to the desktop's Trash; in a Connected Folder,
 History brings them back. With no Automations yet, Settings → Automations
 points to **View → AmpleFile Agent**.
@@ -127,7 +133,8 @@ in Connected Folders and Standard Folders:
 The host decides the kind and reads the file through the place's existing
 `file-preview` and `raw-file` routes, under the same path policy as every
 other route: nothing outside the place, no symbolic links, and nothing in
-`.amplefile/` or `.pi/`. Text is shown, never run; a PDF is drawn by the
+`.amplefile/` or `.pi/`. Space does nothing on a link row; open the link to
+see what it points to. Text is shown, never run; a PDF is drawn by the
 built-in viewer inside the sandboxed window, from the file's own bytes; the
 window's content policy allows no remote loads; and the Preview starts no
 other program. AmpleFile does not use GNOME's Sushi

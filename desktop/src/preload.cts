@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.invoke("amplefile:connected-folder:open-path", { connectedFolderId, path, action })
     ),
     openPathWith: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:open-path-with", { connectedFolderId, path }),
-    startDrag: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:start-drag", { connectedFolderId, path }),
+    startDrag: (connectedFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:connected-folder:start-drag", { connectedFolderId, paths }),
     previewFile: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:preview-file", { connectedFolderId, path }),
     ...(process.platform === "darwin" ? {
       popupFileMenu: (request: {
@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
         standardFolderId?: string;
         path: string;
         kind: "file" | "folder";
-        capabilities: { open: boolean; attach: boolean; history: boolean; upload: boolean; rename: boolean; delete: boolean; worker?: boolean; organize?: boolean; paste?: boolean };
+        capabilities: { open: boolean; attach: boolean; history: boolean; upload: boolean; rename: boolean; delete: boolean; worker?: boolean; organize?: boolean; paste?: boolean; link?: boolean };
         selection?: { files: number; folders: number };
         point: { x: number; y: number };
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-file-menu", request),
@@ -113,10 +113,14 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.invoke("amplefile:standard-folder:open-path", { standardFolderId, path, action })
     ),
     openPathWith: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:open-path-with", { standardFolderId, path }),
-    startDrag: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:start-drag", { standardFolderId, path }),
+    startDrag: (standardFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:standard-folder:start-drag", { standardFolderId, paths }),
     previewFile: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:preview-file", { standardFolderId, path }),
     trash: (standardFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:standard-folder:trash", { standardFolderId, paths }),
     add: () => ipcRenderer.invoke("amplefile:standard-folder:add"),
+  },
+  // A symbolic link a listing showed, in any place: open what it points to (a file), or show the link itself.
+  placeLink: {
+    open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => ipcRenderer.invoke("amplefile:place:open-link", { place, path, action }),
   },
   fileClipboard: {
     write: (paths: string[]) => ipcRenderer.invoke("amplefile:file-clipboard:write", paths),

@@ -46,6 +46,12 @@ export interface NativeFileMenuRequest {
      */
     organize?: boolean;
     paste?: boolean;
+    /**
+     * The row is a symbolic link (optional): the menu offers only Open (when
+     * `open`), Show in Finder, and Copy Path, which act on the link. Every
+     * other action is off for a link.
+     */
+    link?: boolean;
   };
   /**
    * Set when the clicked row is one of several selected together (optional;
@@ -61,8 +67,8 @@ export type NativeFileMenuItem =
   | { type: "item"; label: string; command: NativeFileMenuCommand; icon?: "amplefile" };
 
 const requestKeys = new Set(["connectedFolderId", "standardFolderId", "path", "kind", "capabilities", "selection", "point"]);
-const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste"]);
-const optionalCapabilityKeys = new Set(["worker", "organize", "paste"]);
+const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste", "link"]);
+const optionalCapabilityKeys = new Set(["worker", "organize", "paste", "link"]);
 const pointKeys = new Set(["x", "y"]);
 const selectionKeys = new Set(["files", "folders"]);
 const maxSelectionCount = 1_000_000;
@@ -107,6 +113,7 @@ export function parseNativeFileMenuRequest(value: unknown): NativeFileMenuReques
       ...(capabilities.worker === true ? { worker: true } : {}),
       ...(capabilities.organize === true ? { organize: true } : {}),
       ...(capabilities.paste === true ? { paste: true } : {}),
+      ...(capabilities.link === true ? { link: true } : {}),
     },
     ...(selection ? { selection } : {}),
     point: {
@@ -127,6 +134,13 @@ function parseSelection(value: unknown): { files: number; folders: number } {
 export function nativeFileMenuItems(request: NativeFileMenuRequest, platform: NodeJS.Platform = "darwin"): NativeFileMenuItem[] {
   if (request.selection) return nativeSelectionMenuItems(request, request.selection);
   const items: NativeFileMenuItem[] = [];
+  const reveal: NativeFileMenuItem = { type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" };
+  if (request.capabilities.link) {
+    // A link opens what it points to and shows itself; nothing changes it from here.
+    if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" ? "Open Folder" : "Open", command: "open" });
+    items.push(reveal, { type: "item", label: "Copy Link Path", command: "copy-path" });
+    return items;
+  }
   if (request.capabilities.open) {
     items.push({
       type: "item",
@@ -136,7 +150,7 @@ export function nativeFileMenuItems(request: NativeFileMenuRequest, platform: No
   }
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
   items.push(
-    { type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" },
+    reveal,
     { type: "item", label: `Copy ${request.kind === "folder" ? "Folder" : "File"} Path`, command: "copy-path" },
   );
   if (request.capabilities.organize && request.path) {

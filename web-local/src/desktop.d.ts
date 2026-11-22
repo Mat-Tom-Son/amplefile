@@ -48,7 +48,8 @@ type AmpleFileDesktopMenuCommand =
   | "open-keyboard-shortcuts"
   | "close-tab"
   | "toggle-sidebar"
-  | "toggle-agent-panel";
+  | "toggle-agent-panel"
+  | "toggle-hidden-files";
 
 type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
 type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
@@ -98,6 +99,8 @@ interface AmpleFileDesktopFileMenuRequest {
     /** The file manager's Copy, Duplicate, Compress, and New Folder with Selection, and Paste on a folder. */
     organize?: boolean;
     paste?: boolean;
+    /** A symbolic link: only Open, Show in Finder, and Copy Path. */
+    link?: boolean;
   };
   /** Several rows selected together: the menu offers only what applies to all of them. */
   selection?: { files: number; folders: number };
@@ -145,7 +148,8 @@ declare global {
         revealFolder: (connectedFolderId: string) => Promise<void>;
         openPath: (connectedFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
         openPathWith?: (connectedFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
-        startDrag: (connectedFolderId: string, path: string) => Promise<void>;
+        /** Drags these items (files and folders) out to other apps. */
+        startDrag: (connectedFolderId: string, paths: string[]) => Promise<boolean>;
         previewFile: (connectedFolderId: string, path: string) => Promise<boolean>;
         popupFileMenu?: (request: AmpleFileDesktopFileMenuRequest) => Promise<AmpleFileDesktopFileMenuCommand | null>;
         /** A Connected Folder tab's or a Chat's right-click menu (macOS). */
@@ -161,11 +165,15 @@ declare global {
       standardFolder?: {
         openPath: (standardFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
         openPathWith: (standardFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
-        startDrag: (standardFolderId: string, path: string) => Promise<boolean>;
+        startDrag: (standardFolderId: string, paths: string[]) => Promise<boolean>;
         previewFile: (standardFolderId: string, path: string) => Promise<boolean>;
         trash: (standardFolderId: string, paths: string[]) => Promise<{ trashed: string[]; failed: { path: string; error: string } | null }>;
         /** Opens the folder picker and adds the chosen folder to Standard Folders (absent in older desktop builds). */
         add?: () => Promise<{ id: string; name: string } | null>;
+      };
+      /** A symbolic link a listing showed: opens what it points to (a file), or shows the link itself (absent in older desktop builds). */
+      placeLink?: {
+        open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => Promise<void>;
       };
       /**
        * Files on the system pasteboard, to and from Finder (absent in older
@@ -291,7 +299,8 @@ declare global {
         setOpenFoldersByDefault: (enabled: boolean) => Promise<unknown>;
       };
       menu: {
-        setState: (state: { connectedFolderOpen: boolean }) => void;
+        /** What the menu bar reflects; a key left out keeps its value. */
+        setState: (state: { connectedFolderOpen?: boolean; showHiddenFiles?: boolean }) => void;
         popup: (menuId: AmpleFileDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;
         onCommand: (listener: (command: AmpleFileDesktopMenuCommand) => void) => () => void;
       };

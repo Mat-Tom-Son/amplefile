@@ -1,13 +1,22 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { lstat, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
 
-import { listConnectedFolders, nestedRegisteredConnectedFolderPaths, scanConnectedFolderTree, type TreeEntry } from "./connected-folder.js";
+import {
+  getConnectedFolder,
+  listConnectedFolders,
+  nestedRegisteredConnectedFolderPaths,
+  resolveListedSymbolicLink,
+  scanConnectedFolderTree,
+  type ListedSymbolicLink,
+  type TreeEntry,
+} from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import {
   accessError,
   computerFolderId,
   isShownStandardEntry,
+  isStandardFolderId,
   listStandardFolders,
   standardFolderPathBase,
   standardFolderRoot,
@@ -93,7 +102,8 @@ function deepestPlace(folder: string, places: readonly KnownPlace[]): KnownPlace
 
 /**
  * One level of a folder in the computer place, with the Standard Folder
- * listing's rules: no dotfiles, no links, and nothing of AmpleFile's or Pi's.
+ * listing's rules: dotfiles and links only when asked for, and nothing of
+ * AmpleFile's or Pi's.
  * A folder below the disk's top is listed by the shared tree scan from its
  * first folder (see standardFolderPathBase); the top itself, which that scan
  * never takes as a root, is read here. A registered Connected Folder is
@@ -121,29 +131,97 @@ export async function scanComputerFolder(relativePath: string, home = homedir(),
         truncated: scan.truncated,
       };
     }
-    return { tree: await scanDiskTop(standardFolderRoot(computerFolderId, home)), truncated: false };
+    return { tree: await scanDiskTop(standardFolderRoot(computerFolderId, home), options), truncated: false };
   } catch (error) {
     throw accessError(error, computerFolderId);
   }
 }
 
-async function scanDiskTop(top: string): Promise<TreeEntry[]> {
+/**
+ * The disk's top, under the same rules as any other listing in the computer
+ * place: dotfiles only when `includeHidden` asks (marked `hidden`), symbolic
+ * links only when `includeLinks` asks (Linux keeps `/bin` and `/lib` as
+ * links), each with what it points to and never followed, and nothing of
+ * AmpleFile's or Pi's ever.
+ */
+async function scanDiskTop(top: string, options: StandardFolderScanOptions = {}): Promise<TreeEntry[]> {
   const registered = new Set((await listConnectedFolders()).map((connectedFolder) => comparison(connectedFolder.connectedFolderRoot)));
-  const entries = (await readdir(top, { withFileTypes: true }))
-    .filter((entry) => !entry.isSymbolicLink() && (entry.isDirectory() || entry.isFile()) && isShownStandardEntry(entry.name));
+  const entries = (await readdir(top, { withFileTypes: true })).filter((entry) => {
+    if (!entry.name || isAlwaysHiddenConnectedFolderEntry(entry.name)) return false;
+    if (!options.includeHidden && !isShownStandardEntry(entry.name)) return false;
+    return entry.isSymbolicLink() ? Boolean(options.includeLinks) : entry.isDirectory() || entry.isFile();
+  });
   const listed = await Promise.all(entries.map(async (entry): Promise<TreeEntry | null> => {
     const path = join(top, entry.name);
+    const hidden = !isShownStandardEntry(entry.name) ? { hidden: true as const } : {};
+    if (entry.isSymbolicLink()) return diskTopLink(entry.name, path, hidden);
     // An entry that disappears between the read and its stat is skipped, as the tree scan skips one.
     const info = await stat(path).catch(() => null);
     if (!info) return null;
-    if (info.isFile()) return { name: entry.name, path: entry.name, kind: "file", sizeBytes: info.size, updatedAt: info.mtime.toISOString() };
-    if (registered.has(comparison(path))) return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: false, nestedFolder: true };
+    if (info.isFile()) return { name: entry.name, path: entry.name, kind: "file", sizeBytes: info.size, updatedAt: info.mtime.toISOString(), ...hidden };
+    if (registered.has(comparison(path))) return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: false, nestedFolder: true, ...hidden };
     const children = await readdir(path).catch(() => []);
-    return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: children.some((name) => isShownStandardEntry(name)) };
+    const shown = (name: string) => options.includeHidden ? Boolean(name) && !isAlwaysHiddenConnectedFolderEntry(name) : isShownStandardEntry(name);
+    return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: children.some(shown), ...hidden };
   }));
   return listed
     .filter((entry): entry is TreeEntry => Boolean(entry))
     .sort((left, right) => left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === "folder" ? -1 : 1);
+}
+
+/** A link at the disk's top, as the tree scan lists one: by what it points to now, a broken one or a loop as missing. */
+async function diskTopLink(name: string, path: string, hidden: { hidden?: true }): Promise<TreeEntry | null> {
+  const linkInfo = await lstat(path).catch(() => null);
+  if (!linkInfo?.isSymbolicLink()) return null;
+  const targetInfo = await stat(path).catch(() => null);
+  if (targetInfo && !targetInfo.isFile() && !targetInfo.isDirectory()) return null;
+  const targetPath = await realpath(path).catch(async () => {
+    const named = await readlink(path).catch(() => null);
+    return named === null ? null : resolve(dirname(path), named);
+  });
+  if (targetPath === null) return null;
+  const target = targetInfo ? targetInfo.isDirectory() ? "folder" as const : "file" as const : "missing" as const;
+  return {
+    name,
+    path: name,
+    kind: target === "folder" ? "folder" : "file",
+    ...(target === "file" && targetInfo ? { sizeBytes: targetInfo.size } : {}),
+    updatedAt: (targetInfo ?? linkInfo).mtime.toISOString(),
+    ...(target === "folder" ? { hasChildren: false } : {}),
+    link: { target, targetPath },
+    ...hidden,
+  };
+}
+
+/**
+ * A symbolic link a listing in any place showed, resolved now so the desktop
+ * can open what it points to or show the link itself (docs/product-model.md,
+ * "Symbolic links"). The folder holding the link keeps the place's path
+ * policy; the link may point anywhere, and only where it points is read. A
+ * link at the disk's top (Linux's `/bin`) is the computer place's first
+ * folder, which the policy never takes as a folder, so it is read here.
+ */
+export async function resolvePlaceSymbolicLink(place: FolderLocationPlace, relativePath: string, home = homedir()): Promise<ListedSymbolicLink> {
+  if (place.kind === "connected-folder") return resolveListedSymbolicLink((await getConnectedFolder(place.id)).connectedFolderRoot, relativePath);
+  if (!isStandardFolderId(place.id)) throw Object.assign(new Error("That folder isn’t in the sidebar anymore."), { status: 404, statusCode: 404 });
+  const parts = relativePath.split("/").filter((part) => part && part !== ".");
+  if (place.id === computerFolderId && parts.length === 1) return diskTopSymbolicLink(standardFolderRoot(computerFolderId, home), parts[0]!);
+  const base = standardFolderPathBase(place.id, relativePath, home);
+  if (!base) throw Object.assign(new Error("Choose a link inside the folder."), { status: 400, statusCode: 400 });
+  return resolveListedSymbolicLink(base.root, base.path);
+}
+
+async function diskTopSymbolicLink(top: string, name: string): Promise<ListedSymbolicLink> {
+  if (name === ".." || name.includes("\\") || isAlwaysHiddenConnectedFolderEntry(name)) throw Object.assign(new Error("Choose a link inside the folder."), { status: 400, statusCode: 400 });
+  const linkPath = join(top, name);
+  const info = await lstat(linkPath).catch(() => null);
+  if (!info) throw Object.assign(new Error("That link isn’t there anymore."), { status: 404, statusCode: 404 });
+  if (!info.isSymbolicLink()) throw Object.assign(new Error("That item isn’t a symbolic link."), { status: 400, statusCode: 400 });
+  const targetPath = await realpath(linkPath).catch(() => null);
+  const target = targetPath ? await stat(targetPath).catch(() => null) : null;
+  if (!targetPath || !target) throw Object.assign(new Error("The item this link points to isn’t there."), { status: 404, statusCode: 404 });
+  if (!target.isFile() && !target.isDirectory()) throw Object.assign(new Error("This link points to something that isn’t a file or folder."), { status: 400, statusCode: 400 });
+  return { linkPath, targetPath, target: target.isDirectory() ? "folder" : "file" };
 }
 
 function contains(root: string, path: string): boolean {

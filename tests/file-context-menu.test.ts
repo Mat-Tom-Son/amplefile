@@ -57,3 +57,16 @@ test("native file menu requests reject unbounded or path-escaping renderer input
   assert.throws(() => parseNativeFileMenuRequest({ ...fileRequest, path: "", kind: "file" }), /root must be a folder/i);
   assert.throws(() => parseNativeFileMenuRequest({ ...fileRequest, point: { x: Number.NaN, y: 10 } }), /position/i);
 });
+
+test("a link's native menu offers only Open, Show in Finder, and Copy Path", () => {
+  const request = parseNativeFileMenuRequest({ ...fileRequest, capabilities: { ...fileRequest.capabilities, link: true } });
+  assert.equal(request.capabilities.link, true);
+  assert.deepEqual(nativeFileMenuItems(request), [
+    { type: "item", label: "Open", command: "open" },
+    { type: "item", label: "Show in Finder", command: "reveal" },
+    { type: "item", label: "Copy Link Path", command: "copy-path" },
+  ]);
+  const broken = parseNativeFileMenuRequest({ ...fileRequest, kind: "folder", capabilities: { ...fileRequest.capabilities, open: false, link: true } });
+  assert.deepEqual(nativeFileMenuItems(broken, "linux").map((item) => item.type === "item" ? item.command : "separator"), ["reveal", "copy-path"]);
+  assert.throws(() => parseNativeFileMenuRequest({ ...fileRequest, capabilities: { ...fileRequest.capabilities, link: "yes" } }), /capabilities/);
+});
