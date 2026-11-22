@@ -15,6 +15,8 @@ import { listConversations } from "../agent/chat-store.js";
 import { isGeneratedImageId } from "../agent/generated-image-store.js";
 import { createConnectedFolderMutationCheckpoint } from "../history.js";
 import { searchConnectedFolder } from "../search.js";
+import { searchStandardFolder } from "../folder-search.js";
+import { isStandardFolderId } from "../standard-folders.js";
 import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "../connected-folder-ignore.js";
 import {
   createConnectedFolderFolder,
@@ -84,7 +86,45 @@ export async function handleSearchRoutes({ req, res, url, method }: LocalApiRequ
     }
     return true;
   }
+  // Search in a Standard Folder or a folder in the computer place: names and
+  // text, in the folder shown and beneath it, a bounded page at a time.
+  const standardSearchMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/search$/);
+  if (method === "GET" && standardSearchMatch) {
+    const standardFolderId = standardSearchMatch[1];
+    if (!isStandardFolderId(standardFolderId)) throw notFound("That standard folder isn’t on this computer.");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once("aborted", abort);
+    res.once("close", abort);
+    try {
+      const result = await searchStandardFolder(standardFolderId, url.searchParams.get("q") ?? "", {
+        path: url.searchParams.get("path") ?? undefined,
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        includeHidden: url.searchParams.get("includeHidden") === "1",
+        maxMatches: searchBudget(url.searchParams, "limit"),
+        maxScannedFiles: searchBudget(url.searchParams, "maxFiles"),
+        maxScannedBytes: searchBudget(url.searchParams, "maxBytes"),
+        maxEntries: searchBudget(url.searchParams, "maxEntries"),
+        maxMilliseconds: searchBudget(url.searchParams, "maxMilliseconds"),
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted && !res.destroyed) sendJson(res, result);
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      req.off("aborted", abort);
+      res.off("close", abort);
+    }
+    return true;
+  }
   return false;
+}
+
+function searchBudget(params: URLSearchParams, name: string): number | undefined {
+  const value = params.get(name);
+  if (value === null || value === "") return undefined;
+  if (!/^[1-9]\d{0,9}$/.test(value)) throw badRequest(`${name} must be a whole number.`);
+  return Number(value);
 }
 
 /** One Connected Folder's files: suggestions, the tree, reading and saving, generated pictures, moves, renames, new folders, added files, deletes, ignore rules, file events, and uploads. */
