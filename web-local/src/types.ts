@@ -41,6 +41,15 @@ export interface TreeEntry {
   children?: TreeEntry[];
   /** Its own registered Connected Folder: Files shows it as a door, not a subtree. */
   nestedFolder?: true;
+  /** Only in a listing asked for with `includeLinks=1`: a symbolic link, never followed; a linked folder has no children here. */
+  link?: {
+    /** What it points to now; `missing` covers a broken link and a loop. */
+    target: "file" | "folder" | "missing";
+    /** The target's absolute path, for display. */
+    targetPath: string;
+  };
+  /** Only in a listing asked for with `includeHidden=1`: the system file manager hides this entry by default. */
+  hidden?: true;
 }
 
 export interface FileContextMenuState {

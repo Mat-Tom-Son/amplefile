@@ -46,6 +46,7 @@ import {
 } from "../connected-folder.js";
 import { registerConnectedFolderInternal } from "./connected-folder-routes.js";
 import { openStandardFolderFileStream } from "./event-streams.js";
+import { treeListingQuery } from "./tree-listing-query.js";
 import { applyConnectedFolderDelete, moveConnectedFolderEntriesWithHistory, normalizeConnectedFolderRelativePath } from "./file-changes.js";
 import { sendConnectedFolderRawFile } from "./file-routes.js";
 import { badRequest, errorMessage, httpError, match, notFound, readJsonBody, sendJson, unavailable } from "./http.js";
@@ -103,7 +104,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     const route = standardFolderMatch[2];
     const path = url.searchParams.get("path") ?? "";
     if (method === "GET" && route === "tree") {
-      sendJson(res, await scanStandardFolder(standardFolderId, path));
+      sendJson(res, await scanStandardFolder(standardFolderId, path, undefined, undefined, treeListingQuery(url.searchParams, true)));
       return true;
     }
     if (method === "GET" && route === "file-info") {
@@ -122,7 +123,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
       return true;
     }
     if (method === "GET" && route === "events") {
-      await openStandardFolderFileStream(state, createLocalEventSink(res), standardFolderId, path);
+      await openStandardFolderFileStream(state, createLocalEventSink(res), standardFolderId, path, { includeHidden: url.searchParams.get("includeHidden") === "1" });
       return true;
     }
     if (method === "POST" && route === "rename-local-entry") {
