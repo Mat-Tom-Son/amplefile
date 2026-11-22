@@ -1805,7 +1805,11 @@ type FilesystemLimiter = <T>(task: () => Promise<T>) => Promise<T>;
  */
 function createFilesystemLimiter(limit: number): FilesystemLimiter {
   let active = 0;
-  const waiting: Array<() => void> = [];
+  // A large flat folder queues one waiter per entry. Taking waiters from a
+  // moving head keeps each hand-off constant time; `Array.shift` on a queue of
+  // 100,000 waiters moves the whole array every time.
+  let waiting: Array<() => void> = [];
+  let head = 0;
   return async <T>(task: () => Promise<T>): Promise<T> => {
     // A finished task hands its slot directly to the next waiter instead of
     // releasing it and waking one. Releasing first lets a fresh caller claim
@@ -1816,7 +1820,11 @@ function createFilesystemLimiter(limit: number): FilesystemLimiter {
     try {
       return await task();
     } finally {
-      const next = waiting.shift();
+      const next = head < waiting.length ? waiting[head++] : undefined;
+      if (head === waiting.length) {
+        waiting = [];
+        head = 0;
+      }
       if (next) next();
       else active -= 1;
     }

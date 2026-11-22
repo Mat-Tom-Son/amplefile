@@ -86,16 +86,50 @@ export function isConnectedFolderIgnored(relativePath: string, configuredPattern
   const path = normalizeConnectedFolderPath(relativePath);
   if (!path) return false;
   let ignored = false;
-  for (const rawPattern of [...builtInPatterns, ...configuredPatterns]) {
-    const negated = rawPattern.startsWith("!");
-    const pattern = normalizePattern(negated ? rawPattern.slice(1) : rawPattern);
-    if (pattern && ignoreRuleMatches(path, pattern)) ignored = !negated;
+  const segments = path.split("/");
+  for (const rule of compiledIgnoreRules(configuredPatterns)) {
+    if (ruleMatches(path, rule, segments)) ignored = !rule.negated;
   }
   return ignored;
 }
 
 export function isAlwaysHiddenConnectedFolderEntry(name: string): boolean {
-  return builtInPatterns.some((pattern) => ignoreRuleMatches(name, pattern));
+  const path = normalizeConnectedFolderPath(name);
+  const segments = path.split("/");
+  return builtInRules.some((rule) => ruleMatches(path, rule, segments));
+}
+
+interface CompiledIgnoreRule {
+  negated: boolean;
+  folderPattern: boolean;
+  /** Normalized; empty when the rule can never match. */
+  pattern: string;
+  regex: RegExp | null;
+}
+
+// A listing tests every entry against every rule. Each rule is normalized and
+// compiled once per rule list, not once per entry, so a folder of 100,000
+// entries does not compile millions of expressions.
+function compileIgnoreRule(rawPattern: string, negated: boolean): CompiledIgnoreRule {
+  const pattern = normalizeConnectedFolderPath(rawPattern);
+  return { negated, folderPattern: rawPattern.endsWith("/"), pattern, regex: pattern ? globRegex(pattern) : null };
+}
+
+const builtInRules = builtInPatterns.map((pattern) => compileIgnoreRule(pattern, false));
+const compiledRuleLists = new WeakMap<readonly string[], CompiledIgnoreRule[]>();
+
+function compiledIgnoreRules(configuredPatterns: readonly string[]): CompiledIgnoreRule[] {
+  const cached = compiledRuleLists.get(configuredPatterns);
+  if (cached) return cached;
+  const rules: CompiledIgnoreRule[] = [];
+  for (const rawPattern of [...builtInPatterns, ...configuredPatterns]) {
+    const negated = rawPattern.startsWith("!");
+    const pattern = normalizePattern(negated ? rawPattern.slice(1) : rawPattern);
+    if (pattern) rules.push(compileIgnoreRule(pattern, negated));
+  }
+  // Rule lists are read whole from ignore.json and never changed in place.
+  compiledRuleLists.set(configuredPatterns, rules);
+  return rules;
 }
 
 function ignoreStateFile(connectedFolderRoot: string): string {
@@ -114,15 +148,13 @@ function normalizeConnectedFolderPath(value: string): string {
   return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
 }
 
-function ignoreRuleMatches(relativePath: string, rawPattern: string): boolean {
-  const path = normalizeConnectedFolderPath(relativePath);
-  const folderPattern = rawPattern.endsWith("/");
-  const pattern = normalizeConnectedFolderPath(rawPattern);
-  if (!pattern) return false;
-  const regex = globRegex(pattern);
+/** `path` is already normalized, and `segments` is its `/`-separated parts. */
+function ruleMatches(path: string, rule: CompiledIgnoreRule, segments: readonly string[]): boolean {
+  const { pattern, regex } = rule;
+  if (!pattern || !regex) return false;
   if (regex.test(path)) return true;
-  if (folderPattern && (path === pattern || path.startsWith(`${pattern}/`))) return true;
-  if (!pattern.includes("/")) return path.split("/").some((segment) => regex.test(segment));
+  if (rule.folderPattern && (path === pattern || path.startsWith(`${pattern}/`))) return true;
+  if (!pattern.includes("/")) return segments.some((segment) => regex.test(segment));
   return false;
 }
 
