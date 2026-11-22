@@ -7,6 +7,7 @@ import {
   Dismiss20Regular,
   Delete20Regular,
   Flash20Regular,
+  FolderOpen20Regular,
   Info20Regular,
   Keyboard20Regular,
   PaintBrush20Regular,
@@ -32,10 +33,11 @@ import { IconCredits } from "./IconCredits";
 import { AutomationsPane } from "./AutomationsPane";
 import { RecentlyDeletedPane } from "./RecentlyDeletedPane";
 import { CommandLinePane } from "./CommandLinePane";
+import { FileManagerPane } from "./FileManagerPane";
 
-export type SettingsPage = "appearance" | "ai-models" | "automations" | "command-line" | "recently-deleted" | "general" | "desktop" | "shortcuts" | "about";
+export type SettingsPage = "appearance" | "ai-models" | "automations" | "command-line" | "file-manager" | "recently-deleted" | "general" | "desktop" | "shortcuts" | "about";
 export type SettingsSection = "automations" | "deleted" | "limits";
-type SettingsTabId = "appearance" | "ai-models" | "automations" | "command-line" | "recently-deleted" | "shortcuts" | "about";
+type SettingsTabId = "appearance" | "ai-models" | "automations" | "command-line" | "file-manager" | "recently-deleted" | "shortcuts" | "about";
 // AI Models edits nobody saved yet: closing Settings and opening it again finds them as left.
 const unsavedAiModelsEdits = new Map<string, AiModelsDraft>();
 
@@ -129,6 +131,8 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
     { id: "ai-models", label: "AI Models", icon: <Sparkle20Regular /> },
     { id: "automations", label: "Automations", icon: <Flash20Regular /> },
     { id: "command-line", label: "Command Line", icon: <WindowConsole20Regular /> },
+    // Linux only: the preload offers the bridge there alone.
+    ...(window.ampleFileDesktop?.fileManagerIntegration ? [{ id: "file-manager" as const, label: "File Manager", icon: <FolderOpen20Regular /> }] : []),
     { id: "recently-deleted", label: "Recently Deleted", icon: <Delete20Regular /> },
     { id: "shortcuts", label: "Shortcut Keys", icon: <Keyboard20Regular /> },
     { id: "about", label: "About", icon: <Info20Regular /> },
@@ -203,6 +207,11 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
             {page === "command-line" ? (
               <div className="settings-tab-panel" id="settings-panel-command-line" role="tabpanel" aria-labelledby="settings-tab-command-line">
                 <CommandLinePane fixtureMode={fixtureMode} />
+              </div>
+            ) : null}
+            {page === "file-manager" ? (
+              <div className="settings-tab-panel" id="settings-panel-file-manager" role="tabpanel" aria-labelledby="settings-tab-file-manager">
+                <FileManagerPane />
               </div>
             ) : null}
             {page === "recently-deleted" ? (

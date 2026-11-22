@@ -284,6 +284,12 @@ declare global {
         removeSkill: (target: "claude" | "codex") => Promise<AmpleFileCommandLineStatus>;
         skill: () => Promise<string>;
       };
+      /** Settings → File Manager; present on Linux only. */
+      fileManagerIntegration?: {
+        status: () => Promise<unknown>;
+        setShowFilesFromOtherApps: (enabled: boolean) => Promise<unknown>;
+        setOpenFoldersByDefault: (enabled: boolean) => Promise<unknown>;
+      };
       menu: {
         setState: (state: { connectedFolderOpen: boolean }) => void;
         popup: (menuId: AmpleFileDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;

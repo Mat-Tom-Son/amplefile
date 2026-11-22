@@ -94,7 +94,7 @@ module.exports = {
     category: "Utility;FileTools;FileManager",
     // "Open With" for folders. Declaring a type never makes AmpleFile the
     // default: nothing here or in the install scripts runs xdg-mime or edits
-    // mimeapps.list. A folder opens only if it is already a Connected Folder.
+    // mimeapps.list. The person chooses that in Settings → File Manager.
     mimeTypes: ["inode/directory"],
     maintainer: identity.sourceRepositoryOwner,
     synopsis: "Work with AI in ordinary folders",

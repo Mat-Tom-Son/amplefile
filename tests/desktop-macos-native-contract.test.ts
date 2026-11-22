@@ -45,9 +45,9 @@ test("the Darwin Connected Folder header menu requires the trusted main renderer
 test("Finder and Open Recent recreate the Mac window before showing a queued folder where it lives", () => {
   assert.match(
     main,
-    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?folderLocationForOpenPath\(path\)[\s\S]*?amplefile:file-manager:open-location/,
+    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?folderLocationForOpenPath\(path[,)][\s\S]*?amplefile:file-manager:open-location/,
   );
-  assert.match(main, /folderLocationForOpenPath[\s\S]*?resolveFolderLocation\(path, await listConnectedFolders\(\), homedir\(\)\)/);
+  assert.match(main, /folderLocationForOpenPath[\s\S]*?resolveFolderLocation\(path, await listConnectedFolders\(\), homedir\(\)[,)]/);
   assert.match(main, /request = \{ token: randomUUID\(\), location \}[\s\S]*?amplefile:file-manager:open-location/);
   assert.match(preload, /deliveredTokens[\s\S]*?amplefile:file-manager:take-open-location[\s\S]*?then\(deliver\)/);
 });

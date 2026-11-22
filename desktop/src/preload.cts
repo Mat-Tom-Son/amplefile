@@ -251,6 +251,12 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     removeSkill: (target: "claude" | "codex") => ipcRenderer.invoke("amplefile:command-line:remove-skill", target),
     skill: () => ipcRenderer.invoke("amplefile:command-line:skill"),
   },
+  // Settings → File Manager: Linux only.
+  ...(process.platform === "linux" ? { fileManagerIntegration: {
+    status: () => ipcRenderer.invoke("amplefile:file-manager-integration:status"),
+    setShowFilesFromOtherApps: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-show-files-from-other-apps", enabled),
+    setOpenFoldersByDefault: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-open-folders-by-default", enabled),
+  } } : {}),
   menu: {
     setState: (state: unknown) => ipcRenderer.send("amplefile:menu:set-state", state),
     popup: (menuId: unknown, bounds: unknown) => ipcRenderer.invoke("amplefile:menu:popup", menuId, bounds),

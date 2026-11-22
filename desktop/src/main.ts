@@ -118,6 +118,7 @@ import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } fro
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
 import { LinuxDesktopSettings } from "./linux-desktop-settings.js";
+import { startLinuxFileManager } from "./linux-file-manager-host.js";
 import { fallbackWindowButtonLayout, linuxNativeThemeSource, type LinuxDesktopAppearance, type LinuxWindowChromeState } from "../../src/shared/linux-desktop-appearance.js";
 import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
@@ -274,7 +275,9 @@ let recentConnectedFolderEntries: RecentConnectedFolderEntry[] = [];
 let recentConnectedFoldersUpdate: Promise<void> = Promise.resolve();
 let activeNativeConnectedFolderGeneration = 0;
 let pendingOpenLocationRequest: { token: string; location: FolderLocation } | null = null;
-const pendingOpenPaths: string[] = [];
+// Strings open as given; a { reveal } entry (Settings → File Manager's ShowItems) shows a folder selected in its parent.
+const pendingOpenPaths: Array<string | { path: string; reveal: boolean }> = [];
+let linuxFileManager: ReturnType<typeof startLinuxFileManager> | null = null;
 let openPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
   prepare: prepareForApplicationQuit,
@@ -553,6 +556,13 @@ async function startInteractiveApp(): Promise<void> {
   interactiveRequested = true;
   if (interactiveStartupPromise) return interactiveStartupPromise;
   interactiveStartupPromise = (async () => {
+    // Settings → File Manager (linux-file-manager-host.ts): first, so an app that started AmpleFile on demand is answered soon.
+    if (process.platform === "linux") linuxFileManager ??= startLinuxFileManager({
+      ipcMain, assertTrusted: assertTrustedMainRenderer, userDataPath: app.getPath("userData"),
+      isPackaged: app.isPackaged, execPath: process.execPath, appPath: app.getAppPath(), appImage: process.env.APPIMAGE,
+      log: (message) => console.warn(`${productName} file manager: ${message}`),
+      open: (target) => { pendingOpenPaths.push(target); void startInteractiveApp().then(showWindow).then(drainPendingOpenPaths).catch(reportStartupError); },
+    });
     // A headless CLI host may be tearing down; it re-checks for this launch
     // afterwards and stays up, but the new act token must not race it.
     await headlessQuit.whenTeardownSettled();
@@ -2126,11 +2136,12 @@ async function drainPendingOpenPaths(): Promise<void> {
 
   openPathDrainPromise = (async () => {
     while (pendingOpenPaths.length) {
-      const path = pendingOpenPaths.shift();
+      const entry = pendingOpenPaths.shift();
+      const path = typeof entry === "string" ? entry : entry?.path;
       if (!path) continue;
       await ensureMainWindow();
       showWindow();
-      const location = await folderLocationForOpenPath(path);
+      const location = await folderLocationForOpenPath(path, typeof entry === "object" && entry.reveal);
       if (!location) {
         console.warn(`${productName} could not open a folder that is not on this computer: ${path}`);
         continue;
@@ -2152,9 +2163,9 @@ async function drainPendingOpenPaths(): Promise<void> {
 }
 
 /** Where a path the system handed over opens, or null when nothing is there (Finder may pass a path that moved before AmpleFile was ready). */
-async function folderLocationForOpenPath(path: string): Promise<FolderLocation | null> {
+async function folderLocationForOpenPath(path: string, reveal = false): Promise<FolderLocation | null> {
   try {
-    return await resolveFolderLocation(path, await listConnectedFolders(), homedir());
+    return await resolveFolderLocation(path, await listConnectedFolders(), homedir(), { reveal });
   } catch (error) {
     console.warn(`${productName} could not open ${path}: ${errorMessage(error)}`);
     return null;
@@ -2206,6 +2217,7 @@ async function openExternal(value: string): Promise<void> {
 async function shutdown(): Promise<void> {
   if (shutdownPromise) return shutdownPromise;
   linuxDesktopSettings?.stop();
+  void linuxFileManager?.stop();
   modelContextWindow?.dispose();
   // Quitting closes every page. Tabs are not kept: sign-ins and history are what the next launch has.
   builtInBrowser?.dispose();
