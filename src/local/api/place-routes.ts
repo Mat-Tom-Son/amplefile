@@ -1140,6 +1140,7 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     }
     try {
       const plan = await planPlacements([{ source: staged.folder, key: name, name }], staged.parent, policy, {
+        newItems: true,
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
       const label = `Before extracting ${basename(item.abs)}`;

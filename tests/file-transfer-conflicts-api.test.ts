@@ -339,6 +339,35 @@ test("Extract asks first, then skips, replaces, or merges into the folder alread
   assert.equal(plain.body!.replaced, undefined);
 });
 
+test("Extract of an archive with loose items asks about the new folder's name like any other clash", async (t) => {
+  // The new folder is made under a working name beside the archive: that is not a copy of an item into its own folder.
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  const zip = new JSZip();
+  zip.file("a.txt", "new a");
+  zip.file("sub/b.txt", "b");
+  await writeFile(join(folder.connectedFolderRoot, "photos.zip"), await zip.generateAsync({ type: "nodebuffer" }));
+  await mkdir(join(folder.connectedFolderRoot, "photos"));
+  await writeFile(join(folder.connectedFolderRoot, "photos", "a.txt"), "old a");
+  await writeFile(join(folder.connectedFolderRoot, "photos", "kept.txt"), "kept");
+  const place = { kind: "connected-folder", id: folder.id };
+  const extract = (conflicts: unknown) => call("/api/file-transfer/extract", { method: "POST", body: { place, path: "photos.zip", conflicts } });
+
+  const merged = await extract({ items: { photos: "merge" }, inside: "replace" });
+  assert.equal(merged.status, 201, JSON.stringify(merged.body));
+  assert.equal(merged.body!.path, "photos");
+  assert.deepEqual(merged.body!.merged, ["photos"]);
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "photos"))).sort(), ["a.txt", "kept.txt", "sub"]);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "photos", "a.txt"), "utf8"), "new a");
+
+  const replaced = await extract({ items: { photos: "replace" } });
+  assert.equal(replaced.status, 201, JSON.stringify(replaced.body));
+  assert.equal(replaced.body!.path, "photos");
+  assert.deepEqual(replaced.body!.replaced, [{ path: "photos", recovery: "history" }]);
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "photos"))).sort(), ["a.txt", "sub"]);
+  assert.deepEqual(await visible(folder.connectedFolderRoot), ["photos", "photos.zip"], "no working folder is left");
+});
+
 test("a replaced item History cannot keep goes whole into Recently Deleted", async (t) => {
   const { api, call } = await sandboxApi(t);
   const source = await connectedFolder(call, "Source");
