@@ -1,13 +1,13 @@
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, readdir, rename, rmdir, type FileHandle } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, open, readdir, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
+import { basename, dirname, join, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { createGunzip, createInflateRaw, crc32 } from "node:zlib";
 
+import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
 import {
   claimWorkingPath,
   extractWorkingPrefix,
-  formatBytes,
   placeFolderWithoutReplacing,
   removeAbandonedWorkingItems,
   removeOwnedItem,
@@ -16,31 +16,32 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
 
 /**
  * Extract: an archive becomes a new folder beside it, named after it
- * ("Photos.zip" → "Photos"), never replacing anything (a taken name gets
- * " copy"). The folder is written under a hidden working name and takes its
- * name only once complete, so a refused, failed, or cancelled Extract leaves
- * nothing behind. An archive whose whole content is one folder of that same
- * name fills the new folder with that folder's content, so compressing a
- * folder and extracting the archive gives the folder back.
+ * ("Photos.zip" → "Photos"; a taken name gets " copy" unless the caller chose
+ * otherwise, src/local/file-conflicts.ts). The folder is written under a
+ * hidden working name and takes its name only once complete, so a refused,
+ * failed, or cancelled Extract leaves nothing behind. An archive whose whole
+ * content is one folder of that same name fills the new folder with that
+ * folder's content, so compressing a folder and extracting the archive gives
+ * the folder back.
  *
- * Every archive is treated as hostile: an entry that would land outside the
- * new folder (an absolute path, a drive letter, `..`) refuses the whole
- * archive; links, hard links, and special files are skipped; nothing is
- * written into `.amplefile/` or `.pi/`; the bytes and items actually written
- * are bounded; and nothing extracted is made runnable (no executable,
- * set-id, or sticky bits), since a Mac's download quarantine cannot be
- * carried over to what an archive holds.
+ * Every archive is treated as hostile:
+ * - an entry that would land outside the new folder (an absolute path, a
+ *   drive letter, `..`) refuses the whole archive;
+ * - a symbolic link is made only when it points inside the new folder (it is
+ *   checked again once made); hard links and special files are left out;
+ * - nothing is written into `.amplefile/` or `.pi/`;
+ * - a file keeps the execute bits the archive records, never a set-id or
+ *   sticky bit and never more than 0755; folders are 0755;
+ * - a zip entry that inflates past the size it declares, or whose checksum
+ *   does not match, refuses the archive; and
+ * - the disk guard (src/local/disk-space.ts) refuses to start when the
+ *   archive's declared size does not fit and stops before the disk fills.
  */
 
 export type ArchiveFormat = "zip" | "tar" | "tar.gz";
 
-/**
- * The most Extract writes: bytes as actually written (never the sizes an
- * archive claims) and files and folders. Larger work belongs to Finder.
- */
-export const extractLimits = { maxBytes: 4 * 1024 ** 3, maxEntries: 60_000 } as const;
-
-export type ExtractLimits = { maxBytes: number; maxEntries: number };
+/** Why an entry was left out. */
+export type ExtractSkipReason = "link" | "hard-link" | "special" | "configuration" | "repeat";
 
 /** What an Extract wrote and what it left out. */
 export interface ExtractResult {
@@ -48,9 +49,26 @@ export interface ExtractResult {
   folder: string;
   files: number;
   folders: number;
+  links: number;
   bytes: number;
-  /** Entries left out: links, special files, Connected Folder or Pi configuration, and repeats of a name already written. */
-  skipped: Array<{ path: string; reason: "link" | "special" | "configuration" | "repeat" }>;
+  /**
+   * Entries left out: a symbolic link pointing outside the new folder (`link`),
+   * hard links, special files, Connected Folder or Pi configuration, and
+   * repeats of a name already written.
+   */
+  skipped: Array<{ path: string; reason: ExtractSkipReason }>;
+}
+
+/** An extraction finished under its working name, not yet given its own. */
+export interface StagedExtract extends Omit<ExtractResult, "folder"> {
+  /** The folder holding what was extracted, inside the hidden working folder. */
+  folder: string;
+  /** The name it takes: the archive's, without its extension. */
+  name: string;
+  /** The folder the archive is in, where the new folder goes. */
+  parent: string;
+  /** Removes whatever is left of the working folder. */
+  discard(): Promise<void>;
 }
 
 /** The archive format a file's name says, or null when Extract cannot open it. */
@@ -71,45 +89,68 @@ export function extractFolderName(name: string): string {
   return `${name} folder`;
 }
 
-/** Extracts `archive` into a new folder beside it and returns what it wrote. */
-export async function extractArchive(
-  archive: string,
-  limits: ExtractLimits = extractLimits,
-  operation: FileOperationControl = untrackedFileOperation,
-): Promise<ExtractResult> {
-  const format = archiveFormat(basename(archive));
-  if (!format) throw badRequest("AmpleFile can extract .zip, .tar, .tar.gz, and .tgz archives.");
+/** Checks that `archive` is one Extract opens, before anything is written. */
+export async function assertExtractable(archive: string): Promise<void> {
+  if (!archiveFormat(basename(archive))) throw badRequest("AmpleFile can extract .zip, .tar, .tar.gz, and .tgz archives.");
   const info = await lstat(archive).catch(() => null);
   if (!info?.isFile()) throw badRequest(`“${basename(archive)}” isn’t an archive file.`);
+}
+
+/** Extracts `archive` into a new folder beside it and returns what it wrote. */
+export async function extractArchive(archive: string, operation: FileOperationControl = untrackedFileOperation): Promise<ExtractResult> {
+  const staged = await stageExtract(archive, operation);
+  try {
+    operation.stage("finishing");
+    const folder = await placeFolderWithoutReplacing(staged.folder, staged.parent, staged.name);
+    const { discard: _discard, name: _name, parent: _parent, ...result } = staged;
+    return { ...result, folder };
+  } finally {
+    await staged.discard();
+  }
+}
+
+/** Extracts `archive` under a hidden working name beside it; the caller places it and then discards what is left. */
+export async function stageExtract(archive: string, operation: FileOperationControl = untrackedFileOperation): Promise<StagedExtract> {
+  await assertExtractable(archive);
+  const format = archiveFormat(basename(archive))!;
+  const info = await lstat(archive);
   const parent = dirname(archive);
   const name = extractFolderName(basename(archive));
   await removeAbandonedWorkingItems(parent, extractWorkingPrefix);
   const working = claimWorkingPath(parent, extractWorkingPrefix);
-  const writer = new ExtractWriter(working.path, limits, operation);
-  try {
-    await mkdir(working.path, { mode: 0o755 });
-    operation.setTotals(null, info.size);
-    operation.stage("extracting");
-    if (format === "zip") await readZip(archive, info.size, writer, operation);
-    else await readTar(archive, format === "tar.gz", writer, operation);
-    operation.stage("finishing");
-    const folder = await placeExtracted(working.path, parent, name);
-    return { folder, files: writer.files, folders: writer.folders, bytes: writer.bytes, skipped: writer.skipped };
-  } finally {
+  const discard = async () => {
     working.release();
     await removeOwnedItem(working.path).catch(() => undefined);
+  };
+  try {
+    await mkdir(working.path, { mode: 0o755 });
+    const writer = new ExtractWriter(working.path, operation, watchDiskSpace(parent, "finish extracting this archive"));
+    operation.setTotals(null, info.size);
+    if (format === "zip") await readZip(archive, info.size, writer, operation);
+    else {
+      // A tar holds about as much as it measures; a gzipped one cannot say until it is read.
+      if (format === "tar") await assertDiskSpace(parent, info.size, "extract this archive");
+      operation.stage("extracting");
+      await readTar(archive, format === "tar.gz", writer, operation);
+    }
+    await writer.finishLinks();
+    const inside = await readdir(working.path);
+    const collapsed = inside.length === 1 && inside[0] === name && (await lstat(join(working.path, name))).isDirectory();
+    return {
+      folder: collapsed ? join(working.path, name) : working.path,
+      name,
+      parent,
+      files: writer.files,
+      folders: writer.folders,
+      links: writer.links,
+      bytes: writer.bytes,
+      skipped: writer.skipped,
+      discard,
+    };
+  } catch (error) {
+    await discard();
+    throw error;
   }
-}
-
-/** One folder of the archive's own name inside the working folder becomes the result; anything else, the working folder itself. */
-async function placeExtracted(workingFolder: string, parent: string, name: string): Promise<string> {
-  const inside = await readdir(workingFolder);
-  if (inside.length === 1 && inside[0] === name && (await lstat(join(workingFolder, name))).isDirectory()) {
-    const placed = await placeFolderWithoutReplacing(join(workingFolder, name), parent, name);
-    await rmdir(workingFolder).catch(() => undefined);
-    return placed;
-  }
-  return placeFolderWithoutReplacing(workingFolder, parent, name);
 }
 
 /** Folder names an archive never writes into: a Connected Folder's identity and Pi's project configuration. */
@@ -134,53 +175,66 @@ export function archiveEntrySegments(raw: string): { segments: string[] } | { sk
   return { segments };
 }
 
+/**
+ * Whether a symbolic link at `segments` pointing at `target` stays inside the
+ * new folder as written: a relative target that never climbs above the top
+ * and never names configuration.
+ */
+export function linkStaysInside(segments: readonly string[], target: string): boolean {
+  if (!target || target.includes("\0") || target.includes("\\") || target.startsWith("/") || /^[A-Za-z]:/.test(target)) return false;
+  const resolved = posix.normalize(posix.join(...segments.slice(0, -1), target));
+  if (resolved === ".." || resolved.startsWith("../") || posix.isAbsolute(resolved)) return false;
+  return !resolved.split("/").some((segment) => configurationFolders.has(segment.toLowerCase()));
+}
+
 function refusedEntry(raw: string): Error {
   const shown = raw.replace(/\0/g, "␀").slice(0, 200);
   return badRequest(`This archive has an item that would land outside its folder (“${shown}”). Nothing was extracted.`);
 }
 
-type EntryKind = "file" | "folder" | "link" | "special";
+type EntryKind = "file" | "folder" | "link" | "hard-link" | "special";
 
-/** Writes entries into the working folder, counting what it writes against the limits. */
+/** The longest link target Extract reads. */
+const maxLinkTargetBytes = 4096;
+
+/** Writes entries into the working folder. */
 class ExtractWriter {
   files = 0;
   folders = 0;
+  links = 0;
   bytes = 0;
   readonly skipped: ExtractResult["skipped"] = [];
   private readonly made = new Set<string>();
-  private entries = 0;
+  private readonly pendingLinks: Array<{ rawPath: string; segments: string[]; target: string }> = [];
 
   constructor(
     private readonly root: string,
-    readonly limits: ExtractLimits,
     private readonly operation: FileOperationControl,
+    private readonly watchDisk: (bytes: number) => Promise<void>,
   ) {}
 
   /**
    * Opens an entry: null when it is left out, else where its bytes go (a
    * folder needs none). Folders an entry sits in are made as needed.
    */
-  async begin(rawPath: string, kind: EntryKind): Promise<FileHandle | null | "folder"> {
+  async begin(rawPath: string, kind: Exclude<EntryKind, "link">): Promise<FileHandle | null | "folder"> {
     const read = archiveEntrySegments(rawPath);
-    // A left-out entry still counts as an item, so a flood of them is bounded too.
     if ("skip" in read) {
-      if (read.skip === "configuration" && kind !== "folder") this.skip(rawPath, "configuration");
+      if (read.skip === "configuration" && kind !== "folder") this.skipped.push({ path: rawPath, reason: "configuration" });
       return null;
     }
-    if (kind === "link" || kind === "special") {
-      this.skip(rawPath, kind);
+    if (kind === "hard-link" || kind === "special") {
+      this.skipped.push({ path: rawPath, reason: kind });
       return null;
     }
     const { segments } = read;
     if (!segments.length) return null;
     await this.ensureFolders(segments.slice(0, kind === "folder" ? segments.length : -1));
     if (kind === "folder") return "folder";
-    this.count();
     const target = join(this.root, ...segments);
     this.operation.current(segments.at(-1)!);
     try {
-      // Owner read and write, readable by others; never executable.
-      const handle = await open(target, "wx", 0o644);
+      const handle = await open(target, "wx", 0o600);
       this.files += 1;
       return handle;
     } catch (error) {
@@ -190,22 +244,79 @@ class ExtractWriter {
     }
   }
 
-  private skip(path: string, reason: ExtractResult["skipped"][number]["reason"]): void {
-    this.count();
-    this.skipped.push({ path, reason });
+  /** Closes a file and gives it its mode: readable by all, writable by its owner, executable where the archive says. */
+  async finishFile(handle: FileHandle, archivedMode: number): Promise<void> {
+    await handle.chmod(0o644 | (archivedMode & 0o111));
+    await handle.close();
   }
 
-  private count(): void {
-    this.entries += 1;
-    if (this.entries > this.limits.maxEntries) throw tooManyItems(this.limits);
-  }
-
-  /** Counts bytes about to be written, refusing once the total passes the limit. */
-  wrote(count: number): void {
-    this.bytes += count;
-    if (this.bytes > this.limits.maxBytes) {
-      throw tooLarge(`This archive holds more than ${formatBytes(this.limits.maxBytes)} once extracted, more than AmpleFile extracts. Nothing was extracted; open it in Finder instead.`);
+  /** Notes a symbolic link, made once every file is written so no write ever passes through one. */
+  addLink(rawPath: string, target: string): void {
+    const read = archiveEntrySegments(rawPath);
+    if ("skip" in read) {
+      if (read.skip === "configuration") this.skipped.push({ path: rawPath, reason: "configuration" });
+      return;
     }
+    if (!read.segments.length) return;
+    if (!linkStaysInside(read.segments, target)) {
+      this.skipped.push({ path: rawPath, reason: "link" });
+      return;
+    }
+    this.pendingLinks.push({ rawPath, segments: read.segments, target });
+  }
+
+  /**
+   * Makes the links, then checks where each really leads: one that reaches
+   * outside the new folder through another link is removed and reported.
+   */
+  async finishLinks(): Promise<void> {
+    const made: Array<{ rawPath: string; path: string }> = [];
+    for (const link of this.pendingLinks) {
+      const path = join(this.root, ...link.segments);
+      if (!await this.foldersAreReal(link.segments.slice(0, -1))) {
+        this.skipped.push({ path: link.rawPath, reason: "link" });
+        continue;
+      }
+      await this.ensureFolders(link.segments.slice(0, -1));
+      try {
+        await symlink(link.target, path);
+      } catch (error) {
+        if ((error as { code?: string }).code !== "EEXIST") throw error;
+        this.skipped.push({ path: link.rawPath, reason: "repeat" });
+        continue;
+      }
+      made.push({ rawPath: link.rawPath, path });
+    }
+    const root = await realpath(this.root);
+    for (const link of made) {
+      let leadsInside = true;
+      try {
+        const real = await realpath(link.path);
+        leadsInside = real === root || real.startsWith(`${root}${sep}`);
+      } catch (error) {
+        // A link to something the archive did not hold stays, as written; a loop does not.
+        leadsInside = (error as { code?: string }).code === "ENOENT";
+      }
+      if (leadsInside) { this.links += 1; continue; }
+      await unlink(link.path);
+      this.skipped.push({ path: link.rawPath, reason: "link" });
+    }
+  }
+
+  /** Counts bytes about to be written and checks the disk now and then. */
+  async wrote(count: number): Promise<void> {
+    this.bytes += count;
+    await this.watchDisk(count);
+  }
+
+  private async foldersAreReal(segments: readonly string[]): Promise<boolean> {
+    let path = this.root;
+    for (const segment of segments) {
+      path = join(path, segment);
+      const info = await lstat(path).catch(() => null);
+      if (info && !info.isDirectory()) return false;
+    }
+    return true;
   }
 
   private async ensureFolders(segments: readonly string[]): Promise<void> {
@@ -216,7 +327,6 @@ class ExtractWriter {
       const existing = await lstat(path).catch(() => null);
       if (existing && !existing.isDirectory()) throw badRequest(`This archive is damaged: “${segment}” is both a file and a folder. Nothing was extracted.`);
       if (!existing) {
-        this.count();
         await mkdir(path, { mode: 0o755 });
         this.folders += 1;
       }
@@ -225,9 +335,9 @@ class ExtractWriter {
   }
 }
 
-/** Writes all of `chunk`, counting it first so a bound stops before the disk fills. */
+/** Writes all of `chunk`, counting it first. */
 async function writeChunk(handle: FileHandle, writer: ExtractWriter, chunk: Buffer): Promise<void> {
-  writer.wrote(chunk.length);
+  await writer.wrote(chunk.length);
   for (let offset = 0; offset < chunk.length;) offset += (await handle.write(chunk, offset, chunk.length - offset)).bytesWritten;
 }
 
@@ -236,6 +346,7 @@ async function writeChunk(handle: FileHandle, writer: ExtractWriter, chunk: Buff
 interface ZipEntry {
   name: string;
   kind: EntryKind;
+  mode: number;
   method: number;
   encrypted: boolean;
   crc: number;
@@ -244,14 +355,17 @@ interface ZipEntry {
   localHeaderOffset: number;
 }
 
-/** The most central directory Extract reads; 60,000 entries with long names fit well inside. */
-const maxCentralDirectoryBytes = 64 * 1024 * 1024;
+/** The most central directory Extract reads: room for some two million entries. */
+const maxCentralDirectoryBytes = 256 * 1024 * 1024;
 
 async function readZip(archive: string, archiveSize: number, writer: ExtractWriter, operation: FileOperationControl): Promise<void> {
   const handle = await open(archive, "r");
   try {
-    const entries = await readZipDirectory(handle, archiveSize, writer.limits);
+    const entries = await readZipDirectory(handle, archiveSize);
     operation.setTotals(entries.length, archiveSize);
+    // The sizes an archive declares are checked as each entry inflates.
+    await assertDiskSpace(dirname(archive), entries.reduce((total, entry) => total + (entry.kind === "file" ? entry.size : 0), 0), "extract this archive");
+    operation.stage("extracting");
     for (const entry of entries) {
       await operation.boundary("entry");
       await extractZipEntry(archive, archiveSize, handle, entry, writer, operation);
@@ -270,49 +384,71 @@ async function extractZipEntry(
   writer: ExtractWriter,
   operation: FileOperationControl,
 ): Promise<void> {
-  if (entry.encrypted && entry.kind === "file") throw badRequest("This archive is protected with a password. Nothing was extracted; open it in Finder instead.");
+  if (entry.encrypted && (entry.kind === "file" || entry.kind === "link")) throw badRequest("This archive is protected with a password. Nothing was extracted; open it in Finder instead.");
+  if (entry.kind === "link") {
+    if (entry.size > maxLinkTargetBytes) { writer.addLink(entry.name, ""); return; }
+    const chunks: Buffer[] = [];
+    await readZipData(archive, archiveSize, handle, entry, operation, async (chunk) => { chunks.push(chunk); });
+    writer.addLink(entry.name, Buffer.concat(chunks).toString("utf8"));
+    return;
+  }
   const target = await writer.begin(entry.name, entry.kind);
   if (target === "folder" || target === null) {
     operation.bytesDone(entry.compressedSize);
     return;
   }
+  let finished = false;
   try {
-    if (entry.method !== 0 && entry.method !== 8) throw badRequest("This archive uses a kind of compression AmpleFile can’t open. Nothing was extracted; open it in Finder instead.");
-    const header = await readAt(handle, entry.localHeaderOffset, 30);
-    if (header.length < 30 || header.readUInt32LE(0) !== 0x04034b50) throw damaged();
-    const start = entry.localHeaderOffset + 30 + header.readUInt16LE(26) + header.readUInt16LE(28);
-    if (start + entry.compressedSize > archiveSize) throw damaged();
-    let written = 0;
-    let crc = 0;
-    if (entry.compressedSize) {
-      const raw = createReadStream(archive, { start, end: start + entry.compressedSize - 1, highWaterMark: 256 * 1024 });
-      const inflating = entry.method === 8;
-      // Progress counts the archive's bytes as they are read.
-      if (inflating) raw.on("data", (chunk) => operation.bytesDone(chunk.length));
-      const content: Readable = inflating ? raw.pipe(createInflateRaw()) : raw;
-      raw.once("error", (error) => content.destroy(error));
-      try {
-        for await (const chunk of content as AsyncIterable<Buffer>) {
-          if (!inflating) operation.bytesDone(chunk.length);
-          written += chunk.length;
-          // An entry that inflates past the size it declares is damaged or a bomb.
-          if (written > entry.size) throw damaged();
-          crc = crc32(chunk, crc);
-          await writeChunk(target, writer, chunk);
-          await operation.boundary("chunk");
-        }
-      } finally {
-        raw.destroy();
-        content.destroy();
-      }
-    }
-    if (written !== entry.size || crc !== entry.crc) throw damaged();
+    await readZipData(archive, archiveSize, handle, entry, operation, (chunk) => writeChunk(target, writer, chunk));
+    await writer.finishFile(target, entry.mode);
+    finished = true;
   } finally {
-    await target.close();
+    if (!finished) await target.close().catch(() => undefined);
   }
 }
 
-async function readZipDirectory(handle: FileHandle, size: number, limits: ExtractLimits): Promise<ZipEntry[]> {
+/** Inflates one entry's data, checking it against the size and checksum the archive declares. */
+async function readZipData(
+  archive: string,
+  archiveSize: number,
+  handle: FileHandle,
+  entry: ZipEntry,
+  operation: FileOperationControl,
+  take: (chunk: Buffer) => Promise<void>,
+): Promise<void> {
+  if (entry.method !== 0 && entry.method !== 8) throw badRequest("This archive uses a kind of compression AmpleFile can’t open. Nothing was extracted; open it in Finder instead.");
+  const header = await readAt(handle, entry.localHeaderOffset, 30);
+  if (header.length < 30 || header.readUInt32LE(0) !== 0x04034b50) throw damaged();
+  const start = entry.localHeaderOffset + 30 + header.readUInt16LE(26) + header.readUInt16LE(28);
+  if (start + entry.compressedSize > archiveSize) throw damaged();
+  let written = 0;
+  let crc = 0;
+  if (entry.compressedSize) {
+    const raw = createReadStream(archive, { start, end: start + entry.compressedSize - 1, highWaterMark: 256 * 1024 });
+    const inflating = entry.method === 8;
+    // Progress counts the archive's bytes as they are read.
+    if (inflating) raw.on("data", (chunk) => operation.bytesDone(chunk.length));
+    const content: Readable = inflating ? raw.pipe(createInflateRaw()) : raw;
+    raw.once("error", (error) => content.destroy(error));
+    try {
+      for await (const chunk of content as AsyncIterable<Buffer>) {
+        if (!inflating) operation.bytesDone(chunk.length);
+        written += chunk.length;
+        // An entry that inflates past the size it declares is damaged or a bomb.
+        if (written > entry.size) throw damaged();
+        crc = crc32(chunk, crc);
+        await take(chunk);
+        await operation.boundary("chunk");
+      }
+    } finally {
+      raw.destroy();
+      content.destroy();
+    }
+  }
+  if (written !== entry.size || crc !== entry.crc) throw damaged();
+}
+
+async function readZipDirectory(handle: FileHandle, size: number): Promise<ZipEntry[]> {
   // The end record sits in the last 22 bytes plus a comment of up to 65,535.
   const tailLength = Math.min(size, 22 + 0xffff);
   const tail = await readAt(handle, size - tailLength, tailLength);
@@ -342,9 +478,7 @@ async function readZipDirectory(handle: FileHandle, size: number, limits: Extrac
     directoryOffset = safeNumber(zip64.readBigUInt64LE(48));
   }
   if (disk !== 0 || directoryDisk !== 0) throw badRequest("This archive is split across several files. Nothing was extracted; open it in Finder instead.");
-  // Room for a Mac's resource forks beside each item; the bound on what is written still applies.
-  if (count > limits.maxEntries * 2) throw tooManyItems(limits);
-  if (directorySize > maxCentralDirectoryBytes || directoryOffset + directorySize > size) throw damaged();
+  if (directorySize > maxCentralDirectoryBytes || directoryOffset + directorySize > size || count * 46 > directorySize) throw damaged();
   const directory = await readAt(handle, directoryOffset, directorySize);
   const entries: ZipEntry[] = [];
   let at = 0;
@@ -383,14 +517,14 @@ async function readZipDirectory(handle: FileHandle, size: number, limits: Extrac
       field += 4 + length;
     }
     const name = decodeName(nameBytes, (flags & 0x800) !== 0);
-    // A Unix-made entry keeps its file type in the high bits of its attributes.
+    // A Unix-made entry keeps its file type and mode in the high bits of its attributes.
     const unixMode = madeBy === 3 ? externalAttributes >>> 16 : 0;
     const type = unixMode & 0o170000;
     const kind: EntryKind = type === 0o120000 ? "link"
       : type === 0o040000 || name.endsWith("/") || name.endsWith("\\") ? "folder"
       : type === 0 || type === 0o100000 ? "file"
       : "special";
-    entries.push({ name, kind, method, encrypted: (flags & 1) !== 0, crc, compressedSize, size: uncompressedSize, localHeaderOffset });
+    entries.push({ name, kind, mode: unixMode & 0o7777, method, encrypted: (flags & 1) !== 0, crc, compressedSize, size: uncompressedSize, localHeaderOffset });
     at += 46 + nameLength + extraLength + commentLength;
   }
   return entries;
@@ -434,13 +568,10 @@ async function readTar(archive: string, gzipped: boolean, writer: ExtractWriter,
   const content: Readable = gzipped ? raw.pipe(createGunzip()) : raw;
   raw.once("error", (error) => content.destroy(error));
   const blocks = new BlockReader(content[Symbol.asyncIterator]() as AsyncIterator<Buffer>, gzipped ? undefined : (length) => operation.bytesDone(length));
-  // What the tar stream may hold beyond what is written: headers, padding,
-  // and the data of skipped entries, so a skipped entry cannot be a bomb.
-  const readBound = writer.limits.maxBytes + 64 * 1024 * 1024;
   try {
     let longName: string | null = null;
-    let paxPath: string | null = null;
-    let paxSize: number | null = null;
+    let longLink: string | null = null;
+    let pax: Record<string, string> = {};
     for (;;) {
       await operation.boundary("entry");
       const header = await blocks.read(512);
@@ -448,41 +579,44 @@ async function readTar(archive: string, gzipped: boolean, writer: ExtractWriter,
       if (header.every((byte) => byte === 0)) break;
       if (!tarChecksumMatches(header)) throw damaged();
       const type = String.fromCharCode(header[156]!);
-      const headerSize = readTarNumber(header.subarray(124, 136));
-      const size = paxSize ?? headerSize;
-      if (blocks.consumed + size > readBound) {
-        throw tooLarge(`This archive holds more than ${formatBytes(writer.limits.maxBytes)} once extracted, more than AmpleFile extracts. Nothing was extracted; open it in Finder instead.`);
-      }
+      const paxSize = pax.size === undefined ? null : Number(pax.size);
+      if (paxSize !== null && (!Number.isSafeInteger(paxSize) || paxSize < 0)) throw damaged();
+      const size = paxSize ?? readTarNumber(header.subarray(124, 136));
       const padded = Math.ceil(size / 512) * 512;
       if (type === "x" || type === "g" || type === "L" || type === "K") {
         if (size > maxTarHeaderRecordBytes) throw damaged();
         const body = await blocks.read(padded);
         if (!body) throw damaged();
         const record = body.subarray(0, size);
-        if (type === "x") {
-          const attributes = parsePax(record);
-          if (attributes.path !== undefined) paxPath = attributes.path;
-          if (attributes.size !== undefined) paxSize = Number(attributes.size);
-          if (paxSize !== null && (!Number.isSafeInteger(paxSize) || paxSize < 0)) throw damaged();
-        } else if (type === "L") {
-          longName = record.toString("utf8").replace(/\0+$/, "");
-        }
+        if (type === "x") pax = { ...pax, ...parsePax(record) };
+        else if (type === "L") longName = record.toString("utf8").replace(/\0+$/, "");
+        else if (type === "K") longLink = record.toString("utf8").replace(/\0+$/, "");
         continue;
       }
-      const name = paxPath ?? longName ?? tarHeaderName(header);
-      paxPath = null;
+      const name = pax.path ?? longName ?? tarHeaderName(header);
+      const linkTarget = pax.linkpath ?? longLink ?? cString(header.subarray(157, 257));
+      const mode = readTarNumber(header.subarray(100, 108)) & 0o7777;
+      pax = {};
       longName = null;
-      paxSize = null;
+      longLink = null;
       const kind: EntryKind = type === "0" || type === "\0" || type === "7" ? "file"
         : type === "5" ? "folder"
-        : type === "1" || type === "2" ? "link"
+        : type === "2" ? "link"
+        : type === "1" ? "hard-link"
         : "special";
+      if (kind === "link") {
+        writer.addLink(name, linkTarget);
+        await blocks.skip(padded);
+        operation.itemsDone();
+        continue;
+      }
       const target = await writer.begin(name, kind);
       if (target === "folder" || target === null) {
         await blocks.skip(padded);
         operation.itemsDone();
         continue;
       }
+      let finished = false;
       try {
         let left = size;
         while (left > 0) {
@@ -492,8 +626,10 @@ async function readTar(archive: string, gzipped: boolean, writer: ExtractWriter,
           await writeChunk(target, writer, chunk);
           await operation.boundary("chunk");
         }
+        await writer.finishFile(target, mode);
+        finished = true;
       } finally {
-        await target.close();
+        if (!finished) await target.close().catch(() => undefined);
       }
       await blocks.skip(padded - size);
       operation.itemsDone();
@@ -555,7 +691,6 @@ function parsePax(record: Buffer): Record<string, string> {
 
 /** Reads exact byte counts from a stream of chunks. */
 class BlockReader {
-  consumed = 0;
   private buffered: Buffer[] = [];
   private bufferedLength = 0;
   private done = false;
@@ -578,7 +713,6 @@ class BlockReader {
     const rest = all.subarray(length);
     this.buffered = rest.length ? [rest] : [];
     this.bufferedLength = rest.length;
-    this.consumed += taken.length;
     return taken;
   }
 
@@ -606,10 +740,6 @@ class BlockReader {
   }
 }
 
-function tooManyItems(limits: ExtractLimits): Error {
-  return tooLarge(`This archive holds too many items to extract here (more than ${limits.maxEntries.toLocaleString("en-US")}). Nothing was extracted; open it in Finder instead.`);
-}
-
 function damaged(): Error {
   return badRequest("This archive is damaged or incomplete. Nothing was extracted.");
 }
@@ -618,6 +748,3 @@ function badRequest(message: string): Error {
   return Object.assign(new Error(message), { status: 400, statusCode: 400 });
 }
 
-function tooLarge(message: string): Error {
-  return Object.assign(new Error(message), { status: 413, statusCode: 413 });
-}

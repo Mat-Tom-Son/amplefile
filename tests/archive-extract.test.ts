@@ -1,15 +1,22 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
 
 import JSZip from "jszip";
 
 import { abandonedCompressAfterMs, compressInto } from "../src/local/file-transfer.js";
-import { archiveEntrySegments, extractArchive, extractFolderName } from "../src/local/archive-extract.js";
+import { archiveEntrySegments, extractArchive, extractFolderName, linkStaysInside } from "../src/local/archive-extract.js";
+import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
+import { setZip64ForTests } from "../src/local/zip-writer.js";
+
+const exec = promisify(execFile);
 import { cancelFileOperation, runFileOperation, setFileOperationBoundaryHookForTests } from "../src/local/file-operations.js";
 
 /**
@@ -150,6 +157,8 @@ test("an entry that would land outside its folder refuses the whole archive and 
   assert.ok(!existsSync(join(root, "..", "evil.txt")));
   for (const name of ["../x", "/x", "C:\\x", "a/../../x", "x\0y"]) assert.throws(() => archiveEntrySegments(name), /outside its folder/, name);
   assert.deepEqual(archiveEntrySegments("./a//b/./c"), { segments: ["a", "b", "c"] });
+  assert.equal(linkStaysInside(["bin", "tool"], "../lib/tool"), true);
+  for (const target of ["../x", "/etc/passwd", "C:/x", "a\\..\\..\\x", "", ".amplefile/connected-folder.json"]) assert.equal(linkStaysInside(["tool"], target), false, target);
 
   await writeFile(join(root, "bad.tar"), tar(tarEntry("fine.txt", { content: "fine" }), tarEntry("../../escape.txt", { content: "evil" })));
   await assert.rejects(extractArchive(join(root, "bad.tar")), /outside its folder/);
@@ -158,7 +167,7 @@ test("an entry that would land outside its folder refuses the whole archive and 
   assert.deepEqual((await readdir(root)).sort(), ["bad.tar", "bad.zip", "bad2.tar"]);
 });
 
-test("links, special files, and Connected Folder or Pi configuration are left out", async (t) => {
+test("links leading outside, hard links, special files, and Connected Folder or Pi configuration are left out", async (t) => {
   const root = await folder(t);
   await writeFile(join(root, "mixed.zip"), await zipWith({
     "keep.txt": { content: "keep" },
@@ -182,42 +191,78 @@ test("links, special files, and Connected Folder or Pi configuration are left ou
   await writeFile(join(root, "mixed.tar"), tar(
     tarEntry("keep.txt", { content: "keep" }),
     tarEntry("symlink", { type: "2", linkName: "/etc/passwd" }),
+    tarEntry("up", { type: "2", linkName: "../../outside" }),
     tarEntry("hardlink", { type: "1", linkName: "/etc/passwd" }),
     tarEntry("device", { type: "3" }),
     tarEntry("pipe", { type: "6" }),
     tarEntry(".pi/settings.json", { content: "{}" }),
+    tarEntry("to-config", { type: "2", linkName: ".pi/settings.json" }),
   ));
   const tarred = await extractArchive(join(root, "mixed.tar"));
   assert.deepEqual(await listTree(tarred.folder), ["keep.txt"]);
-  assert.deepEqual(tarred.skipped.map((item) => item.reason).sort(), ["configuration", "link", "link", "special", "special"]);
+  assert.deepEqual(tarred.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
+    "configuration:.pi/settings.json", "hard-link:hardlink", "link:symlink", "link:to-config", "link:up", "special:device", "special:pipe",
+  ]);
 });
 
-test("nothing extracted is made runnable", async (t) => {
+test("links that stay inside the new folder are made, and one that escapes through another link is removed", async (t) => {
   const root = await folder(t);
-  await writeFile(join(root, "tools.zip"), await zipWith({ "run.sh": { content: "#!/bin/sh\n", unixPermissions: 0o104777 }, "bin/": { dir: true, unixPermissions: 0o041777 } }));
+  await writeFile(join(root, "links.tar"), tar(
+    tarEntry("lib/", { type: "5" }),
+    tarEntry("lib/libthing.so.1", { content: "library" }),
+    tarEntry("lib/libthing.so", { type: "2", linkName: "libthing.so.1" }),
+    tarEntry("bin/", { type: "5" }),
+    tarEntry("bin/thing", { type: "2", linkName: "../lib/libthing.so" }),
+    tarEntry("dangling", { type: "2", linkName: "not-in-the-archive" }),
+    // "here" is the new folder itself, so "here/.." would be the folder beside it.
+    tarEntry("here", { type: "2", linkName: "." }),
+    tarEntry("escape", { type: "2", linkName: "here/../outside" }),
+    // A file never lands through a link: "here/x" would write into the folder through "here".
+    tarEntry("loop", { type: "2", linkName: "loop" }),
+  ));
+  await writeFile(join(root, "outside"), "not to be reached");
+  const result = await extractArchive(join(root, "links.tar"));
+  assert.equal(await readFile(join(result.folder, "bin", "thing"), "utf8"), "library", "a link inside the folder works");
+  assert.equal(await readlink(join(result.folder, "bin", "thing")), "../lib/libthing.so", "kept as written");
+  assert.equal(await readlink(join(result.folder, "dangling")), "not-in-the-archive");
+  assert.ok(existsSync(join(result.folder, "here")));
+  assert.ok(!existsSync(join(result.folder, "escape")), "a link reaching outside through another link is removed");
+  assert.ok(!(await lstat(join(result.folder, "loop")).catch(() => null)), "a link to itself is removed");
+  assert.deepEqual(result.skipped.map((item) => `${item.reason}:${item.path}`).sort(), ["link:escape", "link:loop"]);
+  assert.equal(result.links, 4);
+});
+test("Extract keeps the execute bits an archive records, never a set-id or sticky bit, never more than 0755", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "tools.zip"), await zipWith({
+    "run.sh": { content: "#!/bin/sh\n", unixPermissions: 0o104777 },
+    "notes.txt": { content: "notes", unixPermissions: 0o100666 },
+    "own.sh": { content: "#!/bin/sh\n", unixPermissions: 0o100700 },
+    "bin/": { dir: true, unixPermissions: 0o041777 },
+  }));
   const zipped = await extractArchive(join(root, "tools.zip"));
-  const script = await stat(join(zipped.folder, "run.sh"));
-  assert.equal(script.mode & 0o7111, 0, "no executable, set-id, or sticky bit");
-  assert.equal(script.mode & 0o022, 0, "not writable by others");
-  assert.equal((await stat(join(zipped.folder, "bin"))).mode & 0o7022, 0);
+  const mode = async (path: string) => (await stat(join(zipped.folder, path))).mode & 0o7777;
+  assert.equal(await mode("run.sh"), 0o755);
+  assert.equal(await mode("notes.txt"), 0o644, "not writable by others");
+  assert.equal(await mode("own.sh"), 0o744);
+  assert.equal((await mode("bin")) & 0o7022, 0, "a folder is never more than 0755");
 
-  await writeFile(join(root, "tools.tar"), tar(tarEntry("run.sh", { content: "#!/bin/sh\n", mode: 0o6777 })));
+  await writeFile(join(root, "tools.tar"), tar(tarEntry("run.sh", { content: "#!/bin/sh\n", mode: 0o6777 }), tarEntry("data", { content: "d", mode: 0o600 })));
   const tarred = await extractArchive(join(root, "tools.tar"));
-  assert.equal((await stat(join(tarred.folder, "run.sh"))).mode & 0o7111, 0);
+  assert.equal((await stat(join(tarred.folder, "run.sh"))).mode & 0o7777, 0o755);
+  assert.equal((await stat(join(tarred.folder, "data"))).mode & 0o7777, 0o644);
+
+  // What Compress writes keeps its modes, so an executable round-trips.
+  await mkdir(join(root, "Tool"));
+  await writeFile(join(root, "Tool", "go"), "#!/bin/sh\n", { mode: 0o755 });
+  await chmod(join(root, "Tool", "go"), 0o755);
+  const archive = await compressInto([join(root, "Tool")], root);
+  await rm(join(root, "Tool"), { recursive: true });
+  const back = await extractArchive(archive);
+  assert.equal((await stat(join(back.folder, "go"))).mode & 0o7777, 0o755);
 });
-
-test("a zip bomb stops at the bound on bytes actually written, and says so", async (t) => {
+test("a zip entry that inflates past its declared size is refused, and the disk guard stops what does not fit", async (t) => {
   const root = await folder(t);
-  await writeFile(join(root, "bomb.zip"), await zipWith({ "a.bin": { content: Buffer.alloc(600_000) }, "b.bin": { content: Buffer.alloc(600_000) } }));
-  assert.ok((await stat(join(root, "bomb.zip"))).size < 10_000, "the archive is small");
-  await assert.rejects(extractArchive(join(root, "bomb.zip"), { maxBytes: 1_000_000, maxEntries: 100 }), (error: Error & { statusCode?: number }) => {
-    assert.equal(error.statusCode, 413);
-    assert.match(error.message, /more than .* once extracted/);
-    return true;
-  });
-  assert.deepEqual(await readdir(root), ["bomb.zip"], "what it wrote is gone");
-
-  // An entry that inflates past the size it declares is refused, whatever the bound.
+  // An entry that inflates past the size it declares is refused.
   const honest = await zipWith({ "c.bin": { content: Buffer.alloc(50_000) } });
   const lying = Buffer.from(honest);
   const central = lying.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
@@ -225,28 +270,42 @@ test("a zip bomb stops at the bound on bytes actually written, and says so", asy
   await writeFile(join(root, "lying.zip"), lying);
   await assert.rejects(extractArchive(join(root, "lying.zip")), /damaged/);
 
+  // A zip whose declared sizes do not fit the disk is refused before anything is written.
+  await writeFile(join(root, "bomb.zip"), await zipWith({ "a.bin": { content: Buffer.alloc(600_000) }, "b.bin": { content: Buffer.alloc(600_000) } }));
+  assert.ok((await stat(join(root, "bomb.zip"))).size < 10_000, "the archive is small");
+  setDiskSpaceProbeForTests(async () => 1_500_000, 1_000_000);
+  t.after(() => setDiskSpaceProbeForTests(null));
+  await assert.rejects(extractArchive(join(root, "bomb.zip")), (error: Error & { statusCode?: number }) => {
+    assert.equal(error.statusCode, 507);
+    assert.match(error.message, /isn’t enough space on the disk to extract this archive \(it needs about 1 MB; 1 MB is free\)/);
+    return true;
+  });
+  // A gzipped tar cannot say its size first, so the guard stops it while it writes.
+  let free = 50_000_000;
+  setDiskSpaceProbeForTests(async () => (free -= 20_000_000), 20_000_000, 100_000);
   await writeFile(join(root, "bomb.tgz"), gzipSync(tar(tarEntry("a.bin", { content: Buffer.alloc(2_000_000) }))));
-  await assert.rejects(extractArchive(join(root, "bomb.tgz"), { maxBytes: 1_000_000, maxEntries: 100 }), /more than .* once extracted/);
-  // Data an entry is skipped with counts too, so a skipped entry cannot be a bomb.
-  await writeFile(join(root, "skipped.tgz"), gzipSync(tar(tarEntry("sparse", { type: "S", content: Buffer.alloc(80 * 1024 * 1024) }))));
-  await assert.rejects(extractArchive(join(root, "skipped.tgz"), { maxBytes: 1_000_000, maxEntries: 100 }), /more than .* once extracted/);
-  assert.deepEqual((await readdir(root)).sort(), ["bomb.tgz", "bomb.zip", "lying.zip", "skipped.tgz"]);
+  await assert.rejects(extractArchive(join(root, "bomb.tgz")), /disk is almost full/);
+  assert.deepEqual((await readdir(root)).sort(), ["bomb.tgz", "bomb.zip", "lying.zip"], "what it wrote is gone");
 });
-
-test("too many items stop at the bound, and says so", async (t) => {
+test("Extract takes any number of items, and Compress writes the 64-bit records a large archive needs", async (t) => {
   const root = await folder(t);
-  const files: Record<string, { content: string }> = {};
-  for (let index = 0; index < 30; index += 1) files[`f${index}.txt`] = { content: "x" };
-  await writeFile(join(root, "many.zip"), await zipWith(files));
-  await assert.rejects(extractArchive(join(root, "many.zip"), { maxBytes: 1_000_000, maxEntries: 20 }), /too many items to extract here \(more than 20\)/);
-  // A zip that declares far more entries than the bound is refused before its directory is read.
-  await assert.rejects(extractArchive(join(root, "many.zip"), { maxBytes: 1_000_000, maxEntries: 10 }), /too many items/);
-  // Entries that are left out count too, so a flood of links is bounded.
-  await writeFile(join(root, "links.tar"), tar(...Array.from({ length: 30 }, (_, index) => tarEntry(`l${index}`, { type: "2", linkName: "x" }))));
-  await assert.rejects(extractArchive(join(root, "links.tar"), { maxBytes: 1_000_000, maxEntries: 20 }), /too many items/);
-  assert.deepEqual((await readdir(root)).sort(), ["links.tar", "many.zip"]);
+  await mkdir(join(root, "Many"));
+  for (let index = 0; index < 300; index += 1) await writeFile(join(root, "Many", `f${index}.txt`), `file ${index}`);
+  await writeFile(join(root, "Many", "big.bin"), randomBytes(300_000));
+  setZip64ForTests(true);
+  t.after(() => setZip64ForTests(false));
+  const archive = await compressInto([join(root, "Many")], root);
+  setZip64ForTests(false);
+  if (existsSync("/usr/bin/unzip")) {
+    const checked = await exec("/usr/bin/unzip", ["-t", archive]);
+    assert.match(checked.stdout, /No errors detected/);
+  }
+  await rm(join(root, "Many"), { recursive: true });
+  const back = await extractArchive(archive);
+  assert.equal((await readdir(back.folder)).length, 301);
+  assert.equal(await readFile(join(back.folder, "f299.txt"), "utf8"), "file 299");
+  assert.equal(back.files, 301);
 });
-
 test("damaged, protected, and unknown archives are refused plainly", async (t) => {
   const root = await folder(t);
   await writeFile(join(root, "notes.zip"), "this is not a zip");
@@ -281,14 +340,14 @@ test("an Extract cancelled partway leaves no folder and no working folder, and r
     if (point === "entry" && progress.itemsDone === 2) cancelFileOperation(operationId);
   });
   t.after(() => setFileOperationBoundaryHookForTests(null));
-  await assert.rejects(runFileOperation("extract", "extract", (operation) => extractArchive(join(root, "parts.zip"), undefined, operation)), /Stopped/);
+  await assert.rejects(runFileOperation("extract", "extract", (operation) => extractArchive(join(root, "parts.zip"), operation)), /Stopped/);
   assert.deepEqual(await readdir(root), ["parts.zip"]);
   assert.ok(seen.includes(2));
 
   setFileOperationBoundaryHookForTests(({ operationId, point, progress }) => {
     if (point === "chunk" && progress.itemsDone === 1) cancelFileOperation(operationId);
   });
-  await assert.rejects(runFileOperation("extract-mid", "extract", (operation) => extractArchive(join(root, "parts.zip"), undefined, operation)), /Stopped/);
+  await assert.rejects(runFileOperation("extract-mid", "extract", (operation) => extractArchive(join(root, "parts.zip"), operation)), /Stopped/);
   assert.deepEqual(await readdir(root), ["parts.zip"], "a cancel inside an entry leaves nothing either");
 });
 

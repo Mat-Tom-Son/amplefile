@@ -655,7 +655,7 @@ async function compressEntries(body: { place?: unknown; paths?: unknown; operati
     const target = await resolveTransferItem(place, folderRelative, "target");
     let archive: string;
     try {
-      archive = await compressInto(items.map((item) => item.abs), folder, undefined, operation);
+      archive = await compressInto(items.map((item) => item.abs), folder, operation);
     } catch (error) {
       // A cancelled Compress wrote nothing: its working file is gone.
       if (isFileOperationCancelled(error)) return { path: null, restorePoints: [] as TransferRestorePoint[], cancelled: true as const };
@@ -686,7 +686,7 @@ async function extractEntry(body: { place?: unknown; path?: unknown; operationId
     const target = await resolveTransferItem(place, folderRelative, "target");
     let extracted: Awaited<ReturnType<typeof extractArchive>>;
     try {
-      extracted = await extractArchive(item.abs, undefined, operation);
+      extracted = await extractArchive(item.abs, operation);
     } catch (error) {
       if (isFileOperationCancelled(error)) return { path: null, restorePoints: [] as TransferRestorePoint[], cancelled: true as const };
       throw error;

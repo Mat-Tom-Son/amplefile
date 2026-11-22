@@ -173,7 +173,7 @@ test("a Compress cancelled inside a file leaves no archive and no working file",
     if (point === "chunk" && progress.current === "video.mov" && progress.bytesDone > 300_000) cancelFileOperation(operationId);
   });
   const events = follow(t);
-  await assert.rejects(runFileOperation("zip", "compress", (operation) => compressInto([join(root, "Trip")], root, undefined, operation)), /Stopped/);
+  await assert.rejects(runFileOperation("zip", "compress", (operation) => compressInto([join(root, "Trip")], root, operation)), /Stopped/);
   assert.deepEqual((await readdir(root)).sort(), ["Trip"], "no archive and no hidden working file");
   const stages = events.flatMap((event) => event.type === "progress" ? [event.operation.stage] : []);
   assert.ok(stages.includes("compressing"));
