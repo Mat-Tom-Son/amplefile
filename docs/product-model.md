@@ -32,7 +32,7 @@ organizing metaphor.
 | **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
 | **AmpleFile Agent** | The agent above all Connected Folders: one conversation scope, shown in the menu-bar popover. | It is not a Connected Folder or a second Worker ([what it is](amplefile-agent-and-cli.md#what-the-amplefile-agent-is)). |
 | **Automation** | A declared, inert-until-enabled set of deterministic steps that move work between Connected Folders on a reviewed trigger. | App code runs it, never a Worker conversation, and nothing Automation-shaped is written into any Connected Folder. |
-| **Recently Deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore (files, folders, a managed Connected Folder's folder, a deleted Chat, and a removed imported Skill), kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
+| **Recently Deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore (files, folders, a managed Connected Folder's folder, a deleted Chat, and a removed imported Skill), kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. It is not the computer's Trash either: what is moved to the Trash from a Standard Folder, an other folder, or any app is in the window's **Trash**, which the person can empty. |
 
 ## The file manager window
 
@@ -52,7 +52,8 @@ other surface.
 - **Window:** a sidebar, a toolbar (Back and Forward, the folder's name,
   Icons or List, Action, the **Browser** button, Search, and the panel
   button), the folder's contents, and Finder's path bar (the disk down to
-  the selected item) with an item count, then the Browser pane while a
+  the selected item) with an item count and the space available on the
+  folder's drive ("12 items, 40.2 GB available"), then the Browser pane while a
   browser tab is open, and the right panel. The panel button is the
   toolbar's last control, to the right of Search and nearest the panel: it
   hides the panel (**Hide Panel**) and shows it again (**Show Panel**). The
@@ -69,10 +70,11 @@ other surface.
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
   Downloads, newest first, with where each lives; Return opens one and ⌘↑
-  shows it in its folder. Then **Standard Folders** (Desktop, Documents,
+  shows it in its folder. **Trash** follows it (see **Trash**). Then
+  **Standard Folders** (Desktop, Documents,
   Downloads, Pictures, the home folder by the account's name, and iCloud
   Drive), then **Connected Folders**, each drawn as a folder in its own color
-  with its chosen icon. A Standard Folder that is a Connected Folder appears
+  with its chosen icon, then **Drives** (see **Drives**). A Standard Folder that is a Connected Folder appears
   only under Connected Folders. Each heading has a **+** at its far right:
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
@@ -141,14 +143,44 @@ other surface.
   folder that is a Standard Folder shows that Standard Folder. An other folder
   has no sidebar row, so no row is highlighted; Back and Forward, the path
   bar, the toolbar's title, and the item count work as anywhere else.
-  Nothing is registered and nothing is kept about it: with nothing selected,
-  Info offers **Connect This Folder** for the folder shown (never for the
-  disk itself). The path policy is the same as everywhere: no path through
+  Nothing is registered and nothing is kept about it: the panel offers
+  **Connect This Folder** for the folder shown (never for the
+  disk itself), at the panel's foot. The path policy is the same as everywhere: no path through
   a symbolic link, and `.amplefile/` and `.pi/` stay hidden. The disk's top
   lists its links (Linux keeps `/bin` and `/lib` as links into `/usr`) as
   **Symbolic links** describes. A folder the
   account may not read says so (on a Mac, as for Desktop or Documents, with
   where to allow it).
+- **Drives:** the sidebar's last section starts with the computer's own disk
+  (**Macintosh HD** on a Mac, **File System** on Linux), the top of the file
+  system, then every mounted drive the host lists, by name; hovering one
+  shows its free and total space. Each opens in the computer place at its
+  mount path, so it follows the other-folder rules. An ejectable drive has an
+  **Eject** button beside it; the host refuses while a file on it is in use
+  or a Connected Folder on it has unfinished work, and the window shows its
+  reason as it is. A drive coming or going updates the list on its own, and
+  ejecting the drive shown goes back to where the window opened. The host
+  reads the mount table on this computer; nothing about a drive leaves it.
+- **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
+  area: what was moved to the Trash from any app, this window's Standard
+  Folders and other folders included, with Name, Original Location, Date
+  Deleted, and Size, newest first and sortable. A line above the list says
+  how it differs from AmpleFile's own Recently Deleted (in Settings), which
+  holds what AmpleFile removes from Connected Folders. **Put Back** returns
+  the selected items where they were (a taken name gets " copy"; nothing is
+  replaced) and its notice's **Show** opens the folder with the item
+  selected. **Delete Immediately** (or Delete, or ⌘⌫) and **Empty Trash**
+  delete for good: each first asks in a dialog that names what will be lost
+  (the item, or how many items and how much space, drives' Trash folders
+  included) and says it cannot be undone, and nothing is deleted without a
+  yes. While Empty Trash runs, the view says **Emptying the Trash…**; the
+  host does not report progress beyond that. The list is read again each
+  time it is shown, when the window comes back, and when this window moves
+  something to the Trash. Search filters it by name. On a Mac the list needs
+  Full Disk Access and says so when it is missing; macOS keeps no record of
+  where an item came from that AmpleFile can read, so Put Back there points
+  to Finder and the rest works. On Linux it is the freedesktop.org Trash of
+  the home folder and of each mounted drive ([Linux build](linux-build.md#sidebar-and-desktop)).
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
   Quick Look, Command-Down to open, Command-Up for the enclosing folder
@@ -159,6 +191,22 @@ other surface.
   selection rectangle that selects what it touches; Shift or Command adds
   to the selection, and the list scrolls while the pointer is near its top
   or bottom edge. Right-click uses the native menu.
+- **Thumbnails:** icon view shows a picture's or a PDF's first page in its
+  tile (PNG, JPEG, GIF, WebP, BMP, AVIF, and PDF; SVG, HEIC, TIFF, RAW, and
+  video keep their icons), drawn by the host from the file and cached by its
+  size and date, so a changed file gets a new one. Only the tiles near the
+  view ask, a few at a time with the ones in view first, and a tile scrolled
+  away withdraws its request; anything the host cannot draw keeps its icon.
+  The list keeps icons.
+- **Folder sizes:** Info measures the folder it describes (a selected folder,
+  or the folder shown) when it is shown, saying **Calculating…** meanwhile,
+  then its size and how many items it holds, with **Recalculate**. The host
+  stops after 10 seconds or a million items; then Info says "At least …" and
+  "More than … items" and why, and says so when some items could not be read
+  or a drive is mounted inside (not counted). Links are not followed, and
+  AmpleFile's and Pi's hidden folders are left out. A folder measured this
+  session shows its size in the list's Size column too; the list never
+  measures the folders it merely shows. The disk itself is never measured.
 - **Big folders:** a folder lists completely up to 200,000 items; one that
   holds more shows 200,000 of them with a note that some items are not
   shown. Only the
@@ -235,11 +283,20 @@ other surface.
   computer, completes names in any folder, and says so plainly when nothing
   is at the path or it is hidden AmpleFile or Pi data.
 - **Search** reads names and contents. A scope bar offers **All Connected
-  Folders** or the folder shown; results list name matches, then text matches
-  with the words around them, in Name, Match, and Connected Folder columns. A
-  Standard Folder, or any other folder, searches its names only. Selection is accent-colored while
-  the contents have focus. The last row of results asks the Worker to find it
-  by what the person remembers; Return with nothing chosen does the same.
+  Folders** (while any exist) or the folder shown; results list name
+  matches, then text matches with the words around them, in Name, Match, and
+  Connected Folder columns. In a Standard Folder or any other folder the
+  host's folder search reads names and file text below the folder shown, in
+  the same list with a Where column; hidden items are searched only while
+  Show Hidden Files is on. It reads a bounded amount at a time: when it
+  stops early it says so ("Search stopped after a few seconds, having read
+  20,000 files.") with **Keep Searching**, and it says when some folders
+  could not be read. Connected Folders inside are left to their own search,
+  which applies their rules, and the results say so with **Search All
+  Connected Folders**. Selection is accent-colored while the contents have
+  focus. Where a Worker exists (in a Connected Folder, or searching all of
+  them), the last row of results asks the Worker to find it by what the
+  person remembers; Return with nothing chosen does the same.
 - **Browser pane:** the built-in browser's tabs, under the folder's contents
   ([Built-in browser](built-in-browser.md#the-browser-pane)). The toolbar's
   **Browser** button opens it with a new tab and shows or folds it afterward;
@@ -253,11 +310,12 @@ other surface.
   alone, with the running dot; the page shows a **Worker in …** marker that
   opens that Chat. A site's question shows in a bar above the page with
   **Block** and **Allow**, and only the person answers it; with the page out
-  of view, a notice offers **Show Page**. Pages show only here: with no
-  Connected Folder there is no file manager window to hold the pane, so a
-  page the AmpleFile Agent opens then runs unseen.
-- **Right panel:** **Info** shows the selection (a picture shows itself;
-  files show Where, Modified, and Size) or, at a Connected Folder's top
+  of view, a notice offers **Show Page**. Pages show only here, and the
+  window is there with or without a Connected Folder.
+- **Right panel:** **Info** shows the selection (a picture or PDF shows its
+  larger thumbnail, an SVG shows itself; files show Where, Modified, and
+  Size; folders add their measured size, see **Folder sizes**), the Trash
+  item chosen in the Trash, or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
   ready-made ones it has not turned on ([Automations](automations.md)).
   **History** lists the Connected Folder's changes, then its Chats, newest
@@ -278,7 +336,10 @@ other surface.
   **Set Up AI** when no AI is connected. It is AmpleFile's ordinary Chat, so
   Stop, questions, and the Worker's steps work the same way, and a Chat left
   running keeps going while Info is shown. There are no automatic AI file
-  summaries.
+  summaries. Outside a Connected Folder there is no Worker to message: the
+  panel's foot says so and offers **Connect This Folder** for the folder
+  shown (never the disk itself, or the Trash) and, with no AI connected,
+  **Set Up AI…**.
 - **Suggested messages:** push buttons above the message box, on Info only,
   that send at once: up to four, or two when the folder already has an
   Automation on. With AI connected, they are written by the Connected
@@ -325,12 +386,25 @@ other surface.
 
 ### First run
 
-With no Connected Folder yet, the window opens on a short first run: a
+A fresh profile opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
 Use Your Mac** when the app includes Computer Control or the command line
 and something is not yet set up, and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
-click beside Connect Folder and New Connected Folder.
+click beside Connect Folder and New Connected Folder. Every step has
+**Browse Files**, which leaves the welcome for good and opens the file
+manager at the home folder with nothing connected. Connecting a folder ends
+it too. A folder handed to AmpleFile (a launcher, a second launch, or the
+system's file manager request on Linux) is shown at once, first run or not.
+
+With no Connected Folder the window is still a whole file manager: the
+sidebar's Recents, Trash, Standard Folders, and Drives, every other folder,
+Search, Info, Thumbnails, and folder sizes work as anywhere else; the
+Connected Folders heading keeps its **+**, and the panel's foot offers
+**Connect This Folder** and **Set Up AI…** where the message box would be.
+Skills & Extensions, which belongs to a Connected Folder, says to connect
+one first. Disconnecting the last Connected Folder leaves the window open,
+at the home folder.
 
 Connect Your AI offers ChatGPT, Claude, and OpenRouter first, signing in
 where the app can run the provider's sign-in and taking a key otherwise,
@@ -912,7 +986,8 @@ properties:
    ([the act ledger](act-ledger.md#receipts-not-gates)).
 10. **Reversible destruction, setup-only secrets:** History covers ordinary
     deletion; what it cannot cover goes to Recently Deleted with a retention
-    window. Provider credentials are Settings acts with no agent or CLI verb,
+    window. Emptying the computer's Trash, or deleting from it, is the
+    person's own act in the window, after a dialog that says it is final. Provider credentials are Settings acts with no agent or CLI verb,
     and no task waits on them. Per–Connected Folder model defaults and
     Worker instructions are configuration with narrow receipted verbs.
 11. **Agency on a cadence lives in Connected Folders:** above Connected
@@ -954,14 +1029,19 @@ not a complete or transactional backup.
 - Create a Connected Folder or connect an existing folder without
   conversion; rename one, disconnect a linked folder without deleting its
   files, or delete a managed Connected Folder into Recently Deleted.
-- Browse Connected Folder and Standard Folder files in a Finder-style file
-  manager, run Connected Folder Chats in the panel, and view History.
-- See and use the built-in browser's pages in the window's Browser pane,
-  once a folder is connected: watch a Worker's page, sign in to a site, and
-  answer a site's question.
+- Browse Connected Folder, Standard Folder, and any other folder's files in a
+  Finder-style file manager, with or without a Connected Folder, run
+  Connected Folder Chats in the panel, and view History.
+- Open drives from the sidebar and eject them; see free space; browse the
+  computer's Trash with Put Back, Delete Immediately, and Empty Trash.
+- See picture and PDF thumbnails in icon view and in Info, and measure a
+  folder's size in Info.
+- See and use the built-in browser's pages in the window's Browser pane:
+  watch a Worker's page, sign in to a site, and answer a site's question.
 - Search a Connected Folder by name and by content inside ordinary files and
   Chat transcripts, honouring ignore rules, skipping binary content, and
-  saying when a bound stopped the search.
+  saying when a bound stopped the search; search a Standard Folder or any
+  other folder by name and file text, page by page.
 - Restore content-addressed History checkpoints made around file changes and
   agent turns. A full checkpoint hashes real bytes and keeps that cost
   proportional to the person's own work: it skips version-control internals,

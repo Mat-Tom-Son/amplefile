@@ -110,7 +110,22 @@ a check mark. A link's menu is the window's own: Open (not for a broken
 link), **Show in File Manager**, and **Copy Link Path**. Dragging items out
 hands the desktop every selected file and folder at once. Deleting in a
 Standard Folder or any other folder moves items to the desktop's Trash; in a Connected Folder,
-History brings them back. With no Automations yet, Settings → Automations
+History brings them back.
+
+The sidebar's **Trash** is the [freedesktop.org Trash](https://specifications.freedesktop.org/trash-spec/latest/):
+the home Trash in `$XDG_DATA_HOME/Trash` (`~/.local/share/Trash` by default)
+and each mounted drive's `.Trash/<uid>` or `.Trash-<uid>`, the folders GNOME
+Files and Dolphin use, so an item moved to the Trash in either shows here
+and the reverse. Put Back returns an item to the path its `.trashinfo`
+records. Empty Trash empties all of them, after the window asks.
+
+**Drives** lists what is mounted for the person: the startup disk is the
+**File System** row, then drives under `/run/media`, `/media`, `/mnt`, and
+the like, named by their label. The host watches the mount table, so a drive
+plugged in or ejected elsewhere appears or goes on its own. Eject uses
+`gio mount -e`, or `udisksctl` when gio is not there; with neither installed
+the window says so. The space shown in the path bar is the drive's free space
+as `statfs` reports it to the person. With no Automations yet, Settings → Automations
 points to **View → AmpleFile Agent**.
 
 Quick Look is Mac-only. On Linux, Space on a selected file opens AmpleFile's
@@ -254,7 +269,11 @@ deepest Connected Folder holding it, at that folder; else in the Standard
 Folder holding it; else as an other folder under the Standard Folder rules
 ([Other folders](product-model.md#the-file-manager-window)). A file opens its
 folder with the file selected. Nothing is connected, because connecting a
-folder is its own explicit act; Info offers **Connect This Folder**.
+folder is its own explicit act; the panel offers **Connect This Folder**.
+This works on a fresh profile too: the folder is shown in the file manager,
+not held behind first run's welcome, and with no Connected Folder at all the
+window is a whole file manager that opens at the home folder
+([First run](product-model.md#first-run)).
 
 ## AmpleFile as the file manager
 

@@ -23,10 +23,14 @@ without being a security boundary. So the product works on these rules:
 2. **Every effect leaves a receipt.** The journal-first, at-most-once,
    identity-pinned act path is attribution and recovery machinery, not a
    gate.
-3. **Every destruction is reversible.** Nothing the product does is
+3. **Every destruction is reversible.** Nothing a product verb does is
    permanent at the moment it happens. History covers ordinary deletion;
    everything History cannot cover goes to machine-local
-   [Recently Deleted](#recently-deleted) with a retention window.
+   [Recently Deleted](#recently-deleted) with a retention window. The
+   computer's own Trash is not a verb's: in the file manager window the
+   person can Put Back from it, or empty it or delete items from it for good
+   after a dialog that says so ([the file manager window](product-model.md#the-file-manager-window)).
+   No agent or CLI verb deletes from it.
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
    you" means an agent asked a question, never that an action waits for
