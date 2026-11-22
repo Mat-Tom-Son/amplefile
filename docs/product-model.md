@@ -146,7 +146,8 @@ other surface.
   Nothing is registered and nothing is kept about it: the panel offers
   **Connect This Folder** for the folder shown (never for the
   disk itself), at the panel's foot. The path policy is the same as everywhere: no path through
-  a symbolic link, and `.amplefile/` and `.pi/` stay hidden. The disk's top
+  a symbolic link (a link can be the item an action acts on, never a folder
+  a path goes through), and `.amplefile/` and `.pi/` stay hidden. The disk's top
   lists its links (Linux keeps `/bin` and `/lib` as links into `/usr`) as
   **Symbolic links** describes. A folder the
   account may not read says so (on a Mac, as for Desktop or Documents, with
@@ -173,8 +174,11 @@ other surface.
   delete for good: each first asks in a dialog that names what will be lost
   (the item, or how many items and how much space, drives' Trash folders
   included) and says it cannot be undone, and nothing is deleted without a
-  yes. While Empty Trash runs, the view says **Emptying the Trash…**; the
-  host does not report progress beyond that. The list is read again each
+  yes. While Empty Trash or Delete Immediately runs, the view says
+  **Emptying the Trash…** (or **Deleting…**), and one that takes a moment
+  shows its progress with **Stop** in the operations area, as a copy does;
+  after Stop the notice says how many items were deleted and how many are
+  still in the Trash. The list is read again each
   time it is shown, when the window comes back, and when this window moves
   something to the Trash. Search filters it by name. On a Mac the list needs
   Full Disk Access and says so when it is missing; macOS keeps no record of
@@ -185,8 +189,10 @@ other surface.
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
   Quick Look, Command-Down to open, Command-Up for the enclosing folder
   (from the top of a place, the folder above it, down to the disk),
-  Command-Delete, Return to rename, typing to jump to a name). Double-click
-  opens a folder here and a file in its default app. Dragging from empty
+  Command-Delete, Return to rename, typing to jump to a name, and the
+  Copy, Cut, Paste, and Duplicate keys under **Finder's file actions**).
+  Double-click opens a folder here and a file in its default app; an
+  archive opens in its default app too, and **Extract** is in its menu. Dragging from empty
   space, or in the list from a row outside its icon and name, draws a
   selection rectangle that selects what it touches; Shift or Command adds
   to the selection, and the list scrolls while the pointer is near its top
@@ -222,8 +228,9 @@ other surface.
   restore points). Items dragged in from Finder are copied into the folder
   shown, or the folder row they are dropped on; in a Standard Folder or an
   other folder that needs the desktop app, which knows where they are.
-  Nothing drops into itself or a folder inside itself, and a link or a
-  nested Connected Folder never drags.
+  Nothing drops into itself or a folder inside itself, nothing drops into a
+  link, and a nested Connected Folder never drags. A link drags as the link
+  itself. A drop whose names are taken asks first, as a paste does.
 - **Show Hidden Files:** the View menu's **Show Hidden Files**, ⇧⌘. on a
   Mac and Ctrl+H on Linux, shows what the system file manager hides (names
   starting with a period, Finder's custom-icon file, and on a Mac the home
@@ -237,41 +244,100 @@ other surface.
   **Original** (or **Missing**). Opening a link to a folder goes where that
   folder really is, as if its path were typed in Go to Folder; opening a
   link to a file opens that file in its default app; a broken link says so
-  and opens nothing. Its menu offers only Open, Show in Finder (which shows
-  the link itself), and Copy Link Path. Nothing else changes a link here:
-  renaming, deleting, copying, moving, compressing, attaching it to a Chat,
-  or dragging it is not offered, and the host refuses each, a broken link
-  included. Where the desktop has no Quick
+  and opens nothing. **Show Original** goes to the folder holding the item
+  it points to, with that item selected. Everything else acts on the link
+  itself, never on what it points to, a broken link included: Rename,
+  Delete (Move to Trash in a plain folder), Copy, Cut, Duplicate, Move, and
+  Compress, and dragging it. A copied or moved link is made again as a link
+  pointing where it did (a relative link is kept as written, so it can read
+  as broken in its new folder); Compress stores it as a link, and Extract
+  makes a link again when it points inside the new folder. History keeps no
+  copy of a link, so a link deleted in a Connected Folder waits in Recently
+  Deleted, and History's restore point undoes its rename or move. Nothing
+  is ever written through a link or into a linked folder: a link is never
+  a folder a path goes through, so New Folder, Paste, a drop, or adding
+  files into one is not offered, and the host refuses each. Attaching a
+  link to a Chat is not offered. Where the desktop has no Quick
   Look (Linux), Space opens the window's own **Preview** of the selected
   file instead: a panel over the window that follows the selection as the
   arrow keys move it and closes with Space, Esc, or its close button. It
   shows text, images, and PDFs from the place's own `file-preview` and
   `raw-file` routes ([Linux build](linux-build.md#sidebar-and-desktop)).
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
-  pasteboard so Finder can paste it; ⌘V pastes what was copied here or in
-  Finder (the desktop process reads the pasteboard and pastes; the window
-  never reads the clipboard); ⌥⌘V moves what was copied here; ⌘D duplicates;
-  the right-click menu adds Copy, Duplicate, Compress, New Folder with
-  Selection, and Paste Here. Nothing is replaced: a taken name gets " copy".
-  Files dropped on a sidebar place go to its top. Every change keeps a
-  History restore point in each Connected Folder it touches (a Standard
-  Folder has none), and ⌘Z and ⇧⌘Z undo and redo the last file change. A
-  move between Connected Folders copies the items, then deletes each from
-  its source with that delete's receipt, and keeps a restore point on both
-  sides. It refuses, before copying anything, while the source Connected
-  Folder has unfinished work (a running turn or a question waiting on an
-  answer), and for an item that is, holds, or sits inside a nested
-  Connected Folder. A copy leaves a folder's `.amplefile/` behind; a move
-  carries it, so a disconnected Connected Folder keeps its identity and
-  Chats. An item whose copy did not carry everything History could not
-  keep leaves its source through Recently Deleted rather than being erased,
-  and an item that cannot leave its source stays there and the move says
-  so; its copy then drops the `.amplefile/` the source still holds, and the
-  move names any it could not drop. Any other move across places copies and says the original stays.
-  Compress writes the archive beside the items under a hidden working name,
-  at any size (with the 64-bit zip records a large archive needs) and with
-  each item's Unix mode; it refuses to start, and stops, when the disk would
-  keep less than 256 MB free.
+  pasteboard so Finder or a Linux file manager can paste it; ⌘X cuts it:
+  the items stay where they are, drawn dimmed, until ⌘V moves them or the
+  clipboard holds something else. ⌘V pastes what was copied or cut here or
+  in Finder (the desktop process reads the pasteboard and pastes; the window
+  never reads the clipboard); ⌥⌘V moves what was copied; ⌘D duplicates. On
+  Linux a Cut carries the marker GNOME Files and Dolphin use, so a Cut made
+  there pastes here as a move and the reverse
+  ([Linux build](linux-build.md#sidebar-and-desktop)); a Mac's pasteboard
+  has no Cut marker, so there a Cut is this window's own. The Edit menu's
+  Cut, Copy, and Paste do the same while the folder list has the keyboard.
+  The right-click menu (the native menu on the Mac, the window's own with
+  the same items elsewhere) adds Copy, Cut, Duplicate, Compress, **Extract**
+  for an archive, New Folder with Selection, and Paste Here. Files dropped
+  on a sidebar place go to its top.
+  - **Progress and Stop:** a copy, move, paste, drop, Duplicate, Compress,
+    or Extract that takes more than a moment shows in an operations area at
+    the foot of the folder, above the path bar: what it is doing, its items
+    and bytes, the item in hand, and **Stop**. A quick one never shows. The
+    window stays usable meanwhile, and several run at once. Stop ends at the
+    next safe point and the notice says what was done and what was not: the
+    finished items stay (with their restore point), the item in hand is
+    taken back, and the rest are not done; a stopped move between Connected
+    Folders leaves everything where it was unless items had already left
+    their source. A stopped Compress or Extract makes nothing.
+  - **Taken names:** when a copy, move, paste, drop, or Extract would land
+    on names already taken, the window asks once, before anything is
+    written: one clash at a time, both items' kind, size, and date, and
+    **Keep Both** (the " copy" name), **Skip**, **Replace**, or for two
+    folders **Merge** (with what to do about same-named items inside), with
+    **Apply to All** while more wait, and **Stop**, which does nothing.
+    Apply to All never replaces a folder with a file or a file with a
+    folder; those are replaced only when chosen for that item. Duplicate
+    always keeps both with the " copy" name. An item that is, holds, or sits
+    in a nested Connected Folder is never replaced or merged into. After a
+    Replace the notice says where the old item went: History keeps it in a
+    Connected Folder (⌘Z brings it back), Recently Deleted holds what
+    History could not keep, the system Trash takes it in a plain folder, and
+    where no Trash can take it, it is gone and the notice says so.
+  - **History and Undo:** every change keeps a History restore point in
+    each Connected Folder it touches (a Standard Folder has none), and ⌘Z and
+    ⇧⌘Z undo and redo the last file change; a move inside or between plain
+    folders is undone by moving the items back. When a Replace sent
+    something to the Trash or it is gone, ⌘Z says plainly that it cannot
+    bring it back.
+  - **Moves:** a move inside one Connected Folder is History's move. A move
+    between plain folders (Standard Folders, folders added to the sidebar,
+    and any other folder) is a plain move, as Finder's. A move between
+    Connected Folders copies the items, then deletes each from its source
+    with that delete's receipt, and keeps a restore point on both sides. It
+    refuses, before copying anything, while the source Connected Folder has
+    unfinished work (a running turn or a question waiting on an answer), and
+    for an item that is, holds, or sits inside a nested Connected Folder. A
+    copy leaves a folder's `.amplefile/` behind; a move carries it, so a
+    disconnected Connected Folder keeps its identity and Chats. An item
+    whose copy did not carry everything History could not keep leaves its
+    source through Recently Deleted rather than being erased, and an item
+    that cannot leave its source stays there and the move says so; its copy
+    then drops the `.amplefile/` the source still holds, and the move names
+    any it could not drop. A move between a Connected Folder and a plain
+    folder copies and says the original stays.
+  - **Compress and Extract:** Compress writes the archive beside the items
+    under a hidden working name, at any size (with the 64-bit zip records a
+    large archive needs) and with each item's Unix mode, and stores a link
+    as a link; it refuses to start, and stops, when the disk would keep less
+    than 256 MB free. **Extract** turns a `.zip`, `.tar`, `.tar.gz`, or
+    `.tgz` into a new folder beside it named after it (an archive whose
+    whole content is one folder of that name gives that folder), at any
+    size, and selects it when done; it is the archive's menu item, and
+    double-clicking an archive still opens it in its default app. Nothing
+    extracted is runnable beyond the execute bits the archive records
+    (never setuid, setgid, or sticky); a link is made only when it points
+    inside the new folder; hard links, special files, and entries that would
+    land outside the folder are left out or refused; and the same 256 MB
+    disk guard applies. A damaged or password-protected archive says so.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it, above the place's top too, where
   it lives (see **Other folders**); a long path keeps the disk and its
@@ -364,7 +430,10 @@ other surface.
   sends.
 - **Notices:** one card for everything the window says, errors included: an
   icon for its kind, the words, one action, and Close, stacked over the
-  folder list. Errors stay longer and carry a red edge.
+  folder list. Errors stay longer and carry a red edge. A file operation
+  still running shows instead in the operations area above the path bar, a
+  row in the same card style with its progress and Stop (**Finder's file
+  actions**).
 - **Disconnecting a Connected Folder:** the Action menu or the sidebar's
   right-click menu offers Disconnect…; a linked folder and its files stay
   where they are, a managed one moves to Recently Deleted, and the host still
@@ -987,7 +1056,9 @@ properties:
 10. **Reversible destruction, setup-only secrets:** History covers ordinary
     deletion; what it cannot cover goes to Recently Deleted with a retention
     window. Emptying the computer's Trash, or deleting from it, is the
-    person's own act in the window, after a dialog that says it is final. Provider credentials are Settings acts with no agent or CLI verb,
+    person's own act in the window, after a dialog that says it is final;
+    so is a **Replace** in a plain folder, whose old item goes to that Trash
+    (or, when no Trash can take it, is removed and the window says so). Provider credentials are Settings acts with no agent or CLI verb,
     and no task waits on them. Per–Connected Folder model defaults and
     Worker instructions are configuration with narrow receipted verbs.
 11. **Agency on a cadence lives in Connected Folders:** above Connected

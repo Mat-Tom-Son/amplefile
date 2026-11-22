@@ -130,6 +130,9 @@ test("nothing permanent is sent unless the person says yes", async () => {
 test("results say what went and plainly what did not; Put Back says why not, as the host does on macOS", () => {
   assert.deepEqual(permanentResultMessage({ removed: [{ id: "1", name: "a", originalPath: null }], failed: [], notFound: [] }, false), { text: "Deleted “a”", tone: "success" });
   assert.deepEqual(permanentResultMessage({ removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 }, true), { text: "The Trash is empty.", tone: "success" });
+  // Stop during Empty Trash or Delete Immediately says what was deleted and what is still there.
+  assert.deepEqual(permanentResultMessage({ removed: [{ id: "1", name: "a", originalPath: null }], failed: [], notFound: [], cancelled: true, notDone: ["2", "3"] }, true), { text: "Stopped. “a” was deleted for good; 2 items are still in the Trash.", tone: "success" });
+  assert.deepEqual(permanentResultMessage({ removed: [], failed: [], notFound: [], cancelled: true, notDone: ["2"] }, false), { text: "Stopped. Nothing was deleted; everything is still in the Trash.", tone: "success" });
   const failed = permanentResultMessage({ removed: [], failed: [{ id: "1", name: "locked", error: "Permission denied." }, { id: "2", name: "x", error: "y" }], notFound: [] }, true);
   assert.equal(failed.tone, "error");
   assert.equal(failed.text, "“locked” couldn’t be deleted: Permission denied. 1 other item couldn’t be deleted either.");

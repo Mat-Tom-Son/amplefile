@@ -1,24 +1,7 @@
-import { extname, isAbsolute } from "node:path";
-import { fileSelectionLabel } from "../../src/shared/file-selection.js";
+import { isAbsolute } from "node:path";
+import { fileMenuItems, type FileMenuCapabilities, type FileMenuCommand, type FileMenuItem } from "../../src/shared/file-menu.js";
 
-export type NativeFileMenuCommand =
-  | "open"
-  | "open-with"
-  | "reveal"
-  | "copy-path"
-  | "attach-chat"
-  | "version-history"
-  | "new-folder"
-  | "upload-here"
-  | "refresh"
-  | "give-worker"
-  | "rename"
-  | "delete"
-  | "copy"
-  | "paste"
-  | "duplicate"
-  | "compress"
-  | "new-folder-with-selection";
+export type NativeFileMenuCommand = FileMenuCommand;
 
 export interface NativeFileMenuRequest {
   /** Empty when the entry is in a standard folder instead. */
@@ -31,28 +14,8 @@ export interface NativeFileMenuRequest {
   standardFolderId?: string;
   path: string;
   kind: "file" | "folder";
-  capabilities: {
-    open: boolean;
-    attach: boolean;
-    history: boolean;
-    upload: boolean;
-    rename: boolean;
-    delete: boolean;
-    /** A plain folder inside this Connected Folder that can become its own Connected Folder (optional; older renderers omit it). */
-    worker?: boolean;
-    /**
-     * The file manager's Finder actions: Copy, Duplicate, Compress,
-     * and New Folder with Selection for items, and Paste on the folder (optional).
-     */
-    organize?: boolean;
-    paste?: boolean;
-    /**
-     * The row is a symbolic link (optional): the menu offers only Open (when
-     * `open`), Show in Finder, and Copy Path, which act on the link. Every
-     * other action is off for a link.
-     */
-    link?: boolean;
-  };
+  /** What the row offers (src/shared/file-menu.ts); the optional ones are absent in older renderers. */
+  capabilities: FileMenuCapabilities;
   /**
    * Set when the clicked row is one of several selected together (optional;
    * older renderers omit it). The menu then offers only the actions that apply
@@ -62,13 +25,11 @@ export interface NativeFileMenuRequest {
   point: { x: number; y: number };
 }
 
-export type NativeFileMenuItem =
-  | { type: "separator" }
-  | { type: "item"; label: string; command: NativeFileMenuCommand; icon?: "amplefile" };
+export type NativeFileMenuItem = FileMenuItem;
 
 const requestKeys = new Set(["connectedFolderId", "standardFolderId", "path", "kind", "capabilities", "selection", "point"]);
-const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste", "link"]);
-const optionalCapabilityKeys = new Set(["worker", "organize", "paste", "link"]);
+const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste", "extract", "link", "original"]);
+const optionalCapabilityKeys = new Set(["worker", "organize", "paste", "extract", "link", "original"]);
 const pointKeys = new Set(["x", "y"]);
 const selectionKeys = new Set(["files", "folders"]);
 const maxSelectionCount = 1_000_000;
@@ -113,7 +74,9 @@ export function parseNativeFileMenuRequest(value: unknown): NativeFileMenuReques
       ...(capabilities.worker === true ? { worker: true } : {}),
       ...(capabilities.organize === true ? { organize: true } : {}),
       ...(capabilities.paste === true ? { paste: true } : {}),
+      ...(capabilities.extract === true ? { extract: true } : {}),
       ...(capabilities.link === true ? { link: true } : {}),
+      ...(capabilities.original === true ? { original: true } : {}),
     },
     ...(selection ? { selection } : {}),
     point: {
@@ -131,93 +94,9 @@ function parseSelection(value: unknown): { files: number; folders: number } {
   return { files, folders };
 }
 
+/** The native menu's items: the window's own item menu, from the same list (src/shared/file-menu.ts). */
 export function nativeFileMenuItems(request: NativeFileMenuRequest, platform: NodeJS.Platform = "darwin"): NativeFileMenuItem[] {
-  if (request.selection) return nativeSelectionMenuItems(request, request.selection);
-  const items: NativeFileMenuItem[] = [];
-  const reveal: NativeFileMenuItem = { type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" };
-  if (request.capabilities.link) {
-    // A link opens what it points to and shows itself; nothing changes it from here.
-    if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" ? "Open Folder" : "Open", command: "open" });
-    items.push(reveal, { type: "item", label: "Copy Link Path", command: "copy-path" });
-    return items;
-  }
-  if (request.capabilities.open) {
-    items.push({
-      type: "item",
-      label: request.kind === "folder" ? "Open Folder" : nativeFileOpenLabel(request.path),
-      command: "open",
-    });
-  }
-  if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
-  items.push(
-    reveal,
-    { type: "item", label: `Copy ${request.kind === "folder" ? "Folder" : "File"} Path`, command: "copy-path" },
-  );
-  if (request.capabilities.organize && request.path) {
-    const name = request.path.slice(request.path.lastIndexOf("/") + 1);
-    items.push(
-      { type: "separator" },
-      { type: "item", label: `Copy “${name}”`, command: "copy" },
-      { type: "item", label: "Duplicate", command: "duplicate" },
-      { type: "item", label: `Compress “${name}”`, command: "compress" },
-    );
-  }
-  if (request.kind === "file" && request.capabilities.attach) {
-    items.push({ type: "item", label: "Attach to Chat", command: "attach-chat" });
-  }
-  if (request.kind === "file" && request.capabilities.history) {
-    items.push({ type: "item", label: "Version History", command: "version-history" });
-  }
-  if (request.kind === "folder") {
-    items.push(
-      { type: "separator" },
-      { type: "item", label: "New Folder Here…", command: "new-folder" },
-    );
-    if (request.capabilities.paste) items.push({ type: "item", label: "Paste Here", command: "paste" });
-    if (request.capabilities.upload) items.push({ type: "item", label: "Add Files Here…", command: "upload-here" });
-    // Files has no toolbar buttons: refreshing lives here with the other folder actions.
-    items.push({ type: "item", label: "Refresh", command: "refresh" });
-    if (request.capabilities.worker) {
-      items.push({ type: "separator" }, { type: "item", label: "Connect This Folder", command: "give-worker", icon: "amplefile" });
-    }
-  }
-  if (request.path && (request.capabilities.rename || request.capabilities.delete)) {
-    items.push({ type: "separator" });
-    if (request.capabilities.rename) items.push({ type: "item", label: "Rename…", command: "rename" });
-    if (request.capabilities.delete) {
-      items.push({ type: "item", label: request.standardFolderId ? "Move to Trash" : `Delete ${request.kind === "folder" ? "Folder" : "File"}`, command: "delete" });
-    }
-  }
-  return items;
-}
-
-/** Several rows selected together: attach (files only), copy their paths, delete them. Single-row actions are left out. */
-function nativeSelectionMenuItems(request: NativeFileMenuRequest, selection: { files: number; folders: number }): NativeFileMenuItem[] {
-  const items: NativeFileMenuItem[] = [];
-  if (request.capabilities.attach && selection.folders === 0) items.push({ type: "item", label: "Attach to Chat", command: "attach-chat" });
-  items.push({ type: "item", label: "Copy Paths", command: "copy-path" });
-  if (request.capabilities.organize) {
-    const count = selection.files + selection.folders;
-    items.push(
-      { type: "separator" },
-      { type: "item", label: `Copy ${count} Items`, command: "copy" },
-      { type: "item", label: "Duplicate", command: "duplicate" },
-      { type: "item", label: `Compress ${count} Items`, command: "compress" },
-      { type: "item", label: `New Folder with Selection (${count} Items)`, command: "new-folder-with-selection" },
-    );
-  }
-  if (request.capabilities.delete) {
-    items.push({ type: "separator" }, { type: "item", label: request.standardFolderId ? "Move to Trash" : `Delete ${fileSelectionLabel(selection.files, selection.folders)}`, command: "delete" });
-  }
-  return items;
-}
-
-function nativeFileOpenLabel(path: string): string {
-  const extension = extname(path).toLocaleLowerCase();
-  if (extension === ".docx" || extension === ".dotx") return "Open in Word";
-  if (extension === ".xlsx" || extension === ".csv") return "Open in Excel";
-  if (extension === ".pptx" || extension === ".potx") return "Open in PowerPoint";
-  return "Open";
+  return fileMenuItems(request, platform);
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: Set<string>): boolean {

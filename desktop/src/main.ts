@@ -7,7 +7,7 @@ import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +45,8 @@ import {
 } from "../../src/local/agent/registered-connected-folder-runtime.js";
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
+import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
+import { parseFileClipboardPasteRequest, pasteboardHolds, planFileClipboardPaste, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
@@ -637,6 +639,8 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     const userData = app.getPath("userData");
     const host = await ensureDesktopHost();
     apiSessionToken = randomUUID();
+    // An item a Replace takes out of a plain folder goes to the operating system's own Trash.
+    setSystemTrashHandler((path) => shell.trashItem(path));
     const api = await startLocalApi({
       appMode: "desktop",
       port: 0,
@@ -1027,7 +1031,7 @@ function registerIpc(): void {
     const connectedFolder = await getConnectedFolder(request.id);
     const items: string[] = [];
     for (const path of request.paths) {
-      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), () => resolveConnectedFolderItem(request.id, path)));
+      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink: true }), () => resolveConnectedFolderItem(request.id, path)));
     }
     return startItemDrag(event.sender, items);
   });
@@ -1082,7 +1086,7 @@ function registerIpc(): void {
     if (!isStandardFolderId(request.id)) throw new Error("That standard folder isn’t on this computer.");
     const items: string[] = [];
     for (const path of request.paths) {
-      items.push(await draggableItem(resolveStandardFolderPath(request.id, path), () => resolveStandardFolderItem(request.id, path)));
+      items.push(await draggableItem(resolveStandardFolderPath(request.id, path, homedir(), { finalLink: true }), () => resolveStandardFolderItem(request.id, path)));
     }
     return startItemDrag(event.sender, items);
   });
@@ -1115,35 +1119,49 @@ function registerIpc(): void {
     window.previewFile(filePath, basename(filePath));
     return true;
   });
-  // Copy and paste with Finder: files copied in Finder paste into the file manager, and
-  // files copied here paste into Finder, through the system's file pasteboard.
-  // Paste reads the pasteboard here, never in the window (the window can't read the clipboard): what was
-  // copied in this window pastes by place (so ⌥⌘V can move it); anything else Finder copied is copied in.
+  // Copy, Cut, and paste with Finder and Linux file managers: files copied or cut there paste into the file
+  // manager, and files copied or cut here paste there, through the system's file pasteboard. Paste reads the
+  // pasteboard here, never in the window (the window can't read the clipboard): what was copied or cut in this
+  // window pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
+  // that app cut them or the person chose ⌥⌘V. The window's `operationId` shows the paste's progress, and
+  // `conflicts` asks about taken names first, then carries the person's choices.
   ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (!isRecord(value) || !isRecord(value.target)) throw new Error("Choose where to paste.");
-    const mode = value.mode === "move" ? "move" : "copy";
-    const internal = isRecord(value.internal) && Array.isArray(value.internal.paths) && Array.isArray(value.internal.nativePaths) ? value.internal : null;
-    const pasteboard = await readPasteboardFilePaths();
-    const internalNative = internal ? (internal.nativePaths as unknown[]).filter((item): item is string => typeof item === "string") : [];
-    const fromHere = Boolean(internal) && (!pasteboard.length || (pasteboard.length === internalNative.length && pasteboard.every((path) => internalNative.includes(path))));
-    const sources = fromHere
-      ? (internal!.paths as unknown[]).map((path) => ({ place: internal!.place, path }))
-      : pasteboard.map((nativePath) => ({ nativePath }));
-    if (!sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
-    const result = await transferFileEntries({ mode: fromHere ? mode : "copy", sources, target: value.target });
-    return { ...result, fromHere, count: sources.length };
+    const request = parseFileClipboardPasteRequest(value);
+    const pasteboard = await readPasteboardFiles();
+    const plan = planFileClipboardPaste(request, pasteboard, await listConnectedFolders());
+    if (!plan.sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
+    const result = await transferFileEntries({
+      mode: plan.mode,
+      sources: plan.sources,
+      target: request.target,
+      ...(request.operationId ? { operationId: request.operationId } : {}),
+      ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
+    });
+    const answer = { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut };
+    // A finished paste of a Cut empties the pasteboard, as the system file managers do, so it is not moved twice.
+    if (plan.cut && !("conflicts" in result) && !("cancelled" in result && result.cancelled)) await clearPasteboardFiles(pasteboard.paths);
+    return answer;
   });
   ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
-    if (!Array.isArray(value) || !value.length || value.length > 5_000) throw new Error("Choose items to copy.");
-    const paths = value.map((item) => {
+    // A list of paths is a Copy; { paths, operation: "cut" } is a Cut.
+    const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.paths) ? value.paths : null;
+    const operation = isRecord(value) && !Array.isArray(value) && value.operation === "cut" ? "cut" : "copy";
+    if (!list || !list.length || list.length > 5_000) throw new Error("Choose items to copy.");
+    const paths = list.map((item) => {
       if (typeof item !== "string" || !isAbsolute(item) || item.includes("\0")) throw new Error("Choose items to copy.");
       return item;
-    }).filter((path) => existsSync(path));
+    }).filter((path) => Boolean(lstatSync(path, { throwIfNoEntry: false })));
     if (!paths.length) return false;
-    await writePasteboardFilePaths(paths);
+    await writePasteboardFilePaths(paths, operation);
     return true;
+  });
+  // Whether the pasteboard still holds what this window cut, so those items stay drawn as cut.
+  ipcMain.handle("amplefile:file-clipboard:holds", async (event, value: unknown): Promise<boolean> => {
+    assertTrustedMainRenderer(event);
+    if (!Array.isArray(value) || !value.length || value.length > 5_000 || value.some((item) => typeof item !== "string")) return false;
+    return pasteboardHolds(await readPasteboardFiles(), value as string[]);
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
   ipcMain.handle("amplefile:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
@@ -1165,8 +1183,11 @@ function registerIpc(): void {
       try {
         const request = standardFolderPathRequest({ standardFolderId, path });
         // Anything a Connected Folder owns is changed through that Connected Folder, where History keeps it.
-        await assertStandardFolderPathUnowned(standardFolderId, request.path);
-        await shell.trashItem(await resolveStandardFolderItem(standardFolderId, request.path));
+        await assertStandardFolderPathUnowned(standardFolderId, request.path, homedir(), { finalLink: true });
+        // A symbolic link goes to the Trash as itself; what it points to stays.
+        const linkPath = resolveStandardFolderPath(standardFolderId, request.path, homedir(), { finalLink: true });
+        const isLink = Boolean((await lstat(linkPath).catch(() => null))?.isSymbolicLink());
+        await shell.trashItem(isLink ? linkPath : await resolveStandardFolderItem(standardFolderId, request.path));
         trashed.push(request.path);
       } catch (error) {
         return { trashed, failed: { path: typeof path === "string" ? path : "", error: error instanceof Error ? error.message : String(error) } };
@@ -1966,14 +1987,15 @@ function placeDragRequest(value: unknown, idKey: "connectedFolderId" | "standard
 }
 
 /**
- * One dragged item: a file or folder, held to the place's path policy (no
- * symbolic link anywhere in its path, the item itself included, even a
- * broken one), then resolved where it really is.
+ * One dragged item: a file, folder, or symbolic link, held to the place's
+ * path policy (no symbolic link in the folders above it), then resolved where
+ * it really is. A link drags as the link itself, never what it points to.
  */
 async function draggableItem(policyPath: string, resolveItem: () => Promise<string>): Promise<string> {
   const info = await lstat(policyPath).catch(() => null);
   if (!info) throw new Error(`“${basename(policyPath)}” isn’t there anymore.`);
-  if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) throw new Error("Only files and folders can be dragged out.");
+  if (info.isSymbolicLink()) return policyPath;
+  if (!info.isFile() && !info.isDirectory()) throw new Error("Only files and folders can be dragged out.");
   return resolveItem();
 }
 
@@ -2004,6 +2026,14 @@ async function setActiveNativeConnectedFolder(connectedFolderId: string | null):
 
 async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Promise<void> {
   let info;
+  if (request.capabilities.link) {
+    // A link row is checked as the link itself (a broken one included), never through it.
+    const linkPath = request.standardFolderId
+      ? isStandardFolderId(request.standardFolderId) ? resolveStandardFolderPath(request.standardFolderId, request.path, homedir(), { finalLink: true }) : ""
+      : resolveConnectedFolderPath((await getConnectedFolder(request.connectedFolderId)).connectedFolderRoot, request.path, { finalLink: true });
+    if (!linkPath || !(await lstat(linkPath).catch(() => null))?.isSymbolicLink()) throw new Error("The native file menu entry no longer matches this folder.");
+    return;
+  }
   if (request.standardFolderId) {
     info = await stat(await resolveStandardFolderItem(request.standardFolderId, request.path));
   } else if (request.path) {
@@ -2046,31 +2076,43 @@ function linuxClipboardOwner(): Promise<LinuxClipboardOwner | null> {
   return linuxClipboardOwnerInstance;
 }
 
-/** The files on the system pasteboard (Finder's or a Linux file manager's Copy), newest format first; empty when it holds no files. */
-async function readPasteboardFilePaths(): Promise<string[]> {
-  // A Linux Cut is pasted as a copy too: the other app's files stay where they are.
+/**
+ * The files on the system pasteboard (Finder's or a Linux file manager's Copy or Cut), newest format first,
+ * with the Linux Cut marker; empty when it holds no files. A Mac's pasteboard has no Cut marker.
+ */
+async function readPasteboardFiles(): Promise<PasteboardFiles> {
   if (process.platform === "linux") {
     // The helper reads off the main thread, and also reads another Chromium app's files; Electron's read is the fallback.
     const files = await (await linuxClipboardOwner())?.readFiles();
-    return (files ?? readLinuxClipboardFiles(clipboard)).paths;
+    return files ?? readLinuxClipboardFiles(clipboard);
   }
-  if (process.platform !== "darwin") return [];
+  if (process.platform !== "darwin") return { paths: [], operation: null };
   const plist = clipboard.read("NSFilenamesPboardType");
   const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
-  if (listed.length) return listed;
+  if (listed.length) return { paths: listed, operation: null };
   const url = clipboard.read("public.file-url").trim();
   if (url.startsWith("file://")) {
-    try { return [fileURLToPath(url)]; } catch { return []; }
+    try { return { paths: [fileURLToPath(url)], operation: null }; } catch { return { paths: [], operation: null }; }
   }
-  return [];
+  return { paths: [], operation: null };
 }
 
-/** Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy does, so it can paste them. */
-async function writePasteboardFilePaths(paths: readonly string[]): Promise<void> {
+/** After a Cut is pasted: the pasteboard is emptied if it still holds those files. */
+async function clearPasteboardFiles(paths: readonly string[]): Promise<void> {
+  if (!pasteboardHolds(await readPasteboardFiles(), paths)) return;
+  if (process.platform === "linux") (await linuxClipboardOwner())?.release();
+  clipboard.clear();
+}
+
+/**
+ * Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy or Cut does, so it can
+ * paste them. On Linux a Cut carries the GNOME and KDE cut markers; a Mac's pasteboard has none.
+ */
+async function writePasteboardFilePaths(paths: readonly string[], operation: "copy" | "cut" = "copy"): Promise<void> {
   if (process.platform === "linux") {
     // The helper offers GNOME's format, the URI list and text together; Electron alone offers only the URI list.
     const owner = await linuxClipboardOwner();
-    if (owner && await owner.offer(linuxFileClipboardOffers(paths))) return;
+    if (owner && await owner.offer(linuxFileClipboardOffers(paths, operation))) return;
     writeLinuxClipboardFiles(clipboard, paths);
     return;
   }

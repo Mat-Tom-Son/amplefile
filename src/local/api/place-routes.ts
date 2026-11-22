@@ -270,15 +270,20 @@ function transferPlace(value: unknown): TransferPlaceRef {
   return { kind: record.kind, id: record.id };
 }
 
+/**
+ * A source (read or change) may itself be a symbolic link: it is copied,
+ * moved, or compressed as a link, never followed. A target is a real folder.
+ */
 async function resolveTransferItem(place: TransferPlaceRef, path: string, purpose: "read" | "change" | "target"): Promise<ResolvedTransferItem> {
+  const finalLink = purpose !== "target";
   if (place.kind === "connected-folder") {
     const connectedFolder = await getConnectedFolder(place.id);
-    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
+    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink }), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
   }
   if (!isStandardFolderId(place.id)) throw notFound("That folder isn’t in the sidebar anymore.");
   const abs = purpose === "read"
-    ? resolveStandardFolderPath(place.id, path)
-    : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target" });
+    ? resolveStandardFolderPath(place.id, path, userHomedir(), { finalLink })
+    : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target", finalLink });
   return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
 }
 
@@ -359,7 +364,6 @@ async function transferResolvedEntries(
 ) {
   const items = sources.map((item) => ({ source: item.abs, key: sourceKey(item) }));
   const sameConnectedFolder = (item: ResolvedTransferItem) => Boolean(item.connectedFolder && target.connectedFolder && item.connectedFolder.id === target.connectedFolder.id);
-  const placeKey = (item: ResolvedTransferItem) => item.place ? `${item.place.kind}:${item.place.id}` : "";
   const targetRoot = transferTargetRoot(target);
 
   if (mode === "move" && sources.every(sameConnectedFolder)) {
@@ -379,7 +383,8 @@ async function transferResolvedEntries(
       ...(moved.failed ? { failed: moved.failed } : {}),
     };
   }
-  if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => placeKey(item) === placeKey(target))) {
+  // Between plain folders (Standard Folders, added folders, and the computer place) a move is a plain move, as Finder's.
+  if (mode === "move" && target.place?.kind === "standard" && sources.every((item) => item.place?.kind === "standard")) {
     if (policy) {
       const plan = await planPlacements(items, target.abs, policy, { withIdentity: true, move: true, mayChange: standardMayChange(target.place.id as StandardFolderId) });
       operation.stage("moving");
@@ -387,20 +392,20 @@ async function transferResolvedEntries(
       const result = placementResult(plan, executed, targetRoot, sources.map(sourceKey));
       const moves = plan.tops.flatMap((top, index) => {
         const at = topUnitAt(plan, executed, index);
-        return at && top.action !== "merge" ? [{ from: sources[index]!.relativePath, to: relativeTo(targetRoot, at) }] : [];
+        return at && top.action !== "merge" ? [{ from: sources[index]!.relativePath, fromPlace: sources[index]!.place!, to: relativeTo(targetRoot, at) }] : [];
       });
       return { mode, written: result.written, moves, restorePoints: [], ...result.extras, ...result.stop };
     }
     operation.setTotals(sources.length, null);
     operation.stage("moving");
-    const moves: Array<{ from: string; to: string }> = [];
+    const moves: Array<{ from: string; fromPlace: TransferPlaceRef; to: string }> = [];
     let cancelled = false;
     for (const source of sources) {
       try {
         await operation.boundary("item");
         operation.current(basename(source.abs));
         const destination = await moveInto(source.abs, target.abs, operation);
-        moves.push({ from: source.relativePath, to: relativeTo(standardFolderRoot(target.place.id as StandardFolderId), destination) });
+        moves.push({ from: source.relativePath, fromPlace: source.place!, to: relativeTo(standardFolderRoot(target.place.id as StandardFolderId), destination) });
         operation.itemsDone();
       } catch (error) {
         if (!isFileOperationCancelled(error)) throw error;
@@ -1094,6 +1099,8 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     const place = transferPlace(body.place);
     if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose an archive to extract.");
     const item = await resolveTransferItem(place, body.path, "read");
+    // A link to an archive is extracted from the archive itself, where it really is.
+    if ((await lstat(item.abs).catch(() => null))?.isSymbolicLink()) throw badRequest("This is a link. Show the original to extract the archive it points to.");
     await assertExtractable(item.abs);
     const folderRelative = item.relativePath.includes("/") ? item.relativePath.slice(0, item.relativePath.lastIndexOf("/")) : "";
     const target = await resolveTransferItem(place, folderRelative, "target");
@@ -1133,6 +1140,7 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     }
     try {
       const plan = await planPlacements([{ source: staged.folder, key: name, name }], staged.parent, policy, {
+        newItems: true,
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
       const label = `Before extracting ${basename(item.abs)}`;

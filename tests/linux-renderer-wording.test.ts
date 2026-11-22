@@ -48,14 +48,16 @@ test("Shortcut Keys keeps the Mac rows and speaks Linux on Linux", () => {
   const mac = filesRows("darwin", true);
   assert.deepEqual(action(mac, "Space"), ["Quick Look the selected item."]);
   assert.deepEqual(action(mac, "C"), ["Copy the selected items (Finder can paste them too)."]);
-  assert.deepEqual(action(mac, "V"), ["Paste items copied here or in Finder.", "Move the items copied here into this folder."]);
+  assert.deepEqual(action(mac, "V"), ["Paste items copied or cut here or in Finder.", "Move the items copied into this folder."]);
+  assert.deepEqual(action(mac, "X"), ["Cut the selected items; Paste moves them."], "Finder has no Cut marker, so a Mac's Cut is the window's own");
   assert.deepEqual(action(mac, "Backspace"), ["Delete. Undo it from History, or from the Trash in a Standard Folder."]);
   assert.deepEqual(mac.find((row) => row.keys.at(-1) === "V" && row.keys.length === 3)?.keys, ["Option", "Command", "V"]);
 
   const linux = filesRows("linux", true);
   assert.deepEqual(action(linux, "Space"), ["Preview the selected item. Space or Esc closes it."], "Linux has no Quick Look; Space opens the window's own Preview");
   assert.deepEqual(action(linux, "C"), ["Copy the selected items (your file manager can paste them too)."]);
-  assert.deepEqual(action(linux, "V"), ["Paste items copied here or in your file manager.", "Move the items copied here into this folder."]);
+  assert.deepEqual(action(linux, "V"), ["Paste items copied or cut here or in your file manager.", "Move the items copied into this folder."]);
+  assert.deepEqual(action(linux, "X"), ["Cut the selected items; Paste moves them, here or in your file manager."]);
   assert.deepEqual(action(linux, "Backspace"), ["Delete. Undo it from History, or from the Trash in a Standard Folder."], "a Standard Folder's items go to the desktop's Trash on Linux too");
   assert.deepEqual(linux.find((row) => row.keys.at(-1) === "V" && row.keys.length === 3)?.keys, ["Alt", "Ctrl", "V"]);
   for (const row of linux) assert.doesNotMatch(row.action, /Finder|Quick Look|Mac\b/);

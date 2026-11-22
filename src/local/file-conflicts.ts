@@ -149,6 +149,12 @@ interface PlanOptions {
    * keeps both instead.
    */
   mayChange?: (existing: string) => Promise<boolean>;
+  /**
+   * The items are new, written under a hidden working name in the target
+   * folder (an Extract): beside the target is where they were made, not a
+   * copy of an item into its own folder, so a clash is asked about as usual.
+   */
+  newItems?: boolean;
 }
 
 /**
@@ -165,7 +171,7 @@ export async function planPlacements(
   const plan: PlacementPlan = { units: [], merged: [], tops: [] };
   for (const [top, item] of items.entries()) {
     const destination = join(targetFolder, item.name ?? basename(item.source));
-    const besideItself = resolve(dirname(item.source)) === resolve(targetFolder);
+    const besideItself = !options.newItems && resolve(dirname(item.source)) === resolve(targetFolder);
     if (options.move && besideItself && policy) {
       plan.units.push({ source: item.source, destination, action: "skip", duplicate: false, reason: "already-there", top });
       plan.tops.push({ action: "skip", destination });

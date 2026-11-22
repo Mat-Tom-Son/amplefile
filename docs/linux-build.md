@@ -106,18 +106,26 @@ manager" where the Mac app names Finder. **View → Show Hidden Files** has
 GNOME Files' key, Ctrl+H; on Linux it shows names starting with a period
 (GNOME's `~` backups and `.hidden` lists are always shown). The window owns
 the key, so it works in the browser preview too, and the menu shows it with
-a check mark. A link's menu is the window's own: Open (not for a broken
-link), **Show in File Manager**, and **Copy Link Path**. Dragging items out
-hands the desktop every selected file and folder at once. Deleting in a
-Standard Folder or any other folder moves items to the desktop's Trash; in a Connected Folder,
-History brings them back.
+a check mark. Right-clicking an item opens the window's own menu with the
+same items as the Mac's native one (Copy, Cut, Duplicate, Compress, Extract
+for an archive, Paste Here, Rename, Move to Trash or Delete). A link's menu
+adds Open (not for a broken link), **Show Original**, **Show in File
+Manager**, and **Copy Link Path**, and its other items act on the link
+itself. Dragging items out hands the desktop every selected file, folder,
+and link at once. Deleting in a Standard Folder or any other folder moves
+items to the desktop's Trash (a link goes there as itself); in a Connected
+Folder, History brings them back, and a link, which History keeps no copy
+of, waits in Recently Deleted. An item a Replace takes the place of in a
+plain folder also goes to the desktop's Trash, through Electron's
+`shell.trashItem`.
 
 The sidebar's **Trash** is the [freedesktop.org Trash](https://specifications.freedesktop.org/trash-spec/latest/):
 the home Trash in `$XDG_DATA_HOME/Trash` (`~/.local/share/Trash` by default)
 and each mounted drive's `.Trash/<uid>` or `.Trash-<uid>`, the folders GNOME
 Files and Dolphin use, so an item moved to the Trash in either shows here
 and the reverse. Put Back returns an item to the path its `.trashinfo`
-records. Empty Trash empties all of them, after the window asks.
+records. Empty Trash empties all of them, after the window asks, and shows
+its progress with Stop in the operations area, as Delete Immediately does.
 
 **Drives** lists what is mounted for the person: the startup disk is the
 **File System** row, then drives under `/run/media`, `/media`, `/mnt`, and
@@ -148,8 +156,8 @@ in Connected Folders and Standard Folders:
 The host decides the kind and reads the file through the place's existing
 `file-preview` and `raw-file` routes, under the same path policy as every
 other route: nothing outside the place, no symbolic links, and nothing in
-`.amplefile/` or `.pi/`. Space does nothing on a link row; open the link to
-see what it points to. Text is shown, never run; a PDF is drawn by the
+`.amplefile/` or `.pi/`. Space does nothing on a link row; open the link, or
+**Show Original**, to see what it points to. Text is shown, never run; a PDF is drawn by the
 built-in viewer inside the sandboxed window, from the file's own bytes; the
 window's content policy allows no remote loads; and the Preview starts no
 other program. AmpleFile does not use GNOME's Sushi
@@ -212,8 +220,10 @@ Copying files offers them on the clipboard in every form Linux apps paste:
 `text/uri-list` (Dolphin, GTK file lists) and the absolute paths as plain text,
 one per line (`text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`,
 and Latin-1 `STRING` when every name fits it), so a text editor or terminal
-pastes the paths. AmpleFile's Copy is always a copy; whether to move is chosen
-when pasting, so it never offers a cut. Electron writes one custom clipboard
+pastes the paths. **Cut** (Ctrl+X) is marked the way GNOME Files and Dolphin
+mark theirs: `cut` as the first line of `x-special/gnome-copied-files`, and
+`application/x-kde-cutselection` set to `1`, so those file managers paste it
+as a move. Electron writes one custom clipboard
 format at a time, so a small bundled helper, `amplefile-clipboard`, owns the X
 `CLIPBOARD` selection and serves all of them. It runs only while the window
 uses X11 (XWayland on a Wayland desktop, per the display rule below) and leaves
@@ -222,13 +232,22 @@ As with any X11 app, a copy is gone after AmpleFile quits unless a clipboard
 manager kept it. On niri, xwayland-satellite hands the helper's copy to native
 Wayland apps. When the helper cannot run (native Wayland-only windowing, or a
 missing or altered helper), Copy falls back to Electron's single
-`text/uri-list`, which GNOME Files, Dolphin and GTK file lists still paste.
+`text/uri-list`, which GNOME Files, Dolphin and GTK file lists still paste;
+that single format cannot carry the Cut marker, so there a Cut made here
+pastes in another app as a copy, and still pastes here as a move.
 
 Paste reads files copied in a file manager or another app from
 `x-special/gnome-copied-files` or `text/uri-list` (ignoring comments and
 non-`file:` URIs), including files another Chromium or Electron app put there,
-and copies them in; a file manager's Cut is also pasted as a copy, leaving the
-originals in place. Under X11 the helper reads the clipboard in its own
+and copies them in. A file manager's Cut (either marker) is pasted as a move:
+each file is named by the Connected Folder that holds it, or else by its
+path on the computer, and moves under the same rules as a move made in the
+window, so a file inside a Connected Folder leaves it through that Connected
+Folder's delete, and one going from a plain folder into a Connected Folder is
+copied and stays where it was, which the notice says. A finished paste of a
+Cut empties the clipboard, as GNOME Files does. Items cut in the window are
+drawn dimmed until they are pasted or another app copies something. Under
+X11 the helper reads the clipboard in its own
 process, so a large copy never holds the window; elsewhere Electron reads it,
 and another Chromium-based app's files are then not read.
 

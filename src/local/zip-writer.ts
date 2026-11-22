@@ -12,12 +12,15 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
  * Writes a zip archive one entry at a time, streaming each file through
  * deflate, with the 64-bit (ZIP64) records an archive over 4 GB or 65,535
  * items needs. Entries record their Unix modes, so Extract can restore what
- * was executable, and their names in UTF-8.
+ * was executable, and their names in UTF-8. A symbolic link is stored as a
+ * link, the way Info-ZIP and Finder's Archive Utility store one: its target
+ * as the entry's (uncompressed) content, with the link file type in its mode.
  */
 
 export type ZipWriterEntry =
   | { kind: "folder"; name: string; date: Date; mode: number }
-  | { kind: "file"; name: string; path: string; date: Date; mode: number; size: number };
+  | { kind: "file"; name: string; path: string; date: Date; mode: number; size: number }
+  | { kind: "link"; name: string; target: string; date: Date };
 
 const max32 = 0xffffffff;
 const max16 = 0xffff;
@@ -52,10 +55,13 @@ export async function writeZip(
     const headerOffset = offset;
     const { time, date } = dosDateTime(entry.date);
     const isFile = entry.kind === "file";
+    const linkTarget = entry.kind === "link" ? Buffer.from(entry.target, "utf8") : null;
     // A file near 4 GB may deflate a little larger, so it takes the 64-bit sizes too.
-    const zip64Sizes = forceZip64 || (isFile && entry.size >= max32 - 0x100000);
+    const zip64Sizes = (forceZip64 && !linkTarget) || (isFile && entry.size >= max32 - 0x100000);
     const flags = 0x0800 | (isFile ? 0x0008 : 0);
     const method = isFile ? 8 : 0;
+    // A link's content is known up front, so its header carries the CRC and sizes (no data descriptor).
+    const linkCrc = linkTarget ? crc32(linkTarget) >>> 0 : 0;
     const version = zip64Sizes || headerOffset >= max32 ? 45 : 20;
 
     const localExtra = zip64Sizes ? zip64Extra([0n, 0n]) : Buffer.alloc(0);
@@ -66,16 +72,17 @@ export async function writeZip(
     local.writeUInt16LE(method, 8);
     local.writeUInt16LE(time, 10);
     local.writeUInt16LE(date, 12);
-    local.writeUInt32LE(0, 14);
-    local.writeUInt32LE(zip64Sizes ? max32 : 0, 18);
-    local.writeUInt32LE(zip64Sizes ? max32 : 0, 22);
+    local.writeUInt32LE(linkCrc, 14);
+    local.writeUInt32LE(zip64Sizes ? max32 : linkTarget?.length ?? 0, 18);
+    local.writeUInt32LE(zip64Sizes ? max32 : linkTarget?.length ?? 0, 22);
     local.writeUInt16LE(name.length, 26);
     local.writeUInt16LE(localExtra.length, 28);
     await write(Buffer.concat([local, name, localExtra]));
 
-    let crc = 0;
-    let size = 0;
-    let compressed = 0;
+    let crc = linkCrc;
+    let size = linkTarget?.length ?? 0;
+    let compressed = linkTarget?.length ?? 0;
+    if (linkTarget) await write(linkTarget);
     if (isFile) {
       operation.current(basename(entry.path));
       const counting = new Transform({
@@ -132,8 +139,9 @@ export async function writeZip(
     record.writeUInt16LE(0, 32);
     record.writeUInt16LE(0, 34);
     record.writeUInt16LE(0, 36);
-    const type = isFile ? 0o100000 : 0o040000;
-    record.writeUInt32LE((((type | (entry.mode & 0o7777)) << 16) | (isFile ? 0 : 0x10)) >>> 0, 38);
+    const type = entry.kind === "file" ? 0o100000 : entry.kind === "link" ? 0o120000 : 0o040000;
+    const mode = entry.kind === "link" ? 0o777 : entry.mode & 0o7777;
+    record.writeUInt32LE((((type | mode) << 16) | (entry.kind === "folder" ? 0x10 : 0)) >>> 0, 38);
     record.writeUInt32LE(bigOffset ? max32 : headerOffset, 42);
     central.push(Buffer.concat([record, name, centralExtra]));
   }

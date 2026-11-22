@@ -444,7 +444,12 @@ async function collectArchiveEntries(
   operation: FileOperationControl,
 ): Promise<void> {
   const info = await lstat(path);
-  if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) return;
+  if (info.isSymbolicLink()) {
+    // Stored as the link it is, never what it points to.
+    entries.push({ kind: "link", name, target: await readlink(path), date: info.mtime });
+    return;
+  }
+  if (!info.isDirectory() && !info.isFile()) return;
   if (info.isDirectory()) {
     entries.push({ kind: "folder", name, date: info.mtime, mode: info.mode & 0o7777 });
     await operation.boundary("item");

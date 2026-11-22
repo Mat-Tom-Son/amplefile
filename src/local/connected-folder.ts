@@ -782,15 +782,15 @@ async function prepareConnectedFolderMove(
   if (targetFolderPath === sourcePath || targetFolderPath.startsWith(`${sourcePath}/`)) throw new Error("Folders cannot be moved into themselves.");
   await assertOutsideNestedFolders(root, sourcePath);
   if (targetFolderPath) await assertOutsideNestedFolders(root, `${targetFolderPath}/${basename(sourcePath)}`);
-  const source = resolveConnectedFolderPath(root, sourcePath);
+  const source = resolveConnectedFolderPath(root, sourcePath, { finalLink: true });
   if (samePath(source, root)) throw new Error("The Connected Folder root cannot be moved.");
-  const sourceInfo = await stat(source).catch(() => null);
-  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory())) throw notFound(`Connected Folder item not found: ${sourcePath}`);
+  const sourceInfo = await lstat(source).catch(() => null);
+  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory() && !sourceInfo.isSymbolicLink())) throw notFound(`Connected Folder item not found: ${sourcePath}`);
   const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
   if (!(await stat(targetFolder)).isDirectory()) throw new Error("Move items into a folder.");
   if (dirname(source) === targetFolder) throw new Error(`${basename(source)} is already in the selected folder.`);
   const destination = join(targetFolder, basename(source));
-  if (existsSync(destination)) throw new Error(`A file or folder named ${basename(source)} already exists there.`);
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${basename(source)} already exists there.`);
   return { sourcePath, source, destination };
 }
 
@@ -839,7 +839,7 @@ export async function moveConnectedFolderEntry(
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const { sourcePath, source, destination } = await prepareConnectedFolderMove(root, input);
   await rename(source, destination);
-  const movedInfo = await stat(destination);
+  const movedInfo = await lstat(destination);
   await touchConnectedFolder(root);
   return {
     fromPath: sourcePath,
@@ -859,16 +859,16 @@ export async function renameConnectedFolderEntry(
   if (!sourcePath || sourcePath === ".") throw new Error("Select a file or folder to rename.");
   const newName = safeFileName(input.newName);
   await assertOutsideNestedFolders(root, sourcePath);
-  const source = resolveConnectedFolderPath(root, sourcePath);
+  const source = resolveConnectedFolderPath(root, sourcePath, { finalLink: true });
   if (samePath(source, root)) throw new Error("The Connected Folder root cannot be renamed.");
-  const sourceInfo = await stat(source).catch(() => null);
-  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory())) throw notFound("Connected Folder item not found.");
+  const sourceInfo = await lstat(source).catch(() => null);
+  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory() && !sourceInfo.isSymbolicLink())) throw notFound("Connected Folder item not found.");
   if (basename(source) === newName) throw new Error("That item already has this name.");
   const destination = join(dirname(source), newName);
-  resolveConnectedFolderPath(root, normalizeRelative(relative(root, destination)));
-  if (existsSync(destination)) throw new Error(`A file or folder named ${newName} already exists there.`);
+  resolveConnectedFolderPath(root, normalizeRelative(relative(root, destination)), { finalLink: true });
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${newName} already exists there.`);
   await rename(source, destination);
-  const renamedInfo = await stat(destination);
+  const renamedInfo = await lstat(destination);
   await touchConnectedFolder(root);
   return {
     fromPath: sourcePath,
@@ -941,10 +941,11 @@ export async function resolveConnectedFolderDeleteTarget(
   const normalized = normalizeRelative(relativePath);
   if (!normalized || normalized === ".") throw new Error("Select a file or folder to delete.");
   await assertOutsideNestedFolders(root, normalized);
-  const path = resolveConnectedFolderPath(root, normalized);
+  const path = resolveConnectedFolderPath(root, normalized, { finalLink: true });
   if (samePath(path, root)) throw new Error("The Connected Folder root cannot be deleted.");
-  const info = await stat(path).catch(() => null);
-  if (!info || (!info.isFile() && !info.isDirectory())) throw notFound("Connected Folder item not found.");
+  // A symbolic link is deleted as itself (kind "file"); what it points to is untouched.
+  const info = await lstat(path).catch(() => null);
+  if (!info || (!info.isFile() && !info.isDirectory() && !info.isSymbolicLink())) throw notFound("Connected Folder item not found.");
   return { absolutePath: path, path: normalized, kind: info.isDirectory() ? "folder" : "file" };
 }
 
@@ -1021,7 +1022,14 @@ export async function copyPathIntoConnectedFolder(
   return normalizeRelative(relative(connectedFolderRoot, destination));
 }
 
-export function resolveConnectedFolderPath(connectedFolderRoot: string, relativePath: string): string {
+/**
+ * A path inside a Connected Folder (or a place resolved under its policy): no
+ * `..`, no reserved metadata, and no symbolic link along the way. With
+ * `finalLink` the last segment may itself be a link, for the operations that
+ * act on a link as an item (rename, delete, copy, move, Compress, drag); the
+ * link is never followed, and a link earlier in the path is still refused.
+ */
+export function resolveConnectedFolderPath(connectedFolderRoot: string, relativePath: string, options: { finalLink?: boolean } = {}): string {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const normalized = normalizeRelative(relativePath || ".");
   if (isAbsolute(relativePath) || normalized.split("/").includes("..")) {
@@ -1032,7 +1040,7 @@ export function resolveConnectedFolderPath(connectedFolderRoot: string, relative
   }
   const path = resolve(root, normalized || ".");
   if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error("Path escapes the selected Connected Folder.");
-  assertNoLinkSegments(root, path);
+  assertNoLinkSegments(root, path, options.finalLink === true);
   return path;
 }
 
@@ -2076,12 +2084,15 @@ async function nextAvailablePath(desired: string): Promise<string> {
   return info.isDirectory() ? nextAvailableDirectory(dirname(desired), basename(desired)) : nextAvailableFile(desired);
 }
 
-function assertNoLinkSegments(root: string, path: string): void {
+function assertNoLinkSegments(root: string, path: string, finalLink = false): void {
   const rel = relative(root, path);
   if (!rel || rel === ".") return;
   let cursor = root;
-  for (const segment of rel.split(sep).filter(Boolean)) {
+  const segments = rel.split(sep).filter(Boolean);
+  for (const [index, segment] of segments.entries()) {
     cursor = join(cursor, segment);
+    // The item itself may be a link the caller acts on as a link; nothing past it is reached.
+    if (finalLink && index === segments.length - 1) return;
     // The link itself, not what it names: a broken link is still a link, and
     // `existsSync` (which follows it) would let its name through.
     const info = lstatSync(cursor, { throwIfNoEntry: false });

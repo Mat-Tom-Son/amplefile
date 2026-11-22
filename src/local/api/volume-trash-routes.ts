@@ -46,6 +46,7 @@ import {
   volumeSpaceForPath,
   type VolumeRecord,
 } from "../volumes.js";
+import { parseFileOperationId, runFileOperation } from "../file-operations.js";
 import { badRequest, errorMessage, httpError, notFound, readJsonBody, sendJson } from "./http.js";
 import { requestHasUnsettledWork } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
@@ -93,18 +94,20 @@ export async function handleVolumeAndTrashRoutes({ state, req, res, url, method 
     return true;
   }
   // Irreversible: the window asks first. Delete Immediately acts only on ids a listing minted.
+  // An optional `operationId` reports progress as a "delete" file operation and makes it stoppable
+  // between items (src/local/file-operations.ts); a stopped deletion answers `cancelled` and `notDone`.
   if (method === "POST" && url.pathname === "/api/trash/delete") {
-    const body = await readJsonBody<{ itemIds?: unknown }>(state, req);
+    const body = await readJsonBody<{ itemIds?: unknown; operationId?: unknown }>(state, req);
     const ids = body.itemIds;
     if (!Array.isArray(ids) || !ids.length || ids.length > 10_000 || ids.some((id) => typeof id !== "string" || !id || id.length > 64)) {
       throw badRequest("Choose items to delete.");
     }
-    sendJson(res, await deleteTrashItemsImmediately(ids as string[]));
+    sendJson(res, await runFileOperation(parseFileOperationId(body.operationId), "delete", (operation) => deleteTrashItemsImmediately(ids as string[], {}, operation), deletionOutcome));
     return true;
   }
   if (method === "POST" && url.pathname === "/api/trash/empty") {
-    await readJsonBody<unknown>(state, req);
-    sendJson(res, await emptySystemTrash());
+    const body = await readJsonBody<{ operationId?: unknown } | null>(state, req);
+    sendJson(res, await runFileOperation(parseFileOperationId(body?.operationId), "delete", (operation) => emptySystemTrash({}, operation), deletionOutcome));
     return true;
   }
   return false;
@@ -238,4 +241,8 @@ async function putBackTrashItem(itemId: string): Promise<PutBackResponse> {
 
 function insideConnectedFolder(root: string, path: string): string {
   return relative(root, path).split(sep).filter(Boolean).join("/");
+}
+
+function deletionOutcome(result: { cancelled?: true }): "succeeded" | "cancelled" {
+  return result.cancelled ? "cancelled" : "succeeded";
 }

@@ -38,6 +38,9 @@ export interface PermanentDeletionResult {
   failed: Array<{ id: string; name: string; error: string }>;
   notFound: string[];
   strayRecordsRemoved?: number;
+  /** Stop came first: `notDone` lists the ids still in the Trash. */
+  cancelled?: true;
+  notDone?: string[];
 }
 
 /** Sent on the window when something was just moved to the system Trash, so a Trash view already shown reads it again. */
@@ -132,6 +135,15 @@ export async function confirmPermanent<T>(question: PermanentConfirm, ask: (ques
 /** What the window says after Delete Immediately or Empty Trash: what went, and plainly what didn't. */
 export function permanentResultMessage(result: PermanentDeletionResult, emptied: boolean): { text: string; tone: "success" | "error" } {
   const removed = result.removed.length;
+  if (result.cancelled) {
+    const left = result.notDone?.length ?? 0;
+    return {
+      text: removed
+        ? `Stopped. ${removed === 1 ? `“${result.removed[0]!.name}” was` : `${removed.toLocaleString()} items were`} deleted for good; ${left ? `${left === 1 ? "1 item is" : `${left.toLocaleString()} items are`} still in the Trash` : "nothing else was"}.`
+        : "Stopped. Nothing was deleted; everything is still in the Trash.",
+      tone: "success",
+    };
+  }
   if (result.failed.length) {
     const first = result.failed[0]!;
     const others = result.failed.length - 1;

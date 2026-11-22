@@ -53,7 +53,7 @@ function fixtureTrash(): TrashListing {
  * The list is read again whenever it is shown and when the window comes back,
  * so an item just moved to the Trash is there.
  */
-export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCount, onError }: {
+export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCount, onError, runDeletion }: {
   fixtureMode: boolean;
   /** The toolbar's Search text: the Trash shows the items whose names hold it. */
   query: string;
@@ -63,6 +63,12 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
   /** How many items the Trash holds, for the path bar's status. */
   onCount?: (count: number | null) => void;
   onError: (message: string | null) => void;
+  /**
+   * Runs Empty Trash or Delete Immediately as a file operation, with progress
+   * and Stop in the window's operations area; without it the request runs
+   * plainly. The request gets the operation's id.
+   */
+  runDeletion?: (title: string, request: (operationId: string | null) => Promise<PermanentDeletionResult>) => Promise<PermanentDeletionResult>;
 }) {
   const [listing, setListing] = useState<TrashListing | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -165,7 +171,8 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
     const outcome = await confirmPermanent(deleteImmediatelyConfirm(items), requestConfirm, async () => {
       setBusy("delete");
       try {
-        return await api<PermanentDeletionResult>("/api/trash/delete", { method: "POST", body: { itemIds: ids } });
+        const request = (operationId: string | null) => api<PermanentDeletionResult>("/api/trash/delete", { method: "POST", body: { itemIds: ids, ...(operationId ? { operationId } : {}) } });
+        return await (runDeletion ? runDeletion(ids.length === 1 ? `Deleting “${items[0]!.name}”` : `Deleting ${ids.length.toLocaleString()} items`, request) : request(null));
       } finally {
         setBusy(null);
       }
@@ -182,7 +189,8 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
     const outcome = await confirmPermanent(emptyTrashConfirm(listing), requestConfirm, async () => {
       setBusy("empty");
       try {
-        return await api<PermanentDeletionResult>("/api/trash/empty", { method: "POST", body: {} });
+        const request = (operationId: string | null) => api<PermanentDeletionResult>("/api/trash/empty", { method: "POST", body: operationId ? { operationId } : {} });
+        return await (runDeletion ? runDeletion("Emptying the Trash", request) : request(null));
       } finally {
         setBusy(null);
       }

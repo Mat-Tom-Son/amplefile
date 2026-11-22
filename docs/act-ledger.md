@@ -23,13 +23,17 @@ without being a security boundary. So the product works on these rules:
 2. **Every effect leaves a receipt.** The journal-first, at-most-once,
    identity-pinned act path is attribution and recovery machinery, not a
    gate.
-3. **Every destruction is reversible.** Nothing a product verb does is
-   permanent at the moment it happens. History covers ordinary deletion;
-   everything History cannot cover goes to machine-local
+3. **Every destruction a verb makes is reversible.** Nothing a product verb
+   does is permanent at the moment it happens. History covers ordinary
+   deletion; everything History cannot cover goes to machine-local
    [Recently Deleted](#recently-deleted) with a retention window. The
-   computer's own Trash is not a verb's: in the file manager window the
-   person can Put Back from it, or empty it or delete items from it for good
-   after a dialog that says so ([the file manager window](product-model.md#the-file-manager-window)).
+   computer's own Trash is not a verb's: outside a Connected Folder, which
+   has no History, the file manager window's Move to Trash and an item the
+   person's **Replace** takes the place of go there (when no Trash can take
+   a replaced item it is removed, and the window says so before Undo is
+   tried), and in the window the person can Put Back from the Trash, or
+   empty it or delete items from it for good after a dialog that says so
+   ([the file manager window](product-model.md#the-file-manager-window)).
    No agent or CLI verb deletes from it.
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
@@ -226,14 +230,19 @@ confirmation.
 | Verb | In the window | Target | Command shape | Receipt adds | Undo | Conflicts |
 |---|---|---|---|---|---|---|
 | Add outside material | Drag in from Finder, ⌘V, a drop on the message box | direct verb | `files add --connected-folder <id> --from <p>… [--to <folder>]` | checkpoint id, copied path count | restore the checkpoint | copy and restore point succeed or fail together |
-| Move an item | Drag onto a folder row, ⌥⌘V | direct verb | `files move --connected-folder <id> --from <path> --to <folder>` | safety checkpoint id, moved path | restore the safety checkpoint | moving into its own subtree is refused; reserved metadata folders such as `.amplefile/` and `.pi/` are never valid endpoints |
+| Move an item | Drag onto a folder row, ⌘X then ⌘V, ⌥⌘V | direct verb | `files move --connected-folder <id> --from <path> --to <folder>` | safety checkpoint id, moved path | restore the safety checkpoint | moving into its own subtree is refused; reserved metadata folders such as `.amplefile/` and `.pi/` are never valid endpoints |
 | Rename an item | Right-click → Rename…, Return | direct verb | `files rename --connected-folder <id> --path <p> --name <n>` | safety checkpoint id, prior name | restore the safety checkpoint or rename back | same path policy |
 | Delete an item | Right-click → Delete, ⌘⌫ | direct verb | `files delete --connected-folder <id> --path <p>` | safety checkpoint id; the Recently Deleted entry id when the checkpoint could not cover every matched file | the safety checkpoint, or `recently-deleted restore --entry <id>` when the receipt names one | never refuses for coverage reasons; same path policy |
 | New folder | Right-click → New Folder Here… | direct verb | `files mkdir --connected-folder <id> --path <folder>` | created path; no safety checkpoint, because creation destroys nothing | `files delete` (an empty folder is fully covered) | an existing name is refused; same path policy |
 | New empty file | — | direct verb | `files create --connected-folder <id> --path <p>` | created path; no safety checkpoint, as for `files mkdir` | `files delete` | an existing name is refused; same path policy |
 | Content search | Toolbar **Search** | direct verb (content-bearing act read) | `search --connected-folder <id> --query <q> [--scope files\|chats\|all]` | scope only, **not** the query text | n/a | honours ignore rules, skips binary content, and reports when a bound stopped the search rather than implying completeness; the same service as `/api/connected-folders/:id/search` |
 
-The file verbs use the window's own mutation paths and add receipts. When the
+The file verbs use the window's own mutation paths and add receipts. A path
+whose last segment is a symbolic link names the link itself: `files move`,
+`files rename`, and `files delete` act on the link and never on what it
+points to, and a link anywhere earlier in a path is refused. The window's
+name-clash choices (Keep Both, Skip, Replace, Merge) belong to its copy,
+move, paste, and Extract; the verbs here keep their own conflict rules. When the
 safety checkpoint captured everything a delete matched, the delete removes
 the item and the checkpoint is its undo. When it could not capture some
 matched file (oversized, unreadable, a symbolic link, or excluded, by the
