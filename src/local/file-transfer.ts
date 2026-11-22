@@ -1,13 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { constants as fsConstants, createReadStream, createWriteStream, type Stats } from "node:fs";
+import { constants as fsConstants, type Stats } from "node:fs";
 import { chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, utimes } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 
-import JSZip from "jszip";
-
-import { FileOperationCancelledError, untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
+import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
+import { untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
+import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
 
 /**
  * The file manager's copy, paste, duplicate, move, and compress
@@ -58,6 +56,20 @@ export async function copyInto(
   const destination = await freeDestination(targetFolder, basename(source), options);
   await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation);
   return destination;
+}
+
+/**
+ * Copies a file or folder to a destination that is free, as `copyInto` does
+ * once it has chosen the name: with modes, times, and links as written,
+ * leaving `.amplefile` behind unless `withIdentity` is set, and taking back
+ * what it wrote if it fails or is cancelled.
+ */
+export async function copyItemTo(
+  source: string,
+  destination: string,
+  options: { withIdentity?: boolean; operation?: FileOperationControl } = {},
+): Promise<void> {
+  await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation);
 }
 
 /** What a copy of `source` leaves behind: every `.amplefile` folder unless it carries the identity. */
@@ -353,58 +365,41 @@ export async function removeOwnedItem(path: string): Promise<void> {
 }
 
 /**
- * The most Compress takes on: what it reads in all (before compressing) and
- * how many items. A zip without its 64-bit extension, which is what Compress
- * writes, holds under 4 GB and 65,535 items; larger work belongs to Finder.
- */
-export const compressLimits = { maxBytes: 2 * 1024 ** 3, maxEntries: 60_000 } as const;
-
-/**
  * Compress, as Finder's: one item becomes "name.zip" beside it, several become
  * "Archive.zip", and a name already taken gets " copy" or a number. The
  * archive streams to a hidden file beside it, one file read at a time, and
- * takes its name only once complete, so a failed or refused Compress leaves
- * nothing behind.
+ * takes its name only once complete, so a failed, refused, or cancelled
+ * Compress leaves nothing behind. Any size compresses (the archive takes the
+ * 64-bit zip records it needs); the disk guard (src/local/disk-space.ts)
+ * refuses to start on a nearly full disk and stops before filling it.
  */
 export async function compressInto(
   sources: readonly string[],
   targetFolder: string,
-  limits: { maxBytes: number; maxEntries: number } = compressLimits,
   operation: FileOperationControl = untrackedFileOperation,
 ): Promise<string> {
   if (!sources.length) throw badRequest("Choose items to compress.");
-  const entries: ArchiveEntry[] = [];
+  const entries: ZipWriterEntry[] = [];
   const total = { bytes: 0 };
-  for (const source of sources) await collectArchiveEntries(source, basename(source), entries, total, limits, operation);
+  for (const source of sources) await collectArchiveEntries(source, basename(source), entries, total, operation);
   operation.setTotals(entries.length, total.bytes);
+  await assertDiskSpace(targetFolder, 0, "compress these items");
   operation.stage("compressing");
-  const zip = new JSZip();
-  for (const entry of entries) {
-    if (entry.kind === "folder") zip.folder(entry.name);
-    else zip.file(entry.name, openWhenRead(entry.path, operation), { date: entry.date, binary: true });
-  }
-  // Folders are written as the archive starts.
-  operation.itemsDone(entries.filter((entry) => entry.kind === "folder").length);
   const name = sources.length === 1 ? `${basename(sources[0]!)}.zip` : "Archive.zip";
   await removeAbandonedWorkingItems(targetFolder, compressWorkingPrefix);
-  const partial = join(targetFolder, `${compressWorkingPrefix}${randomBytes(8).toString("hex")}${workingSuffix}`);
-  writingNow.add(resolve(partial));
+  const working = claimWorkingPath(targetFolder, compressWorkingPrefix);
   try {
+    const output = await open(working.path, "wx", 0o644);
     try {
-      await pipeline(
-        zip.generateNodeStream({ type: "nodebuffer", streamFiles: true, compression: "DEFLATE", compressionOptions: { level: 6 } }),
-        createWriteStream(partial, { flags: "wx" }),
-      );
-    } catch (error) {
-      // However the archive library passes a stop along, a cancel reads as one.
-      if (operation.cancelRequested) throw new FileOperationCancelledError();
-      throw error;
+      await writeZip(entries, output, operation, watchDiskSpace(targetFolder, "finish compressing"));
+    } finally {
+      await output.close();
     }
     operation.stage("finishing");
-    return await placeWithoutReplacing(partial, targetFolder, name);
+    return await placeWithoutReplacing(working.path, targetFolder, name);
   } finally {
-    writingNow.delete(resolve(partial));
-    await rm(partial, { force: true }).catch(() => undefined);
+    working.release();
+    await rm(working.path, { force: true }).catch(() => undefined);
   }
 }
 
@@ -441,66 +436,30 @@ export async function removeAbandonedWorkingItems(folder: string, prefix: string
   }
 }
 
-type ArchiveEntry = { kind: "folder"; name: string } | { kind: "file"; name: string; path: string; date: Date };
-
 async function collectArchiveEntries(
   path: string,
   name: string,
-  entries: ArchiveEntry[],
+  entries: ZipWriterEntry[],
   total: { bytes: number },
-  limits: { maxBytes: number; maxEntries: number },
   operation: FileOperationControl,
 ): Promise<void> {
   const info = await lstat(path);
   if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) return;
-  if (entries.length >= limits.maxEntries) throw tooLarge(`This is too many items to compress here (more than ${limits.maxEntries.toLocaleString("en-US")}). Compress it in Finder instead.`);
   if (info.isDirectory()) {
-    entries.push({ kind: "folder", name });
+    entries.push({ kind: "folder", name, date: info.mtime, mode: info.mode & 0o7777 });
     await operation.boundary("item");
     for (const entry of (await readdir(path)).sort()) {
       if (identityFolders.has(entry) || entry === ".DS_Store") continue;
-      await collectArchiveEntries(join(path, entry), `${name}/${entry}`, entries, total, limits, operation);
+      await collectArchiveEntries(join(path, entry), `${name}/${entry}`, entries, total, operation);
     }
     return;
   }
   total.bytes += info.size;
-  if (total.bytes > limits.maxBytes) throw tooLarge(`This is too large to compress here (more than ${formatBytes(limits.maxBytes)}). Compress it in Finder instead.`);
-  entries.push({ kind: "file", name, path, date: info.mtime });
-}
-
-/**
- * A file's bytes, opened only when the archive reaches it, so one file is
- * open at a time. Each read is a boundary of a tracked operation, so a
- * cancel stops the archive inside a file.
- */
-function openWhenRead(path: string, operation: FileOperationControl): Readable {
-  let source: ReturnType<typeof createReadStream> | null = null;
-  const stream: Readable = new Readable({
-    read() {
-      operation.boundary("chunk").then(() => {
-        if (stream.destroyed) return;
-        if (source) { source.resume(); return; }
-        operation.current(basename(path));
-        source = createReadStream(path);
-        source.on("data", (chunk) => {
-          if (operation.cancelRequested) { stream.destroy(new FileOperationCancelledError()); return; }
-          operation.bytesDone(chunk.length);
-          if (!stream.push(chunk)) source!.pause();
-        });
-        source.once("end", () => { operation.itemsDone(); stream.push(null); });
-        source.once("error", (error) => stream.destroy(error));
-      }, (error: unknown) => stream.destroy(error as Error));
-    },
-    destroy(error, callback) {
-      source?.destroy();
-      callback(error);
-    },
-  });
-  return stream;
+  entries.push({ kind: "file", name, path, date: info.mtime, mode: info.mode & 0o7777, size: info.size });
 }
 
 /** Gives a finished file its name, the first free one, never replacing an item that took it meanwhile. */
-async function placeWithoutReplacing(file: string, folder: string, name: string): Promise<string> {
+export async function placeWithoutReplacing(file: string, folder: string, name: string): Promise<string> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const destination = await freeDestination(folder, name);
     try {
@@ -564,9 +523,6 @@ function badRequest(message: string): Error {
   return Object.assign(new Error(message), { status: 400, statusCode: 400 });
 }
 
-function tooLarge(message: string): Error {
-  return Object.assign(new Error(message), { status: 413, statusCode: 413 });
-}
 
 /** macOS and Windows disks ignore case by default. */
 function comparison(value: string): string {

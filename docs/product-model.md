@@ -183,8 +183,10 @@ other surface.
   and an item that cannot leave its source stays there and the move says
   so; its copy then drops the `.amplefile/` the source still holds, and the
   move names any it could not drop. Any other move across places copies and says the original stays.
-  Compress writes the archive beside the items under a hidden working name
-  and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
+  Compress writes the archive beside the items under a hidden working name,
+  at any size (with the 64-bit zip records a large archive needs) and with
+  each item's Unix mode; it refuses to start, and stops, when the disk would
+  keep less than 256 MB free.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it, above the place's top too, where
   it lives (see **Other folders**); a long path keeps the disk and its
