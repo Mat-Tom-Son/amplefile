@@ -127,9 +127,30 @@ other surface.
   inside, or a folder holding one) is changed only from that Connected
   Folder, so History keeps it. The panel's **Connect This Folder** registers
   the folder; nothing moves.
+- **Other folders:** any other folder on the computer opens in the window
+  too, as a plain folder under the Standard Folder rules: no Worker,
+  History, or `.amplefile/` record, deleting is **Move to Trash**, and
+  anything a Connected Folder owns is changed only from that Connected
+  Folder. It opens from Go to Folder, the path bar, Command-Up, or a folder
+  handed to AmpleFile (Finder's open-file, a desktop launcher, or a second
+  launch); a file opens its folder with the file selected. The host resolves
+  every path to where it really is, then to the place that holds it: inside
+  a Connected Folder (the deepest one) it opens there at that folder, inside
+  a Standard Folder it opens in that Standard Folder, and anything else
+  opens by its path from the disk, which the path bar names first. Opening a
+  folder that is a Standard Folder shows that Standard Folder. An other folder
+  has no sidebar row, so no row is highlighted; Back and Forward, the path
+  bar, the toolbar's title, and the item count work as anywhere else.
+  Nothing is registered and nothing is kept about it: with nothing selected,
+  Info offers **Connect This Folder** for the folder shown (never for the
+  disk itself). The path policy is the same as everywhere: no path through
+  a symbolic link, and `.amplefile/` and `.pi/` stay hidden. A folder the
+  account may not read says so (on a Mac, as for Desktop or Documents, with
+  where to allow it).
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
-  Quick Look, Command-Down to open, Command-Up for the enclosing folder,
+  Quick Look, Command-Down to open, Command-Up for the enclosing folder
+  (from the top of a place, the folder above it, down to the disk),
   Command-Delete, Return to rename, typing to jump to a name). Double-click
   opens a folder here and a file in its default app. Files drag out to other
   apps; files dragged in from Finder are added to the folder shown, or to the
@@ -165,17 +186,19 @@ other surface.
   Compress writes the archive beside the items under a hidden working name
   and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
-  path; double-clicking a folder opens it; a long path keeps the disk and its
+  path; double-clicking a folder opens it, above the place's top too, where
+  it lives (see **Other folders**); a long path keeps the disk and its
   last four items whole with "…" between. The button at the bar's start, or
   ⇧⌘G, opens Go to Folder as Finder has it: a path field (a full path, "~/…",
   or a name inside the folder shown) over the names that complete it; Tab
   completes, the arrow keys choose, Return goes, and a file's path opens its
-  folder with the file selected. It opens any folder inside a Connected
-  Folder or a Standard Folder and says so plainly for anything else.
+  folder with the file selected. It opens any folder or file on the
+  computer, completes names in any folder, and says so plainly when nothing
+  is at the path or it is hidden AmpleFile or Pi data.
 - **Search** reads names and contents. A scope bar offers **All Connected
   Folders** or the folder shown; results list name matches, then text matches
   with the words around them, in Name, Match, and Connected Folder columns. A
-  Standard Folder searches its names only. Selection is accent-colored while
+  Standard Folder, or any other folder, searches its names only. Selection is accent-colored while
   the contents have focus. The last row of results asks the Worker to find it
   by what the person remembers; Return with nothing chosen does the same.
 - **Browser pane:** the built-in browser's tabs, under the folder's contents
