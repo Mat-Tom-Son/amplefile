@@ -407,6 +407,32 @@ test("Extract of an archive holding one file lands that file beside it and asks 
   assert.equal(await readFile(join(folder.connectedFolderRoot, "report copy.txt"), "utf8"), "new report");
 });
 
+test("Extract never merges into a Mac package: Merge is not offered, and chosen anyway it keeps both", async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  await mkdir(join(folder.connectedFolderRoot, "Tool.app", "Contents"), { recursive: true });
+  await writeFile(join(folder.connectedFolderRoot, "Tool.app", "Contents", "Info.plist"), "old");
+  const zip = new JSZip();
+  zip.file("Tool.app/Contents/Info.plist", "new");
+  zip.file("Tool.app/Contents/MacOS/Tool", "#!/bin/sh\n");
+  await writeFile(join(folder.connectedFolderRoot, "Tool.zip"), await zip.generateAsync({ type: "nodebuffer" }));
+  const place = { kind: "connected-folder", id: folder.id };
+  const extract = (conflicts: unknown) => call("/api/file-transfer/extract", { method: "POST", body: { place, path: "Tool.zip", conflicts } });
+
+  const check = await extract({ check: true });
+  assert.equal(check.status, 200, JSON.stringify(check.body));
+  const mac = process.platform === "darwin";
+  assert.deepEqual(check.body!.conflicts.map((conflict: any) => [conflict.key, conflict.source.kind, conflict.canMerge]), [["Tool.app", "folder", !mac]]);
+  if (!mac) return;
+
+  const merged = await extract({ items: { "Tool.app": "merge" } });
+  assert.equal(merged.status, 201, JSON.stringify(merged.body));
+  assert.notEqual(merged.body!.path, "Tool.app", "nothing was merged into the app");
+  assert.deepEqual(merged.body!.merged, []);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "Tool.app", "Contents", "Info.plist"), "utf8"), "old");
+  assert.equal(await readFile(join(folder.connectedFolderRoot, merged.body!.path, "Contents", "Info.plist"), "utf8"), "new");
+});
+
 test("a replaced item History cannot keep goes whole into Recently Deleted", async (t) => {
   const { api, call } = await sandboxApi(t);
   const source = await connectedFolder(call, "Source");

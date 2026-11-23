@@ -374,12 +374,16 @@ other surface.
     folder beside it named after it, never with a leading dot
     (`.agents.zip` gives `agents`). An archive whose one item is a link, a
     hidden item (`.env`, `.agents/`), or a file or folder named as Pi's
-    project instructions (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, in
-    any case), and an empty archive, give that folder too, so nothing hidden
-    or read as instructions lands straight in the folder unseen. The
-    resource forks and attributes a Mac stores beside each item (Archive
-    Utility's `__MACOSX`, the `._Name` files a Mac's `tar` writes) and what
-    Extract leaves out are not items and are not written. It works at any
+    project instructions (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`),
+    and an empty archive, give that folder too, so nothing hidden or read as
+    instructions lands straight in the folder unseen. Names are compared as
+    a Mac volume compares them, so a look-alike (`agentſ.md`) counts, and
+    once extracted the volume is asked again whether the one item opens as
+    an instructions file. The resource forks and attributes a Mac stores
+    beside each item (Archive Utility's `__MACOSX`, and a `._Name` file that
+    is AppleDouble or sits beside its `Name`, as a Mac's `tar` writes them)
+    and what Extract leaves out are not items and are not written; any other
+    `._Name` file is an ordinary file. It works at any
     size and, when done, selects the item or folder it made; a taken name
     asks the name-clash question about that name (reading only enough of
     the archive to know it, and no more than 64 MB of a tar, past which a
@@ -389,13 +393,16 @@ other surface.
     its default app. On a Mac, an archive marked as downloaded passes that
     quarantine mark to everything Extract makes before it takes its name,
     as Archive Utility does, so an app from it gets Gatekeeper's first-open
-    check; if the mark cannot be read or carried, nothing is extracted.
+    check; if the mark cannot be read or carried, nothing is extracted. A
+    package (see **Packages**) is never merged into: Merge is not offered
+    when Extract makes one, and a Merge asked for anyway keeps both.
     Nothing extracted is runnable beyond the execute bits the archive
     records (never setuid, setgid, or sticky); a link is made only when it
     points inside what Extract made (inside the one folder, when that is
     all the archive holds); hard links, special files, `.amplefile/`,
-    `.pi/`, and `.work-fold/` entries, and entries that would land outside
-    are left out or refused; and the same 256 MB disk guard applies. A
+    `.pi/`, and `.work-fold/` entries (and any name a Mac volume would take
+    as one of them, such as `.ampleﬁle`), and entries that would land
+    outside are left out or refused; and the same 256 MB disk guard applies. A
     damaged or password-protected archive says so.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it, above the place's top too, where

@@ -28,6 +28,7 @@ import { goToFolder } from "../go-to-folder.js";
 import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
 import { compressInto, copyHoldsAll, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "../file-transfer.js";
 import { assertExtractable, extractClash, stageExtract, type StagedExtract } from "../archive-extract.js";
+import { isMacPackageName } from "../../shared/mac-packages.js";
 import {
   commitUnit,
   findConflicts,
@@ -1092,7 +1093,10 @@ async function compressEntries(body: { place?: unknown; paths?: unknown; operati
  * writes nothing. `conflicts` works as for a transfer, keyed by the name what
  * is made takes, which the check reads from the archive's entries: a skipped
  * Extract writes nothing and reads only enough to know that name, and a
- * replaced or merged one is extracted first and placed last.
+ * replaced or merged one is extracted first and placed last. On a Mac a
+ * package (an app or a document stored as a folder) is one item, so it is
+ * never merged into: Merge is not offered for one, and a Merge chosen anyway
+ * keeps both.
  */
 async function extractEntry(state: LocalApiState, body: { place?: unknown; path?: unknown; operationId?: unknown; conflicts?: unknown }) {
   const operationId = parseFileOperationId(body.operationId);
@@ -1121,7 +1125,7 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
         name: clash.name,
         source: { kind: clash.kind, sizeBytes: null, modifiedAt: archive.mtime.toISOString() },
         existing: await summarize(destination, existing),
-        canMerge: clash.kind === "folder" && existing.isDirectory(),
+        canMerge: clash.kind === "folder" && existing.isDirectory() && !extractsPackage(clash.name),
       }],
     };
   }
@@ -1145,7 +1149,11 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     }
     try {
       const name = staged.name;
-      const plan = await planPlacements([{ source: staged.path, key: name, name }], staged.parent, policy, {
+      const choice = policy ? policy.items?.[name] ?? policy.apply : undefined;
+      const placing = policy && choice === "merge" && staged.kind === "folder" && extractsPackage(name)
+        ? { ...policy, items: { ...policy.items, [name]: "keep-both" as const } }
+        : policy;
+      const plan = await planPlacements([{ source: staged.path, key: name, name }], staged.parent, placing, {
         newItems: true,
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
@@ -1178,6 +1186,11 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
       await staged.discard();
     }
   }, (result) => "cancelled" in result ? "cancelled" : "succeeded");
+}
+
+/** Whether what an Extract makes is a Mac package, which is one item and never merged into. */
+function extractsPackage(name: string): boolean {
+  return process.platform === "darwin" && isMacPackageName(name);
 }
 
 /**

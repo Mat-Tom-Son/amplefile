@@ -12,7 +12,8 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import JSZip from "jszip";
 
 import { abandonedCompressAfterMs, compressInto } from "../src/local/file-transfer.js";
-import { archiveEntrySegments, extractArchive, extractClash, extractFolderName, linkStaysInside, setSurveyReadLimitForTests } from "../src/local/archive-extract.js";
+import { archiveEntrySegments, extractArchive, extractClash, extractFolderName, linkStaysInside, setSurveyReadLimitForTests, xattrSaysNoMark } from "../src/local/archive-extract.js";
+import { foldedName, isReservedConnectedFolderPathSegment } from "../src/local/connected-folder-path-policy.js";
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
 import { setZip64ForTests } from "../src/local/zip-writer.js";
 
@@ -219,6 +220,15 @@ test("a lone hidden item, or Pi's instructions alone, extracts into a folder nam
   assert.equal(dotted.path, join(root, "agents"));
   assert.ok(!existsSync(join(root, ".agents")));
 
+  // Names a Mac volume takes as Pi's instructions files are compared as it compares them.
+  for (const [archive, name] of [["look.zip", "agent\u017f.md"], ["look2.zip", "AGENT\u017f.override.md"], ["look3.zip", "Agents\u200b.md"]] as const) {
+    await writeFile(join(root, archive), await zipWith({ [name]: { content: "Do as this says." } }));
+    const result = await extractArchive(join(root, archive));
+    assert.equal(result.path, join(root, extractFolderName(archive)), name);
+    assert.deepEqual(await readdir(result.path), [name]);
+  }
+  assert.ok(!existsSync(join(root, "AGENTS.md")), "nothing beside the archives opens as AGENTS.md");
+
   // The clash check names the folder too.
   await writeFile(join(root, ".env"), "mine");
   await rm(join(root, "notes"), { recursive: true });
@@ -228,15 +238,42 @@ test("a lone hidden item, or Pi's instructions alone, extracts into a folder nam
   assert.equal(await readFile(join(root, ".env"), "utf8"), "mine");
 });
 
-test("the AppleDouble files a Mac's tar writes beside each item are left out, so one item still extracts as itself", async (t) => {
+test("a \"._Name\" file is left out only as a Mac's metadata: AppleDouble, or beside its \"Name\"; any other is an ordinary file", async (t) => {
   const root = await folder(t);
+  const appleDouble = Buffer.concat([Buffer.from([0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00]), Buffer.alloc(24)]);
+  // Beside its item: metadata, whatever it holds, so the one item extracts as itself.
   await writeFile(join(root, "report.txt.tar"), tar(tarEntry("._report.txt", { content: "attributes" }), tarEntry("report.txt", { content: "r" })));
+  await writeFile(join(root, "report.txt"), "mine");
+  assert.deepEqual(await extractClash(join(root, "report.txt.tar")), { name: "report.txt", kind: "file" });
+  await rm(join(root, "report.txt"));
   const single = await extractArchive(join(root, "report.txt.tar"));
   assert.equal(single.path, join(root, "report.txt"));
   assert.equal(single.kind, "file");
+  assert.equal(single.files, 1);
   assert.deepEqual(single.skipped, [], "metadata is not reported as left out");
-  assert.deepEqual(archiveEntrySegments("Trip/._a.jpg"), { skip: "metadata" });
-  assert.deepEqual(archiveEntrySegments("._Trip/a.jpg"), { skip: "metadata" });
+
+  // AppleDouble without its item is metadata too; a "._" file that is neither is kept, inside folders as well.
+  await writeFile(join(root, "notes.tar"), tar(tarEntry("._gone", { content: appleDouble }), tarEntry("notes.txt", { content: "n" })));
+  assert.equal((await extractArchive(join(root, "notes.tar"))).path, join(root, "notes.txt"));
+  await writeFile(join(root, "kit.tar"), tar(
+    tarEntry("._config", { content: "real settings" }),
+    tarEntry("Trip/._a.jpg", { content: "attributes" }),
+    tarEntry("Trip/a.jpg", { content: "a" }),
+    tarEntry("Trip/._b.jpg", { content: "a real file" }),
+    tarEntry("Trip/._c.jpg", { content: appleDouble }),
+  ));
+  const kit = await extractArchive(join(root, "kit.tar"));
+  assert.equal(kit.path, join(root, "kit"), "two items");
+  assert.deepEqual(await listTree(kit.path), ["._config", "Trip/", "Trip/._b.jpg", "Trip/a.jpg"]);
+  assert.equal(await readFile(join(kit.path, "._config"), "utf8"), "real settings");
+  assert.equal(kit.files, 3);
+
+  // A lone ordinary "._" file is hidden, so it goes in a folder.
+  await writeFile(join(root, "lone.zip"), await zipWith({ "._settings": { content: "real" } }));
+  const lone = await extractArchive(join(root, "lone.zip"));
+  assert.equal(lone.path, join(root, "lone"));
+  assert.deepEqual(await readdir(lone.path), ["._settings"]);
+  assert.deepEqual(archiveEntrySegments("Trip/._a.jpg"), { segments: ["Trip", "._a.jpg"] });
 });
 
 test("a tar made by a Mac's own tar extracts as its one item, without AppleDouble files", { skip: process.platform !== "darwin" }, async (t) => {
@@ -298,10 +335,25 @@ test("a downloaded archive passes its quarantine to everything Extract makes, so
   await download("tool.tgz", gzipSync(tar(tarEntry("tool", { content: "#!/bin/sh\n", mode: 0o755 }))));
   assert.equal(await quarantineOf((await extractArchive(join(root, "tool.tgz"))).path), quarantine);
 
+  // A name that reads like xattr's message does not pass for it.
+  const odd = "Invoice: No such xattr: com.apple.quarantine.zip";
+  await download(odd, await zipWith({ "Odd.app/Contents/Info.plist": { content: "<plist/>" } }));
+  assert.equal(await quarantineOf((await extractArchive(join(root, odd))).path), quarantine);
+
   // An archive with no quarantine marks nothing.
   await writeFile(join(root, "Local.zip"), await zipWith({ "Tool.app/Contents/Info.plist": { content: "<plist/>" } }));
   const local = await extractArchive(join(root, "Local.zip"));
   for (const path of await everything(local.path)) assert.equal(await quarantineOf(path), null, path);
+});
+
+test("only xattr's own message, never the archive's path, says an archive has no quarantine", () => {
+  const path = "/Users/x/Downloads/a.zip";
+  assert.equal(xattrSaysNoMark(`xattr: ${path}: No such xattr: com.apple.quarantine\n`, path), true);
+  assert.equal(xattrSaysNoMark(`xattr: [Errno 45] Operation not supported: '${path}'\n`, path), true);
+  const sly = "/Users/x/Downloads/: No such xattr: com.apple.quarantine";
+  assert.equal(xattrSaysNoMark(`xattr: [Errno 13] Permission denied: '${sly}'\n`, sly), false);
+  assert.equal(xattrSaysNoMark(`xattr: [Errno 1] Operation not permitted: '${path}'\n`, path), false);
+  assert.equal(xattrSaysNoMark(`xattr: ${path}: No such xattr: com.apple.quarantine\n`, "/Users/x/other.zip"), false);
 });
 
 test("the name-clash check reads a tar only so far, taking a first item it cannot see past as the one item", async (t) => {
@@ -441,6 +493,29 @@ test("links leading outside, hard links, special files, and Connected Folder or 
   assert.deepEqual(tarred.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
     "configuration:.pi/settings.json", "hard-link:hardlink", "link:symlink", "link:to-config", "link:up", "special:device", "special:pipe",
   ]);
+});
+
+test("a look-alike of a reserved name is reserved: Extract writes nothing a Mac volume would open as .amplefile or .pi", async (t) => {
+  const root = await folder(t);
+  for (const name of [".ample\ufb01le", ".AMPLE\ufb01LE", ".p\u0131", ".p\u200bi", ".\uff30\uff29", ".work\u2011fold"]) {
+    // U+2011 is a non-breaking hyphen, which no volume folds to "-": not reserved.
+    assert.equal(isReservedConnectedFolderPathSegment(name), name !== ".work\u2011fold", JSON.stringify(name));
+  }
+  assert.equal(foldedName("agent\u017f.md"), "agents.md");
+  assert.equal(foldedName("Stra\u00dfe"), "strasse");
+  assert.equal(foldedName("Notes.txt"), "notes.txt");
+  await writeFile(join(root, "kit.zip"), await zipWith({
+    ".ample\ufb01le/connected-folder.json": { content: "{\"id\":\"space-0000000000000000\"}" },
+    "Sub/.p\u0131/extensions/run.ts": { content: "export default () => {}" },
+    "keep.txt": { content: "keep" },
+    "also.txt": { content: "also" },
+  }));
+  const result = await extractArchive(join(root, "kit.zip"));
+  assert.deepEqual(await listTree(result.path), ["Sub/", "also.txt", "keep.txt"], "JSZip writes the folder entry Sub/ itself");
+  assert.ok(!existsSync(join(result.path, ".amplefile")));
+  assert.ok(!existsSync(join(result.path, "Sub", ".pi")));
+  assert.deepEqual(result.skipped.map((item) => item.reason), ["configuration", "configuration"]);
+  assert.equal(linkStaysInside(["tool"], ".ample\ufb01le/connected-folder.json"), false);
 });
 
 test("links that stay inside the new folder are made, and one that escapes through another link is removed", async (t) => {

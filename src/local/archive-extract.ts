@@ -6,7 +6,7 @@ import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { createGunzip, createInflateRaw, crc32 } from "node:zlib";
 
-import { isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
+import { foldedName, isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
 import {
   claimWorkingPath,
@@ -39,8 +39,11 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
  * - a symbolic link is made only when it points inside what Extract makes,
  *   the one folder when that is all the archive holds (it is checked again
  *   once made); hard links and special files are left out;
- * - nothing is written into `.amplefile/`, `.pi/`, or `.work-fold/`
- *   (src/local/connected-folder-path-policy.ts);
+ * - nothing is written into `.amplefile/`, `.pi/`, or `.work-fold/`, or a
+ *   name a Mac volume takes as one of them (".ampleﬁle";
+ *   src/local/connected-folder-path-policy.ts);
+ * - a "._Name" file is left out only as a Mac's metadata: AppleDouble, or
+ *   beside its "Name";
  * - on a Mac, an archive marked as downloaded (`com.apple.quarantine`) passes
  *   that mark to everything Extract makes before it takes its name, as
  *   Archive Utility does, so Gatekeeper checks an app from it when it first
@@ -117,16 +120,28 @@ export function extractFolderName(name: string): string {
   return folder.replace(/^\.+/, "") || `${name.replace(/^\.+/, "")} folder`;
 }
 
-/** The files Pi reads as a folder's instructions (its resource loader's context files), in any case. */
-const instructionFileNames = new Set(["agents.md", "agents.override.md", "claude.md"]);
+/** The files Pi reads as a folder's instructions: its resource loader's context files, as it names them. */
+const instructionFiles = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+const instructionFileNames = new Set(instructionFiles.map(foldedName));
 
 /**
  * Whether an archive's lone item may land beside it as itself: not when it is
  * hidden (`.env`, `.agents/`), where a person would not see it arrive and Pi
- * may load it, and not when Pi would read it as the folder's instructions.
+ * may load it, and not when Pi would read it as the folder's instructions,
+ * compared as a Mac volume compares names ("agentſ.md" is "AGENTS.md").
  */
 function landsAsItself(name: string): boolean {
-  return !name.startsWith(".") && !instructionFileNames.has(name.toLowerCase());
+  return !name.startsWith(".") && !instructionFileNames.has(foldedName(name));
+}
+
+/**
+ * Whether a folder holds something its volume would open as one of Pi's
+ * instructions files: the volume's own answer, whatever names it folds
+ * together.
+ */
+async function holdsInstructions(folder: string): Promise<boolean> {
+  for (const name of instructionFiles) if (await lstat(join(folder, name)).catch(() => null)) return true;
+  return false;
 }
 
 /** Checks that `archive` is one Extract opens, before anything is written. */
@@ -202,10 +217,14 @@ export async function stageExtract(archive: string, operation: FileOperationCont
       operation.stage("extracting");
       await readTar(archive, format === "tar.gz", writer, operation);
     }
+    await writer.dropMacMetadata();
     await writer.finishLinks();
     let target = writer.top.target(basename(archive));
-    // What the entries said is what was written; should it not be, the items go in a folder as any several do.
-    if (target.single && !await holdsOnly(working.path, target)) target = { name: extractFolderName(basename(archive)), kind: "folder", single: false };
+    // What the entries said is what was written, and the volume opens it by no
+    // name Pi reads; should either fail, the items go in a folder as any several do.
+    if (target.single && (!await holdsOnly(working.path, target) || await holdsInstructions(working.path))) {
+      target = { name: extractFolderName(basename(archive)), kind: "folder", single: false };
+    }
     const path = target.single ? join(working.path, target.name) : working.path;
     if (quarantine) await applyQuarantine(quarantine, path, operation);
     return {
@@ -264,6 +283,18 @@ async function surveyArchive(archive: string, enough: number): Promise<TopLevelI
 
 const quarantineAttribute = "com.apple.quarantine";
 const execFileAsync = promisify(execFile);
+/** How long one `xattr` call may take before the Extract is refused. */
+const xattrTimeoutMs = 30_000;
+
+/**
+ * Whether `xattr`'s complaint about `path` says only that it holds no mark,
+ * or that its volume keeps no extended attributes. The path is taken out
+ * first, so a name cannot pass for the message.
+ */
+export function xattrSaysNoMark(stderr: string, path: string): boolean {
+  const said = stderr.trim().split(path).join("\0");
+  return said === `xattr: \0: No such xattr: ${quarantineAttribute}` || /^xattr: \[Errno (?:45|102)\] Operation not supported: '\0'$/.test(said);
+}
 
 /**
  * The quarantine mark macOS keeps on a downloaded archive, as hex, or null
@@ -273,12 +304,13 @@ const execFileAsync = promisify(execFile);
  */
 async function readQuarantine(archive: string): Promise<string | null> {
   if (process.platform !== "darwin") return null;
+  const path = resolve(archive);
   try {
-    const { stdout } = await execFileAsync("/usr/bin/xattr", ["-p", "-x", quarantineAttribute, resolve(archive)], { encoding: "utf8" });
+    const { stdout } = await execFileAsync("/usr/bin/xattr", ["-p", "-x", quarantineAttribute, path], { encoding: "utf8", timeout: xattrTimeoutMs });
     const hex = stdout.replace(/\s+/g, "");
     if (/^(?:[0-9a-f]{2})+$/i.test(hex)) return hex;
   } catch (error) {
-    if (/no such xattr|not supported/i.test(String((error as { stderr?: unknown }).stderr ?? ""))) return null;
+    if (xattrSaysNoMark(String((error as { stderr?: unknown }).stderr ?? ""), path)) return null;
   }
   throw badRequest("AmpleFile couldn’t read whether this archive was downloaded. Nothing was extracted.");
 }
@@ -297,7 +329,7 @@ async function applyQuarantine(hex: string, top: string, operation: FileOperatio
     if (!batch.length) return;
     await operation.boundary("entry");
     try {
-      await execFileAsync("/usr/bin/xattr", ["-w", "-x", "-s", quarantineAttribute, hex, ...batch]);
+      await execFileAsync("/usr/bin/xattr", ["-w", "-x", "-s", quarantineAttribute, hex, ...batch], { timeout: xattrTimeoutMs });
     } catch {
       throw badRequest("This archive was downloaded, and AmpleFile couldn’t mark what it extracted as downloaded too. Nothing was extracted.");
     }
@@ -315,29 +347,76 @@ async function applyQuarantine(hex: string, top: string, operation: FileOperatio
   await flush();
 }
 
+/** A "._Name": what a Mac writes beside an item for its attributes, when it is not an ordinary file. */
+function isMacMetadataName(name: string): boolean {
+  return name.startsWith("._") && name !== "._." && name !== "._.." && name.length > 2;
+}
+
+function maybeMacMetadata(name: string, kind: TopLevelItem["kind"]): boolean {
+  return kind === "file" && isMacMetadataName(name);
+}
+
+/** The first bytes of an AppleDouble file, the format of a Mac's "._Name" files. */
+const appleDoubleMagic = Buffer.from([0x00, 0x05, 0x16, 0x07]);
+
+async function isAppleDouble(path: string): Promise<boolean> {
+  const handle = await open(path, "r");
+  try {
+    return (await readAt(handle, 0, appleDoubleMagic.length)).equals(appleDoubleMagic);
+  } finally {
+    await handle.close();
+  }
+}
+
+type TopLevelItem = { name: string; kind: "file" | "folder" | "link" };
+
 /**
  * The names an archive's entries put at the top of what is extracted. A file
  * or folder takes a name before a link does: links are made last, so a link
- * at a name already written is a repeat.
+ * at a name already written is a repeat. A "._Name" file beside its "Name"
+ * is a Mac's metadata for it, not an item.
  */
 class TopLevelItems {
-  private readonly items = new Map<string, "file" | "folder" | "link">();
+  private readonly items = new Map<string, TopLevelItem["kind"]>();
+  /** How many items are not "._Name" files, which may yet prove to be metadata. */
+  private certain = 0;
 
-  note(segments: readonly string[], kind: "file" | "folder" | "link"): void {
+  note(segments: readonly string[], kind: TopLevelItem["kind"]): void {
     const name = segments[0]!;
     const here = segments.length > 1 ? "folder" : kind;
     const had = this.items.get(name);
-    if (!had || (had === "link" && here !== "link")) this.items.set(name, here);
+    if (had && !(had === "link" && here !== "link")) return;
+    if (had && !maybeMacMetadata(name, had)) this.certain -= 1;
+    this.items.set(name, here);
+    if (!maybeMacMetadata(name, here)) this.certain += 1;
   }
 
+  /** Forgets a "._Name" file found to be a Mac's metadata. */
+  forget(name: string): void {
+    const had = this.items.get(name);
+    if (!had) return;
+    if (!maybeMacMetadata(name, had)) this.certain -= 1;
+    this.items.delete(name);
+  }
+
+  private counted(): TopLevelItem[] {
+    const found: TopLevelItem[] = [];
+    for (const [name, kind] of this.items) {
+      if (maybeMacMetadata(name, kind) && this.items.has(name.slice(2))) continue;
+      found.push({ name, kind });
+    }
+    return found;
+  }
+
+  /** How many items are certain: a "._Name" file may yet prove to be metadata. */
   get size(): number {
-    return this.items.size;
+    return this.certain;
   }
 
-  /** The first item, or null when there is none yet. */
-  first(): { name: string; kind: "file" | "folder" | "link" } | null {
-    for (const [name, kind] of this.items) return { name, kind };
-    return null;
+  /** The first item, one that is not a "._Name" file when there is one; null when there is none yet. */
+  first(): TopLevelItem | null {
+    const items = this.counted();
+    return items.find((item) => !maybeMacMetadata(item.name, item.kind)) ?? items[0] ?? null;
   }
 
   /**
@@ -345,7 +424,8 @@ class TopLevelItems {
    * link, a hidden item or Pi's instructions alone, or nothing.
    */
   single(): { name: string; kind: "file" | "folder" } | null {
-    const only = this.items.size === 1 ? this.first() : null;
+    const items = this.counted();
+    const only = items.length === 1 ? items[0]! : null;
     return only && only.kind !== "link" && landsAsItself(only.name) ? { name: only.name, kind: only.kind } : null;
   }
 
@@ -371,9 +451,10 @@ export function archiveEntrySegments(raw: string): { segments: string[] } | { sk
   if (segments.some((segment) => segment === "..")) throw refusedEntry(raw);
   // Never into a Connected Folder's identity or Pi's project configuration.
   if (segments.some(isReservedConnectedFolderPathSegment)) return { skip: "configuration" };
-  // The resource forks and extended attributes a Mac stores beside each item:
-  // Archive Utility's `__MACOSX` folder, and the `._Name` files a Mac's tar writes.
-  if (segments[0] === "__MACOSX" || segments.some((segment) => segment.startsWith("._"))) return { skip: "metadata" };
+  // The resource forks and attributes Archive Utility stores beside each item.
+  // (The "._Name" files a Mac's tar writes are written, then removed once
+  // known to be metadata: see ExtractWriter.dropMacMetadata.)
+  if (segments[0] === "__MACOSX") return { skip: "metadata" };
   return { segments };
 }
 
@@ -489,6 +570,7 @@ class ExtractWriter extends EntryRules implements EntrySink {
   readonly settled = false;
   private readonly made = new Set<string>();
   private readonly pendingLinks: Array<{ rawPath: string; segments: string[]; target: string }> = [];
+  private readonly macMetadata: Array<{ segments: string[]; path: string }> = [];
 
   constructor(
     private readonly root: string,
@@ -512,6 +594,7 @@ class ExtractWriter extends EntryRules implements EntrySink {
     try {
       const handle = await open(target, "wx", 0o600);
       this.files += 1;
+      if (isMacMetadataName(segments.at(-1)!)) this.macMetadata.push({ segments, path: target });
       return handle;
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error;
@@ -524,6 +607,26 @@ class ExtractWriter extends EntryRules implements EntrySink {
   async finishFile(handle: FileHandle, archivedMode: number): Promise<void> {
     await handle.chmod(0o644 | (archivedMode & 0o111));
     await handle.close();
+  }
+
+  /**
+   * Removes the "._Name" files a Mac's tar writes beside each item for its
+   * attributes: each that is AppleDouble, or whose "Name" the archive also
+   * holds. Any other "._" file is an ordinary file and stays.
+   */
+  async dropMacMetadata(): Promise<void> {
+    for (const file of this.macMetadata) {
+      const name = file.segments.at(-1)!;
+      const sibling = [...file.segments.slice(0, -1), name.slice(2)];
+      const beside = Boolean(await lstat(join(this.root, ...sibling)).catch(() => null))
+        || this.pendingLinks.some((link) => link.segments.join("/") === sibling.join("/"));
+      if (!beside && !await isAppleDouble(file.path)) continue;
+      const info = await lstat(file.path);
+      await unlink(file.path);
+      this.files -= 1;
+      this.bytes -= info.size;
+      if (file.segments.length === 1) this.top.forget(name);
+    }
   }
 
   /** Notes a symbolic link, made once every file is written so no write ever passes through one. */
