@@ -1,8 +1,9 @@
 /**
  * The built-in browser's desktop host (docs/built-in-browser.md). It owns one
  * Chromium page per browser tab, all sharing one persistent profile, and
- * shows a page over its tab's placeholder in the main window the same way
- * app views are shown. Pages outlive their placeholder: a tab in the
+ * shows a page over its tab's placeholder in a file manager window the same
+ * way app views are shown. Each page belongs to one window, its home
+ * (browser-page-homes.ts). Pages outlive their placeholder: a tab in the
  * background, a window that closes and reopens, and a page only a Worker
  * is using all keep running.
  *
@@ -41,6 +42,7 @@ import {
 } from "electron";
 
 import { BrowserHistoryStore, type BrowserHistoryEntry } from "./browser-history.js";
+import { pageFateOnWindowClose } from "./browser-page-homes.js";
 import { BrowserStatusBubble } from "./browser-status-bubble.js";
 import { macSpellingGuesses } from "./mac-spelling.js";
 import { BrowserSitePermissionStore } from "./browser-site-permissions.js";
@@ -95,10 +97,12 @@ export type BrowserCommand =
   | { type: "forget-permission" | "open-privacy-settings"; kind: BrowserSitePermission };
 
 export interface BuiltInBrowserOptions {
-  /** The window browser tabs show in; null while there is none. */
-  window: () => BrowserWindow | null;
-  /** Delivers an event to the main window's renderer, when there is one. */
-  send: (channel: (typeof browserChannels)[keyof typeof browserChannels], payload: unknown) => void;
+  /** The file manager windows, most recently focused first; each page shows in the one that is its home. */
+  windows: () => BrowserWindow[];
+  /** Where a Worker's page appears: the window showing that Chat's Connected Folder, else the front window. */
+  workerWindow: (owner: string | null) => BrowserWindow | null;
+  /** Delivers an event to one window's renderer. */
+  send: (window: BrowserWindow, channel: (typeof browserChannels)[keyof typeof browserChannels], payload: unknown) => void;
   openExternal: (url: string) => Promise<void>;
   downloadsPath: () => string;
   /** The file that keeps what the person allowed or blocked for each site. */
@@ -107,8 +111,8 @@ export interface BuiltInBrowserOptions {
   historyPath: string;
   /** The app's own product token for the user agent, such as `amplefile/0.13.0`. */
   userAgentProduct: string;
-  /** Runs after a page joins the window, so host overlays stay above it. */
-  onViewAttached?: () => void;
+  /** Runs after a page joins a window, so that window's host overlays stay above it. */
+  onViewAttached?: (window: BrowserWindow) => void;
   /** How long a Worker's script waits on a site's unanswered question before it is told the person has to answer. */
   questionWaitMs?: number;
   /** Whether this build declares to macOS why it uses location; the packaged app does, an unpackaged run does not. */
@@ -129,6 +133,8 @@ interface BrowserPage {
   error: BrowserPageState["error"];
   crashed: boolean;
   layout: { sequence: number; bounds: Rectangle; active: boolean; occluded: boolean } | null;
+  /** The window the page belongs to: its tab is in that window's strip, and only that window shows it or answers its site. Null while no window has it. */
+  home: BrowserWindow | null;
   attachedTo: BrowserWindow | null;
   console: string[];
   debuggerReady: Promise<Debugger> | null;
@@ -202,7 +208,8 @@ export class BuiltInBrowser {
   readonly #bubble = new BrowserStatusBubble();
   #backgroundWindow: BrowserWindow | null = null;
   readonly #backgroundPages = new Set<BrowserPage>();
-  #synced: BrowserTabsSync = { tabs: [], viewingPageId: null };
+  /** Each window's open browser tabs, as its renderer last listed them, by window id. */
+  readonly #synced = new Map<number, { window: BrowserWindow; tabs: BrowserTabsSync }>();
 
   constructor(options: BuiltInBrowserOptions) {
     this.#options = options;
@@ -215,17 +222,21 @@ export class BuiltInBrowser {
 
   // ── Renderer-facing operations ────────────────────────────────────────────
 
-  /** Shows a tab's page over its placeholder, creating it from its address when needed. */
-  mount(request: BrowserViewRequest): BrowserPageState | null {
-    const page = this.#pages.get(request.pageId) ?? (request.url ? this.#createPage(request.pageId, request.url, "person") : null);
+  /** Shows a tab's page over its placeholder in `window`, creating it from its address when needed. The page now belongs to that window. */
+  mount(request: BrowserViewRequest, window: BrowserWindow): BrowserPageState | null {
+    const page = this.#pages.get(request.pageId) ?? (request.url ? this.#createPage(request.pageId, request.url, "person", undefined, null, window) : null);
     if (!page) return null;
+    this.#rehome(page, window);
     this.#applyRequest(page, request);
     return this.#state(page);
   }
 
-  layout(request: BrowserViewRequest): void {
+  /** A placeholder moved or resized in `window`; only the page's own window lays it out. */
+  layout(request: BrowserViewRequest, window: BrowserWindow): void {
     const page = this.#pages.get(request.pageId);
-    if (page) this.#applyRequest(page, request);
+    if (!page) return;
+    if (!this.#home(page)) page.home = window;
+    if (page.home === window) this.#applyRequest(page, request);
   }
 
   /** The placeholder went away (its tab closed or the window reloaded); the page keeps running. */
@@ -236,11 +247,11 @@ export class BuiltInBrowser {
     this.#hide(page);
   }
 
-  navigate(pageId: string, input: string): BrowserPageState {
+  navigate(pageId: string, input: string, window: BrowserWindow): BrowserPageState {
     const url = browserAddressFor(input);
     if (!url) throw new Error("Type an address or something to search for.");
     const existing = this.#pages.get(pageId);
-    if (!existing) return this.#state(this.#createPage(pageId, url, "person"));
+    if (!existing) return this.#state(this.#createPage(pageId, url, "person", undefined, null, window));
     this.#leave(existing, "person", () => { void this.#load(existing, url); });
     return this.#state(existing);
   }
@@ -293,7 +304,7 @@ export class BuiltInBrowser {
         page.blockedPopup = null;
         const origin = blocked?.origin ?? null;
         if (command.type === "allow-popups" && origin) void this.#sitePermissions.set(origin, ["popups"], "allow").then(() => this.#emitSite(origin));
-        if (blocked) this.#openTab(blocked.url, true, page.openedBy, page.owner);
+        if (blocked) this.#openTab(blocked.url, true, page.openedBy, page.owner, this.#home(page));
         this.#emit(page);
         break;
       }
@@ -318,9 +329,8 @@ export class BuiltInBrowser {
    * A browser tab's right-click menu. The page's own actions run here; the
    * tab strip's (duplicate, close, reopen) are handed back to the renderer.
    */
-  popupTabMenu(pageId: string, url: string, point: { x: number; y: number }, options: { canReopen: boolean; hasOthers: boolean }): Promise<BrowserTabMenuCommand | null> {
-    const window = this.#options.window();
-    if (!window) return Promise.resolve(null);
+  popupTabMenu(pageId: string, url: string, point: { x: number; y: number }, options: { canReopen: boolean; hasOthers: boolean }, window: BrowserWindow): Promise<BrowserTabMenuCommand | null> {
+    if (window.isDestroyed()) return Promise.resolve(null);
     const page = this.#pages.get(pageId);
     const contents = page && !page.view.webContents.isDestroyed() ? page.view.webContents : null;
     const address = contents?.getURL() || url;
@@ -355,11 +365,12 @@ export class BuiltInBrowser {
     });
   }
 
-  /** The person answered a site's question in the tab. */
-  respondPermission(pageId: string, requestId: string, decision: BrowserSiteDecision): void {
+  /** The person answered a site's question in the tab, in the window holding the page; no other window can answer it. */
+  respondPermission(pageId: string, requestId: string, decision: BrowserSiteDecision, window: BrowserWindow): void {
     const page = this.#pages.get(pageId);
-    const index = page?.permissions.findIndex((entry) => entry.request.requestId === requestId) ?? -1;
-    if (!page || index < 0) return;
+    if (!page || this.#home(page) !== window) return;
+    const index = page.permissions.findIndex((entry) => entry.request.requestId === requestId);
+    if (index < 0) return;
     const [entry] = page.permissions.splice(index, 1);
     entry!.resolve(decision);
     this.#emit(page);
@@ -368,7 +379,7 @@ export class BuiltInBrowser {
   /** The person closed the tab. A page that asks to be confirmed first gets to ask; any other closes at once. */
   close(pageId: string): void {
     const page = this.#pages.get(pageId);
-    this.#synced = { ...this.#synced, tabs: this.#synced.tabs.filter((tab) => tab.pageId !== pageId) };
+    this.#forgetListedTab(pageId);
     if (!page || page.closed) return;
     const contents = page.view.webContents;
     if (contents.isDestroyed() || page.crashed) { this.#destroy(page); return; }
@@ -402,7 +413,7 @@ export class BuiltInBrowser {
     page.leaving = null;
     if (leaving?.by === "person" && now >= page.leaveAllowedUntil) {
       // A tab the person closed has left the window's strip; it comes back with the question.
-      if (!this.#synced.tabs.some((tab) => tab.pageId === page.pageId)) this.#announce(page, true);
+      if (!this.#listedIn(this.#home(page), page.pageId)) this.#announce(page, true);
       page.leaveQuestion = { requestId: randomBytes(8).toString("hex"), redo: leaving.redo };
       this.#emit(page);
       return;
@@ -412,13 +423,19 @@ export class BuiltInBrowser {
     event.preventDefault();
   }
 
-  /** The renderer's open browser tabs. Pages a Worker opened that it has not shown are offered again. */
-  sync(value: BrowserTabsSync): void {
-    this.#synced = value;
+  /**
+   * A window's open browser tabs. Pages that belong to it and are missing from
+   * its strip are offered again, and pages no window has (the last window
+   * closed, or none was open when a Worker opened them) join a window now.
+   */
+  sync(value: BrowserTabsSync, window: BrowserWindow): void {
+    this.#synced.set(window.id, { window, tabs: value });
     const known = new Set(value.tabs.map((tab) => tab.pageId));
     const now = Date.now();
     for (const page of this.#pages.values()) {
-      if (known.has(page.pageId) || page.closed || now - page.announcedAt < 3_000) continue;
+      if (page.closed || now - page.announcedAt < 3_000) continue;
+      const home = this.#adopt(page, window);
+      if (home === window ? known.has(page.pageId) : this.#listedIn(home, page.pageId)) continue;
       this.#announce(page, false);
     }
   }
@@ -443,17 +460,46 @@ export class BuiltInBrowser {
     return this.#history.clear();
   }
 
-  states(): BrowserPageState[] {
-    return [...this.#pages.values()].filter((page) => !page.closed).map((page) => this.#state(page));
+  /** The pages that belong to `window`, for its renderer as it starts (a page no window has joins it). */
+  states(window: BrowserWindow): BrowserPageState[] {
+    return [...this.#pages.values()].filter((page) => !page.closed && this.#adopt(page, window) === window).map((page) => this.#state(page));
   }
 
-  /** Takes every page off a window that is closing; they come back when a window shows them again. */
+  /** Takes every page off a window that is closing or reloading; they keep running and show again when laid out. */
   detachWindow(window: BrowserWindow): void {
     for (const page of this.#pages.values()) {
       if (page.attachedTo !== window) continue;
       if (!window.isDestroyed()) window.contentView.removeChildView(page.view);
       page.attachedTo = null;
       page.layout = null;
+    }
+  }
+
+  /**
+   * A window closed (not at Quit). Its pages go where browser-page-homes.ts
+   * says: with other windows open, a page a Worker opened or is using moves to
+   * another window as a background tab and the person's own pages close with
+   * the window; with none open, every page keeps running unseen and joins the
+   * next window.
+   */
+  windowClosed(window: BrowserWindow): void {
+    this.#synced.delete(window.id);
+    const others = this.#options.windows().filter((other) => other !== window && !other.isDestroyed());
+    for (const page of [...this.#pages.values()]) {
+      if (page.closed || page.home !== window) continue;
+      if (page.attachedTo === window) page.attachedTo = null;
+      page.layout = null;
+      const fate = pageFateOnWindowClose({ openedBy: page.openedBy, workerUsing: page.worker !== null || page.agentActs > 0 }, others.length);
+      if (fate === "close") {
+        this.#destroy(page, { announce: false });
+        continue;
+      }
+      page.home = null;
+      if (fate === "move") {
+        const next = this.#options.workerWindow(page.worker?.owner ?? page.owner);
+        page.home = next && next !== window && !next.isDestroyed() ? next : others[0] ?? null;
+        this.#announce(page, false);
+      }
     }
   }
 
@@ -467,7 +513,7 @@ export class BuiltInBrowser {
 
   // ── Pages ─────────────────────────────────────────────────────────────────
 
-  #createPage(pageId: string, url: string, openedBy: BrowserPage["openedBy"], adopt?: WebContentsViewConstructorOptions, owner: string | null = null): BrowserPage {
+  #createPage(pageId: string, url: string, openedBy: BrowserPage["openedBy"], adopt?: WebContentsViewConstructorOptions, owner: string | null = null, home: BrowserWindow | null = null): BrowserPage {
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     if (this.#pages.has(pageId)) throw new Error("That browser tab already exists.");
     const view = new WebContentsView(adopt ?? { webPreferences: this.#webPreferences() });
@@ -484,6 +530,7 @@ export class BuiltInBrowser {
       error: null,
       crashed: false,
       layout: null,
+      home: home && !home.isDestroyed() ? home : null,
       attachedTo: null,
       console: [],
       debuggerReady: null,
@@ -601,7 +648,7 @@ export class BuiltInBrowser {
     });
     contents.on("found-in-page", (_event, result) => {
       const found: BrowserFindResult = { pageId: page.pageId, matches: result.matches, activeMatch: result.activeMatchOrdinal, final: result.finalUpdate };
-      this.#options.send(browserChannels.findResult, found);
+      this.#send(page, browserChannels.findResult, found);
     });
     contents.on("enter-html-full-screen", () => this.#enterFullScreen(page));
     contents.on("leave-html-full-screen", () => this.#leaveFullScreen(page));
@@ -623,11 +670,11 @@ export class BuiltInBrowser {
         // The page closed on its own or was let go by the person's Close Tab: what #destroy tidies is tidied here.
         if (page.debuggerIdle) clearTimeout(page.debuggerIdle);
         if (page.workerLinger) clearTimeout(page.workerLinger);
-        const window = this.#options.window();
-        if (page.fullscreen?.restoreWindowFullScreen && window && !window.isDestroyed() && window.isFullScreen()) window.setFullScreen(false);
+        const window = this.#home(page);
+        if (page.fullscreen?.restoreWindowFullScreen && window && window.isFullScreen()) window.setFullScreen(false);
         page.fullscreen = null;
         page.closed = true;
-        this.#options.send(browserChannels.closeTab, { pageId: page.pageId });
+        this.#send(page, browserChannels.closeTab, { pageId: page.pageId });
       }
     });
   }
@@ -662,7 +709,7 @@ export class BuiltInBrowser {
     // A sized pop-up, such as "Sign in with…", keeps its own small window and
     // its link back to the page that opened it, which sign-in flows rely on.
     if (details.disposition === "new-window") {
-      const parent = this.#options.window();
+      const parent = this.#home(opener) ?? this.#front();
       const overrideBrowserWindowOptions: BrowserWindowConstructorOptions = {
         ...(parent && !parent.isDestroyed() ? { parent } : {}),
         autoHideMenuBar: true,
@@ -674,7 +721,7 @@ export class BuiltInBrowser {
     return {
       action: "allow",
       createWindow: (options) => {
-        const page = this.#createPage(newPageId(this.#pages), details.url, opener.openedBy, options as WebContentsViewConstructorOptions, opener.owner);
+        const page = this.#createPage(newPageId(this.#pages), details.url, opener.openedBy, options as WebContentsViewConstructorOptions, opener.owner, this.#home(opener));
         this.#announce(page, show, details.url);
         return page.view.webContents;
       },
@@ -723,7 +770,7 @@ export class BuiltInBrowser {
       if (!isPageReachableUrl(openerAddress(contents), details.url)) {
         void this.#openOutside(details.url);
       } else if (this.#canOpenPopup(contents, input)) {
-        this.#openTab(details.url, true, "person");
+        this.#openTab(details.url, true, "person", null, this.#home(opener));
       } else {
         this.#blockPopup(opener, contents, details.url);
       }
@@ -737,21 +784,24 @@ export class BuiltInBrowser {
     contents.on("will-prevent-unload", (event) => event.preventDefault());
   }
 
-  #openTab(url: string, show: boolean, openedBy: BrowserPage["openedBy"], owner: string | null = null): BrowserPage {
-    const page = this.#createPage(newPageId(this.#pages), url, openedBy, undefined, owner);
+  /** A new tab: in `home` when given (the window of the page that opened it), else where browser-page-homes.ts puts it. */
+  #openTab(url: string, show: boolean, openedBy: BrowserPage["openedBy"], owner: string | null = null, home?: BrowserWindow | null): BrowserPage {
+    const page = this.#createPage(newPageId(this.#pages), url, openedBy, undefined, owner, home ?? (openedBy === "agent" ? this.#options.workerWindow(owner) : this.#front()));
     this.#announce(page, show, url);
     return page;
   }
 
   #announce(page: BrowserPage, show: boolean, url = page.view.webContents.getURL()): void {
     page.announcedAt = Date.now();
+    // A page with no window joins one now; with no window open it waits, and the next window to list its tabs gets it.
+    if (!this.#home(page)) page.home = page.openedBy === "agent" || page.worker ? this.#options.workerWindow(page.worker?.owner ?? page.owner) : this.#front();
     const command: BrowserOpenTabCommand = {
       pageId: page.pageId,
       url: url || page.view.webContents.getURL(),
       title: page.view.webContents.getTitle() || displayHost(url) || "New Tab",
       show,
     };
-    this.#options.send(browserChannels.openTab, command);
+    this.#send(page, browserChannels.openTab, command);
   }
 
   #destroy(page: BrowserPage, options: { announce?: boolean } = {}): void {
@@ -768,7 +818,7 @@ export class BuiltInBrowser {
       this.#hide(page);
       contents.close({ waitForBeforeUnload: false });
     }
-    if (options.announce !== false) this.#options.send(browserChannels.closeTab, { pageId: page.pageId });
+    if (options.announce !== false) this.#send(page, browserChannels.closeTab, { pageId: page.pageId });
   }
 
   // ── Layout ────────────────────────────────────────────────────────────────
@@ -780,7 +830,7 @@ export class BuiltInBrowser {
   }
 
   #applyLayout(page: BrowserPage): void {
-    const window = this.#options.window();
+    const window = this.#home(page);
     if (page.attachedTo && page.attachedTo !== window) {
       if (!page.attachedTo.isDestroyed()) page.attachedTo.contentView.removeChildView(page.view);
       page.attachedTo = null;
@@ -806,7 +856,7 @@ export class BuiltInBrowser {
     page.attachedTo = window;
     page.view.setBounds(bounds);
     page.view.setVisible(true);
-    this.#options.onViewAttached?.();
+    this.#options.onViewAttached?.(window);
   }
 
   #hide(page: BrowserPage): void {
@@ -816,7 +866,7 @@ export class BuiltInBrowser {
     // so it puts the keyboard on the tab in front and never in a field the person was typing in before.
     if (page.attachedTo && !page.view.webContents.isDestroyed() && page.view.webContents.isFocused()) {
       const returned: BrowserShortcut = { pageId: page.pageId, key: "KeyboardReturned", code: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };
-      this.#options.send(browserChannels.shortcut, returned);
+      this.#send(page, browserChannels.shortcut, returned);
       this.#focusWindow(page);
     }
     page.view.setVisible(false);
@@ -849,8 +899,8 @@ export class BuiltInBrowser {
   }
 
   #enterFullScreen(page: BrowserPage): void {
-    const window = this.#options.window();
-    if (!window || window.isDestroyed()) return;
+    const window = this.#home(page);
+    if (!window) return;
     page.fullscreen = { restoreWindowFullScreen: !window.isFullScreen() };
     if (!window.isFullScreen()) window.setFullScreen(true);
     this.#applyLayout(page);
@@ -860,8 +910,8 @@ export class BuiltInBrowser {
   #leaveFullScreen(page: BrowserPage): void {
     const restore = page.fullscreen?.restoreWindowFullScreen;
     page.fullscreen = null;
-    const window = this.#options.window();
-    if (restore && window && !window.isDestroyed() && window.isFullScreen()) {
+    const window = this.#home(page);
+    if (restore && window && window.isFullScreen()) {
       // While the window is still on its way out of full screen the page is told it has full screen yet, and it is
       // told nothing more once the window arrives. One more size change then lets the page hear that it left.
       window.once("leave-full-screen", () => this.#afterFullScreen(page));
@@ -920,7 +970,76 @@ export class BuiltInBrowser {
 
   #emit(page: BrowserPage): void {
     if (page.closed) return;
-    this.#options.send(browserChannels.state, this.#state(page));
+    this.#send(page, browserChannels.state, this.#state(page));
+  }
+
+  // ── Windows ───────────────────────────────────────────────────────────────
+
+  #live(window: BrowserWindow | null | undefined): BrowserWindow | null {
+    return window && !window.isDestroyed() ? window : null;
+  }
+
+  /** The page's window, while it is open. */
+  #home(page: BrowserPage): BrowserWindow | null {
+    return this.#live(page.home);
+  }
+
+  /** The front file manager window, or null when none is open. */
+  #front(): BrowserWindow | null {
+    return this.#live(this.#options.windows()[0]);
+  }
+
+  /** A page's event goes to its own window only; an event with no page (a download it no longer has) to the front window. */
+  #send(page: BrowserPage | null, channel: (typeof browserChannels)[keyof typeof browserChannels], payload: unknown): void {
+    const window = page ? this.#home(page) : this.#front();
+    if (window) this.#options.send(window, channel, payload);
+  }
+
+  /** The page's window, giving a page no window has to `window` (a Worker's page to the window showing its Connected Folder). */
+  #adopt(page: BrowserPage, window: BrowserWindow): BrowserWindow {
+    const home = this.#home(page);
+    if (home) return home;
+    const worker = page.openedBy === "agent" || page.worker ? this.#live(this.#options.workerWindow(page.worker?.owner ?? page.owner)) : null;
+    page.home = worker ?? window;
+    return page.home;
+  }
+
+  /** A window shows the page now; the window that had it drops its tab. */
+  #rehome(page: BrowserPage, window: BrowserWindow): void {
+    const previous = this.#home(page);
+    page.home = window;
+    if (!previous || previous === window) return;
+    if (page.attachedTo === previous) this.#hide(page);
+    this.#options.send(previous, browserChannels.closeTab, { pageId: page.pageId });
+  }
+
+  #listedIn(window: BrowserWindow | null, pageId: string): boolean {
+    return Boolean(window && this.#synced.get(window.id)?.tabs.tabs.some((tab) => tab.pageId === pageId));
+  }
+
+  #forgetListedTab(pageId: string): void {
+    for (const entry of this.#synced.values()) {
+      entry.tabs = { ...entry.tabs, tabs: entry.tabs.tabs.filter((tab) => tab.pageId !== pageId) };
+    }
+  }
+
+  /** Every window's listed tabs, front window first, each with the window that lists it. */
+  #listedTabs(): Array<{ window: BrowserWindow; tab: BrowserTabsSync["tabs"][number] }> {
+    const result: Array<{ window: BrowserWindow; tab: BrowserTabsSync["tabs"][number] }> = [];
+    for (const window of this.#options.windows()) {
+      const entry = this.#synced.get(window.id);
+      if (!entry || window.isDestroyed()) continue;
+      for (const tab of entry.tabs.tabs) result.push({ window, tab });
+    }
+    return result;
+  }
+
+  /** Whether the person can see the page right now, in any window. */
+  #viewing(pageId: string): boolean {
+    for (const window of this.#options.windows()) {
+      if (!window.isDestroyed() && this.#synced.get(window.id)?.tabs.viewingPageId === pageId) return true;
+    }
+    return false;
   }
 
   async #updateFavicon(page: BrowserPage, url: string | null): Promise<void> {
@@ -998,7 +1117,7 @@ export class BuiltInBrowser {
           record.path = state === "completed" ? path : null;
         }
         const download: BrowserDownload = { filename: item.getFilename(), path, state };
-        this.#options.send(browserChannels.download, download);
+        this.#send(page ?? null, browserChannels.download, download);
       });
     });
     session.webRequest.onCompleted((details) => {
@@ -1131,7 +1250,7 @@ export class BuiltInBrowser {
   async #savePdf(page: BrowserPage): Promise<void> {
     const contents = page.view.webContents;
     if (contents.isDestroyed()) return;
-    const window = page.attachedTo ?? this.#options.window();
+    const window = page.attachedTo ?? this.#home(page) ?? this.#front();
     const name = `${safeFileName(contents.getTitle() || displayHost(contents.getURL()) || "page")}.pdf`;
     const options = { defaultPath: uniquePath(this.#options.downloadsPath(), name, this.#pendingDownloads), filters: [{ name: "PDF", extensions: ["pdf"] }] };
     const choice = window && !window.isDestroyed() ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
@@ -1139,9 +1258,9 @@ export class BuiltInBrowser {
     try {
       await writeFile(choice.filePath, await contents.printToPDF({ printBackground: true }));
       this.#downloads.add(choice.filePath);
-      this.#options.send(browserChannels.download, { filename: choice.filePath.split(/[\\/]/).pop() ?? name, path: choice.filePath, state: "completed" } satisfies BrowserDownload);
+      this.#send(page, browserChannels.download, { filename: choice.filePath.split(/[\\/]/).pop() ?? name, path: choice.filePath, state: "completed" } satisfies BrowserDownload);
     } catch {
-      this.#options.send(browserChannels.download, { filename: name, path: choice.filePath, state: "interrupted" } satisfies BrowserDownload);
+      this.#send(page, browserChannels.download, { filename: name, path: choice.filePath, state: "interrupted" } satisfies BrowserDownload);
     }
   }
 
@@ -1214,7 +1333,7 @@ export class BuiltInBrowser {
     const menuFrameAddress = params.frameURL || contents.getURL();
     if (params.linkURL && isPageReachableUrl(menuFrameAddress, params.linkURL)) {
       template.push(
-        { label: "Open Link in New Tab", click: () => { this.#openTab(params.linkURL, false, "person"); } },
+        { label: "Open Link in New Tab", click: () => { this.#openTab(params.linkURL, false, "person", null, this.#home(page)); } },
         { label: "Open Link in Your Web Browser", click: () => { void this.#options.openExternal(params.linkURL).catch(() => undefined); } },
         { label: "Copy Link Address", click: () => clipboard.writeText(params.linkURL) },
         { type: "separator" },
@@ -1222,7 +1341,7 @@ export class BuiltInBrowser {
     }
     if (params.mediaType === "image" && params.srcURL) {
       template.push(
-        ...(isPageReachableUrl(menuFrameAddress, params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person"); } }] : []),
+        ...(isPageReachableUrl(menuFrameAddress, params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person", null, this.#home(page)); } }] : []),
         { label: "Copy Image", click: () => contents.copyImageAt(params.x, params.y) },
         { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
         { type: "separator" },
@@ -1253,7 +1372,7 @@ export class BuiltInBrowser {
       const shown = selection.length > 30 ? `${selection.slice(0, 29)}…` : selection;
       template.push(
         { label: "Copy", click: () => contents.copy() },
-        { label: `Search Google for “${shown}”`, click: () => { this.#openTab(`${browserSearchUrl}${encodeURIComponent(selection)}`, true, "person"); } },
+        { label: `Search Google for “${shown}”`, click: () => { this.#openTab(`${browserSearchUrl}${encodeURIComponent(selection)}`, true, "person", null, this.#home(page)); } },
         { type: "separator" },
       );
     }
@@ -1269,7 +1388,7 @@ export class BuiltInBrowser {
       );
     }
     template.push({ label: "Inspect", click: () => contents.inspectElement(params.x, params.y) });
-    const window = page.attachedTo ?? this.#options.window();
+    const window = page.attachedTo ?? this.#home(page);
     Menu.buildFromTemplate(template).popup(window && !window.isDestroyed() ? { window } : {});
   }
 
@@ -1309,7 +1428,7 @@ export class BuiltInBrowser {
       shiftKey: input.shift,
       altKey: input.alt,
     };
-    this.#options.send(browserChannels.shortcut, shortcut);
+    this.#send(page, browserChannels.shortcut, shortcut);
     // The key is the window's to act on (its address field, its find field, its
     // tabs), so the keyboard goes back to the window; left in the page, what the
     // person types next would land in the page's own fields.
@@ -1326,7 +1445,7 @@ export class BuiltInBrowser {
    * to whatever field last had it, which can be a Chat's message box.
    */
   #focusWindow(page: BrowserPage): void {
-    const window = page.attachedTo ?? this.#options.window();
+    const window = page.attachedTo ?? this.#home(page);
     if (!window || window.isDestroyed() || BrowserWindow.getFocusedWindow() !== window) return;
     setTimeout(() => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed() && BrowserWindow.getFocusedWindow() === window) window.webContents.focus();
@@ -1663,7 +1782,7 @@ export class BuiltInBrowser {
         const page = await this.#agentPage(tab);
         if (page.openedBy !== "agent") throw new Error("That tab is the person's. Close only tabs you opened.");
         if (!owner || page.owner !== owner) throw new Error("Another Chat opened that tab. Close only tabs this Chat opened.");
-        this.#synced = { ...this.#synced, tabs: this.#synced.tabs.filter((item) => item.pageId !== page.pageId) };
+        this.#forgetListedTab(page.pageId);
         // The action runs as called. The page is given the chance to say it wanted confirming first, so the result can say so.
         const contents = page.view.webContents;
         if (!contents.isDestroyed() && !page.crashed) {
@@ -1705,10 +1824,11 @@ export class BuiltInBrowser {
   #tabSummaries(): BrowserTabSummary[] {
     const result: BrowserTabSummary[] = [];
     const seen = new Set<string>();
-    for (const tab of this.#synced.tabs) {
+    for (const { tab } of this.#listedTabs()) {
+      if (seen.has(tab.pageId)) continue;
       seen.add(tab.pageId);
       const page = this.#pages.get(tab.pageId);
-      result.push(page ? this.#summary(page) : { tab: tab.pageId, url: tab.url, title: tab.title, loading: false, viewing: tab.pageId === this.#synced.viewingPageId });
+      result.push(page ? this.#summary(page) : { tab: tab.pageId, url: tab.url, title: tab.title, loading: false, viewing: this.#viewing(tab.pageId) });
     }
     for (const page of this.#pages.values()) if (!seen.has(page.pageId) && !page.closed) result.push(this.#summary(page));
     return result;
@@ -1725,7 +1845,7 @@ export class BuiltInBrowser {
       url: destroyed ? "" : contents.getURL(),
       title: destroyed ? "" : contents.getTitle(),
       loading: destroyed ? false : contents.isLoading(),
-      viewing: page.pageId === this.#synced.viewingPageId,
+      viewing: this.#viewing(page.pageId),
       ...(page.error ? { error: `${page.error.description || "The page did not load"} (${page.error.url})` } : {}),
       ...(page.crashed ? { error: "The page stopped unexpectedly. Reload it to try again." } : {}),
       ...(page.permissions[0] ? { asking: `The page is waiting for the person to let it ${browserPermissionPhrase(page.permissions[0].request.kinds)}.` } : {}),
@@ -1738,9 +1858,10 @@ export class BuiltInBrowser {
     const pageId = tab.trim();
     const live = this.#pages.get(pageId);
     if (live && !live.closed && !live.view.webContents.isDestroyed()) return live;
-    const restored = this.#synced.tabs.find((item) => item.pageId === pageId);
+    const listed = this.#listedTabs().find((item) => item.tab.pageId === pageId);
+    const restored = listed?.tab;
     if (restored && restored.url && isBrowserAddress(restored.url)) {
-      const page = this.#createPage(pageId, restored.url, "person");
+      const page = this.#createPage(pageId, restored.url, "person", undefined, null, listed.window);
       await delay(50);
       await this.#waitForLoad(page, signal);
       return page;

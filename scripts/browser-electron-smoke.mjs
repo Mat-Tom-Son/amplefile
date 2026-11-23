@@ -107,9 +107,14 @@ async function run() {
   const downloads = await mkdtemp(join(tmpdir(), "amplefile-browser-smoke-"));
   const events = [];
   let window = null;
+  // The file manager windows, front first; a test of several windows sets its own list.
+  let windowList = null;
+  const windows = () => windowList ?? (window ? [window] : []);
+  let workerWindow = () => windows()[0] ?? null;
   const browser = new BuiltInBrowser({
-    window: () => window,
-    send: (channel, payload) => events.push({ channel, payload }),
+    windows,
+    workerWindow: (owner) => workerWindow(owner),
+    send: (target, channel, payload) => events.push({ window: target, channel, payload }),
     openExternal: async () => undefined,
     downloadsPath: () => downloads,
     sitePermissionsPath: join(downloads, "site-permissions.json"),
@@ -125,13 +130,20 @@ async function run() {
     assert.doesNotMatch(browser.session.getUserAgent(), /Electron/);
     assert.match(browser.session.getUserAgent(), /\(KHTML, like Gecko\) AmpleFile\/9\.9\.9 Chrome\/\d+\.\d+\.\d+\.\d+ Safari\/537\.36$/);
 
-    // A Worker opens a page with no window at all: it loads, reads, and takes input.
+    // A Worker opens a page with no window at all: it loads, reads, and takes input. With no window to show its
+    // tab in, nobody is told yet; the first window to start takes it.
     const tab = await host.open({ url: `${base}/`, owner: "chat-a" });
     assert.equal(tab.title, "Smoke");
     assert.equal(tab.viewing, false);
-    const announced = events.find((event) => event.channel === "amplefile:browser:open-tab");
-    assert.equal(announced?.payload.pageId, tab.tab);
+    assert.equal(events.filter((event) => event.channel === "amplefile:browser:open-tab").length, 0, "no window, no tab yet");
+    window = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1200, height: 800, focusable: false, skipTaskbar: true });
+    assert.ok(browser.states(window).some((state) => state.pageId === tab.tab), "the first window to start takes the page no window had");
+    // With a window open, a Worker's tab is announced to it, behind the person's work.
+    const behind = await host.open({ url: `${base}/two`, owner: "chat-a" });
+    const announced = events.find((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === behind.tab);
+    assert.equal(announced?.window, window);
     assert.equal(announced?.payload.show, false, "a Worker's tab opens behind the person's work");
+    await host.close({ tab: behind.tab, owner: "chat-a" });
 
     const structure = await host.read({ tab: tab.tab, mode: "structure" });
     assert.match(structure.text, /- heading "Hello smoke" \[level=1\]/);
@@ -344,7 +356,7 @@ async function run() {
 
     // The person's tabs: a restored tab loads when a Worker first uses it, and only a Worker's own tabs close.
     const restoredId = "restored1";
-    browser.sync({ tabs: [{ pageId: restoredId, url: `${base}/two`, title: "Two" }, { pageId: tab.tab, url: `${base}/two`, title: "Two" }], viewingPageId: restoredId });
+    browser.sync({ tabs: [{ pageId: restoredId, url: `${base}/two`, title: "Two" }, { pageId: tab.tab, url: `${base}/two`, title: "Two" }], viewingPageId: restoredId }, window);
     const withRestored = await host.tabs();
     assert.equal(withRestored[0].tab, restoredId);
     assert.equal(withRestored[0].viewing, true);
@@ -354,16 +366,15 @@ async function run() {
     await assert.rejects(host.read({ tab: "missing1", mode: "text" }), /There is no browser tab "missing1"/);
 
     // In a window: a page shows over its placeholder only while its tab is in front.
-    window = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1200, height: 800, focusable: false, skipTaskbar: true });
     const placement = { pageId: restoredId, url: `${base}/two`, sequence: 1, bounds: { x: 100, y: 80, width: 700, height: 500 }, active: true, occluded: false };
-    const mounted = browser.mount(placement);
+    const mounted = browser.mount(placement, window);
     assert.equal(mounted?.title, "Two");
     assert.equal(window.contentView.children.length, 1, "the page joins the window");
-    browser.layout({ ...placement, sequence: 2, occluded: true });
+    browser.layout({ ...placement, sequence: 2, occluded: true }, window);
     assert.equal(window.contentView.children.length, 0, "an overlay hides the page");
-    browser.layout({ ...placement, sequence: 1, occluded: false });
+    browser.layout({ ...placement, sequence: 1, occluded: false }, window);
     assert.equal(window.contentView.children.length, 0, "an older layout never wins");
-    browser.layout({ ...placement, sequence: 3, active: true });
+    browser.layout({ ...placement, sequence: 3, active: true }, window);
     assert.equal(window.contentView.children.length, 1);
     // The address of a hovered link shows at the page's bottom-left, above the page.
     const bubble = new BrowserStatusBubble();
@@ -421,9 +432,47 @@ async function run() {
     assert.equal(window.contentView.children.length, 0, "a closing window gives its pages back");
     assert.equal((await host.read({ tab: restoredId, mode: "text" })).text.includes("Second page"), true, "the page outlives its window");
 
+    // Several windows (docs/built-in-browser.md, "Pages and windows"): each page belongs to one window, and only that
+    // window lists it, hears about it, and lays it out.
+    const second = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1000, height: 700, focusable: false, skipTaskbar: true });
+    windowList = [second, window];
+    browser.navigate("persons1", `${base}/two`, second);
+    assert.ok(browser.states(second).some((state) => state.pageId === "persons1"), "a tab belongs to the window it was opened in");
+    assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "another window does not list it");
+    browser.layout({ pageId: "persons1", url: `${base}/two`, sequence: 1, bounds: { x: 10, y: 10, width: 400, height: 300 }, active: true, occluded: false }, window);
+    assert.equal(window.contentView.children.length, 0, "another window cannot lay it out");
+    // A Worker's page appears in the window showing that Worker's Connected Folder.
+    workerWindow = (owner) => owner?.startsWith("folder-b/") ? second : windows()[0] ?? null;
+    const folderTab = await host.open({ url: `${base}/`, owner: "folder-b/chat-1" });
+    assert.equal(events.find((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab)?.window, second);
+    // One of several windows closes: the Worker's page moves to another window as a background tab and keeps
+    // working; the person's own tab closes with its window.
+    windowList = [window];
+    browser.windowClosed(second);
+    second.destroy();
+    const moved = events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab).at(-1);
+    assert.equal(moved?.window, window, "the Worker's page moves to the window still open");
+    assert.equal(moved?.payload.show, false);
+    assert.ok(browser.states(window).some((state) => state.pageId === folderTab.tab));
+    assert.equal((await host.read({ tab: folderTab.tab, mode: "text" })).tab.title, "Smoke", "the Worker's page still works");
+    assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "the person's tab closed with its window");
+    // The last window closes: every page keeps running unseen, and the next window to start takes it.
+    const third = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1000, height: 700, focusable: false, skipTaskbar: true });
+    windowList = [third];
+    browser.navigate("lastwin1", `${base}/two`, third);
+    windowList = [];
+    browser.windowClosed(third);
+    third.destroy();
+    windowList = [window];
+    assert.ok(browser.states(window).some((state) => state.pageId === "lastwin1"), "a page outlives the last window and joins the next one");
+    browser.close("lastwin1");
+    windowList = null;
+    workerWindow = () => windows()[0] ?? null;
+    await host.close({ tab: folderTab.tab, owner: "folder-b/chat-1" });
+
     // A page that asks to be confirmed before it is left (a form half filled in). The person is asked in the window
     // and nothing leaves until they say; a Worker's action runs when called and its result says the page had asked.
-    const pageState = (pageId) => browser.states().find((state) => state.pageId === pageId);
+    const pageState = (pageId) => browser.states(window).find((state) => state.pageId === pageId);
     const asksToStay = await host.open({ url: `${base}/leave` });
     const leaveId = asksToStay.tab;
     // Chromium lets a page ask only once it has been pressed in; a Worker's script counts as a press.
@@ -434,7 +483,7 @@ async function run() {
     await pressIn(leaveId);
     const title = async () => (await host.evaluate({ tab: leaveId, script: "document.title" })).result;
     // The person types another address.
-    browser.navigate(leaveId, `${base}/two`);
+    browser.navigate(leaveId, `${base}/two`, window);
     await until(() => pageState(leaveId)?.leaveQuestion, "the window is to ask before the page is left");
     assert.equal(await title(), "Leave", "nothing leaves until the person says");
     browser.command(leaveId, { type: "stay-on-page" });
@@ -496,44 +545,44 @@ async function run() {
 
 
     // A load the person stops leaves the tab as it was: after a page that did not load, its message, not a blank page.
-    const failing = browser.navigate("stop01", "http://127.0.0.1:1/");
+    const failing = browser.navigate("stop01", "http://127.0.0.1:1/", window);
     assert.equal(failing.pageId, "stop01");
     await until(() => pageState("stop01")?.error, "the page says why it did not load");
     const failure = pageState("stop01").error;
-    browser.navigate("stop01", `${base}/never`);
+    browser.navigate("stop01", `${base}/never`, window);
     await until(() => pageState("stop01")?.loading, "another address starts loading");
     assert.deepEqual(pageState("stop01").error, failure, "the message stays while the other address loads");
     browser.command("stop01", { type: "stop" });
     await until(() => !pageState("stop01").loading, "the load stops");
     assert.deepEqual(pageState("stop01").error, failure, "and after it is stopped");
-    browser.navigate("stop01", `${base}/two`);
+    browser.navigate("stop01", `${base}/two`, window);
     await until(() => pageState("stop01").title === "Two", "a page that arrives replaces it");
     assert.equal(pageState("stop01").error, null);
     browser.close("stop01");
 
     // A site asks; the question waits in its tab until the person answers, and the answer is remembered for that site.
-    const asking = browser.navigate("perm01", `${base}/two`);
+    const asking = browser.navigate("perm01", `${base}/two`, window);
     assert.equal(asking.permissionRequest, null);
     await until(async () => (await host.tabs()).find((item) => item.tab === "perm01")?.title === "Two", "the asking page loads");
     const permission = (await host.evaluate({ tab: "perm01", script: "Notification.permission" })).result;
     assert.equal(permission, "denied", "nothing is granted before the person answers");
     const answer = host.evaluate({ tab: "perm01", script: "Notification.requestPermission()" });
-    await until(() => browser.states().find((state) => state.pageId === "perm01")?.permissionRequest, "the question reaches the tab");
-    const question = browser.states().find((state) => state.pageId === "perm01").permissionRequest;
+    await until(() => browser.states(window).find((state) => state.pageId === "perm01")?.permissionRequest, "the question reaches the tab");
+    const question = browser.states(window).find((state) => state.pageId === "perm01").permissionRequest;
     assert.deepEqual(question.kinds, ["notifications"]);
     assert.equal(question.origin, base);
     assert.match((await host.tabs()).find((item) => item.tab === "perm01").asking, /waiting for the person to let it show notifications/);
-    browser.respondPermission("perm01", question.requestId, "allow");
+    browser.respondPermission("perm01", question.requestId, "allow", window);
     assert.equal((await answer).result, "granted");
     assert.equal((await host.evaluate({ tab: "perm01", script: "Notification.permission" })).result, "granted", "the site remembers the answer");
-    assert.deepEqual(browser.states().find((state) => state.pageId === "perm01").sitePermissions, [{ kind: "notifications", decision: "allow" }]);
+    assert.deepEqual(browser.states(window).find((state) => state.pageId === "perm01").sitePermissions, [{ kind: "notifications", decision: "allow" }]);
     const saved = JSON.parse(await readFile(join(downloads, "site-permissions.json"), "utf8"));
     assert.deepEqual(saved, { version: 1, sites: { [base]: { notifications: "allow" } } });
     browser.command("perm01", { type: "forget-permission", kind: "notifications" });
-    await until(() => !browser.states().find((state) => state.pageId === "perm01").sitePermissions.length, "Ask again forgets the decision");
+    await until(() => !browser.states(window).find((state) => state.pageId === "perm01").sitePermissions.length, "Ask again forgets the decision");
     const blocked = host.evaluate({ tab: "perm01", script: "Notification.requestPermission()" });
-    await until(() => browser.states().find((state) => state.pageId === "perm01")?.permissionRequest, "the site asks again");
-    browser.respondPermission("perm01", browser.states().find((state) => state.pageId === "perm01").permissionRequest.requestId, "block");
+    await until(() => browser.states(window).find((state) => state.pageId === "perm01")?.permissionRequest, "the site asks again");
+    browser.respondPermission("perm01", browser.states(window).find((state) => state.pageId === "perm01").permissionRequest.requestId, "block", window);
     assert.equal((await blocked).result, "denied");
     // A Worker's script that waits on a question is not left waiting: it is told the person has to answer,
     // and the question stays for the person.
@@ -541,17 +590,17 @@ async function run() {
       host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" }),
       /The script has not finished: the page is waiting for the person to let it use your MIDI devices\. Only the person can answer/,
     );
-    const waitingQuestion = browser.states().find((state) => state.pageId === "perm01").permissionRequest;
+    const waitingQuestion = browser.states(window).find((state) => state.pageId === "perm01").permissionRequest;
     assert.deepEqual(waitingQuestion?.kinds, ["midi"], "the question is still the person's to answer");
     await host.navigate({ tab: "perm01", to: `${base}/two` });
-    assert.equal(browser.states().find((state) => state.pageId === "perm01").permissionRequest, null);
+    assert.equal(browser.states(window).find((state) => state.pageId === "perm01").permissionRequest, null);
     // Leaving the page drops a question nobody answered.
     // The script is still waiting when the page goes: the dropped question denies it, or the call ends with the page.
     const unanswered = host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" })
       .then((outcome) => outcome.result, () => "page left");
-    await until(() => browser.states().find((state) => state.pageId === "perm01")?.permissionRequest, "a second kind of question arrives");
+    await until(() => browser.states(window).find((state) => state.pageId === "perm01")?.permissionRequest, "a second kind of question arrives");
     await host.navigate({ tab: "perm01", to: `${base}/` });
-    assert.equal(browser.states().find((state) => state.pageId === "perm01").permissionRequest, null);
+    assert.equal(browser.states(window).find((state) => state.pageId === "perm01").permissionRequest, null);
     assert.ok(["denied", "page left"].includes(await unanswered));
 
     // Every page a tab reaches is remembered for the address bar and a new tab.
@@ -565,7 +614,7 @@ async function run() {
 
     // A page that opens a pop-up on its own is stopped; the person can open it or allow the site.
     const popupTab = await host.open({ url: `${base}/two`, owner: "chat-a" });
-    const popupState = () => browser.states().find((state) => state.pageId === popupTab.tab);
+    const popupState = () => browser.states(window).find((state) => state.pageId === popupTab.tab);
     const tabCount = async () => (await host.tabs()).length;
     const beforePopup = await tabCount();
     assert.equal((await host.evaluate({ tab: popupTab.tab, script: `String(window.open("${base}/") === null)` })).result, "true");
@@ -632,7 +681,7 @@ async function run() {
       await until(async () => (await host.tabs()).some((item) => item.url.startsWith(popupOrigin)), "a tab on the popup's site loads");
       const popupSiteTab = (await host.tabs()).find((item) => item.url.startsWith(popupOrigin));
       browser.command(popupSiteTab.tab, { type: "forget-permission", kind: "popups" });
-      await until(() => !browser.states().find((state) => state.pageId === popupSiteTab.tab).sitePermissions.some((item) => item.kind === "popups"), "the popup site's allowance can be forgotten");
+      await until(() => !browser.states(window).find((state) => state.pageId === popupSiteTab.tab).sitePermissions.some((item) => item.kind === "popups"), "the popup site's allowance can be forgotten");
       const afterAllowed = await tabCount();
       assert.equal(await popup.webContents.executeJavaScript(openTwo), "false:false", "forgetting the popup's allowance blocks it again");
       assert.equal(await tabCount(), afterAllowed);
@@ -685,7 +734,7 @@ async function run() {
     await until(() => !popupState().worker, "the restored Chat's marker fades", 6_000);
 
     // A blank tab gets its page from the first address typed.
-    const typed = browser.navigate("typed01", `127.0.0.1:${server.address().port}/two`);
+    const typed = browser.navigate("typed01", `127.0.0.1:${server.address().port}/two`, window);
     assert.equal(typed.pageId, "typed01");
     await until(async () => (await host.tabs()).find((item) => item.tab === "typed01")?.title === "Two", "a bare host and port loads over http");
 

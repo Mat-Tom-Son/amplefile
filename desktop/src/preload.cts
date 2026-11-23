@@ -17,6 +17,11 @@ const productName = argumentValue("product-name");
 const internalProtocol = argumentValue("internal-protocol");
 const rawWindowMaterial = argumentValue("window-material");
 const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vibrancy" ? rawWindowMaterial : "none";
+// Which file manager window this is (desktop/src/file-manager-windows.ts): 1 for the first, and whether it is a new one.
+const rawWindowSlot = Number(argumentValue("window-slot"));
+const windowSlot = Number.isInteger(rawWindowSlot) && rawWindowSlot >= 1 && rawWindowSlot <= 64 ? rawWindowSlot : 1;
+const windowFresh = argumentValue("window-fresh") === "1";
+type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null };
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
@@ -263,6 +268,15 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     setShowFilesFromOtherApps: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-show-files-from-other-apps", enabled),
     setOpenFoldersByDefault: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-open-folders-by-default", enabled),
   } } : {}),
+  // Windows: which one this is, where it is (so File → New Window opens there), and new ones.
+  windows: {
+    slot: windowSlot,
+    fresh: windowFresh,
+    newWindow: () => ipcRenderer.invoke("amplefile:window:new-window"),
+    /** Opens another window at a place and folder (and an item selected there): Open in New Window. */
+    openInNewWindow: (location: WindowLocation) => ipcRenderer.invoke("amplefile:window:open-in-new-window", location),
+    setLocation: (location: WindowLocation | null) => ipcRenderer.send("amplefile:window:set-location", location),
+  },
   menu: {
     setState: (state: unknown) => ipcRenderer.send("amplefile:menu:set-state", state),
     popup: (menuId: unknown, bounds: unknown) => ipcRenderer.invoke("amplefile:menu:popup", menuId, bounds),
