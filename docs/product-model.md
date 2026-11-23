@@ -137,7 +137,11 @@ other surface.
   **Connect This Folder** for the folder shown (never for the
   disk itself), at the panel's foot. The path policy is the same as everywhere: no path through
   a symbolic link (a link can be the item an action acts on, never a folder
-  a path goes through), and `.amplefile/` and `.pi/` stay hidden. The disk's top
+  a path goes through), and `.amplefile/` and `.pi/` stay hidden. The
+  window never goes into `/System/Volumes/Data`, where macOS gives every
+  folder on the data volume a second name that is not a link (through it a
+  Connected Folder would open as a plain folder); Go to Folder or Finder
+  handing over a path by that name opens it under its usual one. The disk's top
   lists its links (a Mac keeps `/etc`, `/tmp`, and `/var` as links into `/private`) as
   **Symbolic links** describes. A folder the
   account may not read says so (on a Mac, as for Desktop or Documents, with

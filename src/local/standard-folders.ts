@@ -212,19 +212,40 @@ export function resolveStandardFolderPath(id: StandardFolderId, relativePath: st
  * as the prefix that puts it back). Null for the computer place's top, the
  * disk itself, which only its listing and the watcher read.
  */
-export function standardFolderPathBase(id: StandardFolderId, relativePath: string, home = homedir()): { root: string; path: string; prefix: string } | null {
+export function standardFolderPathBase(
+  id: StandardFolderId,
+  relativePath: string,
+  home = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): { root: string; path: string; prefix: string } | null {
   if (id !== computerFolderId) return { root: standardFolderRoot(id, home), path: relativePath, prefix: "" };
   if (relativePath.includes("\0") || relativePath.startsWith("/") || relativePath.startsWith("\\")) throw badRequest("Path escapes the selected folder.");
   const parts = relativePath.split("/").filter((part) => part && part !== ".");
   if (parts.includes("..")) throw badRequest("Path escapes the selected folder.");
   const first = parts[0];
   if (!first) return null;
+  if (entersMacDataVolume(parts, platform)) throw badRequest(macDataVolumeRefusal);
   if (isAlwaysHiddenConnectedFolderEntry(first)) throw badRequest("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
   const root = join(standardFolderRoot(id, home), first);
   // The first folder is the policy's root, which it checks only for being a link; say so the way a deeper link is refused.
   // A link at the disk's top itself (`/bin`) is only opened, revealed, or copied as a path.
   if (lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink()) throw badRequest("Paths cannot traverse symbolic links or junctions.");
   return { root, path: parts.slice(1).join("/"), prefix: first };
+}
+
+/**
+ * macOS: the data volume's own mount. Every folder on it has a second name
+ * there (`/System/Volumes/Data/Users/ana` is `/Users/ana`) that is not a
+ * symbolic link, so a path through it would show a Connected Folder as a plain
+ * folder and get around the refusals below. The computer place never goes
+ * into it; resolveFolderLocation turns such a path back into its usual name.
+ */
+export const macDataVolumeRoot = "/System/Volumes/Data";
+export const macDataVolumeRefusal = "That folder is another name for this Mac’s own folders. Open it at its usual path, such as /Users.";
+
+function entersMacDataVolume(parts: readonly string[], platform: NodeJS.Platform): boolean {
+  // The Mac's disk ignores case, so "system/volumes/data" is the same folder.
+  return platform === "darwin" && parts.length >= 3 && ["system", "volumes", "data"].every((name, index) => parts[index]!.toLowerCase() === name);
 }
 
 /**

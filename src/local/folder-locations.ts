@@ -18,6 +18,8 @@ import {
   isShownStandardEntry,
   isStandardFolderId,
   listStandardFolders,
+  macDataVolumeRefusal,
+  macDataVolumeRoot,
   standardFolderPathBase,
   standardFolderRoot,
   type StandardFolderScanOptions,
@@ -56,9 +58,12 @@ export async function resolveFolderLocation(
   home = homedir(),
   options: { reveal?: boolean } = {},
 ): Promise<FolderLocation | null> {
-  // The real location, so a link anywhere in the path is never traversed by a place's routes.
-  const real = await realpath(resolve(path)).catch(() => null);
-  if (!real) return null;
+  // The real location, so a link anywhere in the path is never traversed by a place's routes,
+  // under its usual name when it came by the Mac's data volume.
+  const resolved = await realpath(resolve(path)).catch(() => null);
+  if (!resolved) return null;
+  const real = await withoutMacDataVolumeName(resolved);
+  if (isInsideMacDataVolume(real)) throw Object.assign(new Error(macDataVolumeRefusal), { status: 400, statusCode: 400 });
   const info = await stat(real).catch(() => null);
   if (!info || (!info.isDirectory() && !info.isFile())) return null;
   const diskRoot = parse(real).root;
@@ -73,6 +78,25 @@ export async function resolveFolderLocation(
     }
   }
   return location;
+}
+
+/**
+ * macOS: a path by the data volume's second name (`/System/Volumes/Data/Users/ana`)
+ * under its usual one (`/Users/ana`) when that is the same folder or file;
+ * anything else is returned as it is.
+ */
+export async function withoutMacDataVolumeName(path: string, platform: NodeJS.Platform = process.platform): Promise<string> {
+  if (platform !== "darwin" || !isInsideMacDataVolume(path, platform)) return path;
+  const usual = path.slice(macDataVolumeRoot.length) || "/";
+  const [aliased, plain] = await Promise.all([stat(path).catch(() => null), stat(usual).catch(() => null)]);
+  return aliased && plain && aliased.dev === plain.dev && aliased.ino === plain.ino ? usual : path;
+}
+
+function isInsideMacDataVolume(path: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== "darwin") return false;
+  const lower = path.toLowerCase();
+  const root = macDataVolumeRoot.toLowerCase();
+  return lower === root || lower.startsWith(`${root}/`);
 }
 
 async function knownPlaces(connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>, home: string): Promise<KnownPlace[]> {

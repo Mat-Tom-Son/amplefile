@@ -1,0 +1,52 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { resolveFolderLocation, withoutMacDataVolumeName } from "../src/local/folder-locations.js";
+import { computerFolderId, macDataVolumeRoot, standardFolderPathBase } from "../src/local/standard-folders.js";
+
+// macOS gives every folder on the data volume a second name under
+// /System/Volumes/Data that is not a link (src/local/standard-folders.ts,
+// macDataVolumeRoot). Through it a Connected Folder would open as a plain
+// folder and its changes would skip History, so the computer place never goes
+// in, and a path by that name opens under its usual one.
+
+const refused = (run: () => unknown) => assert.throws(run, (error: { status?: number; message?: string }) => error.status === 400 && /another name for this Mac’s own folders/.test(error.message ?? ""));
+
+test("the computer place never goes into the Mac's data volume, whatever the case", () => {
+  refused(() => standardFolderPathBase(computerFolderId, "System/Volumes/Data", undefined, "darwin"));
+  refused(() => standardFolderPathBase(computerFolderId, "System/Volumes/Data/Users/ana/Projects", undefined, "darwin"));
+  refused(() => standardFolderPathBase(computerFolderId, "system/VOLUMES/data/Users", undefined, "darwin"));
+  assert.deepEqual(standardFolderPathBase(computerFolderId, "System/Volumes", undefined, "darwin"), { root: "/System", path: "Volumes", prefix: "System" });
+  assert.deepEqual(standardFolderPathBase(computerFolderId, "System/Volumes/Preboot", undefined, "darwin"), { root: "/System", path: "Volumes/Preboot", prefix: "System" });
+  // Elsewhere the name means nothing special.
+  assert.deepEqual(standardFolderPathBase(computerFolderId, "System/Volumes/Data/x", undefined, "linux"), { root: "/System", path: "Volumes/Data/x", prefix: "System" });
+});
+
+test("a path by the data volume's name opens under its usual one, in the Connected Folder that holds it", { skip: process.platform !== "darwin" && "macOS only" }, async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "amplefile-data-volume-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = join(root, "Projects", "Client");
+  await mkdir(join(client, "Drafts"), { recursive: true });
+  const alias = `${macDataVolumeRoot}${client}`;
+
+  assert.equal(await withoutMacDataVolumeName(alias), client);
+  assert.equal(await withoutMacDataVolumeName(client), client, "a usual path is left as it is");
+  assert.equal(await withoutMacDataVolumeName(alias, "linux"), alias, "only a Mac has the second name");
+
+  const connectedFolders = [{ id: "space-0123456789abcdef", connectedFolderRoot: client }];
+  assert.deepEqual(await resolveFolderLocation(`${alias}/Drafts`, connectedFolders, root), {
+    place: { kind: "connected-folder", id: "space-0123456789abcdef" },
+    path: "Drafts",
+    select: null,
+  });
+  assert.deepEqual(await resolveFolderLocation(`${macDataVolumeRoot.toLowerCase()}${client}`, connectedFolders, root), {
+    place: { kind: "connected-folder", id: "space-0123456789abcdef" },
+    path: "",
+    select: null,
+  }, "the Mac's disk ignores case");
+  // The volume's own top has no usual name; it is refused like any path into it.
+  await assert.rejects(resolveFolderLocation(macDataVolumeRoot, connectedFolders, root), (error: { status?: number }) => error.status === 400);
+});
