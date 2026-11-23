@@ -303,6 +303,18 @@ declare global {
         setShowFilesFromOtherApps: (enabled: boolean) => Promise<unknown>;
         setOpenFoldersByDefault: (enabled: boolean) => Promise<unknown>;
       };
+      /**
+       * File manager windows (absent in older desktop builds): which one this is (slot 1 is the first; `fresh` is a
+       * window just opened rather than one coming back), where it is, so File → New Window opens there, and new windows.
+       */
+      windows?: {
+        slot: number;
+        fresh: boolean;
+        newWindow: () => Promise<boolean>;
+        /** Open in New Window: another window at this place and folder, with `select` selected there. */
+        openInNewWindow: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null }) => Promise<boolean>;
+        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null) => void;
+      };
       menu: {
         /** What the menu bar reflects; a key left out keeps its value. */
         setState: (state: { connectedFolderOpen?: boolean; showHiddenFiles?: boolean }) => void;

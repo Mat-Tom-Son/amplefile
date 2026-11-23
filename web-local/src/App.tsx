@@ -26,9 +26,12 @@ import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/fe
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
 import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
 import { readStoredJsonValue, writeStoredJsonValue } from "./lib/storage";
+import { windowStorageKey } from "./lib/window-storage";
 import { showsFileManager, welcomeDoneStorageKey } from "./components/file-manager/file-manager-welcome-model";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
+/** The Connected Folder this window shows, kept for this window (web-local/src/lib/window-storage.ts). */
+const activeConnectedFolderStorageKey = windowStorageKey("amplefile.connected-folder.active");
 
 type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "toggle-hidden-files" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder";
 /** A cross-cutting request handled by the open Connected Folder view. */
@@ -41,7 +44,7 @@ export function App() {
   const setThemePreference = useCallback((mode: AppThemePreference) => appearance.store.update({ mode }), [appearance.store]);
   const [fixture, setFixture] = useState<ConnectedFolderUiFixture | null>(null);
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
-  const [activeConnectedFolderId, setActiveConnectedFolderId] = useState(() => localStorage.getItem("amplefile.connected-folder.active") ?? "");
+  const [activeConnectedFolderId, setActiveConnectedFolderId] = useState(() => localStorage.getItem(activeConnectedFolderStorageKey) ?? "");
   const [error, setError] = useState<string | null>(null);
   const [createConnectedFolderOpen, setCreateConnectedFolderOpen] = useState(false);
   // Connect your AI: one dialog for every surface that finds no model connected.
@@ -165,8 +168,8 @@ export function App() {
   const activeConnectedFolder = useMemo(() => boot?.connectedFolders.find((item) => item.id === activeConnectedFolderId) ?? boot?.connectedFolders[0] ?? null, [activeConnectedFolderId, boot]);
   useEffect(() => {
     if (!fixtureRequested && boot) {
-      if (activeConnectedFolder) localStorage.setItem("amplefile.connected-folder.active", activeConnectedFolder.id);
-      else localStorage.removeItem("amplefile.connected-folder.active");
+      if (activeConnectedFolder) localStorage.setItem(activeConnectedFolderStorageKey, activeConnectedFolder.id);
+      else localStorage.removeItem(activeConnectedFolderStorageKey);
     }
     if (activeConnectedFolder) setActiveConnectedFolderId(activeConnectedFolder.id);
   }, [activeConnectedFolder?.id, Boolean(boot)]);
