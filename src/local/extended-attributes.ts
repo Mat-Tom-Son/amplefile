@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { relative, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 /**
  * What a Mac item has besides its contents that a copy made by this app does
@@ -15,6 +15,13 @@ import { relative, join } from "node:path";
  * Anything that cannot be read or told apart counts as not known, and an
  * original whose extras are not known stays. Access control lists are not
  * read. Elsewhere than on the Mac nothing is asked.
+ *
+ * A disk with no extended attributes of its own (FAT, exFAT) has macOS keep
+ * a file's in a companion beside it, named `._file`. The companion is that
+ * file's attributes, not an item with extras of its own: the system answers
+ * for the file, and refuses to answer for the companion. So a companion
+ * whose file is among the entries is not asked about; what it holds is
+ * compared through the file.
  */
 
 /** The mark macOS itself puts on a file an app wrote. Every copy gets its own, so it is not something a copy lacks. */
@@ -58,8 +65,10 @@ export async function extrasCopyLacks(source: string, copy: string, entries: rea
   if (checkedPlatform !== "darwin") return null;
   if (entries.length > limits.maxEntries) return { unknown: `it holds more than ${limits.maxEntries.toLocaleString()} items` };
   if (entries.some((path) => path.includes("\n"))) return { unknown: "one of its names has a line break in it" };
+  const present = new Set(entries);
+  const asked = entries.filter((path) => !isCompanionOf(path, present));
   const deadline = Date.now() + limits.totalTimeoutMs;
-  for (const batch of batches(entries)) {
+  for (const batch of batches(asked)) {
     if (Date.now() > deadline) return { unknown: "the check took too long" };
     const copies = batch.map((path) => join(copy, relative(source, path)));
     const [has, kept, flags, keptFlags] = await Promise.all([attributeNames(batch), attributeNames(copies), fileFlags(batch), fileFlags(copies)]);
@@ -72,6 +81,12 @@ export async function extrasCopyLacks(source: string, copy: string, entries: rea
     }
   }
   return null;
+}
+
+/** Whether `path` is the `._name` companion of a file that is also among the entries. */
+function isCompanionOf(path: string, present: ReadonlySet<string>): boolean {
+  const name = basename(path);
+  return name.startsWith("._") && name.length > 2 && present.has(join(dirname(path), name.slice(2)));
 }
 
 /** What an attribute is, in a person's words. */
