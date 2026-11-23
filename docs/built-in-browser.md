@@ -134,6 +134,30 @@ The browser preview (`/?fixture=connected-folder`) shows the pane over sample
 pages with no page drawn; two of its recent pages show a Worker's marker and a
 site's question.
 
+## Pages and windows
+
+AmpleFile can show several file manager windows
+([Windows](product-model.md#windows)). Each page is a desktop-hosted view
+placed in one of them, its window:
+
+- A tab the person opens belongs to the window it was opened in, and a tab or
+  pop-up a page opens belongs to that page's window. Only that window lists
+  the tab, lays the page out, and hears about it.
+- A page a Worker opens appears, as a background tab, in the window showing
+  that Worker's Connected Folder, else in the front window. A page the
+  AmpleFile Agent opens appears in the front window.
+- A site's question is shown and answered only in the window holding the
+  page.
+- When one of several windows closes, a page a Worker opened or is using
+  moves to another window as a background tab and keeps working; the
+  person's own pages close with their window, as a browser's tabs do.
+- When the last window closes, every page keeps running unseen, as before,
+  and the next window to open takes them as tabs. A page a Worker opens while
+  no window is open waits the same way.
+
+Workers see every window's tabs in one list, and are told the person can see
+a page while it is drawn in front in any window.
+
 ## Profile and sign-ins
 
 One persistent Chromium profile serves every browser page and every Connected
@@ -268,7 +292,9 @@ has no browser and no browser tools.
   webview tags, so a page never reaches the app's desktop bridge. A page is
   never a trusted renderer.
 - Pages keep running in the background, including after the last window
-  closes, until AmpleFile quits.
+  closes, until AmpleFile quits. A page belongs to one window, and only the
+  person in that window answers its site's questions
+  ([Pages and windows](#pages-and-windows)).
 - Nothing from the browser enters a Connected Folder unless a Worker writes it
   there or the person moves a download in. What a Worker reads from a page
   reaches the model provider like any other tool result.

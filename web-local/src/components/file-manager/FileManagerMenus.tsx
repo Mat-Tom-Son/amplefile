@@ -23,6 +23,7 @@ export function ActionMenu({ menu, onClose, onCommand }: { menu: ActionMenuState
       {menu.target ? <>
         {menu.sidebar ? <>
           <button type="button" className="fm-menu-i" role="menuitem" autoFocus onClick={() => run("open-in-new-tab", menu.target)}>Open in New Tab</button>
+          {menu.newWindow ? <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("open-in-new-window", menu.target)}>Open in New Window</button> : null}
           <div className="fm-menu-sep" />
         </> : null}
         <button type="button" className="fm-menu-i" role="menuitem" autoFocus={!menu.sidebar} onClick={() => run("customize", menu.target)}>Customize Connected Folder</button>

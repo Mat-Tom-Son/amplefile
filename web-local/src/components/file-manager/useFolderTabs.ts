@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type SetStateAction } from "react";
 
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
+import { windowStorageKey } from "../../lib/window-storage";
 import type { ChatSendRequest } from "../../types";
 import type { FileManagerLocation } from "./file-manager-places";
 import {
@@ -22,8 +23,12 @@ import {
   type FolderTabView,
 } from "./file-manager-tabs";
 
-/** The window's folder tabs, where they were and which was in front, kept on this computer between launches. */
-export const folderTabsStorageKey = "amplefile.file-manager.tabs.v1";
+/**
+ * The window's folder tabs, where they were and which was in front, kept on
+ * this computer between launches, under this window's own key
+ * (lib/window-storage.ts): two windows never restore each other's tabs.
+ */
+export const folderTabsStorageKey = () => windowStorageKey("amplefile.file-manager.tabs.v1");
 
 /**
  * The Chat a tab's panel holds (docs/product-model.md): one per tab, in the
@@ -52,7 +57,7 @@ export function useFolderTabs(startLocation: () => FileManagerLocation) {
   const nextIdRef = useRef(1);
   const makeId = () => String(nextIdRef.current++);
   const [initial] = useState(() => {
-    const restored = readStoredJsonValue(folderTabsStorageKey, (value) => restoreFolderTabs(value, makeId), null);
+    const restored = readStoredJsonValue(folderTabsStorageKey(), (value) => restoreFolderTabs(value, makeId), null);
     return restored ? { ...restored, restored: true } : { state: singleFolderTab(makeId(), startLocation()), showTabBar: false, restored: false };
   });
   const [state, setState] = useState<FolderTabs>(initial.state);
@@ -67,7 +72,7 @@ export function useFolderTabs(startLocation: () => FileManagerLocation) {
     const stored = JSON.stringify(storedFolderTabs(state, showTabBar));
     if (stored === writtenRef.current) return;
     writtenRef.current = stored;
-    writeStoredJsonValue(folderTabsStorageKey, JSON.parse(stored));
+    writeStoredJsonValue(folderTabsStorageKey(), JSON.parse(stored));
   }, [state, showTabBar]);
 
   const activeTab = activeFolderTab(state);

@@ -11,14 +11,17 @@ import { itemMenuCapabilities, selectionMenuCapabilities, type QuickMenuItem, ty
 import type { PlaceFileBridge } from "./file-manager-view-helpers";
 
 /** The Action menu's Connected Folder (null for the place shown when it is not one) and where the window's own copy of it is drawn. */
-export interface ActionMenuState { target: ConnectedFolderSummary | null; x: number; y: number; /** Opened from the sidebar, which offers Open in New Tab. */ sidebar?: boolean }
+export interface ActionMenuState { target: ConnectedFolderSummary | null; x: number; y: number; /** Opened from the sidebar, which offers Open in New Tab (and Open in New Window where the desktop has windows). */ sidebar?: boolean; newWindow?: boolean }
 
 /** What the menus' items do; each is the window's own action, run as if its button or key had been used. */
 export interface FileManagerMenuActions {
   openEntry: (entry: TreeEntry) => Promise<void>;
   /** Open in New Tab: a folder row, or a sidebar place's top. */
   openEntryInNewTab: (entry: TreeEntry) => void;
+  openEntryInNewWindow: (entry: TreeEntry) => void;
   openPlaceInNewTab: (place: FileManagerPlace) => void;
+  /** Open in New Window, where the desktop can open another window (null elsewhere). */
+  openInNewWindow: ((where: FileManagerLocation) => void) | null;
   openLocal: (path: string, action: "reveal" | "open" | "open-native" | "open-with") => Promise<void>;
   showOriginal: (entry: TreeEntry) => Promise<void>;
   copyPaths: (paths: readonly string[]) => Promise<void>;
@@ -73,7 +76,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
 
   /** A small menu at the pointer: the native one on the Mac, the in-window one elsewhere. */
-  async function popupMenu(event: MouseEvent<HTMLElement>, menuActions: Partial<Record<"reveal" | "putToWork" | "removeFromSidebar" | "createConnectedFolder" | "useExistingFolder" | "openInNewTab", boolean>>, fallback: QuickMenuItem[], run: (command: string | null) => void) {
+  async function popupMenu(event: MouseEvent<HTMLElement>, menuActions: Partial<Record<"reveal" | "putToWork" | "removeFromSidebar" | "createConnectedFolder" | "useExistingFolder" | "openInNewTab" | "openInNewWindow", boolean>>, fallback: QuickMenuItem[], run: (command: string | null) => void) {
     event.preventDefault();
     event.stopPropagation();
     const anchor = event.currentTarget.getBoundingClientRect();
@@ -92,13 +95,15 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   /** Right-clicking a Standard Folder: Show in Finder, Connect This Folder, and Remove from Sidebar for one added with +. */
   function openStandardFolderMenu(folder: StandardFolderSummary, event: MouseEvent<HTMLElement>) {
     const target: FileManagerPlace = { kind: "standard", id: folder.id };
-    void popupMenu(event, { openInNewTab: true, reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
+    void popupMenu(event, { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow), reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
       { label: "Open in New Tab", command: "open-in-new-tab" },
+      ...(actions.openInNewWindow ? [{ label: "Open in New Window", command: "open-in-new-window" }] : []),
       { label: revealInFileManagerLabel(), command: "reveal" },
       { label: "Connect This Folder", command: "put-to-work" },
       ...(folder.added ? [{ label: "Remove from Sidebar", command: "remove-from-sidebar" }] : []),
     ], (command) => {
       if (command === "open-in-new-tab") actions.openPlaceInNewTab(target);
+      else if (command === "open-in-new-window") actions.openInNewWindow?.({ place: target, path: "" });
       else if (command === "reveal") void window.ampleFileDesktop?.standardFolder?.openPath(folder.id, "", "reveal").catch((caught) => onError(errorText(caught)));
       else if (command === "put-to-work") void actions.putToWork("", target);
       else if (command === "remove-from-sidebar") void actions.removeStandardFolder(folder);
@@ -133,19 +138,20 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     if (mac && popup) {
       try {
         const command = await popup({
-          actions: { ...(sidebar ? { openInNewTab: true } : {}), newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
+          actions: { ...(sidebar ? { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow) } : {}), newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
           point,
         });
         runActionCommand(command, target);
       } catch (caught) { onError(errorText(caught)); }
       return;
     }
-    setActionMenu({ target, x: Math.min(point.x, window.innerWidth - 240), y: Math.min(point.y, window.innerHeight - (sidebar ? 224 : 200)), ...(sidebar ? { sidebar } : {}) });
+    setActionMenu({ target, x: Math.min(point.x, window.innerWidth - 240), y: Math.min(point.y, window.innerHeight - (sidebar ? 224 : 200)), ...(sidebar ? { sidebar, newWindow: Boolean(actions.openInNewWindow) } : {}) });
   }
 
   function runActionCommand(command: string | null, target: ConnectedFolderSummary | null) {
     if (command === "settings") actions.openSettings();
     else if (command === "open-in-new-tab" && target) actions.openPlaceInNewTab({ kind: "connected-folder", id: target.id });
+    else if (command === "open-in-new-window" && target) actions.openInNewWindow?.({ place: { kind: "connected-folder", id: target.id }, path: "" });
     else if (command === "customize" && target) actions.customize(target);
     else if (command === "remove-connected-folder" && target) void actions.removeConnectedFolder(target);
     else if (command === "skills" && target) actions.openSkills(target);
@@ -172,7 +178,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     const target: TreeEntry = entry ?? { name: location.path.split("/").pop() || placeName, path: location.path, kind: "folder" };
     const several = entry && paths.length > 1 ? paths.map((path) => byPath.get(path)).filter((item): item is TreeEntry => Boolean(item)) : null;
     const owner = place.kind === "standard" ? { connectedFolderId: "", standardFolderId: place.id } : { connectedFolderId: place.id };
-    const capabilities = several ? selectionMenuCapabilities(several) : itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: await actions.canPaste() });
+    const capabilities = several ? selectionMenuCapabilities(several) : itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: await actions.canPaste(), newWindow: Boolean(actions.openInNewWindow) });
     const selectionCounts = several ? { files: several.filter((item) => item.kind === "file").length, folders: several.filter((item) => item.kind === "folder").length } : null;
     const run = (command: string | null) => several ? runSelectionCommand(command, several) : runMenuCommand(command, target);
     const popupFileMenu = window.ampleFileDesktop?.connectedFolder.popupFileMenu;
@@ -215,6 +221,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   async function runMenuCommand(command: string | null, target: TreeEntry) {
     if (command === "open") await actions.openEntry(target);
     else if (command === "open-in-new-tab") actions.openEntryInNewTab(target);
+    else if (command === "open-in-new-window") actions.openEntryInNewWindow(target);
     else if (command === "open-with") await actions.openLocal(target.path, "open-with");
     else if (command === "reveal") await actions.openLocal(target.path, "reveal");
     else if (command === "show-original") await actions.showOriginal(target);

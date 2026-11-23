@@ -393,7 +393,7 @@ test("user actions retain semantic footer structure; the real cascade is exercis
 });
 
 test("audited desktop and pane controls have working destinations", () => {
-  assert.match(desktopMain, /About \$\{productName\}[\s\S]*?sendRendererMenuCommand\("open-about"\)/);
+  assert.match(desktopMain, /About \$\{productName\}[\s\S]*?menuCommand\("open-about"\)/);
   assert.doesNotMatch(desktopMain, /About \$\{productName\}[^\n]*enabled:\s*false/);
 });
 

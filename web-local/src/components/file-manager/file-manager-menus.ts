@@ -10,7 +10,7 @@ export interface QuickMenuItem { label: string; command: string }
 export interface QuickMenuState { x: number; y: number; items: QuickMenuItem[]; run: (command: string | null) => void }
 
 /** What one row (or the folder shown, when `isItem` is false) offers in its menu. */
-export function itemMenuCapabilities(target: TreeEntry, isItem: boolean, where: { place: FileManagerPlace; fixtureMode: boolean; canPaste: boolean }): FileMenuCapabilities {
+export function itemMenuCapabilities(target: TreeEntry, isItem: boolean, where: { place: FileManagerPlace; fixtureMode: boolean; canPaste: boolean; newWindow?: boolean }): FileMenuCapabilities {
   if (target.link) {
     const there = target.link.target !== "missing";
     return { open: there, original: there, attach: false, history: false, upload: false, rename: true, delete: true, organize: true, link: true };
@@ -18,6 +18,7 @@ export function itemMenuCapabilities(target: TreeEntry, isItem: boolean, where: 
   return {
     open: target.kind === "folder" || canOpenDirectly(target.path),
     newTab: isItem && target.kind === "folder",
+    newWindow: isItem && target.kind === "folder" && Boolean(where.newWindow),
     attach: false,
     history: where.place.kind === "connected-folder" && target.kind === "file",
     upload: false,

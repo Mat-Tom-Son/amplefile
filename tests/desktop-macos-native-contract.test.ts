@@ -8,7 +8,7 @@ const preload = await readFile(new URL("../desktop/src/preload.cts", import.meta
 test("Darwin file menus require the trusted main renderer and canonical Connected Folder validation", () => {
   assert.match(
     main,
-    /ipcMain\.handle\("amplefile:connected-folder:popup-file-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?parseNativeFileMenuRequest\(value\)[\s\S]*?validateNativeFileMenuEntry\(request\)[\s\S]*?popupNativeFileMenu\(request\)/,
+    /ipcMain\.handle\("amplefile:connected-folder:popup-file-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?parseNativeFileMenuRequest\(value\)[\s\S]*?validateNativeFileMenuEntry\(request\)[\s\S]*?popupNativeFileMenu\(request, senderWindow\(event\)\)/,
   );
   assert.match(main, /validateNativeFileMenuEntry[\s\S]*?resolveConnectedFolderItem\(request\.connectedFolderId, request\.path\)/);
 });
@@ -16,14 +16,15 @@ test("Darwin file menus require the trusted main renderer and canonical Connecte
 test("Darwin tab menus require the trusted main renderer and build their items in the host", () => {
   assert.match(
     main,
-    /ipcMain\.handle\("amplefile:connected-folder:popup-tab-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?popupNativeTabMenu\(parseNativeTabMenuRequest\(value\)\)/,
+    /ipcMain\.handle\("amplefile:connected-folder:popup-tab-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?popupNativeTabMenu\(parseNativeTabMenuRequest\(value\), senderWindow\(event\)\)/,
   );
-  assert.match(main, /function popupNativeTabMenu[\s\S]*?popupNativeCommandMenu\(nativeTabMenuItems\(request\), request\.point\)/);
+  assert.match(main, /function popupNativeTabMenu[\s\S]*?popupNativeCommandMenu\(nativeTabMenuItems\(request\), request\.point, window\)/);
   assert.match(preload, /popupTabMenu: \(request[\s\S]*?ipcRenderer\.invoke\("amplefile:connected-folder:popup-tab-menu", request\)/);
 });
 
 test("the Darwin file menu shares the command-menu helper: zoom-scaled point, deferred close, and its icon", () => {
-  assert.match(main, /function popupNativeFileMenu\(request: NativeFileMenuRequest\): Promise<NativeFileMenuCommand \| null> \{\n\s*return popupNativeCommandMenu\(nativeFileMenuItems\(request, process\.platform\), request\.point\);\n\}/);
+  // Every native menu shows in the window that asked for it.
+  assert.match(main, /function popupNativeFileMenu\(request: NativeFileMenuRequest, window: BrowserWindow \| null\): Promise<NativeFileMenuCommand \| null> \{\n\s*return popupNativeCommandMenu\(nativeFileMenuItems\(request, process\.platform\), request\.point, window\);\n\}/);
   const helper = main.slice(main.indexOf("function popupNativeCommandMenu"));
   const body = helper.slice(0, helper.indexOf("\n}\n"));
   assert.match(body, /const zoom = window\.webContents\.getZoomFactor\(\) \|\| 1;/);
@@ -37,7 +38,7 @@ test("the Darwin file menu shares the command-menu helper: zoom-scaled point, de
 test("the Darwin Connected Folder header menu requires the trusted main renderer and builds its items in the host", () => {
   assert.match(
     main,
-    /ipcMain\.handle\("amplefile:connected-folder:popup-header-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?parseNativeConnectedFolderMenuRequest\(value\)[\s\S]*?popupNativeCommandMenu\(nativeConnectedFolderMenuItems\(request\), request\.point\)/,
+    /ipcMain\.handle\("amplefile:connected-folder:popup-header-menu"[\s\S]*?assertTrustedMainRenderer\(event\)[\s\S]*?process\.platform !== "darwin"[\s\S]*?parseNativeConnectedFolderMenuRequest\(value\)[\s\S]*?popupNativeCommandMenu\(nativeConnectedFolderMenuItems\(request\), request\.point, senderWindow\(event\)\)/,
   );
   assert.match(preload, /popupHeaderMenu: \(request[\s\S]*?ipcRenderer\.invoke\("amplefile:connected-folder:popup-header-menu", request\)/);
 });
@@ -45,7 +46,7 @@ test("the Darwin Connected Folder header menu requires the trusted main renderer
 test("Finder and Open Recent recreate the Mac window before showing a queued folder where it lives", () => {
   assert.match(
     main,
-    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?folderLocationForOpenPath\(path[,)][\s\S]*?amplefile:file-manager:open-location/,
+    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureWindow\(\)[\s\S]*?folderLocationForOpenPath\(target\.path[,)][\s\S]*?handOpenLocation\(window, location\)/,
   );
   assert.match(main, /folderLocationForOpenPath[\s\S]*?resolveFolderLocation\(path, await listConnectedFolders\(\), homedir\(\)[,)]/);
   assert.match(main, /request = \{ token: randomUUID\(\), location \}[\s\S]*?amplefile:file-manager:open-location/);
@@ -54,8 +55,8 @@ test("Finder and Open Recent recreate the Mac window before showing a queued fol
 
 test("the interactive local API is app-lifetime state rather than BrowserWindow state", () => {
   assert.match(main, /localApiLifetime = new AppLifetimeResource/);
-  assert.match(main, /createMainWindow[\s\S]*?ensureInteractiveLocalApi\(\)/);
-  assert.doesNotMatch(main, /mainWindow\.on\("closed"[\s\S]{0,300}localApiLifetime\.close/);
+  assert.match(main, /createFileManagerWindow[\s\S]*?ensureInteractiveLocalApi\(\)/);
+  assert.doesNotMatch(main, /window\.on\("closed"[\s\S]{0,1200}localApiLifetime\.close/);
   assert.match(main, /shutdown[\s\S]*?localApiLifetime\.close\(\)/);
 });
 
@@ -78,7 +79,7 @@ test("headless CLI relaunches never front the interactive window", () => {
   // interactive relaunch (person opened AmpleFile again) reaches showWindow.
   assert.match(
     main,
-    /app\.on\("second-instance", \(_event, argv, workingDirectory, additionalData\) => \{[\s\S]*?ampleFileSecondInstanceIntent\(argv, additionalData\)[\s\S]*?intent\.kind === "cli-invalid"[\s\S]*?return;[\s\S]*?intent\.kind === "cli"[\s\S]*?processAmpleFileCliRequest\(intent\.requestId\)[\s\S]*?return;[\s\S]*?interactiveRequested = true;[\s\S]*?startInteractiveApp\(\)\.then\(showWindow\)/,
+    /app\.on\("second-instance", \(_event, argv, workingDirectory, additionalData\) => \{[\s\S]*?ampleFileSecondInstanceIntent\(argv, additionalData\)[\s\S]*?intent\.kind === "cli-invalid"[\s\S]*?return;[\s\S]*?intent\.kind === "cli"[\s\S]*?processAmpleFileCliRequest\(intent\.requestId\)[\s\S]*?return;[\s\S]*?interactiveRequested = true;[\s\S]*?startInteractiveApp\(\)\.then\(showFrontWindow\)/,
   );
   // Parsing ids inline would fall through to showWindow whenever both
   // channels came back empty — CLI-shaped launches must not do that.
@@ -88,6 +89,6 @@ test("headless CLI relaunches never front the interactive window", () => {
 test("the main window reveals itself only on its first ready-to-show", () => {
   // Renderer recoveries can re-emit ready-to-show; a window the person hid
   // (close-to-tray, minimize) must not resurface on an autonomous reload.
-  assert.match(main, /mainWindow\.once\("ready-to-show", \(\) => mainWindow\?\.show\(\)\)/);
-  assert.doesNotMatch(main, /mainWindow\.on\("ready-to-show"/);
+  assert.match(main, /window\.once\("ready-to-show", \(\) => \{ if \(!window\.isDestroyed\(\)\) window\.show\(\); \}\)/);
+  assert.doesNotMatch(main, /window\.on\("ready-to-show"/);
 });

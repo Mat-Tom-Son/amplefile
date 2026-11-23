@@ -10,6 +10,7 @@ import { fileSelectionLabel } from "./file-selection.js";
 export type FileMenuCommand =
   | "open"
   | "open-in-new-tab"
+  | "open-in-new-window"
   | "open-with"
   | "reveal"
   | "show-original"
@@ -55,6 +56,8 @@ export interface FileMenuCapabilities {
   original?: boolean;
   /** Open in New Tab, for a folder in a window with folder tabs. */
   newTab?: boolean;
+  /** Open in New Window, for a folder where the desktop can open another window. */
+  newWindow?: boolean;
 }
 
 export interface FileMenuTarget {
@@ -105,6 +108,7 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
     });
   }
   if (request.kind === "folder" && request.capabilities.newTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
+  if (request.kind === "folder" && request.capabilities.newWindow) items.push({ type: "item", label: "Open in New Window", command: "open-in-new-window" });
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
   items.push(
     reveal,

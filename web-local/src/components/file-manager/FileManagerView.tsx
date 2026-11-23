@@ -18,6 +18,7 @@ import { untitledChatLabel } from "../../constants";
 import { desktopPlatform, isMacOS, connectedFolderEntryNativePath } from "../../lib/platform";
 import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
+import { reportWindowLocation, windowStorageKey } from "../../lib/window-storage";
 import { settleIn } from "../../lib/motion";
 import { useConnectedFolderCustomizations } from "../../hooks/useConnectedFolderCustomizations";
 import { ConnectedFolderAppearanceModal, type ConnectedFolderAppearanceSection } from "../modals/ConnectedFolderAppearanceModal";
@@ -126,8 +127,8 @@ const showHiddenStorageKey = "amplefile.file-manager.show-hidden.v1";
 const folderViewsStorageKey = "amplefile.file-manager.folder-views.v1";
 /** The Browser pane's share of the main area when the folder and the browser are both shown. */
 const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
-/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. */
-const browserPaneStorageKey = "amplefile.file-manager.browser-pane.v1";
+/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. Each window keeps its own. */
+const browserPaneStorageKey = windowStorageKey("amplefile.file-manager.browser-pane.v1");
 function readStoredBrowserPane(parsed: unknown): { layout: BrowserPaneLayout; activePageId: string | null } | null {
   if (!parsed || typeof parsed !== "object") return null;
   const { layout, activePageId } = parsed as { layout?: unknown; activePageId?: unknown };
@@ -208,6 +209,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const setHistory = (update: (current: FolderHistory) => FolderHistory) => folderTabs.update(tabId, (tab) => withTabHistory(tab, update(tab.history)));
   const location = history.location;
   const setLocation = (next: FileManagerLocation) => setHistory((current) => ({ ...current, location: next }));
+  // The desktop follows the tab in front: File → New Window opens at its folder, and the window's title and Open Recent name it.
+  useEffect(() => { if (!fixtureMode) reportWindowLocation(location); }, [fixtureMode, location.place.kind, location.place.id, location.path]); // eslint-disable-line react-hooks/exhaustive-deps
   const place = location.place;
   const connectedFolder = place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === place.id) ?? null : null;
   const standardFolder = place.kind === "standard" ? standard.folders.find((item) => item.id === place.id) ?? null : null;
@@ -252,10 +255,19 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (next.view !== view) { viewChosenRef.current = true; setLastView(next.view); writeStoredJsonValue(viewStorageKey, next.view); }
     if (next.sort !== sort) { setLastSort(next.sort); writeStoredJsonValue(sortStorageKey, next.sort); }
     if (!folderViewAt) return;
-    const remembered = rememberFolderView(folderViews, folderViewAt, next, Date.now());
+    // Another window may have remembered folders since this one read them: add to what is kept now, not to this window's copy.
+    const remembered = rememberFolderView(readStoredJsonValue(folderViewsStorageKey, readFolderViews, folderViews), folderViewAt, next, Date.now());
     setFolderViews(remembered);
     writeStoredJsonValue(folderViewsStorageKey, remembered);
   }
+  // A folder's view chosen in another window shows here too.
+  useEffect(() => {
+    function changed(event: StorageEvent) {
+      if (event.key === folderViewsStorageKey) setFolderViews(readStoredJsonValue(folderViewsStorageKey, readFolderViews, {}));
+    }
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, []);
   const setView = (next: FileManagerViewMode) => chooseFolderView({ view: next, sort });
   const setSort = (next: FileManagerSort) => chooseFolderView({ view, sort: next });
   const [panelOpen, setPanelOpenState] = useState<boolean>(() => readStoredJsonValue(panelStorageKey, (value) => value !== false, true));
@@ -591,6 +603,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       openEntry, openLocal, showOriginal, copyPaths,
       openEntryInNewTab: (entry) => openEntryInNewTab(entry),
       openPlaceInNewTab: (target) => openInNewTab({ place: target, path: "" }),
+      openInNewWindow: !fixtureMode && window.ampleFileDesktop?.windows?.openInNewWindow ? (where) => openInNewWindow(where) : null,
+      openEntryInNewWindow: (entry) => { const where = folderLocationOf(entry); if (where) openInNewWindow(where); },
       showVersionHistory: connectedFolder ? setVersionHistory : null,
       requestNewFolder, refresh: listing.refresh, putToWork, requestRename,
       deletePaths, copySelection: clipboard.copySelection, cutSelection: clipboard.cutSelection, pasteInto: clipboard.pasteInto,
@@ -714,6 +728,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   function openEntryInNewTab(entry: TreeEntry, options: { behind?: boolean } = {}) {
     const where = folderLocationOf(entry);
     if (where) openInNewTab(where, "folder", options);
+  }
+
+  /** Open in New Window: another window at that folder (docs/product-model.md, "Windows"). */
+  function openInNewWindow(where: FileManagerLocation) {
+    const windows = window.ampleFileDesktop?.windows;
+    if (!windows) return;
+    void windows.openInNewWindow({ place: where.place, path: where.path }).catch((caught) => onError(desktopErrorText(errorText(caught))));
   }
 
   /** A place's name as a tab title shows it. */

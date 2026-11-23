@@ -276,3 +276,43 @@ test("each folder keeps its own Icons or List and sort, and a folder never set s
   await view.dom.waitFor(() => view.title() === "Garden");
   assert.equal(shownAs(), "list");
 });
+
+test("with several windows, each keeps its own tabs, reports the tab in front's folder, and offers Open in New Window", async (t) => {
+  const storage = new Map<string, string>();
+  const reported: unknown[] = [];
+  const opened: unknown[] = [];
+  const view = await mountWindow(t, {
+    storage,
+    desktop: { windows: { slot: 2, fresh: false, newWindow: async () => true, setLocation: (location: unknown) => reported.push(location), openInNewWindow: async (location: unknown) => { opened.push(location); return true; } } },
+  });
+  await view.dom.waitFor(() => Boolean(view.row("Notes")));
+  assert.deepEqual(reported.at(-1), { place: { kind: "connected-folder", id: "lab" }, path: "" });
+
+  // A second tab inside Notes: the window reports it while it is in front, and the first tab's folder when that is.
+  await view.command("new-tab");
+  await view.dom.waitFor(() => view.tabs().length === 2);
+  await view.dom.act(() => { view.row("Notes")!.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true })); });
+  await view.dom.waitFor(() => view.activeTab() === "Notes");
+  assert.deepEqual(reported.at(-1), { place: { kind: "connected-folder", id: "lab" }, path: "Notes" });
+  await view.dom.act(() => view.tab(0).click());
+  await view.dom.waitFor(() => view.activeTab() === "Lab");
+  assert.deepEqual(reported.at(-1), { place: { kind: "connected-folder", id: "lab" }, path: "" });
+
+  // The tabs are this window's: kept under its own key, never the first window's.
+  assert.ok(storage.has("amplefile.file-manager.tabs.v1.window-2"));
+  assert.equal(storage.has("amplefile.file-manager.tabs.v1"), false, "window 1's tabs are left alone");
+
+  // Open in New Window, beside Open in New Tab, in a folder's menu and a Connected Folder's sidebar menu.
+  await view.dom.act(() => { view.row("Notes")!.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 80 })); });
+  const items = () => [...view.container.querySelectorAll<HTMLButtonElement>('.fm-menu [role="menuitem"]')];
+  assert.deepEqual(items().slice(0, 3).map((item) => item.textContent), ["Open Folder", "Open in New Tab", "Open in New Window"]);
+  await view.dom.act(() => items().find((item) => item.textContent === "Open in New Window")!.click());
+  await view.dom.waitFor(() => opened.length === 1);
+  assert.deepEqual(opened[0], { place: { kind: "connected-folder", id: "lab" }, path: "Notes" });
+  await view.dom.act(() => { [...view.container.querySelectorAll<HTMLButtonElement>(".fm-sidebar-item")].find((item) => item.textContent?.includes("Garden"))!.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 200 })); });
+  assert.deepEqual(items().slice(0, 2).map((item) => item.textContent), ["Open in New Tab", "Open in New Window"]);
+  await view.dom.act(() => items().find((item) => item.textContent === "Open in New Window")!.click());
+  await view.dom.waitFor(() => opened.length === 2);
+  assert.deepEqual(opened[1], { place: { kind: "connected-folder", id: "garden" }, path: "" });
+  assert.equal(view.tabs().length, 2, "a new window, not a new tab");
+});

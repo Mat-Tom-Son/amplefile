@@ -208,14 +208,14 @@ other surface.
   position, search, and whether it shows the Trash or Recents; going to
   another folder in a tab starts that tab fresh there. **New Tab** (⌘T,
   Ctrl+T) opens one right after the tab in front, at what it shows. **Open in
-  New Tab** is in a folder's menu and in the sidebar's menus; ⌘-click
+  New Tab** (and **Open in New Window**) is in a folder's menu and in the sidebar's menus; ⌘-click
   (Ctrl-click) a sidebar place, or ⌘-double-click (Ctrl-double-click) a
   folder, opens it in a new tab in front, and a middle click opens it in a
   new tab behind. The next and previous tab are Ctrl+Tab and Ctrl+Shift+Tab,
   ⇧⌘] and ⇧⌘[ on a Mac, and Ctrl+PageDown and Ctrl+PageUp elsewhere. **Close
   Tab** (⌘W, Ctrl+W) closes the tab in front (the browser tab in front while
-  the Browser pane has the keyboard) and closing the last one closes the
-  window, which leaves AmpleFile running. The strip sits at the top of the
+  the Browser pane has the keyboard) and closing the last one closes that
+  window alone, which leaves AmpleFile and its other windows running. The strip sits at the top of the
   folder area and shows once there are two tabs, or always with **View → Show
   Tab Bar**. A tab's title is its folder's name (the place's own name at its
   top, **Trash**, or **Recents**); two tabs on different folders of the same
@@ -224,7 +224,8 @@ other surface.
   by dragging; items dropped on a tab move or copy into its folder under the
   same rules as dropping on the list, and items held over a tab bring it to
   the front. The tabs, their folders, Back and Forward, and the one in front
-  come back when the window reopens, from this computer only. The panel
+  come back when the window reopens, from this computer only, each window
+  with its own. The panel
   follows the tab in front: its Info, History, and message box are for that
   tab's folder, and each tab keeps its own open Chat. A Chat in a tab behind
   stays open out of sight, so its reply goes on and shows where it was;
@@ -488,6 +489,55 @@ other surface.
 - **Customize Connected Folder** has Name, Icon, and Color. A chosen icon is
   stamped on the Connected Folder's folder as macOS draws a symbol on a
   folder ([Connected Folder customization](connected-folder-customization.md)).
+
+### Windows
+
+AmpleFile can show several file manager windows at once. **File → New
+Window** (⌘N; Ctrl+N on Linux) opens another window at the folder the front
+window shows, or at the home folder, a step down and to the right of it, so
+two windows never sit exactly on top of each other. **Open in New Window**,
+beside **Open in New Tab** in a folder's menu and the sidebar's menus, opens
+that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Alt+N).
+
+- **Each window is its own:** its folder tabs (each with its folder,
+  selection, and Chat), panel, Browser pane tabs, and size and place on the
+  screen, and the Connected Folder it shows, which names the window in its
+  title. The window's title, Open Recent, and **New Window** follow the tab
+  in front. Every window sees the same Connected
+  Folders, Standard Folders, drives, Trash, running Chats, and running file
+  operations, so a change made in one (a rename, a new Connected Folder, a
+  finished copy) shows in the others.
+- **The front window:** the menus act on the window in front. A command goes
+  to it, and the View menu's check marks and the items that need a Connected
+  Folder follow it. A dialog, a native menu, or a site's question opens over
+  the window that asked.
+- **What windows share:** Icons or List and the sort remembered for each
+  folder are one set for every window, so a folder looks the same in all of
+  them. The last choice of view and sort (for folders never set), Show
+  Hidden Files, and the panel and sidebar widths are kept on this computer:
+  each window keeps its own while it is open, and a new window starts with
+  the last one changed. The Connected Folder a window shows, its folder tabs,
+  and how it left its Browser pane are kept for that window alone, so two
+  windows never restore or overwrite each other's tabs.
+- **Folders handed to AmpleFile** (Finder's Open, a launcher's argument, a
+  second launch, a FileManager1 call on Linux) open in the front window, as
+  they did with one window, so an app that asks again and again to show a
+  folder never piles windows up. When one request names several folders (a
+  launcher given several, `ShowFolders` with several), the first opens in the
+  front window and each further one in a new window, as a system file
+  manager does.
+- **Browser pages** belong to the window that opened them; a page a Worker
+  opens appears in the window showing that Worker's Connected Folder, else the
+  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+- **Closing and quitting:** closing one of several windows closes only it.
+  Closing the last window keeps AmpleFile and every accepted Chat turn,
+  Automation, and file operation running; reopening AmpleFile (the Dock, the
+  tray, launching it again) brings the window back. Quit, Restart to Update,
+  and the "still running" notice keep their rules and wording: they count the
+  work of every window, and the notice comes when the last window closes.
+- **Coming back:** the windows open when AmpleFile quit come back at the next
+  launch, each where it was. A window closed while others stayed open is
+  forgotten; the last window closed keeps its place for the next one.
 
 ### First run
 
@@ -1040,15 +1090,16 @@ on the CLI, with the same receipts and the same named limits.
 ## Desktop shell
 
 - macOS uses its native hidden-inset title bar and application, File, Edit,
-  View, Window, and Help menus. Window size, position, and theme are kept,
-  and the renderer recovers from a crash.
-- Closing the last window keeps AmpleFile running; the Dock icon brings the
-  window back. **Quit** exits cleanly. Closing the window never stops an
-  accepted turn.
+  View, Window, and Help menus. Each window's size and position, and the
+  theme, are kept, and each window's renderer recovers from a crash on its
+  own ([Windows](#windows)).
+- Closing one of several windows closes only it. Closing the last window
+  keeps AmpleFile running; the Dock icon brings the windows back. **Quit**
+  exits cleanly. Closing a window never stops an accepted turn.
 - The menu-bar item opens the AmpleFile Agent popover on click; a right
   click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
   for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
-  icon become reference chips. The popover works with the main window
+  icon become reference chips. The popover works with every window
   closed, holds drops without sending, and its Stop names the AmpleFile
   agent turn and every delegated Connected Folder turn it aborts.
 - Explicit Copy actions in the window and the popover write text (and

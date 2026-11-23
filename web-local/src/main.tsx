@@ -20,6 +20,10 @@ import { App } from "./App";
 import { ModelContextInspector } from "./components/chat/ModelContextInspector";
 import { startExitMotion } from "./lib/motion";
 import { desktopPlatform, previewPlatform } from "./lib/platform";
+import { startWindowStorage } from "./lib/window-storage";
+
+// A new window forgets what an earlier window in its slot left, before anything reads it.
+startWindowStorage();
 
 const platform = desktopPlatform();
 if (platform) document.documentElement.dataset.platform = platform;

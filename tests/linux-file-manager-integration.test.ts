@@ -33,7 +33,7 @@ import {
   writeFileManagerServiceFile,
   type LinuxFileManagerEnvironment,
 } from "../desktop/src/linux-file-manager-integration.js";
-import { fileManagerOpenPath } from "../desktop/src/linux-file-manager-host.js";
+import { fileManagerOpenPaths, launcherOpenPaths, maximumWindowsPerRequest } from "../desktop/src/linux-file-manager-host.js";
 import type { FileManagerService } from "../desktop/src/linux-file-manager-service.js";
 
 /**
@@ -79,9 +79,26 @@ test("a request keeps usable URIs in order, without repeats, from the first 64 o
 });
 
 test("ShowFolders opens the folder; ShowItems and ShowItemProperties show the item selected in its folder", () => {
-  assert.deepEqual(fileManagerOpenPath({ method: "ShowFolders", paths: ["/a", "/b"], startupId: null }), { path: "/a", reveal: false });
-  assert.deepEqual(fileManagerOpenPath({ method: "ShowItems", paths: ["/a/f"], startupId: null }), { path: "/a/f", reveal: true });
-  assert.deepEqual(fileManagerOpenPath({ method: "ShowItemProperties", paths: ["/a/f"], startupId: null }), { path: "/a/f", reveal: true });
+  assert.deepEqual(fileManagerOpenPaths({ method: "ShowFolders", paths: ["/a"], startupId: null }), [{ path: "/a", reveal: false, newWindow: false }]);
+  assert.deepEqual(fileManagerOpenPaths({ method: "ShowItems", paths: ["/a/f"], startupId: null }), [{ path: "/a/f", reveal: true, newWindow: false }]);
+  assert.deepEqual(fileManagerOpenPaths({ method: "ShowItemProperties", paths: ["/a/f"], startupId: null }), [{ path: "/a/f", reveal: true, newWindow: false }]);
+});
+
+test("one folder opens in the most recent window; each further folder of a request opens a window of its own", () => {
+  assert.deepEqual(fileManagerOpenPaths({ method: "ShowFolders", paths: ["/a", "/b", "/c"], startupId: null }), [
+    { path: "/a", reveal: false, newWindow: false },
+    { path: "/b", reveal: false, newWindow: true },
+    { path: "/c", reveal: false, newWindow: true },
+  ]);
+  // Items in one folder share its window, with the first one selected; another folder's items get another window.
+  assert.deepEqual(fileManagerOpenPaths({ method: "ShowItems", paths: ["/a/f", "/a/g", "/b/h"], startupId: null }), [
+    { path: "/a/f", reveal: true, newWindow: false },
+    { path: "/b/h", reveal: true, newWindow: true },
+  ]);
+  const many = Array.from({ length: 20 }, (_, index) => `/folder-${index}`);
+  assert.equal(fileManagerOpenPaths({ method: "ShowFolders", paths: many, startupId: null }).length, maximumWindowsPerRequest, "bounded");
+  assert.deepEqual(launcherOpenPaths(["/x", "/y"]), [{ path: "/x", reveal: false, newWindow: false }, { path: "/y", reveal: false, newWindow: true }]);
+  assert.deepEqual(launcherOpenPaths([]), []);
 });
 
 // ---------------------------------------------------------------------------
