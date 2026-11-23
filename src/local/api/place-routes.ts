@@ -315,30 +315,40 @@ async function resolveTransferItem(place: TransferPlaceRef, path: string, purpos
   return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
 }
 
+/** A Connected Folder nested in another, with every way its root compares (src/local/path-comparison.ts). */
+interface NestedFolder { name: string; forms: string[] }
+
 /**
- * The Connected Folder nested in `connectedFolder` that a path inside it
- * belongs to (`inside`) or holds (`holds`), or null. Nested Connected
- * Folders are the ones registered inside this one, pending removals
- * included, and any other registered Connected Folder that the disk
- * resolves to a folder inside this one, however its path was written when
- * it was registered: in another letter case, with an accent spelled the
- * other way, or through a linked folder (src/local/path-comparison.ts).
+ * The Connected Folders nested in `connectedFolder`: the ones registered
+ * inside it, pending removals included, and any other registered Connected
+ * Folder that the disk resolves to a folder inside it, however its path was
+ * written when it was registered (in another letter case, with an accent
+ * spelled the other way, or through a linked folder).
  */
-async function nestedFolderAt(connectedFolder: ConnectedFolderSummary, path: string, options: { finalLink?: boolean } = {}): Promise<{ name: string; relation: "inside" | "holds" } | null> {
+async function nestedFoldersOf(connectedFolder: ConnectedFolderSummary): Promise<NestedFolder[]> {
   const root = ensureSafeConnectedFolderRoot(connectedFolder.connectedFolderRoot);
-  const nested = [
+  const candidates = [
     ...(await nestedRegisteredConnectedFolderPaths(root)).map((relativePath) => ({ name: relativePath, root: join(root, ...relativePath.split("/")) })),
     ...(await listConnectedFolders()).filter((other) => other.id !== connectedFolder.id).map((other) => ({ name: other.name, root: other.connectedFolderRoot })),
   ];
-  if (!nested.length) return null;
+  if (!candidates.length) return [];
   const own = await comparableForms(root);
+  const nested: NestedFolder[] = [];
+  for (const candidate of candidates) {
+    const forms = await comparableForms(candidate.root);
+    // Inside this Connected Folder, not the one this is nested in.
+    if (formsContain(own, forms) && !formsContain(forms, own)) nested.push({ name: candidate.name, forms });
+  }
+  return nested;
+}
+
+/** The nested Connected Folder a path belongs to (`inside`) or holds (`holds`), or null. */
+async function nestedFolderAt(nested: readonly NestedFolder[], path: string, options: { finalLink?: boolean } = {}): Promise<{ name: string; relation: "inside" | "holds" } | null> {
+  if (!nested.length) return null;
   const asked = await comparableForms(path, options);
   for (const other of nested) {
-    const registered = await comparableForms(other.root);
-    // Inside this Connected Folder, not the one this is nested in.
-    if (!formsContain(own, registered) || formsContain(registered, own)) continue;
-    if (formsContain(registered, asked)) return { name: other.name, relation: "inside" };
-    if (formsContain(asked, registered)) return { name: other.name, relation: "holds" };
+    if (formsContain(other.forms, asked)) return { name: other.name, relation: "inside" };
+    if (formsContain(asked, other.forms)) return { name: other.name, relation: "holds" };
   }
   return null;
 }
@@ -351,7 +361,7 @@ async function nestedFolderAt(connectedFolder: ConnectedFolderSummary, path: str
  * through its parent. A folder that holds a nested one is the parent's.
  */
 async function assertTargetOutsideNestedFolders(connectedFolder: ConnectedFolderSummary, target: string): Promise<void> {
-  const nested = await nestedFolderAt(connectedFolder, target);
+  const nested = await nestedFolderAt(await nestedFoldersOf(connectedFolder), target);
   if (nested?.relation === "inside") throw httpError(409, `${nested.name} is a Connected Folder of its own. Open that Connected Folder to put items in it.`);
 }
 
@@ -360,14 +370,15 @@ async function assertTargetOutsideNestedFolders(connectedFolder: ConnectedFolder
  * an item inside one, or a folder that holds one. The delete's own check
  * (`resolveConnectedFolderDeleteTarget`) finds the nested ones written the
  * way this Connected Folder is; this finds one registered under any other
- * spelling of its path, so it cannot leave through its parent.
+ * spelling of its path, so it cannot leave through its parent. `nested` is
+ * read once for a move (`nestedFoldersOf`), not once for each item.
  */
-async function assertSourceClearOfNestedFolders(connectedFolder: ConnectedFolderSummary, absolutePath: string, relativePath: string): Promise<void> {
-  const nested = await nestedFolderAt(connectedFolder, absolutePath, { finalLink: true });
-  if (!nested) return;
-  throw httpError(409, nested.relation === "inside"
-    ? `${relativePath} belongs to the ${nested.name} Connected Folder. Open that Connected Folder to change it.`
-    : `${relativePath} holds the ${nested.name} Connected Folder, which has its own Worker. Remove that Connected Folder from AmpleFile first, or change it in ${process.platform === "darwin" ? "Finder" : "your file manager"}.`);
+async function assertSourceClearOfNestedFolders(nested: readonly NestedFolder[], absolutePath: string, relativePath: string): Promise<void> {
+  const found = await nestedFolderAt(nested, absolutePath, { finalLink: true });
+  if (!found) return;
+  throw httpError(409, found.relation === "inside"
+    ? `${relativePath} belongs to the ${found.name} Connected Folder. Open that Connected Folder to change it.`
+    : `${relativePath} holds the ${found.name} Connected Folder, which has its own Worker. Remove that Connected Folder from AmpleFile first, or change it in ${process.platform === "darwin" ? "Finder" : "your file manager"}.`);
 }
 
 /**
@@ -1001,9 +1012,10 @@ async function moveOutOfConnectedFolder(
         const place: TransferPlaceRef = { kind: "connected-folder", id: from.id };
         const named = new Map(sources.flatMap((source) => source.name ? [[source.relativePath, source.name] as const] : []));
         const entries: MoveEntry[] = [];
+        const nested = await nestedFoldersOf(from);
         for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
           const entry = await resolveConnectedFolderDeleteTarget(root, path);
-          await assertSourceClearOfNestedFolders(from, entry.absolutePath, entry.path);
+          await assertSourceClearOfNestedFolders(nested, entry.absolutePath, entry.path);
           const name = named.get(entry.path);
           entries.push({ absolutePath: entry.absolutePath, path: entry.path, place, ...(name ? { name } : {}) });
         }

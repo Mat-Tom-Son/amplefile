@@ -451,7 +451,22 @@ test("a transfer's target is never inside a nested Connected Folder named throug
   assert.equal(await readFile(join(parentRoot, "notes.md"), "utf8"), "notes");
   assert.equal(await readFile(join(plain, "loose.txt"), "utf8"), "loose");
   assert.equal(await readFile(join(other.connectedFolderRoot, "theirs.txt"), "utf8"), "theirs");
-  // Beside it is the parent's own folder.
-  const beside = await transfer(call, { mode: "copy", sources: [inFolder(parent, "notes.md")], target: inFolder(parent, "Projects") });
-  assert.equal(beside.status, 200, JSON.stringify(beside.body));
+  // Duplicate, Compress, and Extract write beside the item, so they are refused there too.
+  await writeFile(join(parentRoot, "Projects", "Child", "inside.txt"), "inside");
+  await writeFile(join(parentRoot, "Projects", "Child", "old.zip"), "not read: the folder is refused first");
+  const beside = [
+    await transfer(call, { mode: "duplicate", sources: [inFolder(parent, "Projects/Child/inside.txt")], target: inFolder(parent, "Projects/Child") }),
+    await call("/api/file-transfer/compress", { method: "POST", body: { place: inFolder(parent, "").place, paths: ["Projects/Child/inside.txt"] } }),
+    await call("/api/file-transfer/extract", { method: "POST", body: { place: inFolder(parent, "").place, path: "Projects/Child/old.zip" } }),
+  ];
+  for (const refused of beside) {
+    assert.equal(refused.status, 409, JSON.stringify(refused.body));
+    assert.match(refused.body!.error, /Connected Folder/);
+  }
+  assert.deepEqual((await readdir(join(parentRoot, "Projects", "Child"))).filter((name) => !name.startsWith(".")).sort(), ["Inner", "inside.txt", "old.zip"], "nothing was written beside them");
+  await rm(join(parentRoot, "Projects", "Child", "inside.txt"));
+  await rm(join(parentRoot, "Projects", "Child", "old.zip"));
+  // The folder that holds it is the parent's own.
+  const holder = await transfer(call, { mode: "copy", sources: [inFolder(parent, "notes.md")], target: inFolder(parent, "Projects") });
+  assert.equal(holder.status, 200, JSON.stringify(holder.body));
 });
