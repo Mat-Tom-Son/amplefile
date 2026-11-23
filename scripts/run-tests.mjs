@@ -93,7 +93,32 @@ delete env.PI_CODING_AGENT_SESSION_DIR;
 const concurrency = Number.parseInt(process.env.AMPLEFILE_TEST_CONCURRENCY ?? "", 10);
 const concurrencyArgs = Number.isInteger(concurrency) && concurrency > 0 ? [`--test-concurrency=${concurrency}`] : [];
 
-const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...concurrencyArgs, ...files], {
+// A test that hangs or grows without end fails by name instead of taking the
+// computer with it. Each test gets a time limit (AMPLEFILE_TEST_TIMEOUT_MS,
+// three minutes unless set; 0 for none), and every test process gets a heap
+// ceiling (AMPLEFILE_TEST_HEAP_MB, 2 GB unless set; 0 for none): past it the
+// process ends with Node's "heap out of memory" and its file fails. The
+// ceiling travels in NODE_OPTIONS because the runner starts one process per
+// test file; a ceiling the developer already set there is kept.
+const timeoutMs = limitFromEnvironment("AMPLEFILE_TEST_TIMEOUT_MS", 180_000);
+const timeoutArgs = timeoutMs > 0 ? [`--test-timeout=${timeoutMs}`] : [];
+const heapMb = limitFromEnvironment("AMPLEFILE_TEST_HEAP_MB", 2048);
+if (heapMb > 0 && !/--max-old-space-size/.test(env.NODE_OPTIONS ?? "")) {
+  env.NODE_OPTIONS = [env.NODE_OPTIONS, `--max-old-space-size=${heapMb}`].filter(Boolean).join(" ");
+}
+
+function limitFromEnvironment(name, fallback) {
+  const value = process.env[name]?.trim();
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    console.error(`${name} must be a whole number, or 0 for no limit.`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
+const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...concurrencyArgs, ...timeoutArgs, ...files], {
   cwd: rootDir,
   env,
   stdio: "inherit",

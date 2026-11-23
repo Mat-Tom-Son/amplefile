@@ -206,6 +206,12 @@ extra repository instruction source.
   each, so on a machine with less memory than that calls for, set
   `AMPLEFILE_TEST_CONCURRENCY` (for example `AMPLEFILE_TEST_CONCURRENCY=4 npm test`)
   to run fewer at once.
+- A test that hangs or grows without end fails by name. Each test has three
+  minutes (`AMPLEFILE_TEST_TIMEOUT_MS`), and each test process has a 2 GB heap
+  ceiling (`AMPLEFILE_TEST_HEAP_MB`), past which it ends with Node's "heap out
+  of memory" and its file fails; `0` turns either limit off. In a window test,
+  compare plain values, not live elements: a failed `assert.equal` on an
+  element makes Node describe the whole mounted window.
 - Tests never use your real Pi folder. The runner points `PI_CODING_AGENT_DIR`
   at a temporary folder for every test process, so no test reads your
   provider credentials or writes sessions, settings, or locks into `~/.pi`, and
