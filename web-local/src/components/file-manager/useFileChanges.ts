@@ -74,11 +74,12 @@ export function useFileChanges(context: FileChangesContext) {
    * Asks about taken names first (the engine's conflicts-first answer: nothing
    * is written), then runs with the person's choices. Null when they chose Stop.
    */
-  async function withConflictChoices(check: () => Promise<TransferResult>, verb: string, where: string): Promise<{ policy: ConflictPolicy | undefined } | null> {
+  /** `verb` may follow the check's answer: a paste learns there whether it moves (a Cut from any window) or copies. */
+  async function withConflictChoices(check: () => Promise<TransferResult>, verb: string | ((asked: TransferResult) => string), where: string): Promise<{ policy: ConflictPolicy | undefined } | null> {
     const asked = await check();
     if (asked.nothing) return { policy: undefined };
     if (!asked.conflicts?.length) return { policy: undefined };
-    const policy = await conflictQuestion.ask(asked.conflicts, verb, where);
+    const policy = await conflictQuestion.ask(asked.conflicts, typeof verb === "function" ? verb(asked) : verb, where);
     return policy ? { policy } : null;
   }
 

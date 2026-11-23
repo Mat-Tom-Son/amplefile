@@ -289,12 +289,23 @@ other surface.
   link to a Chat is not offered.
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
   pasteboard so Finder can paste it; ⌘X cuts it:
-  the items stay where they are, drawn dimmed, until ⌘V moves them or the
-  clipboard holds something else. ⌘V pastes what was copied or cut here or
-  in Finder (the desktop process reads the pasteboard and pastes; the window
-  never reads the clipboard); ⌥⌘V moves what was copied; ⌘D duplicates. A
-  Mac's pasteboard has no Cut marker, so a Cut is this window's own. The Edit menu's
-  Cut, Copy, and Paste do the same while the folder list has the keyboard.
+  the items stay where they are, drawn dimmed in every window, until ⌘V in
+  any window moves them, under the same rules as a move by paste in the
+  window that cut them. ⌘V pastes what was copied or cut here, in another
+  window, or in Finder (the desktop process reads the pasteboard and pastes;
+  the window never reads the clipboard); ⌥⌘V moves what was copied; ⌘D
+  duplicates. A Mac's pasteboard has no Cut marker, so ⌘X puts the files
+  there as Finder's Copy does, and the desktop app remembers the Cut by
+  exactly what it put there. The Cut is forgotten, and no window draws it
+  any more, once it is pasted; once **Esc** cancels it (with nothing
+  selected, in a folder that shows a cut item), which leaves nothing to
+  paste; or once the pasteboard holds something else: a Copy here, text, or
+  anything another app copies. Finder copying the same files afresh is a
+  Copy of them, never the Cut, and pastes as a copy. A Copy of items or a
+  Copy button here forgets the Cut at once; anything else on the pasteboard
+  is noticed when a window comes to the front or at the next paste. The Edit
+  menu's Cut, Copy, and Paste do the same while the folder list has the
+  keyboard.
   The right-click menu (the native menu on the Mac, the window's own with
   the same items elsewhere) adds Copy, Cut, Duplicate, Compress, **Extract**
   for an archive, New Folder with Selection, and Paste Here. Files dropped
@@ -488,9 +499,9 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
   screen, and the Connected Folder it shows, which names the window in its
   title. The window's title, Open Recent, and **New Window** follow the tab
   in front. Every window sees the same Connected
-  Folders, Standard Folders, drives, Trash, running Chats, and running file
-  operations, so a change made in one (a rename, a new Connected Folder, a
-  finished copy) shows in the others.
+  Folders, Standard Folders, drives, Trash, running Chats, running file
+  operations, and Cut, so a change made in one (a rename, a new Connected
+  Folder, a finished copy, items cut) shows in the others.
 - **The front window:** the menus act on the window in front. A command goes
   to it, and the View menu's check marks and the items that need a Connected
   Folder follow it. A dialog, a native menu, or a site's question opens over
@@ -1068,13 +1079,19 @@ on the CLI, with the same receipts and the same named limits.
 - macOS uses its native hidden-inset title bar and application, File, Edit,
   View, Window, and Help menus. Each window's size and position, and the
   theme, are kept, and each window's renderer recovers from a crash on its
-  own ([Windows](#windows)).
+  own ([Windows](#windows)). File → **Refresh** (⌘R) reads the folder shown
+  again in any place (a Connected Folder, a Standard Folder, the disk, or
+  any other folder) with the sidebar's Connected Folders and Standard
+  Folders; **New Chat** and **Skills & Extensions** wait for a Connected
+  Folder.
 - Closing one of several windows closes only it. Closing the last window
   keeps AmpleFile running; the Dock icon brings the windows back. **Quit**
   exits cleanly. Closing a window never stops an accepted turn.
 - The menu-bar item opens the AmpleFile Agent popover on click; a right
   click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
-  for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
+  for Updates...**, and **Quit AmpleFile**. View → **Toggle AmpleFile
+  Agent** (⌘J) shows or hides the same popover from any window, with or
+  without a Connected Folder. Files or links dropped on the
   icon become reference chips. The popover works with every window
   closed, holds drops without sending, and its Stop names the AmpleFile
   agent turn and every delegated Connected Folder turn it aborts.

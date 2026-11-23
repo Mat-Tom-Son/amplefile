@@ -594,7 +594,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const changes = useFileChanges({ fixtureMode, place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError });
   const { deletePaths, duplicateSelection, renameEntry, runTrashDeletion } = changes;
   const clipboard = useFileClipboard({ fixtureMode, place, placeRoot, location, contentRef, changes, nameOfPlace, onError });
-  const { cutItems } = clipboard;
+  const { cutPaths } = clipboard;
   const drops = useFileDrops({ fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop: searchMode || recentsOpen, listing, changes, select, nameOfPlace, onError });
   const { dropTarget, setDropTarget, isItemDrag } = drops;
   const menus = useFileManagerMenus({
@@ -973,7 +973,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   // The menu bar's commands that mean something here: Skills & Extensions
-  // (⌘⇧S) for the Connected Folder shown, New Chat (⌘⇧N) at the message box, and Refresh (⌘R).
+  // (⌘⇧S) for the Connected Folder shown, New Chat (⌘⇧N) at the message box, and Refresh (⌘R), which reads
+  // the folder shown again in any place, with the sidebar's Connected Folders and Standard Folders.
   useEffect(() => {
     if (!desktopAction) return;
     const { command } = desktopAction;
@@ -987,7 +988,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       setPanelOpen(true);
       setPanelChat((current) => current ? { ...current, open: false } : current);
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
-    } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+    } else if (command === "refresh") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W): nothing behind a dialog. While the Browser pane has the keyboard it closes the browser tab in
@@ -1373,7 +1374,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (event.key === " ") { event.preventDefault(); quickLook(focusPath); return; }
     if (event.key === "Enter" && selection.length === 1) { event.preventDefault(); requestRename(byPath.get(selection[0]!)); return; }
     if (event.key === "Escape" && previewShown) { event.preventDefault(); setPreviewOpen(false); return; }
-    if (event.key === "Escape") { if (selection.length) { event.preventDefault(); select([]); } return; }
+    // Esc clears the selection; with nothing selected, it cancels a Cut shown here (in every window).
+    if (event.key === "Escape") {
+      if (selection.length) { event.preventDefault(); select([]); }
+      else if (cutPaths && order.some((path) => cutPaths.has(path))) { event.preventDefault(); void clipboard.cancelCut(); }
+      return;
+    }
     if (!command && !event.altKey && event.key.length === 1 && /\S/.test(event.key)) {
       const typed = typeSelectRef.current;
       typed.text += event.key;
@@ -1729,7 +1735,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           focusPath={focusPath}
           dropTarget={dropTarget !== location.path ? dropTarget : null}
           markedPaths={markedPaths}
-          cutPaths={cutItems && samePlace(cutItems.place, place) ? cutItems.paths : null}
+          cutPaths={cutPaths}
           kindLabel={kindLabel}
           day={calendarDay}
           tintFor={nestedTint}

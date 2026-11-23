@@ -43,6 +43,26 @@ test("the Darwin Connected Folder header menu requires the trusted main renderer
   assert.match(preload, /popupHeaderMenu: \(request[\s\S]*?ipcRenderer\.invoke\("amplefile:connected-folder:popup-header-menu", request\)/);
 });
 
+test("the menu bar's items work in every place: Refresh with any folder shown, the AmpleFile Agent with or without a Connected Folder", () => {
+  const menus = main.slice(main.indexOf("function buildApplicationSubmenuTemplate("), main.indexOf("function macApplicationMenu("));
+  // File → Refresh (⌘R) reads the folder shown again in a Connected Folder, a Standard Folder, the disk, or any other
+  // folder, so it follows whether the window shows its folders, not whether a Connected Folder is open.
+  assert.match(menus, /\{ id: "refresh", label: "Refresh", accelerator: "CommandOrControl\+R", enabled: state\.folderTabsOpen, click: menuCommand\("refresh"\) \}/);
+  assert.doesNotMatch(main, /Refresh Connected Folder|reload-connected-folder-state|refresh-connected-folder/);
+  // View → Toggle AmpleFile Agent (⌘J) shows or hides the menu-bar popover from the host, always enabled where the
+  // popover lives; it no longer goes to a window that has no agent panel.
+  assert.match(menus, /\.\.\.\(ampleFileAgentPopoverHosted\(\) \? \[\n\s*\{ id: "toggle-amplefile-agent", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl\+J", click: \(\) => \{ void toggleAmpleFileAgentPopover\(\); \} \},/);
+  assert.match(main, /function ampleFileAgentPopoverHosted\(\): boolean \{\n\s*return process\.platform === "darwin" \|\| process\.platform === "win32";\n\}/);
+  assert.doesNotMatch(main, /toggle-agent-panel/);
+  // The window has no sidebar to hide, so View → Toggle Sidebar (⌘B) is gone rather than dead.
+  assert.doesNotMatch(main, /Toggle Sidebar|toggle-sidebar|CommandOrControl\+B"/);
+  // Of the three, only the folder-tabs gate is left in the menu state, and nothing of them waits on a Connected Folder.
+  const refresh = main.slice(main.indexOf("function refreshApplicationMenuState("), main.indexOf("function setMenuItemEnabled("));
+  assert.match(refresh, /setMenuItemEnabled\(menu, "refresh", state\.folderTabsOpen\);/);
+  assert.doesNotMatch(refresh, /"(?:refresh|toggle-amplefile-agent)", state\.connectedFolderOpen/);
+  assert.doesNotMatch(refresh, /toggle-amplefile-agent/);
+});
+
 test("Finder and Open Recent recreate the Mac window before showing a queued folder where it lives", () => {
   assert.match(
     main,

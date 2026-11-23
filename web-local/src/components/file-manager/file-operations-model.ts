@@ -77,10 +77,13 @@ export interface TransferAnswer {
   conflicts?: TransferConflict[];
   // Paste through the desktop.
   nothing?: boolean;
+  /** The items were cut in a window of this app or copied in this one, and pasted by place. */
   fromHere?: boolean;
   count?: number;
   moved?: boolean;
   cut?: boolean;
+  /** Where the items pasted by place came from (a Cut in any window, or this window's Copy). */
+  from?: { place: FileManagerPlace; paths: string[] } | null;
 }
 
 /** One operation the window started, as its operations area shows it. */

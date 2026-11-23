@@ -52,5 +52,14 @@ function connectedFolderEntryNativePath(rootPath: string, relativePath: string, 
   return [root, ...segments].join(separator);
 }
 
-export { computerNoun, desktopPlatform, isMacOS, previewPlatform, systemFileManagerName, typographyFontForPlatform, connectedFolderEntryNativePath };
+/** The other way: a path on disk as an item's path in the place rooted at `rootPath`, or null when it is not inside. */
+function nativePathEntryPath(rootPath: string, nativePath: string, platform: DesktopPlatform = desktopPlatform()): string | null {
+  const separator = platform === "win32" ? "\\" : "/";
+  const root = rootPath.replace(/[\\/]+$/, "");
+  if (!nativePath.startsWith(`${root}${separator}`)) return null;
+  const relative = nativePath.slice(root.length + 1).split(/[\\/]+/).filter(Boolean).join("/");
+  return relative || null;
+}
+
+export { computerNoun, desktopPlatform, isMacOS, previewPlatform, systemFileManagerName, typographyFontForPlatform, connectedFolderEntryNativePath, nativePathEntryPath };
 export type { DesktopPlatform };
