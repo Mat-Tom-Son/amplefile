@@ -5,7 +5,7 @@ import { combineActivityStatuses } from "../../lib/folder-nesting";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import type { ChatActivityStatus, ConnectedFolderSummary } from "../../types";
 import { closedSidebarParents, sidebarConnectedFolderRows } from "./file-manager-model";
-import { placeKey, type FileManagerPlace, type StandardFolderSummary } from "./file-manager-places";
+import { placeKey, type FileManagerLocation, type FileManagerPlace, type StandardFolderSummary } from "./file-manager-places";
 import type { DriveRow } from "./file-manager-drives";
 import { SidebarDrives, SidebarTrashRow } from "./FileManagerSidebarPlaces";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
@@ -14,6 +14,9 @@ import type { FolderLook } from "./FileEntries";
 
 /** Connected Folders whose nested Connected Folders are shown in the sidebar. */
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
+
+/** What a sidebar row opens in a new tab: a place's top, a drive's folder, the Trash, or Recents. */
+export type SidebarTabTarget = FileManagerLocation | "recents" | "trash";
 
 /** Dropping on a sidebar place: what the window's drops do there. */
 export interface SidebarDropHandlers {
@@ -29,7 +32,7 @@ export interface SidebarDropHandlers {
  * (nested ones indented under their parent, behind a caret), and the drives,
  * with the update indicator at its foot.
  */
-export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, standardFolders, recentsOpen, trashOpen, atPlaceTop, isCurrent, folderStatuses, folderLook, drives, currentDrive, ejecting, drop, onOpenRecents, onOpenTrash, onAddStandardFolder, onOpenPlace, onStandardFolderMenu, onAddConnectedFolderMenu, onConnectedFolderMenu, onOpenDrive, onEjectDrive, foot }: {
+export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, standardFolders, recentsOpen, trashOpen, atPlaceTop, isCurrent, folderStatuses, folderLook, drives, currentDrive, ejecting, drop, onOpenRecents, onOpenTrash, onAddStandardFolder, onOpenPlace, onStandardFolderMenu, onAddConnectedFolderMenu, onConnectedFolderMenu, onOpenDrive, onEjectDrive, isNewTabClick, onOpenInNewTab, foot }: {
   connectedFolders: readonly ConnectedFolderSummary[];
   /** The Connected Folder shown, whose parents are kept open so where you are is in view. */
   shownConnectedFolder: ConnectedFolderSummary | null;
@@ -54,6 +57,10 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
   onConnectedFolderMenu: (connectedFolder: ConnectedFolderSummary, event: MouseEvent<HTMLElement>) => void;
   onOpenDrive: (row: DriveRow) => void;
   onEjectDrive: (row: DriveRow) => void;
+  /** A click that opens a place in a new tab: ⌘-click on the Mac, Ctrl-click elsewhere. */
+  isNewTabClick: (event: MouseEvent<HTMLElement>) => boolean;
+  /** Opens a place, the Trash, or Recents in a new tab; a middle click leaves it behind. */
+  onOpenInNewTab: (target: SidebarTabTarget, options: { behind: boolean }) => void;
   /** The update indicator, when there is one. */
   foot: ReactNode;
 }) {
@@ -90,15 +97,22 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
     if (closed.length) setSidebarOpen([...sidebarOpen, ...closed]);
   }, [shownConnectedFolder?.id, connectedFolders]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** ⌘-click (Ctrl-click elsewhere) and a middle click open the row in a new tab; anything else is the row's own click. */
+  const newTabProps = (target: SidebarTabTarget, open: () => void) => ({
+    onClick: (event: MouseEvent<HTMLElement>) => { if (isNewTabClick(event)) onOpenInNewTab(target, { behind: false }); else open(); },
+    onMouseDown: (event: MouseEvent<HTMLElement>) => { if (event.button === 1) event.preventDefault(); },
+    onAuxClick: (event: MouseEvent<HTMLElement>) => { if (event.button === 1) { event.preventDefault(); onOpenInNewTab(target, { behind: true }); } },
+  });
+
   return <nav className="fm-sidebar" aria-label="Sidebar">
     <div className="fm-sidebar-inset" aria-hidden="true" />
     <div className="fm-sidebar-scroll">
       <ul className="fm-sidebar-list fm-sidebar-top" aria-label="Recents">
-        <li><button type="button" className={`fm-sidebar-item${recentsOpen ? " is-current" : ""}`} aria-current={recentsOpen ? "page" : undefined} onClick={onOpenRecents}>
+        <li><button type="button" className={`fm-sidebar-item${recentsOpen ? " is-current" : ""}`} aria-current={recentsOpen ? "page" : undefined} {...newTabProps("recents", onOpenRecents)}>
           <span className="fm-sidebar-icon"><RecentsGlyph /></span>
           <span className="fm-sidebar-name">Recents</span>
         </button></li>
-        <SidebarTrashRow current={trashOpen} onOpen={onOpenTrash} />
+        <SidebarTrashRow current={trashOpen} openProps={newTabProps("trash", onOpenTrash)} />
       </ul>
       <div className="fm-sidebar-heading"><span id="fm-standard-heading">Standard Folders</span><button type="button" className="fm-heading-add" aria-label="Add a Folder to the Sidebar" title="Add a Folder" onClick={onAddStandardFolder}><Add16Regular /></button></div>
       {standardFolders.length ? <>
@@ -107,7 +121,7 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
             const target: FileManagerPlace = { kind: "standard", id: folder.id };
             const current = isCurrent(target);
             return <li key={folder.id}>
-              <button type="button" className={`fm-sidebar-item${current ? " is-current" : ""}${drop.over === placeKey(target) ? " is-drop-target" : ""}`} aria-current={current ? "page" : undefined} onClick={() => onOpenPlace(target)} onContextMenu={(event) => onStandardFolderMenu(folder, event)}
+              <button type="button" className={`fm-sidebar-item${current ? " is-current" : ""}${drop.over === placeKey(target) ? " is-drop-target" : ""}`} aria-current={current ? "page" : undefined} {...newTabProps({ place: target, path: "" }, () => onOpenPlace(target))} onContextMenu={(event) => onStandardFolderMenu(folder, event)}
                 onDragOver={(event) => drop.dragOver(target, event)}
                 onDragLeave={drop.dragLeave}
                 onDrop={(event) => drop.drop(target, folder.name, event)}>
@@ -131,14 +145,14 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
             {inside.length ? <button type="button" className={`fm-sidebar-caret${open ? " is-open" : ""}`} aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} Connected Folders inside ${item.name}`} title={open ? "Hide Connected Folders inside" : "Show Connected Folders inside"} onClick={() => toggleSidebarFolder(item.id)}>
               <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3.5 3-3.5 3z" fill="currentColor" /></svg>
             </button> : null}
-            <button type="button" className={`fm-sidebar-item${current ? " is-current" : ""}${drop.over === placeKey(target) ? " is-drop-target" : ""}`} aria-current={current ? "page" : undefined} onClick={() => {
+            <button type="button" className={`fm-sidebar-item${current ? " is-current" : ""}${drop.over === placeKey(target) ? " is-drop-target" : ""}`} aria-current={current ? "page" : undefined} {...newTabProps({ place: target, path: "" }, () => {
                 // A parent opens on the first click and goes to its top; clicking
                 // it again while there closes it.
                 const atTop = current && atPlaceTop;
                 if (inside.length && atTop && open) { toggleSidebarFolder(item.id); return; }
                 if (inside.length && !open) toggleSidebarFolder(item.id);
                 if (!atTop) onOpenPlace(target);
-              }} onContextMenu={(event) => onConnectedFolderMenu(item, event)}
+              })} onContextMenu={(event) => onConnectedFolderMenu(item, event)}
               onKeyDown={(event) => {
                 if (!inside.length) return;
                 if (event.key === "ArrowRight" && !open) { event.preventDefault(); toggleSidebarFolder(item.id); }
@@ -154,7 +168,7 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
           </li>;
         })}
       </ul>
-      <SidebarDrives rows={[...drives]} currentKey={currentDrive} ejecting={ejecting} onOpen={onOpenDrive} onEject={onEjectDrive} />
+      <SidebarDrives rows={drives} currentKey={currentDrive} ejecting={ejecting} onEject={onEjectDrive} openProps={(row) => newTabProps(row.location, () => onOpenDrive(row))} />
     </div>
     {foot}
   </nav>;

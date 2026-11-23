@@ -21,7 +21,11 @@ export function ActionMenu({ menu, onClose, onCommand }: { menu: ActionMenuState
     <div className="fm-menu-back" onClick={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
     <div className="fm-menu" role="menu" style={{ left: menu.x, top: menu.y }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); onClose(); } }}>
       {menu.target ? <>
-        <button type="button" className="fm-menu-i" role="menuitem" autoFocus onClick={() => run("customize", menu.target)}>Customize Connected Folder</button>
+        {menu.sidebar ? <>
+          <button type="button" className="fm-menu-i" role="menuitem" autoFocus onClick={() => run("open-in-new-tab", menu.target)}>Open in New Tab</button>
+          <div className="fm-menu-sep" />
+        </> : null}
+        <button type="button" className="fm-menu-i" role="menuitem" autoFocus={!menu.sidebar} onClick={() => run("customize", menu.target)}>Customize Connected Folder</button>
         <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("organize", menu.target)}>Organize</button>
         <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("skills", menu.target)}>Skills &amp; Extensions…</button>
         <div className="fm-menu-sep" />

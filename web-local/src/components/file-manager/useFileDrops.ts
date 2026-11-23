@@ -216,7 +216,13 @@ export function useFileDrops(context: FileDropsContext) {
     if (written.length) attach(written);
   }
 
+  /** Items dragged out of this window are on the way, so a drop moves them. */
+  function hasInternalDrag(): boolean {
+    return Boolean(internalDragRef.current);
+  }
+
   return {
+    hasInternalDrag,
     dropTarget,
     setDropTarget,
     sidebarDrop,

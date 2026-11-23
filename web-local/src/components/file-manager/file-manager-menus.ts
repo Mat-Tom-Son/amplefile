@@ -17,6 +17,7 @@ export function itemMenuCapabilities(target: TreeEntry, isItem: boolean, where: 
   }
   return {
     open: target.kind === "folder" || canOpenDirectly(target.path),
+    newTab: isItem && target.kind === "folder",
     attach: false,
     history: where.place.kind === "connected-folder" && target.kind === "file",
     upload: false,
