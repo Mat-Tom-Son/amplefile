@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 
 import {
@@ -6,6 +7,7 @@ import {
   planFileClipboardPaste,
   type FileClipboardPasteRequest,
   type PasteboardFiles,
+  type PastePlan,
   type PastePlace,
   type PasteSource,
   type RememberedCut,
@@ -23,8 +25,10 @@ import {
  *
  * The Cut is forgotten when the pasteboard holds something else (a Copy here
  * or in another app, Finder copying the same files fresh), when it is pasted,
- * and when it is cancelled. It knows nothing of Electron, so it is tested on
- * its own; desktop/src/main.ts gives it the pasteboard and the windows.
+ * when it is cancelled, and once any of its items is no longer where it was
+ * cut (renamed, deleted, or moved by a paste that failed or was stopped
+ * partway). It knows nothing of Electron, so it is tested on its own;
+ * desktop/src/main.ts gives it the pasteboard, the disk, and the windows.
  */
 export interface FileClipboardHost {
   /** The files on the pasteboard now. */
@@ -33,6 +37,8 @@ export interface FileClipboardHost {
   write(nativePaths: readonly string[], token: string | null): Promise<void> | void;
   /** Empties the pasteboard. */
   clear(): void;
+  /** Whether something is still at this path on disk (a link counts, wherever it points). */
+  exists(nativePath: string): Promise<boolean> | boolean;
   /** A new token for a Cut, or null where the pasteboard carries none. */
   token(): string | null;
   /** Tells every window what is cut now: the files, or null for nothing. */
@@ -81,17 +87,25 @@ export class FileClipboard {
   }
 
   /**
-   * The Cut while the pasteboard still holds what it put there; when it does
-   * not, the Cut is forgotten and every window hears it. `pasteboard` is a
-   * reading already taken, so a paste reads the pasteboard once.
+   * The Cut while the pasteboard still holds what it put there and its items
+   * are all where they were cut; otherwise the Cut is forgotten and every
+   * window hears it. `pasteboard` is a reading already taken, so a paste reads
+   * the pasteboard once.
    */
   async current(pasteboard?: PasteboardFiles): Promise<RememberedCut | null> {
     const cut = this.#cut;
     if (!cut) return null;
-    const holds = pasteboardHoldsCut(pasteboard ?? await this.#host.read(), cut);
-    if (holds) return cut;
-    if (this.#cut === cut) this.#set(null);
-    return null;
+    if (!pasteboardHoldsCut(pasteboard ?? await this.#host.read(), cut)) {
+      if (this.#cut === cut) this.#set(null);
+      return null;
+    }
+    // An item was renamed, deleted, or moved by a paste that failed or was stopped partway. The Cut no longer
+    // says where its items are, and the move would refuse it, so it is forgotten and leaves the pasteboard.
+    if (!(await this.#inPlace(cut))) {
+      await this.#forget(cut);
+      return null;
+    }
+    return cut;
   }
 
   /**
@@ -99,7 +113,13 @@ export class FileClipboard {
    * pasteboard is read once; a Cut it still holds moves by the place it was
    * cut in. A finished paste of a Cut empties the pasteboard, as the system
    * file managers do, so it never moves twice, and every window hears that
-   * nothing is cut. The conflicts-first check and a stopped paste keep it.
+   * nothing is cut. The conflicts-first check keeps it, and so does a paste
+   * that failed or was stopped before any item left its place.
+   *
+   * The answer's `plan` names what this paste carries; the run after the
+   * conflicts-first check sends it back, and is refused when the pasteboard
+   * has changed since, so it never carries items the person was not asked
+   * about.
    */
   async paste<Result extends object>(
     request: FileClipboardPasteRequest,
@@ -109,21 +129,32 @@ export class FileClipboard {
     const pasteboard = await this.#host.read();
     const cut = await this.current(pasteboard);
     const plan = planFileClipboardPaste(request, pasteboard, connectedFolders, cut);
+    const planned = pastePlanId(plan);
+    if (request.plan !== undefined && request.plan !== planned) throw new Error("The clipboard changed before the paste began. Paste again.");
     if (!plan.sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
-    const result = await transfer({
-      mode: plan.mode,
-      sources: plan.sources,
-      target: request.target,
-      ...(request.operationId ? { operationId: request.operationId } : {}),
-      ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
-    });
-    const finished = !("conflicts" in result) && !("cancelled" in result && result.cancelled);
-    if (plan.cut && finished) {
-      if (cut && plan.fromHere) await this.#forget(cut);
+    // The remembered Cut, when this paste moves it.
+    const pasting = plan.cut && plan.fromHere ? cut : null;
+    let result: Result;
+    try {
+      result = await transfer({
+        mode: plan.mode,
+        sources: plan.sources,
+        target: request.target,
+        ...(request.operationId ? { operationId: request.operationId } : {}),
+        ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
+      });
+    } catch (error) {
+      // A move that failed partway took some items: the Cut is kept only while all are where they were cut.
+      if (pasting) await this.current().catch(() => null);
+      throw error;
+    }
+    const stopped = "cancelled" in result && Boolean(result.cancelled);
+    if (plan.cut && !stopped && !("conflicts" in result)) {
+      if (pasting) await this.#forget(pasting);
       // Another app's Cut (GNOME Files, Dolphin): its files leave the pasteboard too.
       else if (pasteboardHolds(await this.#host.read(), pasteboard.paths)) this.#host.clear();
-    }
-    return { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut, from: plan.from };
+    } else if (stopped && pasting) await this.current().catch(() => null);
+    return { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut, from: plan.from, plan: planned };
   }
 
   /** The person cancelled the Cut (Esc): the items are no longer cut, and nothing is left to paste. */
@@ -137,11 +168,23 @@ export class FileClipboard {
     if (this.#cut === cut) this.#set(null);
   }
 
+  async #inPlace(cut: RememberedCut): Promise<boolean> {
+    for (const nativePath of cut.nativePaths) {
+      if (!(await this.#host.exists(nativePath))) return false;
+    }
+    return true;
+  }
+
   #set(cut: RememberedCut | null): void {
     if (cut === this.#cut) return;
     this.#cut = cut;
     this.#host.changed(cut ? cut.nativePaths : null);
   }
+}
+
+/** What a paste carries and whether it moves, as one id: the same pasteboard and request plan the same id. */
+export function pastePlanId(plan: PastePlan): string {
+  return createHash("sha256").update(JSON.stringify({ mode: plan.mode, cut: plan.cut, sources: plan.sources })).digest("hex");
 }
 
 /** A Cut request from a window: native paths and the same items by place, one for one. */

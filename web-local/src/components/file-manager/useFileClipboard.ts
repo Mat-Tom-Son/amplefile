@@ -131,9 +131,11 @@ export function useFileClipboard(context: FileClipboardContext) {
         const from = asked.from ?? null;
         const what = from ? transferLabel(from.paths) : `${asked.count ?? 0} items`;
         const touched = [target.place, from?.place].flatMap((item) => item?.kind === "connected-folder" ? [item.id] : []);
+        // The run carries what the person was asked about: the host refuses it if the pasteboard changed meanwhile.
+        const plan = asked.plan;
         result = await changes.runOperation(kind, operationTitle(kind, what, where), (handle) => historyTurn(touched, () => {
           handle.beforeSend();
-          return paste({ ...request, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) });
+          return paste({ ...request, operationId: handle.operationId, ...(plan ? { plan } : {}), ...(choices.policy ? { conflicts: choices.policy } : {}) });
         }));
       } else {
         if (!internal) { showToast({ text: "Nothing to paste", tone: "info" }); return; }

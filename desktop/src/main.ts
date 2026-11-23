@@ -55,7 +55,7 @@ import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
 import { FileClipboard, parseCutItems } from "./file-clipboard.js";
-import { parseFileClipboardPasteRequest, pasteboardFileList, readPasteboardFileList, type PasteboardFiles } from "./file-clipboard-paste.js";
+import { parseFileClipboardPasteRequest, pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
@@ -450,7 +450,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     extensionUi.on("event", (event: PiExtensionUiEvent) => {
     if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
-    else if (event.method === "copyText") clipboard.writeText(event.text);
+    else if (event.method === "copyText") copyTextToClipboard(event.text);
     else if (event.method === "openSettings") frontWindow()?.webContents.send("amplefile:agent:open-settings");
     else if (event.method === "quit") app.quit();
     });
@@ -591,7 +591,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       piOAuthHooks: createDesktopPiOAuthHooks({
         openExternal,
         readClipboard: () => clipboard.readText(),
-        writeClipboard: (value) => clipboard.writeText(value),
+        writeClipboard: (value) => copyTextToClipboard(value),
         showMessageBox: (options) => {
           const parent = BrowserWindow.getFocusedWindow() ?? frontWindow();
           return parent && !parent.isDestroyed() ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
@@ -2048,10 +2048,11 @@ type NativeCommandMenuItem<Command extends string> =
  * The files on the system pasteboard (Finder's Copy), newest format first,
  * with no Cut marker (a Mac's pasteboard has none) but the token an AmpleFile
  * Cut wrote beside them; empty when it holds no files. Elsewhere the desktop
- * reads no files from it.
+ * reads no files from it, only its text, where AmpleFile writes files as
+ * their paths.
  */
 async function readPasteboardFiles(): Promise<PasteboardFiles> {
-  if (process.platform !== "darwin") return { paths: [], operation: null, unreadable: true };
+  if (process.platform !== "darwin") return { paths: [], operation: null, unreadable: true, text: clipboard.readText() };
   const listed = readPasteboardFileList(clipboard.read("NSFilenamesPboardType"));
   if (listed.paths.length) return { paths: listed.paths, operation: null, cutToken: listed.cutToken };
   const url = clipboard.read("public.file-url").trim();
@@ -2067,7 +2068,7 @@ async function readPasteboardFiles(): Promise<PasteboardFiles> {
  * and the host remembers the Cut (fileClipboard).
  */
 async function writePasteboardFilePaths(paths: readonly string[], token: string | null = null): Promise<void> {
-  if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
+  if (process.platform !== "darwin") { clipboard.writeText(pasteboardFileText(paths)); return; }
   clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(pasteboardFileList(paths, token), "utf8"));
 }
 
@@ -2076,6 +2077,7 @@ const fileClipboard = new FileClipboard({
   read: readPasteboardFiles,
   write: writePasteboardFilePaths,
   clear: () => clipboard.clear(),
+  exists: async (nativePath) => Boolean(await lstat(nativePath).catch(() => null)),
   token: () => process.platform === "darwin" ? randomBytes(16).toString("hex") : null,
   changed: (nativePaths) => {
     const cut = nativePaths ? { nativePaths: [...nativePaths] } : null;
@@ -2084,6 +2086,12 @@ const fileClipboard = new FileClipboard({
     }
   },
 });
+
+/** Text AmpleFile puts on the clipboard (a sign-in code, an address): the pasteboard holds it now, so nothing is cut. */
+function copyTextToClipboard(text: string): void {
+  clipboard.writeText(text);
+  fileClipboard.replaced();
+}
 
 /**
  * A menu label as written, for Electron: it reads a single "&" as a keyboard
@@ -2260,6 +2268,8 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: (window) => railTooltipOverlays.get(window.id)?.raise(),
+    // An address or a picture the person copied from a page replaces what was cut.
+    onCopied: () => fileClipboard.replaced(),
     declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
@@ -2826,7 +2836,7 @@ function buildEditableContextMenuTemplate(window: BrowserWindow, params: Context
 function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
   if (params.selectionText.length > 0) template.push({ role: "copy", enabled: params.editFlags.canCopy });
-  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => clipboard.writeText(params.linkURL) });
+  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => copyTextToClipboard(params.linkURL) });
   return template;
 }
 

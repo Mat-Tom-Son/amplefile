@@ -39,6 +39,10 @@ test("a paste request is checked and keeps its progress id and conflict choices"
     operationId: "fm-1",
     conflicts: { apply: "replace" },
   });
+  // The check's plan travels with the run; anything that is not one is dropped.
+  const plan = "a".repeat(64);
+  assert.equal(parseFileClipboardPasteRequest({ target, plan }).plan, plan);
+  assert.equal("plan" in parseFileClipboardPasteRequest({ target, plan: "not a plan" }), false);
   assert.throws(() => parseFileClipboardPasteRequest({ mode: "copy" }), /where to paste/);
   assert.throws(() => parseFileClipboardPasteRequest({ target: { place: { kind: "elsewhere", id: "x" }, path: "" } }), /where to paste/);
 });
@@ -137,6 +141,11 @@ test("the pasteboard holds exactly these files, or exactly a Cut with its token"
   assert.equal(pasteboardHoldsCut({ paths: ["/a", "/b"], operation: "cut" }, { ...cut, token: null }), true);
   assert.equal(pasteboardHoldsCut({ paths: ["/c"], operation: "copy" }, { ...cut, token: null }), false);
   assert.equal(pasteboardHoldsCut({ paths: [], operation: null, unreadable: true }, cut), true);
+  // Where it reads no files but reads text, the Cut holds while the text is still its paths, in either line ending.
+  assert.equal(pasteboardHoldsCut({ paths: [], operation: null, unreadable: true, text: "/a\n/b" }, cut), true);
+  assert.equal(pasteboardHoldsCut({ paths: [], operation: null, unreadable: true, text: "/a\r\n/b\r\n" }, cut), true);
+  assert.equal(pasteboardHoldsCut({ paths: [], operation: null, unreadable: true, text: "a note" }, cut), false);
+  assert.equal(pasteboardHoldsCut({ paths: [], operation: null, unreadable: true, text: "" }, cut), false);
   assert.equal(pasteboardHoldsCut({ paths: ["/a"], operation: null, cutToken: cut.token }, { ...cut, nativePaths: [] }), false);
 });
 

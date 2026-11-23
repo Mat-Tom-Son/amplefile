@@ -131,7 +131,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     write: (paths: string[], operation: "copy" | "cut" = "copy", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => (
       ipcRenderer.invoke("amplefile:file-clipboard:write", operation === "cut" ? { paths, operation, from } : paths)
     ),
-    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null; operationId?: string; conflicts?: unknown }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
+    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null; operationId?: string; conflicts?: unknown; plan?: string }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
     // What is cut in any window, while the pasteboard still holds it; and each change, as it happens.
     cut: () => ipcRenderer.invoke("amplefile:file-clipboard:cut"),
     cancelCut: () => ipcRenderer.invoke("amplefile:file-clipboard:cancel-cut"),

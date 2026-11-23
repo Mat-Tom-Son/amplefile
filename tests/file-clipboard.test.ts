@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { FileClipboard, parseCutItems, type PasteTransfer } from "../desktop/src/file-clipboard.js";
-import { pasteboardFileList, readPasteboardFileList, type PasteboardFiles } from "../desktop/src/file-clipboard-paste.js";
+import { pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "../desktop/src/file-clipboard-paste.js";
 import { nativePathEntryPath } from "../web-local/src/lib/platform.js";
 
 /**
@@ -10,7 +10,8 @@ import { nativePathEntryPath } from "../web-local/src/lib/platform.js";
  * desktop host remembers a Cut made in any window by the exact files it put on
  * the pasteboard, so a paste in any window moves them, every window draws them
  * cut, and the Cut is forgotten once the pasteboard holds something else, once
- * it is pasted, or once it is cancelled.
+ * it is pasted, once it is cancelled, or once any of its items is no longer
+ * where it was cut.
  */
 
 const documents = { kind: "standard" as const, id: "documents" };
@@ -37,22 +38,27 @@ class FakePasteboard {
   }
 }
 
-/** The host and its windows: each window keeps what it last heard is cut, as the file manager draws it. */
+/**
+ * The host and its windows: each window keeps what it last heard is cut, as the file manager draws it. Every
+ * file is on disk until the test puts its path in `gone`.
+ */
 function setUp(options: { token?: () => string | null; read?: (pasteboard: FakePasteboard) => PasteboardFiles | Promise<PasteboardFiles> } = {}) {
   const pasteboard = new FakePasteboard();
   const windows = { one: null as string[] | null, two: null as string[] | null };
+  const gone = new Set<string>();
   let tokens = 0;
   const clipboard = new FileClipboard({
     read: () => options.read ? options.read(pasteboard) : pasteboard.read(),
     write: (nativePaths, token) => pasteboard.writeFiles(nativePaths, token),
     clear: () => pasteboard.clear(),
+    exists: async (nativePath) => !gone.has(nativePath),
     token: options.token ?? (() => (++tokens).toString(16).padStart(32, "0")),
     changed: (nativePaths) => {
       windows.one = nativePaths ? [...nativePaths] : null;
       windows.two = nativePaths ? [...nativePaths] : null;
     },
   });
-  return { pasteboard, windows, clipboard };
+  return { pasteboard, windows, gone, clipboard };
 }
 
 /** The place transfer as the local API answers: a conflicts-first check, a finished transfer, or a stopped one. */
@@ -96,13 +102,66 @@ test("a Cut made in one window pastes as a move in another, and every window dra
   assert.deepEqual(await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer), { mode: "copy", written: [], restorePoints: [], nothing: true });
 });
 
-test("a stopped paste keeps the Cut for another try", async () => {
-  const { pasteboard, windows, clipboard } = setUp();
+test("a paste that failed or was stopped keeps the Cut only while every item is still where it was cut", async () => {
+  // Stopped, or refused, before any item left its place: the Cut stays for another try.
+  for (const answer of [() => ({ written: [], restorePoints: [], cancelled: true }), () => { throw new Error("busy"); }]) {
+    const { pasteboard, windows, clipboard } = setUp();
+    await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+    const { transfer } = transfers(answer);
+    await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer).catch(() => undefined);
+    assert.deepEqual(windows.one, [report, photos]);
+    assert.notEqual(pasteboard.fileList, null);
+  }
+  // Stopped, or failed, after the first item moved: the rest are no longer cut, and nothing is left to paste.
+  for (const stopped of [true, false]) {
+    const { pasteboard, windows, gone, clipboard } = setUp();
+    await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+    const { transfer } = transfers(() => {
+      gone.add(report);
+      if (stopped) return { written: ["Inbox/report.pdf"], restorePoints: [], cancelled: true };
+      throw new Error("“Photos” could not be moved.");
+    });
+    const pasting = clipboard.paste({ target, mode: "copy", internal: null }, [], transfer);
+    if (stopped) await pasting;
+    else await assert.rejects(pasting, /could not be moved/, "the failure still reaches the window");
+    assert.deepEqual(windows, { one: null, two: null });
+    assert.equal(pasteboard.fileList, null);
+    assert.equal(clipboard.remembered, null);
+  }
+});
+
+test("a Cut whose items were renamed or deleted since is forgotten in every window and leaves the pasteboard", async () => {
+  const { pasteboard, windows, gone, clipboard } = setUp();
+  await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+  gone.add(photos);
+  // A window comes to the front and asks: no folder lists the item any more, so Esc could not cancel it.
+  assert.equal(await clipboard.current(), null);
+  assert.deepEqual(windows, { one: null, two: null });
+  assert.equal(pasteboard.fileList, null);
+  const { calls, transfer } = transfers();
+  assert.deepEqual(await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer), { mode: "copy", written: [], restorePoints: [], nothing: true });
+  assert.equal(calls.length, 0);
+});
+
+test("a paste carries what its conflicts check asked about, and is refused when the pasteboard changed meanwhile", async () => {
+  const { pasteboard, clipboard } = setUp();
   await clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
-  const { transfer } = transfers(() => ({ written: [], restorePoints: [], cancelled: true }));
-  await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer);
-  assert.deepEqual(windows.one, [report]);
-  assert.notEqual(pasteboard.fileList, null);
+  const { calls, transfer } = transfers();
+  const asked = await clipboard.paste({ target, mode: "copy", internal: null, conflicts: { check: true } }, [], transfer);
+  assert.match(String("plan" in asked && asked.plan), /^[0-9a-f]{64}$/);
+  const plan = "plan" in asked ? asked.plan : undefined;
+  // While the question is open, Finder copies the same file fresh: the run would copy it, not move it.
+  pasteboard.finderCopies([report]);
+  await assert.rejects(clipboard.paste({ target, mode: "copy", internal: null, operationId: "fm-3", plan }, [], transfer), /changed before the paste began/);
+  assert.equal(calls.length, 1, "only the check reached the transfer");
+  assert.notEqual(pasteboard.fileList, null, "the new Copy stays");
+
+  // Unchanged, the run goes ahead with the same plan.
+  const again = setUp();
+  await again.clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
+  const checked = await again.clipboard.paste({ target, mode: "copy", internal: null, conflicts: { check: true } }, [], transfer);
+  const pasted = await again.clipboard.paste({ target, mode: "copy", internal: null, plan: "plan" in checked ? checked.plan : undefined }, [], transfer);
+  assert.equal("moved" in pasted && pasted.moved, true);
 });
 
 test("Finder copying the same files fresh does not inherit the Cut", async () => {
@@ -178,13 +237,52 @@ test("a slow look at the pasteboard never forgets a newer Cut", async () => {
   assert.equal(clipboard.remembered?.nativePaths[0], photos);
 });
 
-test("where the pasteboard carries no token and reads no files, a Cut holds until AmpleFile replaces it", async () => {
-  const { clipboard } = setUp({ token: () => null, read: () => ({ paths: [], operation: null, unreadable: true }) });
-  await clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
+/** A clipboard the desktop reads no files from (off the Mac): AmpleFile writes files there as their paths, as text. */
+function setUpTextClipboard(lineEnding = "\n") {
+  const board = { text: "" };
+  const windows = { one: null as string[] | null };
+  const clipboard = new FileClipboard({
+    read: () => ({ paths: [], operation: null, unreadable: true, text: board.text }),
+    // The system may give the text back with its own line endings.
+    write: (nativePaths) => { board.text = pasteboardFileText(nativePaths).replace(/\n/g, lineEnding); },
+    clear: () => { board.text = ""; },
+    exists: () => true,
+    token: () => null,
+    changed: (nativePaths) => { windows.one = nativePaths ? [...nativePaths] : null; },
+  });
+  return { board, windows, clipboard };
+}
+
+test("where the pasteboard reads no files, a Cut holds while the clipboard's text is still its paths", async () => {
+  for (const lineEnding of ["\n", "\r\n"]) {
+    const { board, clipboard } = setUpTextClipboard(lineEnding);
+    await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+    const { calls, transfer } = transfers();
+    await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer);
+    assert.equal(calls[0]?.mode, "move");
+    assert.equal(clipboard.remembered, null);
+    assert.equal(board.text, "", "pasted once, it leaves the clipboard");
+  }
+});
+
+test("where the pasteboard reads no files, forgetting a Cut never empties text copied since", async () => {
+  // Esc after the person copied text in another app.
+  const cancelled = setUpTextClipboard();
+  await cancelled.clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
+  cancelled.board.text = "a note copied elsewhere";
+  await cancelled.clipboard.cancel();
+  assert.equal(cancelled.board.text, "a note copied elsewhere");
+  assert.equal(cancelled.windows.one, null);
+
+  // ⌘V after the same: the Cut is gone, so nothing moves and the text stays.
+  const pasted = setUpTextClipboard();
+  await pasted.clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
+  pasted.board.text = "a note copied elsewhere";
   const { calls, transfer } = transfers();
-  await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer);
-  assert.equal(calls[0]?.mode, "move");
-  assert.equal(clipboard.remembered, null);
+  assert.deepEqual(await pasted.clipboard.paste({ target, mode: "copy", internal: null }, [], transfer), { mode: "copy", written: [], restorePoints: [], nothing: true });
+  assert.equal(calls.length, 0);
+  assert.equal(pasted.board.text, "a note copied elsewhere");
+  assert.equal(pasted.windows.one, null);
 });
 
 test("a window's Cut request names each item by place and on disk, one for one", () => {

@@ -28,6 +28,12 @@ export interface FileClipboardPasteRequest {
   operationId?: string;
   /** Passed to the transfer as is: a conflicts-first check, or the person's choices. */
   conflicts?: unknown;
+  /**
+   * What the conflicts-first check planned (FileClipboard's answer): the run
+   * is refused when the pasteboard now asks for something else, so it never
+   * carries items other than those the person was asked about.
+   */
+  plan?: string;
 }
 
 export interface PasteboardFiles {
@@ -41,6 +47,12 @@ export interface PasteboardFiles {
    * cut in AmpleFile pastes until something in AmpleFile replaces it.
    */
   unreadable?: boolean;
+  /**
+   * There, the text the pasteboard holds: AmpleFile writes files as their
+   * paths, one per line (pasteboardFileText), so a Cut holds only while that
+   * text is still its paths.
+   */
+  text?: string;
 }
 
 /**
@@ -87,6 +99,7 @@ export function parseFileClipboardPasteRequest(value: unknown): FileClipboardPas
     internal,
     ...(typeof value.operationId === "string" ? { operationId: value.operationId } : {}),
     ...(value.conflicts !== undefined ? { conflicts: value.conflicts } : {}),
+    ...(typeof value.plan === "string" && /^[0-9a-f]{64}$/.test(value.plan) ? { plan: value.plan } : {}),
   };
 }
 
@@ -140,13 +153,25 @@ export function pasteboardHolds(pasteboard: PasteboardFiles, nativePaths: readon
  * with its token. Another app's Copy, a Copy made here, and Finder copying the
  * same files fresh all replace the token. Where the pasteboard carries no
  * token, the same files are enough; where no files can be read from it, the
- * Cut holds until AmpleFile replaces it.
+ * Cut holds while its text is still the Cut's paths (or, where no text can
+ * be read either, until AmpleFile replaces it).
  */
 export function pasteboardHoldsCut(pasteboard: PasteboardFiles, cut: RememberedCut): boolean {
   if (!cut.nativePaths.length) return false;
-  if (pasteboard.unreadable === true) return true;
+  if (pasteboard.unreadable === true) return pasteboard.text === undefined || sameText(pasteboard.text, pasteboardFileText(cut.nativePaths));
   if (cut.token !== null && pasteboard.cutToken !== cut.token) return false;
   return sameSet(pasteboard.paths, cut.nativePaths);
+}
+
+/** Files as AmpleFile puts them on a pasteboard it reads no files from: their paths, one per line. */
+export function pasteboardFileText(paths: readonly string[]): string {
+  return paths.join("\n");
+}
+
+/** The same text, whatever line endings the system's clipboard gave it. */
+function sameText(left: string, right: string): boolean {
+  const lines = (value: string) => value.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+  return lines(left) === lines(right);
 }
 
 /**

@@ -257,8 +257,20 @@ test("a Cut is the host's, for every window: a paste in any window moves it, and
   assert.match(write, /await writePasteboardFilePaths\(paths\);\s*\/\/ A Copy replaces whatever was cut\.\s*fileClipboard\.replaced\(\);/);
   assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:cut"', "\n  });\n"), /assertTrustedMainRenderer\(event\);\s*const cut = await fileClipboard\.current\(\);/);
   assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:cancel-cut"', "\n  });\n"), /assertTrustedMainRenderer\(event\);\s*await fileClipboard\.cancel\(\);/);
-  // Text a window puts on the clipboard replaces a Cut too.
+  // Text a window puts on the clipboard replaces a Cut too, and so does everything else AmpleFile copies: a sign-in
+  // code, an Extension's text, a link address, and an address or picture from a built-in browser page.
   assert.match(section(main, 'ipcMain.handle("amplefile:clipboard:write"', "\n  });\n"), /fileClipboard\.replaced\(\);/);
+  assert.match(section(main, "function copyTextToClipboard("), /clipboard\.writeText\(text\);\s*fileClipboard\.replaced\(\);/);
+  assert.deepEqual(main.match(/clipboard\.writeText\(\w+/g), ["clipboard.writeText(pasteboardFileText", "clipboard.writeText(text"], "every other text goes through copyTextToClipboard");
+  assert.match(section(main, "function ensureBuiltInBrowser("), /onCopied: \(\) => fileClipboard\.replaced\(\),/);
+  assert.deepEqual(browserHost.match(/clipboard\.writeText\(\w+/g), ["clipboard.writeText(text"], "the browser's Copy items go through #copyText");
+  assert.match(browserHost, /#copyText\(text: string\): void \{\s*clipboard\.writeText\(text\);\s*this\.#options\.onCopied\?\.\(\);/);
+  assert.match(browserHost, /contents\.copyImageAt\(params\.x, params\.y\); this\.#options\.onCopied\?\.\(\);/);
+  // A Cut is forgotten once an item is no longer where it was cut; off the Mac the clipboard's text is read back.
+  assert.match(section(main, "const fileClipboard = new FileClipboard({", "\n});\n"), /exists: async \(nativePath\) => Boolean\(await lstat\(nativePath\)\.catch\(\(\) => null\)\),/);
+  assert.match(section(main, "async function readPasteboardFiles("), /unreadable: true, text: clipboard\.readText\(\)/);
+  // The run after the conflicts check carries the check's plan.
+  assert.match(clipboardHook, /const plan = asked\.plan;[\s\S]*?\.\.\.\(plan \? \{ plan \} : \{\}\)/);
   // The Mac's file list carries the Cut's token; the window no longer keeps a Cut of its own or checks the pasteboard itself.
   assert.match(section(main, "async function writePasteboardFilePaths("), /clipboard\.writeBuffer\("NSFilenamesPboardType", Buffer\.from\(pasteboardFileList\(paths, token\), "utf8"\)\)/);
   assert.match(section(main, "async function readPasteboardFiles("), /readPasteboardFileList\(clipboard\.read\("NSFilenamesPboardType"\)\)/);

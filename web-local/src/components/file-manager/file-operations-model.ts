@@ -84,6 +84,8 @@ export interface TransferAnswer {
   cut?: boolean;
   /** Where the items pasted by place came from (a Cut in any window, or this window's Copy). */
   from?: { place: FileManagerPlace; paths: string[] } | null;
+  /** What the paste carries, as the desktop planned it; the run after the conflicts check sends it back. */
+  plan?: string;
 }
 
 /** One operation the window started, as its operations area shows it. */

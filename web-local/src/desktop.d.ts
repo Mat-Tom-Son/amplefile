@@ -201,6 +201,8 @@ declare global {
           internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
           operationId?: string;
           conflicts?: { check: true } | import("./components/file-manager/file-operations-model").ConflictPolicy;
+          /** The check's `plan`: the run is refused when the pasteboard has changed since. */
+          plan?: string;
         }) => Promise<import("./components/file-manager/file-operations-model").TransferAnswer>;
         /** What is cut in any window while the pasteboard still holds it, as absolute paths; null for nothing (absent in older desktop builds). */
         cut?: () => Promise<{ nativePaths: string[] } | null>;

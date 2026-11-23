@@ -294,18 +294,25 @@ other surface.
   window that cut them. ⌘V pastes what was copied or cut here, in another
   window, or in Finder (the desktop process reads the pasteboard and pastes;
   the window never reads the clipboard); ⌥⌘V moves what was copied; ⌘D
-  duplicates. A Mac's pasteboard has no Cut marker, so ⌘X puts the files
-  there as Finder's Copy does, and the desktop app remembers the Cut by
-  exactly what it put there. The Cut is forgotten, and no window draws it
-  any more, once it is pasted; once **Esc** cancels it (with nothing
-  selected, in a folder that shows a cut item), which leaves nothing to
-  paste; or once the pasteboard holds something else: a Copy here, text, or
-  anything another app copies. Finder copying the same files afresh is a
-  Copy of them, never the Cut, and pastes as a copy. A Copy of items or a
-  Copy button here forgets the Cut at once; anything else on the pasteboard
-  is noticed when a window comes to the front or at the next paste. The Edit
-  menu's Cut, Copy, and Paste do the same while the folder list has the
-  keyboard.
+  duplicates. A paste that asks about taken names first then carries
+  exactly what it asked about: if the pasteboard changed while the question
+  was open, the paste is refused and says to paste again. A Mac's
+  pasteboard has no Cut marker, so ⌘X puts the files there as Finder's Copy
+  does, and the desktop app remembers the Cut by exactly what it put there.
+  The Cut is forgotten, and no window draws it any more, once it is pasted;
+  once **Esc** cancels it (with nothing selected, in a folder that shows a
+  cut item); once any of its items is no longer where it was cut (renamed
+  or deleted since, or moved by a paste that failed or was stopped partway);
+  each of these leaves nothing to paste. On a Mac it is also forgotten once
+  the pasteboard holds something else: a Copy here, text, or anything
+  another app copies. Finder copying the same files afresh is a Copy of
+  them, never the Cut, and pastes as a copy. Elsewhere the clipboard holds
+  the items' paths as text, and the Cut lasts while it still does, so
+  forgetting a Cut never empties text copied since. A Copy of items, a Copy
+  button, or a copied address here forgets the Cut at once; anything else on
+  the pasteboard is noticed when a window comes to the front or at the next
+  paste. The Edit menu's Cut, Copy, and Paste do the same while the folder
+  list has the keyboard.
   The right-click menu (the native menu on the Mac, the window's own with
   the same items elsewhere) adds Copy, Cut, Duplicate, Compress, **Extract**
   for an archive, New Folder with Selection, and Paste Here. Files dropped
