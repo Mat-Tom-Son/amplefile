@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { ensureSafeConnectedFolderRoot } from "../src/local/connected-folder.js";
+import { ensureSafeConnectedFolderRoot, getConnectedFolder, listConnectedFolders, registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
 import { resolveFolderLocation } from "../src/local/folder-locations.js";
 import { isInsideMacDataVolume, macDataVolumeRoot, withoutMacDataVolumeName } from "../src/local/mac-data-volume.js";
 import { addSidebarFolder, computerFolderId, listStandardFolders, standardFolderPathBase } from "../src/local/standard-folders.js";
-import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
+import { configureAmpleFileStateRoot, connectedFolderRegistryFile } from "../src/local/state-paths.js";
 
 // macOS gives every folder on the data volume a second name under
 // /System/Volumes/Data that is not a link (src/local/mac-data-volume.ts).
@@ -77,4 +77,21 @@ test("a sidebar folder and a Connected Folder chosen by the data volume's name a
 
   assert.equal(ensureSafeConnectedFolderRoot(`${macDataVolumeRoot}${shared}`), shared);
   assert.throws(() => ensureSafeConnectedFolderRoot(`${macDataVolumeRoot}/`), (error: { status?: number }) => error.status === 400);
+});
+
+test("a Connected Folder stored by the data volume's name on an earlier build is read under the usual one", { skip: process.platform !== "darwin" && "macOS only" }, async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "amplefile-data-volume-registry-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  configureAmpleFileStateRoot(join(root, "state"));
+  t.after(() => configureAmpleFileStateRoot(undefined));
+  const notes = join(root, "Notes");
+  await mkdir(notes);
+  const registered = await registerLinkedConnectedFolder(`${macDataVolumeRoot}${notes}`);
+  assert.equal(registered.connectedFolderRoot, notes, "connecting by the second name registers the usual one");
+  // A registry an earlier build wrote with the second name.
+  const file = connectedFolderRegistryFile();
+  await writeFile(file, (await readFile(file, "utf8")).split(JSON.stringify(notes)).join(JSON.stringify(`${macDataVolumeRoot}${notes}`)));
+  assert.match(await readFile(file, "utf8"), /System\/Volumes\/Data/);
+  assert.equal((await getConnectedFolder(registered.id)).connectedFolderRoot, notes);
+  assert.deepEqual((await listConnectedFolders()).map((item) => item.connectedFolderRoot), [notes]);
 });

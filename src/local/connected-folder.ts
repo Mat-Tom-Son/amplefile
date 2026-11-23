@@ -39,7 +39,7 @@ import {
 import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
 import { containsReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
-import { usualMacPath } from "./mac-data-volume.js";
+import { usualMacPath, withoutMacDataVolumeName } from "./mac-data-volume.js";
 import { productIdentity } from "../shared/product-identity.js";
 
 import type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
@@ -1236,11 +1236,15 @@ async function readRegistry(): Promise<ConnectedFolderRegistry> {
     if (!Array.isArray(parsed.connectedFolders)) throw new Error("Connected Folder registry Connected Folders are invalid.");
     const connectedFolders = parsed.connectedFolders.map((connectedFolder) => {
       if (!isConnectedFolderSummary(connectedFolder)) throw new Error("Connected Folder registry contains an invalid Connected Folder.");
-      return { ...connectedFolder, connectedFolderRoot: resolve(connectedFolder.connectedFolderRoot) };
+      // A root stored by the Mac data volume's second name (on an earlier build) is read under its usual one (mac-data-volume.ts).
+      return { ...connectedFolder, connectedFolderRoot: withoutMacDataVolumeName(resolve(connectedFolder.connectedFolderRoot)) };
     });
     const pendingRemovals = parsed.pendingRemovals === undefined
       ? []
-      : parsed.pendingRemovals.map((intent) => connectedFolderRemovalIntent(intent));
+      : parsed.pendingRemovals.map((intent) => {
+        const parsedIntent = connectedFolderRemovalIntent(intent);
+        return { ...parsedIntent, connectedFolderRoot: withoutMacDataVolumeName(parsedIntent.connectedFolderRoot) };
+      });
     const connectedFolderById = new Map(connectedFolders.map((connectedFolder) => [connectedFolder.id, connectedFolder]));
     if (new Set(pendingRemovals.map((intent) => intent.connectedFolderId)).size !== pendingRemovals.length
       || new Set(pendingRemovals.map((intent) => intent.transactionId)).size !== pendingRemovals.length
