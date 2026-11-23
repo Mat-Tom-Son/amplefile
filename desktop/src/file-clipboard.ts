@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lstat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
 import {
@@ -63,6 +64,8 @@ export interface PasteTransfer {
 export class FileClipboard {
   readonly #host: FileClipboardHost;
   #cut: RememberedCut | null = null;
+  /** Cuts whose own paste is running, and how many: their items leave their places as it goes, so they are kept until it ends. */
+  readonly #pasting = new Map<RememberedCut, number>();
 
   constructor(host: FileClipboardHost) {
     this.#host = host;
@@ -101,7 +104,8 @@ export class FileClipboard {
     }
     // An item was renamed, deleted, or moved by a paste that failed or was stopped partway. The Cut no longer
     // says where its items are, and the move would refuse it, so it is forgotten and leaves the pasteboard.
-    if (!(await this.#inPlace(cut))) {
+    // While its own paste runs, its items leave as they move: it is kept until that paste ends.
+    if (!this.#pasting.has(cut) && !(await this.#inPlace(cut))) {
       await this.#forget(cut);
       return null;
     }
@@ -126,8 +130,13 @@ export class FileClipboard {
     connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>,
     transfer: (body: PasteTransfer) => Promise<Result>,
   ) {
-    const pasteboard = await this.#host.read();
-    const cut = await this.current(pasteboard);
+    const reading = await this.#host.read();
+    const remembered = this.#cut;
+    const cut = await this.current(reading);
+    // The pasteboard held the Cut, but an item of it is gone, so it was just forgotten and left the pasteboard:
+    // this paste was for it, and pastes nothing, never a copy of what was cut.
+    const forgotten = Boolean(remembered && !cut && pasteboardHoldsCut(reading, remembered));
+    const pasteboard: PasteboardFiles = forgotten ? { paths: [], operation: null } : reading;
     const plan = planFileClipboardPaste(request, pasteboard, connectedFolders, cut);
     const planned = pastePlanId(plan);
     if (request.plan !== undefined && request.plan !== planned) throw new Error("The clipboard changed before the paste began. Paste again.");
@@ -136,13 +145,13 @@ export class FileClipboard {
     const pasting = plan.cut && plan.fromHere ? cut : null;
     let result: Result;
     try {
-      result = await transfer({
+      result = await this.#whilePasting(pasting, () => transfer({
         mode: plan.mode,
         sources: plan.sources,
         target: request.target,
         ...(request.operationId ? { operationId: request.operationId } : {}),
         ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
-      });
+      }));
     } catch (error) {
       // A move that failed partway took some items: the Cut is kept only while all are where they were cut.
       if (pasting) await this.current().catch(() => null);
@@ -168,6 +177,18 @@ export class FileClipboard {
     if (this.#cut === cut) this.#set(null);
   }
 
+  async #whilePasting<T>(cut: RememberedCut | null, run: () => Promise<T>): Promise<T> {
+    if (!cut) return run();
+    this.#pasting.set(cut, (this.#pasting.get(cut) ?? 0) + 1);
+    try {
+      return await run();
+    } finally {
+      const left = (this.#pasting.get(cut) ?? 1) - 1;
+      if (left > 0) this.#pasting.set(cut, left);
+      else this.#pasting.delete(cut);
+    }
+  }
+
   async #inPlace(cut: RememberedCut): Promise<boolean> {
     for (const nativePath of cut.nativePaths) {
       if (!(await this.#host.exists(nativePath))) return false;
@@ -179,6 +200,22 @@ export class FileClipboard {
     if (cut === this.#cut) return;
     this.#cut = cut;
     this.#host.changed(cut ? cut.nativePaths : null);
+  }
+}
+
+/**
+ * Whether something is still at a path on disk, for the host's `exists`: only
+ * a missing item or a missing folder on the way counts as gone. A path that
+ * cannot be read now (no permission, a drive that is slow to answer) still
+ * counts as there, so a Cut is never forgotten for it.
+ */
+export async function existsOnDisk(nativePath: string): Promise<boolean> {
+  try {
+    await lstat(nativePath);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code !== "ENOENT" && code !== "ENOTDIR";
   }
 }
 

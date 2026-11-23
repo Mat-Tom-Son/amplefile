@@ -54,7 +54,7 @@ import {
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
-import { FileClipboard, parseCutItems } from "./file-clipboard.js";
+import { existsOnDisk, FileClipboard, parseCutItems } from "./file-clipboard.js";
 import { parseFileClipboardPasteRequest, pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
@@ -2077,7 +2077,7 @@ const fileClipboard = new FileClipboard({
   read: readPasteboardFiles,
   write: writePasteboardFilePaths,
   clear: () => clipboard.clear(),
-  exists: async (nativePath) => Boolean(await lstat(nativePath).catch(() => null)),
+  exists: existsOnDisk,
   token: () => process.platform === "darwin" ? randomBytes(16).toString("hex") : null,
   changed: (nativePaths) => {
     const cut = nativePaths ? { nativePaths: [...nativePaths] } : null;
@@ -2268,8 +2268,13 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: (window) => railTooltipOverlays.get(window.id)?.raise(),
-    // An address or a picture the person copied from a page replaces what was cut.
+    // An address the person copied from a page replaces what was cut.
     onCopied: () => fileClipboard.replaced(),
+    // A page puts a picture on the clipboard in its own time, or fails to: look again shortly, and forget the Cut
+    // only once the pasteboard no longer holds it.
+    onCopyingImage: () => {
+      for (const delay of [300, 2_000]) setTimeout(() => { void fileClipboard.current().catch(() => null); }, delay);
+    },
     declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;

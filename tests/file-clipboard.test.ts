@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { FileClipboard, parseCutItems, type PasteTransfer } from "../desktop/src/file-clipboard.js";
+import { existsOnDisk, FileClipboard, parseCutItems, type PasteTransfer } from "../desktop/src/file-clipboard.js";
 import { pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "../desktop/src/file-clipboard-paste.js";
 import { nativePathEntryPath } from "../web-local/src/lib/platform.js";
 
@@ -141,6 +144,73 @@ test("a Cut whose items were renamed or deleted since is forgotten in every wind
   const { calls, transfer } = transfers();
   assert.deepEqual(await clipboard.paste({ target, mode: "copy", internal: null }, [], transfer), { mode: "copy", written: [], restorePoints: [], nothing: true });
   assert.equal(calls.length, 0);
+});
+
+test("a paste that is first to find a cut item gone pastes nothing, never a copy of what was cut", async () => {
+  const { pasteboard, windows, gone, clipboard } = setUp();
+  await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+  gone.add(photos);
+  // No window has asked since: the paste's own check is the first to look.
+  const { calls, transfer } = transfers();
+  for (const request of [{ conflicts: { check: true } }, {}]) {
+    assert.deepEqual(await clipboard.paste({ target, mode: "copy", internal: null, ...request }, [], transfer), { mode: "copy", written: [], restorePoints: [], nothing: true });
+  }
+  assert.equal(calls.length, 0, "nothing reaches the transfer");
+  assert.deepEqual(windows, { one: null, two: null });
+  assert.equal(pasteboard.fileList, null);
+});
+
+test("a Cut is kept while its own paste runs, though its items leave as they move", async () => {
+  const { windows, gone, clipboard } = setUp();
+  await clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+  let finish: (() => void) | null = null;
+  const moving = new Promise<void>((resolve) => { finish = resolve; });
+  let started: () => void = () => undefined;
+  const begun = new Promise<void>((resolve) => { started = resolve; });
+  const { transfer } = transfers(() => {
+    started();
+    return moving.then(() => ({ written: ["Inbox/report.pdf", "Inbox/Photos"], restorePoints: [] }));
+  });
+  const pasting = clipboard.paste({ target, mode: "copy", internal: null }, [], transfer);
+  await begun;
+  gone.add(report);
+  // Another window comes to the front mid-move and asks: still cut, still drawn dimmed.
+  assert.equal((await clipboard.current())?.nativePaths.length, 2);
+  assert.deepEqual(windows.two, [report, photos]);
+  gone.add(photos);
+  finish!();
+  await pasting;
+  assert.deepEqual(windows, { one: null, two: null }, "forgotten once its paste ends");
+
+  // Stopped partway instead: kept while it ran, forgotten once it ends with an item gone.
+  const stopped = setUp();
+  await stopped.clipboard.cut({ place: documents, paths: ["report.pdf", "Photos"], nativePaths: [report, photos] });
+  const { transfer: stopping } = transfers(() => { stopped.gone.add(report); return { written: ["Inbox/report.pdf"], restorePoints: [], cancelled: true }; });
+  await stopped.clipboard.paste({ target, mode: "copy", internal: null }, [], stopping);
+  assert.equal(stopped.clipboard.remembered, null);
+});
+
+test("only a missing item, or a missing folder on its way, counts as gone from disk", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "amplefile-cut-"));
+  try {
+    const file = join(folder, "report.pdf");
+    await writeFile(file, "x");
+    assert.equal(await existsOnDisk(file), true);
+    assert.equal(await existsOnDisk(join(folder, "renamed.pdf")), false, "ENOENT");
+    assert.equal(await existsOnDisk(join(file, "inside")), false, "ENOTDIR");
+    // A folder that cannot be searched now: its items are not known to be gone, so a Cut of them is kept.
+    const locked = join(folder, "Locked");
+    await mkdir(locked);
+    await writeFile(join(locked, "a.txt"), "x");
+    await chmod(locked, 0o000);
+    try {
+      if (process.getuid?.() !== 0) assert.equal(await existsOnDisk(join(locked, "a.txt")), true, "EACCES");
+    } finally {
+      await chmod(locked, 0o755);
+    }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });
 
 test("a paste carries what its conflicts check asked about, and is refused when the pasteboard changed meanwhile", async () => {

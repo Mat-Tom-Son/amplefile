@@ -113,8 +113,10 @@ export interface BuiltInBrowserOptions {
   userAgentProduct: string;
   /** Runs after a page joins a window, so that window's host overlays stay above it. */
   onViewAttached?: (window: BrowserWindow) => void;
-  /** Runs after the person copies an address or a picture from a menu here: the clipboard holds that now. */
+  /** Runs after the person copies an address from a menu here: the clipboard holds it now. */
   onCopied?: () => void;
+  /** Runs after the person asks a page to copy a picture, which the page puts on the clipboard in its own time, or fails to. */
+  onCopyingImage?: () => void;
   /** How long a Worker's script waits on a site's unanswered question before it is told the person has to answer. */
   questionWaitMs?: number;
   /** Whether this build declares to macOS why it uses location; the packaged app does, an unpackaged run does not. */
@@ -1319,7 +1321,7 @@ export class BuiltInBrowser {
     if (params.mediaType === "image" && params.srcURL) {
       template.push(
         ...(isPageReachableUrl(menuFrameAddress, params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person", null, this.#home(page)); } }] : []),
-        { label: "Copy Image", click: () => { contents.copyImageAt(params.x, params.y); this.#options.onCopied?.(); } },
+        { label: "Copy Image", click: () => { contents.copyImageAt(params.x, params.y); this.#options.onCopyingImage?.(); } },
         { label: "Copy Image Address", click: () => this.#copyText(params.srcURL) },
         { type: "separator" },
       );
