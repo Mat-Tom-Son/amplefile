@@ -1545,7 +1545,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         checked: state.showHiddenFiles,
         accelerator: process.platform === "darwin" ? "Shift+Command+." : "Control+H",
         registerAccelerator: false,
-        enabled: state.connectedFolderOpen,
+        // Every folder the window shows has hidden files, with or without a Connected Folder.
+        enabled: state.folderTabsOpen,
         click: menuCommand("toggle-hidden-files"),
       },
       // Folder tabs: the strip shows with more than one tab, or always with Show Tab Bar on. The window owns the next and
@@ -1691,7 +1692,7 @@ function refreshApplicationMenuState(): void {
   const menu = Menu.getApplicationMenu();
   const showHidden = menu?.getMenuItemById("show-hidden-files");
   if (showHidden) showHidden.checked = state.showHiddenFiles;
-  setMenuItemEnabled(menu, "show-hidden-files", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "show-hidden-files", state.folderTabsOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);

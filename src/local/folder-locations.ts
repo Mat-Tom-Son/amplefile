@@ -12,6 +12,7 @@ import {
   type TreeEntry,
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { isHiddenAtMacDiskTop } from "./hidden-entries.js";
 import {
   accessError,
   computerFolderId,
@@ -168,16 +169,18 @@ export async function scanComputerFolder(relativePath: string, home = homedir(),
  * links), each with what it points to and never followed, and nothing of
  * AmpleFile's or Pi's ever.
  */
-async function scanDiskTop(top: string, options: StandardFolderScanOptions = {}): Promise<TreeEntry[]> {
+async function scanDiskTop(top: string, options: StandardFolderScanOptions = {}, platform: NodeJS.Platform = process.platform): Promise<TreeEntry[]> {
   const registered = new Set((await listConnectedFolders()).map((connectedFolder) => comparison(connectedFolder.connectedFolderRoot)));
+  // Finder also hides the Mac's system folders here (/usr, /private, /Volumes, …).
+  const hiddenHere = (name: string) => !isShownStandardEntry(name) || isHiddenAtMacDiskTop(name, platform);
   const entries = (await readdir(top, { withFileTypes: true })).filter((entry) => {
     if (!entry.name || isAlwaysHiddenConnectedFolderEntry(entry.name)) return false;
-    if (!options.includeHidden && !isShownStandardEntry(entry.name)) return false;
+    if (!options.includeHidden && hiddenHere(entry.name)) return false;
     return entry.isSymbolicLink() ? Boolean(options.includeLinks) : entry.isDirectory() || entry.isFile();
   });
   const listed = await Promise.all(entries.map(async (entry): Promise<TreeEntry | null> => {
     const path = join(top, entry.name);
-    const hidden = !isShownStandardEntry(entry.name) ? { hidden: true as const } : {};
+    const hidden = hiddenHere(entry.name) ? { hidden: true as const } : {};
     if (entry.isSymbolicLink()) return diskTopLink(entry.name, path, hidden);
     // An entry that disappears between the read and its stat is skipped, as the tree scan skips one.
     const info = await stat(path).catch(() => null);

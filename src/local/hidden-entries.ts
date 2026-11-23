@@ -27,6 +27,17 @@ export function isSystemHiddenEntry(name: string, context: HiddenEntryContext): 
   return context.platform === "darwin" && context.atHomeFolder && name === "Library";
 }
 
+/**
+ * macOS: what Finder hides at the disk's top by each item's hidden flag
+ * (`ls -lO /`) rather than by its name. A listing cannot read that flag, so
+ * the disk's top uses the set macOS gives every Mac.
+ */
+const macDiskTopHidden = new Set(["Volumes", "bin", "cores", "dev", "etc", "home", "opt", "private", "sbin", "tmp", "usr", "var"]);
+
+export function isHiddenAtMacDiskTop(name: string, platform: NodeJS.Platform): boolean {
+  return platform === "darwin" && macDiskTopHidden.has(name);
+}
+
 /** Whether `directory` is the home folder, ignoring case where the disk does. */
 export function isHomeFolder(directory: string, home: string, platform: NodeJS.Platform): boolean {
   const comparable = (value: string) => {

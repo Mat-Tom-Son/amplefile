@@ -155,7 +155,7 @@ other surface.
   or a Connected Folder on it has unfinished work, and the window shows its
   reason as it is. A drive coming or going updates the list on its own, and
   ejecting the drive shown goes back to where the window opened. The host
-  reads the mount table on this computer; nothing about a drive leaves it.
+  reads `/Volumes` on this computer; nothing about a drive leaves it.
 - **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
   area: what was moved to the Trash from any app, this window's Standard
   Folders and other folders included, with Name, Original Location, Date
@@ -261,7 +261,8 @@ other surface.
   itself. A drop whose names are taken asks first, as a paste does.
 - **Show Hidden Files:** the View menu's **Show Hidden Files** (⇧⌘.)
   shows what Finder hides (names starting with a period, Finder's
-  custom-icon file, and the home folder's Library), dimmed, in every Connected Folder, Standard Folder, and
+  custom-icon file, the home folder's Library, and at the disk's top the
+  Mac's system folders such as `usr`, `private`, and `Volumes`), dimmed, in every Connected Folder, Standard Folder, and
   other folder, the disk's top included; turning it off hides them again. It
   is one setting for the window, kept on this computer like the view, and
   the menu's check mark follows it. `.amplefile/` and `.pi/` never appear.

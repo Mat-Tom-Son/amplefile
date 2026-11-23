@@ -77,6 +77,10 @@ test("desktop release configuration uses the isolated AmpleFile identities and f
   assert.equal(builder.electronFuses.onlyLoadAppFromAsar, true);
   assert.deepEqual(builder.mac.target, ["dmg", "zip"]);
   assert.equal(builder.mac.category, "public.app-category.productivity");
+  // Finder's Open With offers AmpleFile for a folder without making it the default.
+  assert.deepEqual(builder.mac.extendInfo.CFBundleDocumentTypes, [{ CFBundleTypeName: "Folder", CFBundleTypeRole: "Viewer", LSHandlerRank: "Alternate", LSItemContentTypes: ["public.folder"] }]);
+  assert.match(builder.mac.extendInfo.NSRemovableVolumesUsageDescription, /drives/);
+  assert.match(builder.mac.extendInfo.NSNetworkVolumesUsageDescription, /network drives/);
   assert.match(packageJson.scripts["desktop:make:mac"], /build-mac-desktop\.mjs/);
   assert.match(packageJson.scripts["desktop:make:mac:release"], /--release/);
   assert.match(packageJson.scripts["desktop:release:mac"], /desktop:publish:mac/);

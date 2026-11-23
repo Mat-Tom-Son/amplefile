@@ -442,6 +442,24 @@ async function describeEntry(entry: TrashEntry, sizes: Map<string, { size: numbe
 const macPutBackNote = "Put this back from the Trash in Finder. AmpleFile can’t read where macOS recorded it came from.";
 
 /**
+ * macOS: a drive's own Trash folder, `.Trashes/<uid>` at its top, or null.
+ * Both folders must be real folders on that drive, never links: a disk
+ * whose `.Trashes` pointed elsewhere would otherwise list, and let Empty
+ * Trash delete, what is in that other folder.
+ */
+async function macVolumeTrashRoot(top: string, uid: number): Promise<string | null> {
+  const drive = await lstat(top).catch(() => null);
+  if (!drive?.isDirectory() || drive.isSymbolicLink()) return null;
+  let folder = top;
+  for (const name of [".Trashes", String(uid)]) {
+    folder = join(folder, name);
+    const info = await lstat(folder).catch(() => null);
+    if (!info?.isDirectory() || info.isSymbolicLink() || info.dev !== drive.dev) return null;
+  }
+  return folder;
+}
+
+/**
  * macOS: `~/.Trash` and each volume's `.Trashes/<uid>`, listed only. Reading
  * `~/.Trash` needs the person's permission (Full Disk Access); without it the
  * listing is refused with a plain message.
@@ -451,7 +469,10 @@ async function listMacTrash(options: TrashOptions): Promise<TrashListing> {
   const uid = currentUid(options);
   const roots: Array<{ root: string; trash: "home" | "volume"; topdir: string | null }> = [{ root: join(home, ".Trash"), trash: "home", topdir: null }];
   const tops = options.macVolumeTops ?? await readdir("/Volumes").then((names) => names.filter((name) => !name.startsWith(".")).map((name) => join("/Volumes", name)), () => []);
-  for (const top of tops) roots.push({ root: join(top, ".Trashes", String(uid)), trash: "volume", topdir: top });
+  for (const top of tops) {
+    const root = await macVolumeTrashRoot(top, uid);
+    if (root) roots.push({ root, trash: "volume", topdir: top });
+  }
   const items: TrashItem[] = [];
   let truncated = false;
   const budget = { entries: trashLimits.measureEntries };
@@ -870,7 +891,10 @@ async function macSlots(options: TrashOptions): Promise<TrashSlot[]> {
   const uid = currentUid(options);
   const roots = [join(home, ".Trash")];
   const tops = options.macVolumeTops ?? await readdir("/Volumes").then((names) => names.filter((name) => !name.startsWith(".")).map((name) => join("/Volumes", name)), () => []);
-  for (const top of tops) roots.push(join(top, ".Trashes", String(uid)));
+  for (const top of tops) {
+    const root = await macVolumeTrashRoot(top, uid);
+    if (root) roots.push(root);
+  }
   const slots: TrashSlot[] = [];
   for (const [index, root] of roots.entries()) {
     if (!await realDirectory(root)) continue;

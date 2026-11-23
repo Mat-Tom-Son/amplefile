@@ -447,3 +447,30 @@ test("macOS deletes listed Trash items and empties the Trash, and says plainly w
     }
   }
 });
+
+test("macOS takes a drive's Trash only from real folders on that drive, never through a link", async (t) => {
+  const box = await sandbox(t);
+  await mkdir(join(box.home, ".Trash"), { recursive: true });
+  // A drive with its own Trash, holding one item.
+  const camera = join(box.root, "Volumes", "Camera");
+  await mkdir(join(camera, ".Trashes", String(uid)), { recursive: true });
+  await writeFile(join(camera, ".Trashes", String(uid), "clip.mov"), "1");
+  // A crafted disk whose .Trashes points at a folder elsewhere.
+  const elsewhere = join(box.root, "elsewhere");
+  await mkdir(join(elsewhere, String(uid)), { recursive: true });
+  await writeFile(join(elsewhere, String(uid), "precious.txt"), "keep me");
+  const crafted = join(box.root, "Volumes", "Crafted");
+  await mkdir(crafted, { recursive: true });
+  await symlink(elsewhere, join(crafted, ".Trashes"));
+  // And one whose own uid folder is the link.
+  const linkedUid = join(box.root, "Volumes", "LinkedUid");
+  await mkdir(join(linkedUid, ".Trashes"), { recursive: true });
+  await symlink(join(elsewhere, String(uid)), join(linkedUid, ".Trashes", String(uid)));
+
+  const options: TrashOptions = { platform: "darwin", home: box.home, uid, macVolumeTops: [camera, crafted, linkedUid] };
+  const listing = await listSystemTrash(options);
+  assert.deepEqual(listing.items.map((item) => [item.name, item.volumePath]), [["clip.mov", camera]]);
+  const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.removed.map((item) => item.name), ["clip.mov"]);
+  assert.equal(await readFile(join(elsewhere, String(uid), "precious.txt"), "utf8"), "keep me", "nothing behind a link is touched");
+});

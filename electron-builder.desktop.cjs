@@ -104,6 +104,18 @@ module.exports = {
       NSDesktopFolderUsageDescription: "AmpleFile shows your Desktop in its file manager.",
       NSDocumentsFolderUsageDescription: "AmpleFile shows your Documents folder in its file manager.",
       NSDownloadsFolderUsageDescription: "AmpleFile shows your Downloads folder in its file manager.",
+      // Drives the window opens from its sidebar (docs/product-model.md, "Drives").
+      NSRemovableVolumesUsageDescription: "AmpleFile shows the files on drives you open in its file manager.",
+      NSNetworkVolumesUsageDescription: "AmpleFile shows the files on network drives you open in its file manager.",
+      // "Open With" for folders, and a folder dropped on the Dock icon, open it
+      // in the window (desktop/src/finder-open-paths.ts). Rank Alternate never
+      // makes AmpleFile the default for folders: Finder stays the default.
+      CFBundleDocumentTypes: [{
+        CFBundleTypeName: "Folder",
+        CFBundleTypeRole: "Viewer",
+        LSHandlerRank: "Alternate",
+        LSItemContentTypes: ["public.folder"],
+      }],
     },
   },
   dmg: {
