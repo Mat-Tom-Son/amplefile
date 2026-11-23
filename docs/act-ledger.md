@@ -34,13 +34,11 @@ without being a security boundary. So the product works on these rules:
    tried), and in the window the person can Put Back from the Trash, or
    empty it or delete items from it for good after a dialog that says so
    ([the file manager window](product-model.md#the-file-manager-window)).
-   No agent or CLI verb deletes from it. A move is not a destruction: an
-   item the window moves out of a Connected Folder leaves through that
-   Connected Folder's delete, and one it moves from a plain folder into a
-   Connected Folder is removed from the plain folder, not sent to the
-   Trash, only while it is still exactly the item that was copied and its
-   copy in the Connected Folder is whole
-   ([moves between places](#moves-between-places)).
+   No agent or CLI verb deletes from it. A move is not a destruction: on
+   one disk the item is renamed into the other place, and across disks an
+   original is removed, not sent to the Trash, only while it is still
+   exactly the item that was copied and its copy is whole and lacks nothing
+   the original has ([moves between places](#moves-between-places)).
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
    you" means an agent asked a question, never that an action waits for
@@ -264,63 +262,80 @@ ownership changes.
 
 `files move` moves inside one Connected Folder. The window also moves items
 between places ([the file manager window](product-model.md#the-file-manager-window),
-"Moves"); those moves are the window's, with no act verb, and each copies
-first, then takes every item out of its source under that place's rules. The
-copy keeps what it read of each entry of the source as it read it: which file
-it was, a file's size and modification time, where a link pointed, and how
-many entries a folder had.
+"Moves"); those moves are the window's, with no act verb. Each item leaves
+its source in a journaled step of its own, under that place's rules:
 
 - **Out of a Connected Folder**, into another one or into a plain folder:
-  each item leaves through this section's delete, journaled as `files.delete`
-  with the `main-window` surface, one receipt per item. It has the delete's
-  restore point, the path policy (never the Connected Folder itself or a
-  nested one), and the settled-work refusal, which comes before anything is
-  copied. A move also finds a nested Connected Folder by its path as the
-  disk resolves it, so one registered under another spelling of its path, or
-  through a linked folder, does not leave through its parent. An item the restore point could not fully cover, where the copy
-  did not carry the rest or the rest is an `.amplefile` identity, leaves
-  whole for Recently Deleted, with whatever it holds by then. Any other
-  item is erased, and only while it is still exactly what the copy read
-  (the same entries, each the same file at the same size and modification
-  time), the copy holds all of it, and no folder in it that holds something,
-  nor the folder it is in, is read-only. The first of those is checked again
-  inside the journaled step. Finder's `.DS_Store` in a folder is left out of
-  the first two.
-- **From a plain folder into a Connected Folder:** the copy has one restore
-  point in the Connected Folder. Each original is then removed, as a move
-  across disks removes it in Finder; it does not go to the system Trash,
-  because nothing is deleted. It is removed only under the same three
-  conditions, and only while no Connected Folder owns it or sits inside it.
-  Ownership compares the path as written and as the disk resolves it, so
-  another letter case, an accent spelled the other way, or a linked folder
-  on the way names the same Connected Folder; it is checked before anything
-  is copied. The removal is journaled first as `files.move` with the
-  `main-window` surface, naming the Connected Folder and that restore point,
-  and inside the journaled step ownership, that the original is still what
-  the copy read, and that all of it can go are checked again.
+  this section's delete, journaled as `files.delete` with the `main-window`
+  surface, one receipt per item. It has the delete's restore point for
+  everything about to leave, the path policy (never the Connected Folder
+  itself or a nested one, checked again inside the step), and the
+  settled-work refusal, which comes before anything changes. A move also
+  finds a nested Connected Folder by its path as the disk resolves it, so
+  one registered under another spelling of its path, or through a linked
+  folder, does not leave through its parent.
+- **From a plain folder into a Connected Folder:** the arrivals have one
+  restore point in the Connected Folder, and each original's leaving is
+  journaled first as `files.move` with the `main-window` surface, naming the
+  Connected Folder and that restore point. An original leaves only while no
+  Connected Folder owns it or sits inside it. Ownership compares the path as
+  written and as the disk resolves it, so another letter case, an accent
+  spelled the other way, or a linked folder on the way names the same
+  Connected Folder; it is checked before anything changes and again inside
+  the step. It does not go to the system Trash, because nothing is deleted.
+
+How the item leaves depends on the disk:
+
+- **On one disk** it is renamed into the target inside its journaled step.
+  The item itself goes, whole and at once, with its extended attributes,
+  access rules, flags, and dates. Nothing is erased, so nothing is set aside
+  in Recently Deleted, and there is no copy to check. A target Connected
+  Folder's restore point is taken before the first rename, naming where each
+  item is to land. An item that is to replace one has that one taken away
+  first, as a Replace takes it (`files.delete`, or the system Trash in a
+  plain folder).
+- **Across disks** it is copied first; the copy keeps what it read of each
+  entry of the source as it read it (which file it was, a file's size,
+  modification time, and change time, where a link pointed, how many entries
+  a folder had). An item the source's restore point could not fully cover,
+  where the copy did not carry the rest or the rest is an `.amplefile`
+  identity, leaves whole for Recently Deleted, with whatever it holds by
+  then. Any other original is erased, and only while it is still exactly
+  what the copy read (a file read within one tick of a coarse clock is
+  compared byte for byte), the copy holds all of it, no folder in it that
+  holds something, nor the folder it is in, is read-only, and the copy
+  lacks no extended attribute or hide or lock flag the original has
+  (`/usr/bin/xattr` and `/usr/bin/stat` are asked, without a shell, under a
+  bound and a time limit; what cannot be read keeps the original). Finder's
+  `.DS_Store` in a folder is left out of the first two. Inside the journaled
+  step, that the original is still what the copy read is checked again, and
+  for a plain original so is that all of it can go.
 
 What the journal holds: an original that the checks before its journaled
 step refuse is never attempted, and leaves no receipt. A refusal inside the
-journaled step, and a removal that fails, are recorded as that act's error.
-An original that is already gone when its turn comes has nothing to remove
-and leaves no receipt.
+journaled step, and a rename or removal that fails, are recorded as that
+act's error. An original that is already gone when its turn comes has
+nothing to remove and leaves no receipt.
 
-An original that cannot go stays whole, and the other items still move. Its
-copy stays in the target, so the item is in both places and the answer names
-it and why (`notRemoved`, `failures`). A copy that was to replace an item
-replaces it only once the checks before the journaled step have passed: when
-they refuse, the item there stays, the copy is taken back, and the answer
-names the original under `failures` alone. Removing
+An item that cannot leave stays whole, and the other items still move. On
+one disk it is only where it was (`failures`). Across disks its copy stays
+in the target, so the item is in both places and the answer names it, why,
+and where the copy is (`notRemoved`, `failures`, `copies`). A copy that was
+to replace an item replaces it only once the checks before the journaled
+step have passed: when they refuse, the item there stays, the copy is taken
+back, and the answer names the original under `failures` alone. Removing
 a folder is not all-or-nothing, so after a removal fails the original is
 looked at again: when anything the copy read there is gone, the item counts
 as moved, since all of it is only in the target, and the answer names it as
 partly removed, with what is left still in the source (`partlyRemoved`).
 Undo then moves it back and never takes the copy away.
 
-The undo of a move a plain folder took part in is the reverse move, with the
-same rules; an item whose name is taken by now in the folder it came from is
-skipped and stays where the move put it. A move between two plain folders
-touches no Connected Folder and is not journaled.
+The undo of a move between places is the reverse move, with the same rules
+and receipts; an item whose name is taken by now in the folder it came
+from, or that is no longer where the move put it, is left out and named. A
+move is refused with the code `busy` only while work is still going on,
+which is the one refusal a caller should try again later. A move between
+two plain folders touches no Connected Folder and is not journaled.
 
 ### Recently Deleted
 
@@ -333,8 +348,9 @@ so the family takes no `--connected-folder`.
 What goes there:
 
 - `files delete` of an item the safety checkpoint could not fully cover,
-  which includes an item a move takes out of a Connected Folder when its
-  copy did not carry what the checkpoint could not cover;
+  which includes an item a move across disks takes out of a Connected
+  Folder when its copy did not carry what the checkpoint could not cover
+  (an item renamed out on one disk is not erased, so it is not set aside);
 - `connected-folders delete`: the managed folder, together with its
   machine-local History;
 - deleting a Worker Chat or an AmpleFile Agent Chat: its transcript;
@@ -367,7 +383,7 @@ Deletion waits for settled work. Deleting a file, a Chat, or a Connected
 Folder is refused while the affected work is running, waiting on an answer,
 or still draining after Stop; no second confirmation is added. Moving items
 out of a Connected Folder is that delete for each item, so it is refused the
-same way, before anything is copied. Deleting a
+same way, before anything changes. Deleting a
 managed parent is refused until its nested Connected Folders are
 disconnected.
 
