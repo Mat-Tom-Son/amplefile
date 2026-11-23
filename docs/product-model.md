@@ -453,6 +453,50 @@ other surface.
   stamped on the Connected Folder's folder as macOS draws a symbol on a
   folder ([Connected Folder customization](connected-folder-customization.md)).
 
+### Windows
+
+AmpleFile can show several file manager windows at once. **File → New
+Window** (⌘N; Ctrl+N on Linux) opens another window at the folder the front
+window shows, or at the home folder, a step down and to the right of it, so
+two windows never sit exactly on top of each other. **Open in New Window**,
+which the window's menus can offer, opens a given folder in a window of its
+own. **New Connected Folder** is ⌥⌘N (Ctrl+Alt+N).
+
+- **Each window is its own:** its folder, selection, panel, Browser pane
+  tabs, and size and place on the screen, and the Connected Folder it shows,
+  which names the window in its title. Every window sees the same Connected
+  Folders, Standard Folders, drives, Trash, running Chats, and running file
+  operations, so a change made in one (a rename, a new Connected Folder, a
+  finished copy) shows in the others.
+- **The front window:** the menus act on the window in front. A command goes
+  to it, and the View menu's check marks and the items that need a Connected
+  Folder follow it. A dialog, a native menu, or a site's question opens over
+  the window that asked.
+- **What windows share:** the view, the sort, Show Hidden Files, and the
+  panel and sidebar widths are kept on this computer. Each window keeps its
+  own while it is open, and a new window starts with the last one changed.
+  The Connected Folder a window shows and how it left its Browser pane are
+  kept for that window alone.
+- **Folders handed to AmpleFile** (Finder's Open, a launcher's argument, a
+  second launch, a FileManager1 call on Linux) open in the front window, as
+  they did with one window, so an app that asks again and again to show a
+  folder never piles windows up. When one request names several folders (a
+  launcher given several, `ShowFolders` with several), the first opens in the
+  front window and each further one in a new window, as a system file
+  manager does.
+- **Browser pages** belong to the window that opened them; a page a Worker
+  opens appears in the window showing that Worker's Connected Folder, else the
+  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+- **Closing and quitting:** closing one of several windows closes only it.
+  Closing the last window keeps AmpleFile and every accepted Chat turn,
+  Automation, and file operation running; reopening AmpleFile (the Dock, the
+  tray, launching it again) brings the window back. Quit, Restart to Update,
+  and the "still running" notice keep their rules and wording: they count the
+  work of every window, and the notice comes when the last window closes.
+- **Coming back:** the windows open when AmpleFile quit come back at the next
+  launch, each where it was. A window closed while others stayed open is
+  forgotten; the last window closed keeps its place for the next one.
+
 ### First run
 
 A fresh profile opens on a short first run: a
@@ -1004,15 +1048,16 @@ on the CLI, with the same receipts and the same named limits.
 ## Desktop shell
 
 - macOS uses its native hidden-inset title bar and application, File, Edit,
-  View, Window, and Help menus. Window size, position, and theme are kept,
-  and the renderer recovers from a crash.
-- Closing the last window keeps AmpleFile running; the Dock icon brings the
-  window back. **Quit** exits cleanly. Closing the window never stops an
-  accepted turn.
+  View, Window, and Help menus. Each window's size and position, and the
+  theme, are kept, and each window's renderer recovers from a crash on its
+  own ([Windows](#windows)).
+- Closing one of several windows closes only it. Closing the last window
+  keeps AmpleFile running; the Dock icon brings the windows back. **Quit**
+  exits cleanly. Closing a window never stops an accepted turn.
 - The menu-bar item opens the AmpleFile Agent popover on click; a right
   click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
   for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
-  icon become reference chips. The popover works with the main window
+  icon become reference chips. The popover works with every window
   closed, holds drops without sending, and its Stop names the AmpleFile
   agent turn and every delegated Connected Folder turn it aborts.
 - Explicit Copy actions in the window and the popover write text (and
