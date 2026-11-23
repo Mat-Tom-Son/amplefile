@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, lstatSync } from "node:fs";
-import { link, mkdir, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, realpath, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,7 +17,8 @@ import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 // bound stops it.
 
 async function folder(t: test.TestContext, prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix));
+  // The real path: a Mac's temporary folder is under /var, a link to /private/var.
+  const root = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

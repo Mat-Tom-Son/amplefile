@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, readFile, readlink, realpath, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
@@ -95,6 +95,11 @@ export function setTrashOptionsForTests(options: TrashOptions | null): void {
 
 function withTestOptions(options: TrashOptions): TrashOptions {
   return trashOptionsForTests ? { ...trashOptionsForTests, ...options } : options;
+}
+
+/** Whose Trash rules apply: this computer's platform, or the sandbox's a test chose. */
+export function systemTrashPlatform(): NodeJS.Platform {
+  return withTestOptions({}).platform ?? process.platform;
 }
 
 export const trashLimits = {
@@ -650,6 +655,7 @@ export async function performPutBack(item: FoundTrashItem, plan: PutBackPlan): P
 
 async function placeWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): Promise<string> {
   const current = await lstat(item.itemPath);
+  if (current.isSymbolicLink()) return placeLinkWithoutReplacing(item, plan);
   if (current.isDirectory()) {
     try {
       return await placeFolderWithoutReplacing(item.itemPath, plan.parent, plan.name);
@@ -674,6 +680,32 @@ async function placeWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): P
     }
     await unlink(item.itemPath).catch(async (error) => {
       // The item is in both places; take back the new name so it stays one item in the Trash.
+      await unlink(destination).catch(() => undefined);
+      throw error;
+    });
+    return destination;
+  }
+  throw new TrashError(409, `There are too many copies of “${plan.name}” there already.`);
+}
+
+/**
+ * A link is made again where it goes, pointing where it did, then leaves the
+ * Trash. Making a link claims its name as a hard link does (a taken name fails
+ * with EEXIST), and it never follows the link: a Mac's link() would, and give
+ * back a second name for whatever the link points to.
+ */
+async function placeLinkWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): Promise<string> {
+  const target = await readlink(item.itemPath);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = await freeDestination(plan.parent, plan.name);
+    try {
+      await symlink(target, destination);
+    } catch (error) {
+      if ((error as { code?: string }).code === "EEXIST") continue;
+      throw error;
+    }
+    await unlink(item.itemPath).catch(async (error) => {
+      // The link is in both places; take back the new one so it stays one item in the Trash.
       await unlink(destination).catch(() => undefined);
       throw error;
     });

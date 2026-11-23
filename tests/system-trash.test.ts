@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -32,7 +32,8 @@ const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
 interface Sandbox { root: string; home: string; dataHome: string; trash: string; volume: string; options: TrashOptions }
 
 async function sandbox(t: test.TestContext): Promise<Sandbox> {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-system-trash-"));
+  // The real path: a Mac's temporary folder is under /var, a link to /private/var.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "amplefile-system-trash-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   const home = join(root, "home", "ana");
   const dataHome = join(home, ".local", "share");

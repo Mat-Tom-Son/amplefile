@@ -29,6 +29,7 @@ import {
   emptySystemTrash,
   findTrashItem,
   listSystemTrash,
+  systemTrashPlatform,
   performPutBack,
   planPutBack,
   readTrashRecord,
@@ -200,7 +201,7 @@ export interface PutBackResponse extends PutBackResult {
 async function putBackTrashItem(itemId: string): Promise<PutBackResponse> {
   const item = await findTrashItem(itemId);
   if (!item) {
-    if (process.platform === "darwin") throw httpError(409, "Put items back from the Trash in Finder. AmpleFile can’t read where macOS recorded they came from.");
+    if (systemTrashPlatform() === "darwin") throw httpError(409, "Put items back from the Trash in Finder. AmpleFile can’t read where macOS recorded they came from.");
     throw notFound("That item isn’t in the Trash anymore.");
   }
   const plan = await planPutBack(item, await listConnectedFolders());

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, truncate, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, truncate, utimes, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -22,7 +22,8 @@ import { connectedFolderThumbnailRoot, ThumbnailRefusedError, ThumbnailService, 
 const canvas = createRequire(import.meta.url)("@napi-rs/canvas") as typeof import("@napi-rs/canvas");
 
 async function folder(t: test.TestContext, prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix));
+  // The real path: a Mac's temporary folder is under /var, a link to /private/var.
+  const root = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

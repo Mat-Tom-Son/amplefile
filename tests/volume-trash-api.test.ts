@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { startLocalApi } from "../src/local/server.js";
 import { setTrashOptionsForTests } from "../src/local/system-trash.js";
-import { setEjectRunnerForTests, setVolumeSourceForTests, type EjectCommand, type VolumeRecord } from "../src/local/volumes.js";
+import { ejectCommands, setEjectRunnerForTests, setVolumeSourceForTests, type EjectCommand, type VolumeRecord } from "../src/local/volumes.js";
 
 /**
  * The local API's drives and system Trash routes
@@ -22,7 +22,8 @@ type Call = (path: string, init?: { method?: string; body?: unknown }) => Promis
 const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
 
 async function sandboxApi(t: test.TestContext): Promise<{ api: Api; call: Call; sandbox: string; home: string; trash: string }> {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-volume-trash-api-"));
+  // The real path: a Mac's temporary folder is under /var, a link to /private/var.
+  const sandbox = await realpath(await mkdtemp(join(tmpdir(), "amplefile-volume-trash-api-")));
   const home = join(sandbox, "home");
   const trash = join(home, ".local", "share", "Trash");
   await mkdir(join(trash, "files"), { recursive: true });
@@ -171,7 +172,8 @@ test("Eject refuses a drive that isn't listed or can't be ejected, and one holdi
   const ejected = await call("/api/volumes/eject", { method: "POST", body: { volumeId: other.id } });
   assert.equal(ejected.status, 200, JSON.stringify(ejected.body));
   assert.deepEqual(ejected.body, { volumeId: other.id, ejected: true });
-  assert.deepEqual(ran, [{ command: "gio", args: ["mount", "-e", join(sandbox, "camera")] }]);
+  // The system's own tool: diskutil on a Mac, gio on Linux.
+  assert.deepEqual(ran, [ejectCommands(other)[0]]);
   setEjectRunnerForTests(async () => ({ code: 1, stdout: "", stderr: "Error unmounting block device 8:17: GDBus.Error:org.freedesktop.UDisks2.Error.DeviceBusy: Error unmounting /dev/sdb1: target is busy" }));
   const inUse = await call("/api/volumes/eject", { method: "POST", body: { volumeId: other.id } });
   assert.equal(inUse.status, 409);
@@ -179,7 +181,7 @@ test("Eject refuses a drive that isn't listed or can't be ejected, and one holdi
   setEjectRunnerForTests(async () => ({ code: null, stdout: "", stderr: "", missing: true }));
   const missing = await call("/api/volumes/eject", { method: "POST", body: { volumeId: other.id } });
   assert.equal(missing.status, 503);
-  assert.match(missing.body!.error, /neither gio nor udisksctl/);
+  assert.match(missing.body!.error, process.platform === "darwin" ? /diskutil isn’t available/ : /neither gio nor udisksctl/);
 });
 
 test("the Trash lists items by opaque id, and Put Back returns one without replacing what took its name", async (t) => {
