@@ -87,7 +87,13 @@ delete env.AMPLEFILE_AGENT_DIR;
 delete env.AMPLEFILE_CONTENT_DIR;
 delete env.PI_CODING_AGENT_SESSION_DIR;
 
-const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...files], {
+// How many test files run at once: Node's default (one per core but one), or
+// AMPLEFILE_TEST_CONCURRENCY on a machine with less memory than cores call for
+// (each window test process holds about half a gigabyte).
+const concurrency = Number.parseInt(process.env.AMPLEFILE_TEST_CONCURRENCY ?? "", 10);
+const concurrencyArgs = Number.isInteger(concurrency) && concurrency > 0 ? [`--test-concurrency=${concurrency}`] : [];
+
+const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...concurrencyArgs, ...files], {
   cwd: rootDir,
   env,
   stdio: "inherit",

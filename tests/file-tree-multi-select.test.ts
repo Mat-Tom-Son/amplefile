@@ -8,6 +8,7 @@ import { fileSelectionLabel } from "../src/shared/file-selection.js";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
 import { draggedConnectedFolderPaths } from "../web-local/src/lib/file-actions.js";
 import type { FileContextMenuState, TreeEntry } from "../web-local/src/types.js";
+import { readFileManagerWindowSource } from "./support/file-manager-source.js";
 
 const assets = registerHooks({
   load(url, context, next) { return /\.svg(?:\?|$)/.test(url) ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context); },
@@ -27,7 +28,7 @@ const entries: TreeEntry[] = [
 
 test("the selection toggle key is Cmd on the Mac and Ctrl elsewhere", async () => {
   // Ctrl-click is a right-click on the Mac, so only Cmd toggles a row there.
-  const fileManager = await readFile("web-local/src/components/file-manager/FileManagerView.tsx", "utf8");
+  const fileManager = await readFileManagerWindowSource();
   assert.match(fileManager, /const mac = isMacOS\(\);/);
   assert.match(fileManager, /function clickEntry\(entry: TreeEntry, event: MouseEvent<HTMLElement>\) \{[\s\S]*?const toggle = mac \? event\.metaKey : event\.ctrlKey;[\s\S]*?if \(toggle\) \{/);
 });

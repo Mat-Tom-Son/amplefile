@@ -22,6 +22,10 @@ export interface WindowMenuState {
   connectedFolderOpen: boolean;
   /** Show Hidden Files, which the View menu checks. */
   showHiddenFiles: boolean;
+  /** The window shows the file manager, with its folder tabs: New Tab, Close Tab, and the tab items act on it. */
+  folderTabsOpen: boolean;
+  /** View → Show Tab Bar: the window's folder tab strip shows even with one tab. */
+  showTabBar: boolean;
 }
 
 /** The Connected Folder a window shows, as the host-owned registry names it. */
@@ -61,7 +65,7 @@ export interface FileManagerWindowEntry<W extends FileManagerWindowLike, Locatio
   pendingOpenLocation: OpenLocationRequest<Location> | null;
 }
 
-export const defaultWindowMenuState: WindowMenuState = Object.freeze({ connectedFolderOpen: false, showHiddenFiles: false });
+export const defaultWindowMenuState: WindowMenuState = Object.freeze({ connectedFolderOpen: false, showHiddenFiles: false, folderTabsOpen: false, showTabBar: false });
 
 export class FileManagerWindows<W extends FileManagerWindowLike, Location = WindowLocation> {
   readonly #entries = new Map<number, FileManagerWindowEntry<W, Location>>();
@@ -180,6 +184,8 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     entry.menuState = {
       connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : entry.menuState.connectedFolderOpen,
       showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : entry.menuState.showHiddenFiles,
+      folderTabsOpen: typeof record.folderTabsOpen === "boolean" ? record.folderTabsOpen : entry.menuState.folderTabsOpen,
+      showTabBar: typeof record.showTabBar === "boolean" ? record.showTabBar : entry.menuState.showTabBar,
     };
     return entry.menuState;
   }

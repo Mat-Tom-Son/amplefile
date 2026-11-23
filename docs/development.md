@@ -201,7 +201,11 @@ extra repository instruction source.
   test files. Use the full suite before handing off behavior changes.
   The runner can divide the discovered test files into four disjoint shards;
   run one with `npm test -- --shard=1/4` (through `4/4`). Every file belongs to exactly
-  one shard; an unsharded `npm test` still runs everything.
+  one shard; an unsharded `npm test` still runs everything. Test files run in
+  parallel, one per core but one; the window suites hold about half a gigabyte
+  each, so on a machine with less memory than that calls for, set
+  `AMPLEFILE_TEST_CONCURRENCY` (for example `AMPLEFILE_TEST_CONCURRENCY=4 npm test`)
+  to run fewer at once.
 - Tests never use your real Pi folder. The runner points `PI_CODING_AGENT_DIR`
   at a temporary folder for every test process, so no test reads your
   provider credentials or writes sessions, settings, or locks into `~/.pi`, and

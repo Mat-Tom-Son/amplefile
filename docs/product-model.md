@@ -196,7 +196,44 @@ other surface.
   space, or in the list from a row outside its icon and name, draws a
   selection rectangle that selects what it touches; Shift or Command adds
   to the selection, and the list scrolls while the pointer is near its top
-  or bottom edge. Right-click uses the native menu.
+  or bottom edge. Right-click uses the native menu. Icons or List and the
+  sort are remembered for each folder on this computer: a Connected Folder's
+  folders by its portable id and the path inside it (so a moved Connected
+  Folder keeps its views), any other folder by its path on disk. A folder
+  never set shows the last choice made anywhere. The window keeps a few
+  hundred folders and forgets the least recently set first; nothing is
+  written into a folder. Show Hidden Files stays one choice for the window.
+- **Folder tabs:** the window holds folder tabs, as Finder and GNOME Files
+  do. Each tab has its own folder, Back and Forward, selection, scroll
+  position, search, and whether it shows the Trash or Recents; going to
+  another folder in a tab starts that tab fresh there. **New Tab** (⌘T,
+  Ctrl+T) opens one right after the tab in front, at what it shows. **Open in
+  New Tab** (and **Open in New Window**) is in a folder's menu and in the sidebar's menus; ⌘-click
+  (Ctrl-click) a sidebar place, or ⌘-double-click (Ctrl-double-click) a
+  folder, opens it in a new tab in front, and a middle click opens it in a
+  new tab behind. The next and previous tab are Ctrl+Tab and Ctrl+Shift+Tab,
+  ⇧⌘] and ⇧⌘[ on a Mac, and Ctrl+PageDown and Ctrl+PageUp elsewhere. **Close
+  Tab** (⌘W, Ctrl+W) closes the tab in front (the browser tab in front while
+  the Browser pane has the keyboard) and closing the last one closes that
+  window alone, which leaves AmpleFile and its other windows running. The strip sits at the top of the
+  folder area and shows once there are two tabs, or always with **View → Show
+  Tab Bar**. A tab's title is its folder's name (the place's own name at its
+  top, **Trash**, or **Recents**); two tabs on different folders of the same
+  name each add as few of the folders above as tell them apart, as **Notes —
+  Lab** and **Notes — Work**, and the full path is its tooltip. Tabs reorder
+  by dragging; items dropped on a tab move or copy into its folder under the
+  same rules as dropping on the list, and items held over a tab bring it to
+  the front. The tabs, their folders, Back and Forward, and the one in front
+  come back when the window reopens, from this computer only, each window
+  with its own. The panel
+  follows the tab in front: its Info, History, and message box are for that
+  tab's folder, and each tab keeps its own open Chat. A Chat in a tab behind
+  stays open out of sight, so its reply goes on and shows where it was;
+  closing a tab closes its Chat without stopping a reply, which keeps running
+  and stays in the Connected Folder's History. Copies, moves, and the other
+  operations in progress belong to the window and keep running when the tab
+  that started them closes. The Browser pane and its web tabs stay one set
+  for the window.
 - **Thumbnails:** icon view shows a picture's or a PDF's first page in its
   tile (PNG, JPEG, GIF, WebP, BMP, AVIF, and PDF; SVG, HEIC, TIFF, RAW, and
   video keep their icons), drawn by the host from the file and cached by its
@@ -459,12 +496,14 @@ AmpleFile can show several file manager windows at once. **File → New
 Window** (⌘N; Ctrl+N on Linux) opens another window at the folder the front
 window shows, or at the home folder, a step down and to the right of it, so
 two windows never sit exactly on top of each other. **Open in New Window**,
-which the window's menus can offer, opens a given folder in a window of its
-own. **New Connected Folder** is ⌥⌘N (Ctrl+Alt+N).
+beside **Open in New Tab** in a folder's menu and the sidebar's menus, opens
+that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Alt+N).
 
-- **Each window is its own:** its folder, selection, panel, Browser pane
-  tabs, and size and place on the screen, and the Connected Folder it shows,
-  which names the window in its title. Every window sees the same Connected
+- **Each window is its own:** its folder tabs (each with its folder,
+  selection, and Chat), panel, Browser pane tabs, and size and place on the
+  screen, and the Connected Folder it shows, which names the window in its
+  title. The window's title, Open Recent, and **New Window** follow the tab
+  in front. Every window sees the same Connected
   Folders, Standard Folders, drives, Trash, running Chats, and running file
   operations, so a change made in one (a rename, a new Connected Folder, a
   finished copy) shows in the others.
@@ -472,11 +511,14 @@ own. **New Connected Folder** is ⌥⌘N (Ctrl+Alt+N).
   to it, and the View menu's check marks and the items that need a Connected
   Folder follow it. A dialog, a native menu, or a site's question opens over
   the window that asked.
-- **What windows share:** the view, the sort, Show Hidden Files, and the
-  panel and sidebar widths are kept on this computer. Each window keeps its
-  own while it is open, and a new window starts with the last one changed.
-  The Connected Folder a window shows and how it left its Browser pane are
-  kept for that window alone.
+- **What windows share:** Icons or List and the sort remembered for each
+  folder are one set for every window, so a folder looks the same in all of
+  them. The last choice of view and sort (for folders never set), Show
+  Hidden Files, and the panel and sidebar widths are kept on this computer:
+  each window keeps its own while it is open, and a new window starts with
+  the last one changed. The Connected Folder a window shows, its folder tabs,
+  and how it left its Browser pane are kept for that window alone, so two
+  windows never restore or overwrite each other's tabs.
 - **Folders handed to AmpleFile** (Finder's Open, a launcher's argument, a
   second launch, a FileManager1 call on Linux) open in the front window, as
   they did with one window, so an app that asks again and again to show a

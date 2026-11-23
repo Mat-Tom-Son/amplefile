@@ -10,6 +10,7 @@ import { browserLoadErrorText } from "../web-local/src/lib/browser-pages.js";
 import { revealInFileManagerLabel } from "../web-local/src/lib/file-actions.js";
 import { desktopShortcutText } from "../web-local/src/lib/keyboard.js";
 import { computerNoun, systemFileManagerName } from "../web-local/src/lib/platform.js";
+import { readFileManagerWindowSource } from "./support/file-manager-source.js";
 
 // The Mac app's words stay exactly as they ship; Linux gets its own.
 const root = process.cwd();
@@ -69,7 +70,7 @@ test("Shortcut Keys keeps the Mac rows and speaks Linux on Linux", () => {
 
 test("renderer strings that name the Mac go through the platform helpers", async () => {
   const [fileManager, commandLine, browserPages, shortcuts] = await Promise.all([
-    read("web-local/src/components/file-manager/FileManagerView.tsx"),
+    readFileManagerWindowSource(),
     read("web-local/src/components/modals/CommandLinePane.tsx"),
     read("web-local/src/hooks/useBrowserPages.ts"),
     read("web-local/src/components/modals/KeyboardShortcutsPane.tsx"),

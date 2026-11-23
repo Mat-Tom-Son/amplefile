@@ -77,13 +77,14 @@ test("each window keeps its own menu state, and the application menu shows the f
   const two = new FakeWindow(2);
   windows.add(one);
   windows.add(two);
-  assert.deepEqual(windows.menuState(), { connectedFolderOpen: false, showHiddenFiles: false });
-  windows.updateMenuState(one, { connectedFolderOpen: true, showHiddenFiles: true });
-  assert.deepEqual(windows.menuState(), { connectedFolderOpen: false, showHiddenFiles: false }, "window 2 is in front");
+  const closed = { folderTabsOpen: false, showTabBar: false };
+  assert.deepEqual(windows.menuState(), { connectedFolderOpen: false, showHiddenFiles: false, ...closed });
+  windows.updateMenuState(one, { connectedFolderOpen: true, showHiddenFiles: true, folderTabsOpen: true, showTabBar: true });
+  assert.deepEqual(windows.menuState(), { connectedFolderOpen: false, showHiddenFiles: false, ...closed }, "window 2 is in front");
   windows.focus(one);
-  assert.deepEqual(windows.menuState(), { connectedFolderOpen: true, showHiddenFiles: true });
+  assert.deepEqual(windows.menuState(), { connectedFolderOpen: true, showHiddenFiles: true, folderTabsOpen: true, showTabBar: true }, "each window's own folder tabs and Show Tab Bar");
   windows.updateMenuState(one, { showHiddenFiles: false, unknown: 1 });
-  assert.deepEqual(windows.entry(one)?.menuState, { connectedFolderOpen: true, showHiddenFiles: false }, "a key left out keeps its value");
+  assert.deepEqual(windows.entry(one)?.menuState, { connectedFolderOpen: true, showHiddenFiles: false, folderTabsOpen: true, showTabBar: true }, "a key left out keeps its value");
   assert.equal(windows.updateMenuState({ id: 99 }, { connectedFolderOpen: true }), null);
   assert.equal(windows.updateMenuState(null, { connectedFolderOpen: true }), null);
 });
@@ -321,11 +322,13 @@ test("each window carries its slot to its renderer, and a new window is marked f
   assert.match(preload, /const windowFresh = argumentValue\("window-fresh"\) === "1";/);
 });
 
-test("the renderer keeps the Connected Folder shown and the Browser pane per window; window 1 keeps the keys it always had", async () => {
+test("the renderer keeps the Connected Folder shown, the folder tabs, and the Browser pane per window; window 1 keeps the keys it always had", async () => {
   const { perWindowStorageKeys, windowStorageKey } = await import("../web-local/src/lib/window-storage.js");
   assert.equal(windowStorageKey("amplefile.connected-folder.active", 1), "amplefile.connected-folder.active");
   assert.equal(windowStorageKey("amplefile.file-manager.browser-pane.v1", 3), "amplefile.file-manager.browser-pane.v1.window-3");
-  assert.deepEqual([...perWindowStorageKeys], ["amplefile.connected-folder.active", "amplefile.file-manager.browser-pane.v1"]);
+  assert.deepEqual([...perWindowStorageKeys], ["amplefile.connected-folder.active", "amplefile.file-manager.browser-pane.v1", "amplefile.file-manager.tabs.v1"]);
+  const tabs = await readFile(new URL("../web-local/src/components/file-manager/useFolderTabs.ts", import.meta.url), "utf8");
+  assert.match(tabs, /windowStorageKey\("amplefile\.file-manager\.tabs\.v1"\)/, "each window keeps its own folder tabs");
   const app = await readFile(new URL("../web-local/src/App.tsx", import.meta.url), "utf8");
   const view = await readFile(new URL("../web-local/src/components/file-manager/FileManagerView.tsx", import.meta.url), "utf8");
   const entry = await readFile(new URL("../web-local/src/main.tsx", import.meta.url), "utf8");

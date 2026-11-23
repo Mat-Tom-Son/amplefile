@@ -5,7 +5,7 @@ import type { ShortcutGroup } from "../../types";
 /**
  * The file manager layout's keys (docs/product-model.md, the file
  * manager window): Finder's keys for the list and search, and the menu bar's
- * AmpleFile commands, and the Browser pane's keys in the desktop app. It has
+ * AmpleFile commands, folder tabs, and the Browser pane's keys in the desktop app. It has
  * no command palette or agent panel, so their keys are not listed.
  * Space previews with Quick Look on the Mac (the plain browser points to the
  * Mac app for it); on another desktop it opens the window's own Preview, which
@@ -60,6 +60,19 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: [modifier, "."], action: "Stop the Worker's reply." },
       ],
     },
+    ...(desktop ? [{
+      // Folder tabs: the window owns these keys everywhere but the Browser pane, which keeps its own while it has the keyboard.
+      title: "Tabs",
+      rows: [
+        { keys: [modifier, "T"], action: "Open a new tab at the folder shown." },
+        { keys: [modifier, "W"], action: "Close the tab in front. Closing the last one closes the window." },
+        { keys: ["Control", "Tab"], action: "Show the next tab." },
+        { keys: ["Control", "Shift", "Tab"], action: "Show the previous tab." },
+        ...(macOS
+          ? [{ keys: ["Shift", modifier, "]"], action: "Show the next tab." }, { keys: ["Shift", modifier, "["], action: "Show the previous tab." }]
+          : [{ keys: [modifier, "Page Down"], action: "Show the next tab." }, { keys: [modifier, "Page Up"], action: "Show the previous tab." }]),
+      ],
+    }] : []),
     ...(desktop ? [{
       // These act while the Browser pane or a page in it has the keyboard; elsewhere the same keys keep their own meaning.
       title: "Browser, While It Has the Keyboard",

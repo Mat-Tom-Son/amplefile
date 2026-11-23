@@ -5,8 +5,8 @@
  * window starts from (the view, the sort, Show Hidden Files, panel widths): a
  * window keeps its own copy while it is open, and the last one changed is what
  * the next window starts with. A few things belong to one window only, the
- * Connected Folder it shows and how it left its Browser pane, so they are kept
- * under a key of that window's own.
+ * Connected Folder it shows, its folder tabs, and how it left its Browser
+ * pane, so they are kept under a key of that window's own.
  *
  * The host numbers each window with a slot (desktop/src/file-manager-windows.ts):
  * window 1 keeps the keys AmpleFile always used, so one window behaves as
@@ -18,6 +18,8 @@
 export const perWindowStorageKeys = [
   "amplefile.connected-folder.active",
   "amplefile.file-manager.browser-pane.v1",
+  // Its folder tabs, so two windows never restore or overwrite each other's.
+  "amplefile.file-manager.tabs.v1",
 ] as const;
 
 type PerWindowStorageKey = (typeof perWindowStorageKeys)[number];

@@ -1399,13 +1399,16 @@ function registerIpc(): void {
   ipcMain.on("amplefile:window:control", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const window = senderWindow(event);
-    if (process.platform !== "linux" || !window || window.isDestroyed()) return;
+    if (!window || window.isDestroyed()) return;
+    // Closing the last folder tab closes that window on every platform, through the window's own close rules.
+    if (value === "close") { window.close(); return; }
+    if (process.platform !== "linux") return;
     if (value === "minimize") window.minimize();
     else if (value === "toggle-maximize") {
       if (window.isFullScreen()) window.setFullScreen(false);
       else if (window.isMaximized()) window.unmaximize();
       else window.maximize();
-    } else if (value === "close") window.close();
+    }
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1575,7 +1578,11 @@ type RendererMenuCommand =
   | "open-keyboard-shortcuts"
   | "toggle-sidebar"
   | "toggle-agent-panel"
-  | "toggle-hidden-files";
+  | "toggle-hidden-files"
+  | "new-tab"
+  | "next-tab"
+  | "previous-tab"
+  | "toggle-tab-bar";
 
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
@@ -1616,6 +1623,9 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
     const items: MenuItemConstructorOptions[] = [
       // Another window at the folder the front one shows (docs/product-model.md, "Windows").
       { id: "new-window", label: "New Window", accelerator: "CommandOrControl+N", click: (_item, window) => { void openNewWindow({ from: window }).catch(reportWindowError); } },
+      // A folder tab at the folder shown. The window owns the key, so it works wherever the keyboard is and the
+      // Browser pane keeps its own ⌘T while it has the keyboard; the menu shows the key without registering it.
+      { id: "new-tab", label: "New Tab", accelerator: "CommandOrControl+T", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("new-tab") },
       { label: "New Connected Folder", accelerator: "Alt+CommandOrControl+N", click: menuCommand("new-connected-folder") },
       { label: "Connect Folder...", accelerator: "CommandOrControl+O", click: menuCommand("open-local-folder") },
       ...(process.platform === "darwin" ? [{
@@ -1639,15 +1649,17 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       // tab; the window keeps the conventional Shift+Cmd+W.
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: state.connectedFolderOpen, click: menuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: state.folderTabsOpen, click: menuCommand("close-tab") },
         { role: "close", accelerator: "Shift+CommandOrControl+W" },
       );
     } else if (process.platform === "linux") {
-      // As on the Mac, Ctrl+W closes the browser tab in front, and Shift+Ctrl+W
-      // closes the window (the host and accepted work keep running).
+      // As on the Mac, Ctrl+W closes the folder tab in front (the browser tab in
+      // front while the Browser pane has the keyboard; the last folder tab closes
+      // the window), and Shift+Ctrl+W closes the window (the host and accepted
+      // work keep running).
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: state.connectedFolderOpen, click: menuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: state.folderTabsOpen, click: menuCommand("close-tab") },
         { role: "close", label: "Close Window", accelerator: "Shift+Control+W" },
         { role: "quit", accelerator: "Control+Q" },
       );
@@ -1690,6 +1702,19 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         enabled: state.connectedFolderOpen,
         click: menuCommand("toggle-hidden-files"),
       },
+      // Folder tabs: the strip shows with more than one tab, or always with Show Tab Bar on. The window owns the next and
+      // previous tab keys (Ctrl+Tab and Ctrl+Shift+Tab everywhere, as listed here per platform).
+      {
+        id: "show-tab-bar",
+        label: "Show Tab Bar",
+        type: "checkbox",
+        checked: state.showTabBar,
+        enabled: state.folderTabsOpen,
+        click: menuCommand("toggle-tab-bar"),
+      },
+      { id: "previous-tab", label: "Show Previous Tab", accelerator: process.platform === "darwin" ? "Shift+Command+[" : "Control+PageUp", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("previous-tab") },
+      { id: "next-tab", label: "Show Next Tab", accelerator: process.platform === "darwin" ? "Shift+Command+]" : "Control+PageDown", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("next-tab") },
+      { type: "separator" },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: state.connectedFolderOpen, click: menuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: state.connectedFolderOpen, click: menuCommand("toggle-agent-panel") },
       { type: "separator" },
@@ -1819,7 +1844,10 @@ function refreshApplicationMenuState(): void {
   setMenuItemEnabled(menu, "show-hidden-files", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "close-tab", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
+  const showTabBar = menu?.getMenuItemById("show-tab-bar");
+  if (showTabBar) showTabBar.checked = state.showTabBar;
+  for (const id of ["new-tab", "show-tab-bar", "previous-tab", "next-tab"]) setMenuItemEnabled(menu, id, state.folderTabsOpen);
   setMenuItemEnabled(menu, "open-capabilities", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-sidebar", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-agent-panel", state.connectedFolderOpen);

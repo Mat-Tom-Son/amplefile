@@ -99,8 +99,10 @@ keeps the Connected Folder shown and its Chat.
   keyboard, and keep their own meaning elsewhere in the window: ⌘T opens a
   tab and ⇧⌘T reopens the one closed last, ⌘W closes the tab in front, ⌘L
   goes to the address field, ⌘F finds in the page, and ⌘1 to ⌘9 and
-  Control-Tab change tabs. ⌘W does nothing to the browser from a Chat's
-  message box, the folder's list, or while a dialog is open. A key pressed
+  Control-Tab change tabs. Elsewhere in the window ⌘T, ⌘W, and Control-Tab
+  are the folder tabs' keys ([the file manager window](product-model.md#the-file-manager-window)):
+  ⌘W from a Chat's message box or the folder's list closes the folder tab in
+  front, never a browser tab, and nothing closes while a dialog is open. A key pressed
   in a page that the window acts on brings the keyboard back to the window,
   so what is typed next goes to the address or find field and not to the
   page; a tab chosen from a page gives its page the keyboard. A page that
