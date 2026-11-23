@@ -68,7 +68,8 @@ const localEventMultiplexer = createLocalEventMultiplexer((subscriptions, receiv
 });
 
 export function createEventSource(path: string): LocalEventStream {
-  if (/^\/api\/(?:amplefile-agent\/control-events|file-transfer\/events|amplefile-agent\/conversations\/[^/]+\/events|connected-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
+  // One connection per window carries these: windows share a connection limit to the local API.
+  if (/^\/api\/(?:amplefile-agent\/control-events|file-transfer\/events|volumes\/events|amplefile-agent\/conversations\/[^/]+\/events|connected-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
     return localEventMultiplexer.subscribe(path);
   }
   return createDirectEventSource(path).source;

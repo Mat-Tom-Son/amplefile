@@ -335,3 +335,14 @@ test("the renderer keeps the Connected Folder shown and the Browser pane per win
   assert.match(view, /reportWindowLocation\(location\)/, "the window tells the desktop where it is, for New Window");
   assert.ok(entry.indexOf("startWindowStorage();") < entry.indexOf("<App"), "a new window forgets its slot's leftovers before the app reads them");
 });
+
+test("windows never wait on each other's event streams for a connection to the local API", async () => {
+  // Every window shares one Chromium session, which allows six connections per host; two windows' streams once
+  // left a third window's first request waiting forever.
+  assert.match(main, /const localApiHost = "127\.0\.0\.1";/);
+  assert.match(main, /app\.commandLine\.appendSwitch\("ignore-connections-limit", localApiHost\);/);
+  assert.ok(main.indexOf('appendSwitch("ignore-connections-limit"') < main.indexOf("app.whenReady()"), "set before the app is ready");
+  assert.match(main, /startLocalApi\(\{\s*appMode: "desktop",\s*host: localApiHost,/);
+  const api = await readFile(new URL("../web-local/src/lib/api.ts", import.meta.url), "utf8");
+  assert.match(api, /control-events\|file-transfer\\\/events\|volumes\\\/events\|/, "the drives list rides the window's one multiplexed connection");
+});

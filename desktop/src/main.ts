@@ -150,6 +150,9 @@ import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
 import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
 
+/** The local API's address; it listens on loopback only. */
+const localApiHost = "127.0.0.1";
+
 // AppImage launchers can fall back to --no-sandbox when namespaces are blocked.
 // Refuse before initializing user state rather than weaken renderer isolation.
 const refusedUnsandboxedLaunch = process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox");
@@ -159,6 +162,11 @@ if (refusedUnsandboxedLaunch) {
 }
 
 configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
+// Every file manager window, the AmpleFile Agent popover, and the inspector share one Chromium session, which
+// allows six connections to a host at a time. Each window keeps an event stream open to the loopback local API,
+// so a third window's first request would wait forever behind two windows' streams. The limit is lifted for the
+// local API's loopback address alone (it never listens elsewhere; src/local/server.ts).
+app.commandLine.appendSwitch("ignore-connections-limit", localApiHost);
 // Hidden browser views need X11's native parent for trusted input and capture.
 // Desktop sharing still uses the Wayland portal in a Wayland login session.
 // Chromium has already chosen its platform here, so the instance that owns the
@@ -655,6 +663,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     setSystemTrashHandler((path) => shell.trashItem(path));
     const api = await startLocalApi({
       appMode: "desktop",
+      host: localApiHost,
       port: 0,
       connectedFolderBase: managedConnectedFolderRoot(),
       stateBase: userData,

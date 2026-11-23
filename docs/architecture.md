@@ -124,7 +124,12 @@ slot number that names its saved place in `window-state.json`
 (`desktop/src/window-placements.ts`) and its per-window renderer storage
 (`web-local/src/lib/window-storage.ts`). Every file manager window's top
 frame is trusted the same way; the popover, browser pages, and pop-ups are
-never file manager windows.
+never file manager windows. All of them share one Chromium session, whose
+limit of six connections to a host would let a few windows' event streams
+starve the next window's requests, so the desktop lifts that limit for the
+local API's loopback address alone, and each window carries its event
+streams over one multiplexed `/api/events` connection where the server offers
+it.
 
 The AmpleFile Agent popover is a small separate frameless window
 (`popover.html`, its own lean renderer entry) owned by the menu-bar
