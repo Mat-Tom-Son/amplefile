@@ -275,7 +275,9 @@ many entries a folder had.
   with the `main-window` surface, one receipt per item. It has the delete's
   restore point, the path policy (never the Connected Folder itself or a
   nested one), and the settled-work refusal, which comes before anything is
-  copied. An item the restore point could not fully cover, where the copy
+  copied. A move also finds a nested Connected Folder by its path as the
+  disk resolves it, so one registered under another spelling of its path, or
+  through a linked folder, does not leave through its parent. An item the restore point could not fully cover, where the copy
   did not carry the rest or the rest is an `.amplefile` identity, leaves
   whole for Recently Deleted, with whatever it holds by then. Any other
   item is erased, and only while it is still exactly what the copy read

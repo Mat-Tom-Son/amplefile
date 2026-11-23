@@ -372,7 +372,9 @@ other surface.
     keeps a restore point on both sides. It refuses, before copying
     anything, while the source Connected Folder has unfinished work (a
     running turn or a question waiting on an answer), and for an item that
-    is, holds, or sits inside a nested Connected Folder. A copy leaves a
+    is, holds, or sits inside a nested Connected Folder, whichever way that
+    one's path was written when it was connected (another letter case, an
+    accent spelled the other way, or through a linked folder). A copy leaves a
     folder's `.amplefile/` behind; a move carries it, so a disconnected
     Connected Folder keeps its identity and Chats. A move out of a Connected
     Folder into a plain folder is that same move with one restore point, the

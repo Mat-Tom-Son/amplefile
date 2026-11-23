@@ -390,6 +390,39 @@ test("a Connected Folder registered through a linked folder is never removed thr
   }
 });
 
+test("a Connected Folder inside another, registered through a linked folder, is never moved out through its parent", async (t) => {
+  const { api, call, sandbox } = await sandboxApi(t);
+  const parentRoot = join(sandbox, "Parent");
+  await mkdir(join(parentRoot, "Area", "Child"), { recursive: true });
+  await writeFile(join(parentRoot, "Area", "Child", "doc.txt"), "doc");
+  await writeFile(join(parentRoot, "loose.txt"), "loose");
+  const parent = (await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: parentRoot } })).body!.connectedFolder;
+  // Registered by a path no part of the parent's own spells: through a link to the parent.
+  await symlink(parentRoot, join(sandbox, "Linked"));
+  const registered = await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: join(sandbox, "Linked", "Area", "Child") } });
+  if (registered.status !== 201 && registered.status !== 200) { t.skip(`a folder through a link is not registered: ${JSON.stringify(registered.body)}`); return; }
+  const plain = join(sandbox, "Plain");
+  await mkdir(plain);
+  const other = await connectedFolder(call, "Other");
+
+  // The Connected Folder itself, an item inside it, and the folder that holds it; to a plain folder and to another Connected Folder.
+  for (const target of [onDisk(plain), inFolder(other, "")]) {
+    for (const path of ["Area/Child", "Area/Child/doc.txt", "Area"]) {
+      const refused = await transfer(call, { mode: "move", sources: [inFolder(parent, path)], target });
+      assert.equal(refused.status, 409, `${path}: ${JSON.stringify(refused.body)}`);
+      assert.match(refused.body!.error, /Connected Folder/);
+      assert.equal(await readFile(join(parentRoot, "Area", "Child", "doc.txt"), "utf8"), "doc", "the nested Connected Folder is untouched");
+    }
+  }
+  assert.deepEqual(await tree(plain), [], "nothing was copied");
+  assert.deepEqual(await tree(other.connectedFolderRoot), []);
+  assert.deepEqual((await api.recentlyDeleted.list()).entries, [], "and nothing was set aside");
+  // What is the parent's own still moves.
+  const moved = await transfer(call, { mode: "move", sources: [inFolder(parent, "loose.txt")], target: onDisk(plain) });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual(await tree(plain), ["loose.txt=loose"]);
+});
+
 test("a transfer's target is never inside a nested Connected Folder named through its parent", async (t) => {
   const { call, sandbox } = await sandboxApi(t);
   const parentRoot = join(sandbox, "parent");
