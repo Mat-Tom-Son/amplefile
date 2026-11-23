@@ -39,6 +39,7 @@ import {
 import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
 import { containsReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
+import { usualMacPath } from "./mac-data-volume.js";
 import { productIdentity } from "../shared/product-identity.js";
 
 import type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
@@ -1085,7 +1086,8 @@ export async function resolveListedSymbolicLink(placeRoot: string, relativePath:
 }
 
 export function ensureSafeConnectedFolderRoot(connectedFolderRoot: string): string {
-  const resolved = resolve(connectedFolderRoot);
+  // Under its usual name on a Mac, never the data volume's second one (mac-data-volume.ts).
+  const resolved = usualMacPath(resolve(connectedFolderRoot));
   if (!isAbsolute(resolved) || resolved === parse(resolved).root) throw new Error("A filesystem root cannot be used as a Connected Folder.");
   if (existsSync(resolved) && lstatSync(resolved).isSymbolicLink()) throw new Error("A Connected Folder cannot be a symbolic link or junction.");
   return resolved;

@@ -140,8 +140,9 @@ other surface.
   a path goes through), and `.amplefile/` and `.pi/` stay hidden. The
   window never goes into `/System/Volumes/Data`, where macOS gives every
   folder on the data volume a second name that is not a link (through it a
-  Connected Folder would open as a plain folder); Go to Folder or Finder
-  handing over a path by that name opens it under its usual one. The disk's top
+  Connected Folder would open as a plain folder): Go to Folder, Finder, a
+  folder added to the sidebar, and a folder connected by that name all use
+  its usual one, and search and folder sizes never walk into it. The disk's top
   lists its links (a Mac keeps `/etc`, `/tmp`, and `/var` as links into `/private`) as
   **Symbolic links** describes. A folder the
   account may not read says so (on a Mac, as for Desktop or Documents, with

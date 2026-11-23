@@ -18,6 +18,7 @@ import {
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { isSystemHiddenEntry } from "./hidden-entries.js";
+import { entersMacDataVolume, macDataVolumeRefusal, usualMacPath, withoutMacDataVolumeName, isInsideMacDataVolume } from "./mac-data-volume.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 import { linuxUserDirectories } from "./standard-folder-locations.js";
 
@@ -234,21 +235,6 @@ export function standardFolderPathBase(
 }
 
 /**
- * macOS: the data volume's own mount. Every folder on it has a second name
- * there (`/System/Volumes/Data/Users/ana` is `/Users/ana`) that is not a
- * symbolic link, so a path through it would show a Connected Folder as a plain
- * folder and get around the refusals below. The computer place never goes
- * into it; resolveFolderLocation turns such a path back into its usual name.
- */
-export const macDataVolumeRoot = "/System/Volumes/Data";
-export const macDataVolumeRefusal = "That folder is another name for this Mac’s own folders. Open it at its usual path, such as /Users.";
-
-function entersMacDataVolume(parts: readonly string[], platform: NodeJS.Platform): boolean {
-  // The Mac's disk ignores case, so "system/volumes/data" is the same folder.
-  return platform === "darwin" && parts.length >= 3 && ["system", "volumes", "data"].every((name, index) => parts[index]!.toLowerCase() === name);
-}
-
-/**
  * Refuses a change to anything a registered Connected Folder owns: the standard
  * folder itself when it is registered, a registered folder inside it, or
  * anything inside one. Those changes go through the Connected Folder, which keeps
@@ -369,7 +355,10 @@ function addedFolders(): AddedFolder[] {
       folders = parsed.folders.filter((item): item is AddedFolder => typeof item === "object" && item !== null
         && typeof (item as AddedFolder).id === "string" && /^added-[0-9a-f]{16}$/.test((item as AddedFolder).id)
         && typeof (item as AddedFolder).root === "string" && (item as AddedFolder).root.startsWith(sep)
-        && typeof (item as AddedFolder).name === "string");
+        && typeof (item as AddedFolder).name === "string")
+        // One kept by the Mac data volume's second name is used under its usual one, or left out when it has none.
+        .map((item) => ({ ...item, root: withoutMacDataVolumeName(item.root) }))
+        .filter((item) => !isInsideMacDataVolume(item.root));
     }
   } catch { folders = []; }
   addedFoldersCache = { mtimeMs, folders };
@@ -387,7 +376,8 @@ function writeAddedFolders(folders: AddedFolder[]): void {
 
 /** Adds a folder the person chose in the folder picker; a folder already in the sidebar is returned as it is. */
 export function addSidebarFolder(folderPath: string, home = homedir()): { id: StandardFolderId; name: string } {
-  const root = resolve(folderPath);
+  // A folder chosen by the Mac data volume's second name is kept under its usual one (mac-data-volume.ts).
+  const root = usualMacPath(resolve(folderPath));
   const info = statSync(root, { throwIfNoEntry: false });
   if (!info?.isDirectory()) throw badRequest("Choose a folder.");
   for (const id of builtInStandardFolderIds) {

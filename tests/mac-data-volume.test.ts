@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { resolveFolderLocation, withoutMacDataVolumeName } from "../src/local/folder-locations.js";
-import { computerFolderId, macDataVolumeRoot, standardFolderPathBase } from "../src/local/standard-folders.js";
+import { ensureSafeConnectedFolderRoot } from "../src/local/connected-folder.js";
+import { resolveFolderLocation } from "../src/local/folder-locations.js";
+import { isInsideMacDataVolume, macDataVolumeRoot, withoutMacDataVolumeName } from "../src/local/mac-data-volume.js";
+import { addSidebarFolder, computerFolderId, listStandardFolders, standardFolderPathBase } from "../src/local/standard-folders.js";
+import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 
 // macOS gives every folder on the data volume a second name under
-// /System/Volumes/Data that is not a link (src/local/standard-folders.ts,
-// macDataVolumeRoot). Through it a Connected Folder would open as a plain
-// folder and its changes would skip History, so the computer place never goes
-// in, and a path by that name opens under its usual one.
+// /System/Volumes/Data that is not a link (src/local/mac-data-volume.ts).
+// Through it a Connected Folder would open as a plain folder and its changes
+// would skip History, so nothing goes in, and a path by that name is used
+// under its usual one.
 
 const refused = (run: () => unknown) => assert.throws(run, (error: { status?: number; message?: string }) => error.status === 400 && /another name for this Mac’s own folders/.test(error.message ?? ""));
 
@@ -49,4 +52,29 @@ test("a path by the data volume's name opens under its usual one, in the Connect
   }, "the Mac's disk ignores case");
   // The volume's own top has no usual name; it is refused like any path into it.
   await assert.rejects(resolveFolderLocation(macDataVolumeRoot, connectedFolders, root), (error: { status?: number }) => error.status === 400);
+});
+
+test("the data volume's name is recognized in any case, with or without a trailing slash, only on a Mac", () => {
+  for (const path of [macDataVolumeRoot, `${macDataVolumeRoot}/`, "/system/volumes/DATA/Users", `${macDataVolumeRoot}//Users/ana`]) {
+    assert.equal(isInsideMacDataVolume(path, "darwin"), true, path);
+  }
+  for (const path of ["/System/Volumes", "/System/Volumes/Database", "/Users/ana/System/Volumes/Data"]) assert.equal(isInsideMacDataVolume(path, "darwin"), false, path);
+  assert.equal(isInsideMacDataVolume(`${macDataVolumeRoot}/Users`, "linux"), false);
+});
+
+test("a sidebar folder and a Connected Folder chosen by the data volume's name are kept under the usual one", { skip: process.platform !== "darwin" && "macOS only" }, async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "amplefile-data-volume-roots-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  configureAmpleFileStateRoot(join(root, "state"));
+  t.after(() => configureAmpleFileStateRoot(undefined));
+  const shared = join(root, "Shared");
+  await mkdir(shared);
+
+  const added = addSidebarFolder(`${macDataVolumeRoot}${shared}`, join(root, "home"));
+  assert.equal((await listStandardFolders([], join(root, "home"))).find((folder) => folder.id === added.id)?.root, shared);
+  assert.deepEqual(addSidebarFolder(shared, join(root, "home")), added, "the same folder by its usual name is the same sidebar row");
+  assert.throws(() => addSidebarFolder(macDataVolumeRoot, join(root, "home")), (error: { status?: number }) => error.status === 400);
+
+  assert.equal(ensureSafeConnectedFolderRoot(`${macDataVolumeRoot}${shared}`), shared);
+  assert.throws(() => ensureSafeConnectedFolderRoot(`${macDataVolumeRoot}/`), (error: { status?: number }) => error.status === 400);
 });

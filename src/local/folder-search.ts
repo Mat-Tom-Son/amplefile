@@ -7,6 +7,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { listConnectedFolders, resolveConnectedFolderPath } from "./connected-folder.js";
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
+import { isInsideMacDataVolume } from "./mac-data-volume.js";
 import { directoryLooksGenerated, isHistoryAlwaysSkippedSegment } from "./history-capture-policy.js";
 import { isOfficeLockFileName } from "./office-lock-files.js";
 import { decodeRetrievalCursor, encodeRetrievalCursor, retrievalError } from "./retrieval-cursor.js";
@@ -275,6 +276,8 @@ export async function searchStandardFolder(id: StandardFolderId, rawQuery: strin
       if (!info) { coverage.unreadable++; continue; }
       if (!info.isDirectory()) { coverage.changed++; continue; }
       if (info.dev !== startDev) { coverage.otherFilesystem++; continue; }
+      // A Mac's data volume can share the disk top's device; its second names are never walked (mac-data-volume.ts).
+      if (isInsideMacDataVolume(childPath, platform)) { coverage.otherFilesystem++; continue; }
       if (comparable(childPath, platform) === comparable(stateRoot, platform)) { coverage.internal++; continue; }
       if (entry.name.toLocaleLowerCase().includes(needle)) {
         const match: FolderSearchNameMatch = { path: toPlace(relativePath), name: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), ...(hidden ? { hidden: true as const } : {}) };
