@@ -152,12 +152,16 @@ other surface.
   system, then every mounted drive the host lists, by name; hovering one
   shows its free and total space. Each opens in the computer place at its
   mount path, so it follows the other-folder rules. An ejectable drive has an
-  **Eject** button beside it. Ejecting a drive takes its whole disk, so the
-  other drives on that disk leave with it. The host refuses while a file on
-  any of them is in use or a Connected Folder on any of them has unfinished
-  work, and the window shows its reason as it is. For unfinished work the
-  reason names the drive, the Connected Folder, and the drive that Connected
-  Folder is on. When the Mac cannot say which disk a drive is on, the host
+  **Eject** button beside it. Ejecting a drive takes its whole disk, so
+  everything else mounted from that disk leaves with it, shown in the list or
+  not. While a Connected Folder on any of it has unfinished work, the host
+  refuses before anything changes, and its reason names the drive, the
+  Connected Folder, and the drive that Connected Folder is on. While a file
+  on the drive itself is in use, the Mac refuses and nothing changes. While a
+  file on another drive of the disk is in use, the Mac has already unmounted
+  the drive that was asked for when it refuses: the reason names the drives
+  the disk holds, and the list shows what is left. The window shows each
+  reason as it is. When the Mac cannot say which disk a drive is on, the host
   treats it as sharing the disk rather than risk ejecting it under running
   work. A drive coming or going updates the list on its own, and ejecting the
   drive shown goes back to where the window opened. A drive that has stopped
@@ -186,7 +190,9 @@ other surface.
   something to the Trash. Search filters it by name. On a Mac the list needs
   Full Disk Access and says so when it is missing; macOS keeps no record of
   where an item came from that AmpleFile can read, so Put Back there points
-  to Finder and the rest works.
+  to Finder and the rest works. A drive's Trash is read from a disk, never
+  from a network share, and a drive that is not answering is left out of the
+  list and of Empty Trash until it answers.
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
   Quick Look, Command-Down to open, Command-Up for the enclosing folder

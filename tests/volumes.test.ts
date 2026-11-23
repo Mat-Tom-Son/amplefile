@@ -10,11 +10,13 @@ import {
   ejectCommands,
   ejectVolume,
   linuxUserVolumes,
+  listMacTrashTops,
   listVolumeRecords,
   listVolumes,
   MountCalls,
   parseDfSpace,
   parseMacMounts,
+  parseMacMountTable,
   parseMountInfo,
   parsePropertyList,
   physicalDisksFromDiskutilInfo,
@@ -25,6 +27,7 @@ import {
   volumesEjectedWith,
   volumeSpaceForPath,
   type EjectCommand,
+  type MountedVolume,
   type ToolCommand,
   type ToolLimits,
   type ToolRunner,
@@ -492,7 +495,7 @@ test("diskutil's answer names the physical disks under a volume: an APFS volume'
 
   assert.deepEqual(physicalDisksFromDiskutilInfo(apfs), ["disk4"], "the disk its container is stored on, not the container");
   assert.deepEqual(physicalDisksFromDiskutilInfo(exfat), ["disk4"]);
-  assert.equal(physicalDisksFromDiskutilInfo(notFound), null, "diskutil's own error");
+  assert.deepEqual(physicalDisksFromDiskutilInfo(notFound), [], "diskutil's own error: it knows no disk there");
   // A Fusion Drive's container has a store on each of two disks.
   const fusion = apfs.replace("<string>disk4s1</string>\n\t\t</dict>", "<string>disk0s2</string>\n\t\t</dict>\n\t\t<dict>\n\t\t\t<key>APFSPhysicalStore</key>\n\t\t\t<string>disk1s2</string>\n\t\t</dict>");
   assert.notEqual(fusion, apfs);
@@ -500,10 +503,28 @@ test("diskutil's answer names the physical disks under a volume: an APFS volume'
   assert.equal(physicalDisksFromDiskutilInfo(apfs.replace("<string>disk4s1</string>", "<string>../../etc</string>")), null, "a store that is not a disk");
   assert.equal(physicalDisksFromDiskutilInfo(exfat.replace("<string>disk4</string>", "<string>not a disk</string>")), null);
 
-  // Untrusted text: what does not read as a property list to the end is no answer.
-  for (const text of ["", "not a plist", apfs.slice(0, 900), "<plist><dict><key>a</key></dict></plist>", "<plist><array><key>a</key></array></plist>", `<plist>${"<array>".repeat(64)}${"</array>".repeat(64)}</plist>`, `<plist><string>${"x".repeat(1024 * 1024)}</string></plist>`]) {
-    assert.equal(parsePropertyList(text), null, text.slice(0, 60));
-  }
+  // A whole disk with no partitions is its own disk, and an answer that names no disk at all does not say.
+  assert.deepEqual(physicalDisksFromDiskutilInfo("<plist><dict><key>DeviceIdentifier</key><string>disk7</string><key>WholeDisk</key><true/></dict></plist>"), ["disk7"]);
+  assert.equal(physicalDisksFromDiskutilInfo("<plist><dict><key>MountPoint</key><string>/Volumes/Odd</string></dict></plist>"), null);
+  assert.equal(physicalDisksFromDiskutilInfo("<plist><dict><key>APFSPhysicalStores</key><string>disk4s1</string></dict></plist>"), null);
+
+  // Untrusted text, read strictly: only one whole property list is an answer.
+  const strict = [
+    "", "not a plist", apfs.slice(0, 900),
+    "<plist><dict><key>a</key></dict></plist>",
+    "<plist><array><key>a</key></array></plist>",
+    `<plist>${"<array>".repeat(64)}${"</array>".repeat(64)}</plist>`,
+    `<plist><string>${"x".repeat(1024 * 1024)}</string></plist>`,
+    "<plist><dict><key>a</key><string>b</string></dict>",
+    "<plist><dict><key>a</key><string>b</string></dict></plist> trailing",
+    "<plist><dict>stray<key>a</key><string>b</string></dict></plist>",
+    "<plist><dict><key>a</key><unknown/></dict></plist>",
+    "<plist><dict><key>a</key><string>b</string></dict><dict/></plist>",
+    "<plist><true></true></plist>",
+    "<plist/>",
+  ];
+  for (const text of strict) assert.equal(parsePropertyList(text), null, text.slice(0, 60));
+  assert.equal(parsePropertyList("<?xml version=\"1.0\"?>\n<!DOCTYPE plist>\n<plist version=\"1.0\">\n<true/>\n</plist>\n"), true);
   const odd = parsePropertyList("<plist version=\"1.0\"><dict><key>__proto__</key><string>a &amp; b &lt;c&gt; &#233;&#x1F4BE;</string><key>n</key><real>1.5</real><key>list</key><array/></dict></plist>");
   assert.ok(odd instanceof Map);
   assert.equal(odd.get("__proto__"), "a & b <c> é💾");
@@ -511,80 +532,176 @@ test("diskutil's answer names the physical disks under a volume: an APFS volume'
   assert.deepEqual(odd.get("list"), []);
 });
 
-function record(name: string, device: string): VolumeRecord {
-  return { id: `volume-${name.toLowerCase().replace(/\W+/g, "-")}`, name, mountPath: `/Volumes/${name}`, totalBytes: null, freeBytes: null, ejectable: true, fileSystem: null, device };
+function record(name: string, device: string, fileSystem: string | null = null): VolumeRecord {
+  return { id: `volume-${name.toLowerCase().replace(/\W+/g, "-")}`, name, mountPath: `/Volumes/${name}`, totalBytes: null, freeBytes: null, ejectable: true, fileSystem, device };
 }
 
-test("ejecting a volume takes every listed volume of its physical disk, and a drive the system can't place counts too", async (t) => {
+test("ejecting a volume takes every mount of its physical disk, listed as a drive or not, and one the system can't place counts too", async (t) => {
   t.after(() => { setEjectRunnerForTests(null); setVolumeDiskSourceForTests(null); });
   const apfs = await fixture("diskutil-info-apfs-volume.plist");
   const exfat = await fixture("diskutil-info-exfat-partition.plist");
   const notFound = await fixture("diskutil-info-not-found.plist");
-  const a = record("AFScratch A", "/dev/disk5s1");
-  const b = record("AFScratch B", "/dev/disk4s2");
-  const archive = record("Archive", "/dev/disk6s1");
-  const share = record("Team Photos", "//ana@nas/Team%20Photos");
-  const listed = [a, b, archive, share];
-  const answers = new Map<string, string>([[a.mountPath, apfs], [b.mountPath, exfat], [archive.mountPath, exfat.replaceAll("disk4", "disk6")]]);
+  // The fixture's two volumes, then mounts of the same disk the drives list never shows, another disk, and what is on no disk.
+  const table = `${await fixture("mount-macos.txt")}${[
+    "/dev/disk6s1 on /Volumes/Archive (hfs, local, nodev, nosuid, journaled, noowners)",
+    "/dev/disk4s3 on /Users/ana/mnt/Spare (hfs, local, nodev, nosuid, journaled)",
+    "/dev/disk4s4 on /Volumes/.hidden (hfs, local, nodev, nosuid, journaled)",
+    "/dev/disk4s5 on /Volumes/AFScratch B/inner (msdos, local, nodev, nosuid)",
+    "ntfs://disk4s6/Win on /Volumes/Win (ufsd_NTFS, local, nodev, nosuid, noowners)",
+    "//ana@nas/Team%20Photos on /Volumes/Team Photos (smbfs, nodev, nosuid, mounted by ana)",
+    "ana@server:/srv on /Users/ana/Remote (macfuse, nodev, nosuid, synchronous, mounted by ana)",
+  ].join("\n")}\n`;
+  const a = record("AFScratch A", "/dev/disk5s1", "apfs");
+  const b = record("AFScratch B", "/dev/disk4s2", "exfat");
+  const archive = record("Archive", "/dev/disk6s1", "hfs");
+  const share = record("Team Photos", "//ana@nas/Team%20Photos", "smbfs");
+  const onDisk4 = ["/Volumes/AFScratch B", "/Users/ana/mnt/Spare", "/Volumes/.hidden", "/Volumes/AFScratch B/inner", "/Volumes/Win"];
+  const answers = new Map<string, string>([[a.mountPath, apfs], [archive.mountPath, exfat.replaceAll("disk4", "disk6")], ...onDisk4.map((path): [string, string] => [path, exfat])]);
+  const silent = new Set<string>();
   const ran: Array<{ command: ToolCommand; limits: ToolLimits | undefined }> = [];
+  let mounted = table;
   setEjectRunnerForTests(async (command, limits) => {
     ran.push({ command, limits });
-    const plist = answers.get(command.args[2]!);
+    if (command.command === "/sbin/mount") return { code: 0, stdout: mounted, stderr: "" };
+    const path = command.args[2]!;
+    if (silent.has(path)) return { code: 1, stdout: "", stderr: "diskutil: timed out" };
+    const plist = answers.get(path);
     return plist ? { code: 0, stdout: plist, stderr: "" } : { code: 1, stdout: notFound, stderr: "" };
   });
-  const names = async (volume: VolumeRecord, among = listed) => (await volumesEjectedWith(volume, among, "darwin")).map((companion) => [companion.volume.name, companion.certain]);
+  const names = async (volume: MountedVolume) => (await volumesEjectedWith(volume, "darwin")).map((companion) => [companion.volume.mountPath, companion.certain]);
+  const asked = () => ran.filter((entry) => entry.command.command === "diskutil").map((entry) => entry.command.args[2]);
 
-  // The APFS volume's container is stored on a partition of the disk the exFAT volume is on.
-  assert.deepEqual(await names(a), [["AFScratch B", true]]);
-  assert.deepEqual(ran.map((entry) => entry.command), [a, b, archive].map((volume) => ({ command: "diskutil", args: ["info", "-plist", volume.mountPath] })), "each disk volume is asked, the share never");
-  assert.ok(ran.every((entry) => entry.limits?.readOnly === true && (entry.limits.maxOutput ?? 0) >= 64 * 1024));
-  assert.deepEqual(await names(b), [["AFScratch A", true]]);
+  // The APFS volume's container is stored on a partition of the disk the others are on, wherever they are mounted.
+  assert.deepEqual(await names(a), onDisk4.map((path) => [path, true]));
+  assert.deepEqual(ran[0]!.command, { command: "/sbin/mount", args: [] });
+  assert.deepEqual(asked(), [a.mountPath, "/Volumes/AFScratch B", archive.mountPath, "/Users/ana/mnt/Spare", "/Volumes/.hidden", "/Volumes/AFScratch B/inner", "/Volumes/Win", "/Users/ana/Remote"],
+    "every mount but the system's own and the share is asked, whatever its device is called");
+  assert.ok(ran.every((entry) => entry.limits?.readOnly === true));
+  assert.ok(ran.filter((entry) => entry.command.command === "diskutil").every((entry) => (entry.limits?.maxOutput ?? 0) >= 64 * 1024));
+  assert.deepEqual(await names(b), [[a.mountPath, true], ...onDisk4.slice(1).map((path) => [path, true])]);
   assert.deepEqual(await names(archive), [], "a drive alone on its disk");
 
-  // A share is unmounted alone, and a drive with no other disk volume beside it needs no asking.
+  // A share is a server's: it leaves alone, and nothing is asked. So does a mount diskutil knows no disk under.
   ran.length = 0;
   assert.deepEqual(await names(share), []);
-  assert.deepEqual(await names(a, [a, share]), []);
   assert.deepEqual(ran, [], "no tool ran");
+  assert.deepEqual(await names({ name: "Remote", mountPath: "/Users/ana/Remote", device: "ana@server:/srv", fileSystem: "macfuse" }), []);
+  assert.deepEqual(asked(), ["/Users/ana/Remote"], "asked about itself only");
+  // With nothing else mounted that could be on a disk, the mount table is all that is read.
+  ran.length = 0;
+  mounted = "/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)\n/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n/dev/disk5s1 on /Volumes/AFScratch A (apfs, local)\n//ana@nas/x on /Volumes/x (smbfs, nodev)\n";
+  assert.deepEqual(await names(a), []);
+  assert.deepEqual(ran.map((entry) => entry.command.command), ["/sbin/mount"]);
+  mounted = table;
 
-  // The system can't say which disk one drive is on: that drive counts, uncertainly.
-  answers.delete(archive.mountPath);
-  assert.deepEqual(await names(a), [["AFScratch B", true], ["Archive", false]]);
-  assert.deepEqual(await names(archive), [["AFScratch A", false], ["AFScratch B", false]], "nor where the ejected drive is: every other disk drive counts");
-  // diskutil is missing, or answers nonsense.
-  setEjectRunnerForTests(async () => ({ code: null, stdout: "", stderr: "", missing: true }));
-  assert.deepEqual(await names(a), [["AFScratch B", false], ["Archive", false]]);
-  setEjectRunnerForTests(async () => ({ code: 0, stdout: "Device Node: /dev/disk4s2", stderr: "" }));
-  assert.deepEqual(await names(a), [["AFScratch B", false], ["Archive", false]]);
-  setEjectRunnerForTests(async () => { throw new Error("spawn failed"); });
-  assert.deepEqual(await names(a), [["AFScratch B", false], ["Archive", false]]);
+  // The system can't say which disk one mount is on: that mount counts, uncertainly.
+  silent.add(archive.mountPath);
+  assert.deepEqual(await names(a), [...onDisk4.slice(0, 1).map((path) => [path, true]), [archive.mountPath, false], ...onDisk4.slice(1).map((path) => [path, true])]);
+  // Nor where the ejected volume is: every mount on some disk counts, and one on no disk still does not.
+  assert.deepEqual(await names(archive), [[a.mountPath, false], ...onDisk4.map((path) => [path, false])]);
+  silent.clear();
+  // diskutil is missing, answers nonsense, or cannot be started.
+  const everyOther = [["/Volumes/AFScratch B", false], [archive.mountPath, false], ...onDisk4.slice(1).map((path) => [path, false]), ["/Users/ana/Remote", false]];
+  for (const broken of [
+    async () => ({ code: null, stdout: "", stderr: "", missing: true }),
+    async () => ({ code: 0, stdout: "Device Node: /dev/disk4s2", stderr: "" }),
+    async () => { throw new Error("spawn failed"); },
+  ] as const) {
+    setEjectRunnerForTests(async (command, limits) => command.command === "/sbin/mount" ? { code: 0, stdout: table, stderr: "" } : broken());
+    assert.deepEqual(await names(a), everyOther);
+  }
+  // Without the mount table there is no telling what else is mounted: the eject does not go ahead.
+  setEjectRunnerForTests(async () => ({ code: 1, stdout: "", stderr: "mount: failed" }));
+  await assert.rejects(volumesEjectedWith(a, "darwin"), /couldn’t read which drives are connected/);
 
   // Linux checks a drive alone.
   setEjectRunnerForTests(async (command) => { throw new Error(`no tool should run: ${command.command}`); });
-  assert.deepEqual(await volumesEjectedWith(record("USB Stick", "/dev/sdb1"), [record("USB Stick", "/dev/sdb1"), record("Second", "/dev/sdb2")], "linux"), []);
+  assert.deepEqual(await volumesEjectedWith(record("USB Stick", "/dev/sdb1", "vfat"), "linux"), []);
 });
 
-test("a disk that won't go says which drives it holds", async (t) => {
+test("a disk that won't go says which drives it holds, and says may of one the system couldn't place", async (t) => {
   t.after(() => setEjectRunnerForTests(null));
   const a = record("AFScratch A", "/dev/disk5s1");
-  const b = record("AFScratch B", "/dev/disk4s2");
+  const sure = (...names: string[]) => names.map((name) => ({ name, certain: true }));
+  const unsure = (...names: string[]) => names.map((name) => ({ name, certain: false }));
   const ran: EjectCommand[] = [];
   // diskutil's words when a file on the other volume is open: it has unmounted the one asked for by then.
   setEjectRunnerForTests(async (command) => { ran.push(command); return { code: 1, stdout: "", stderr: "Volume failed to eject\n" }; });
-  await assert.rejects(ejectVolume(a, "darwin", [b]), (error: { statusCode?: number; message: string }) =>
+  await assert.rejects(ejectVolume(a, "darwin", [...sure("AFScratch B"), ...unsure("Archive")]), (error: { statusCode?: number; message: string }) =>
     error.statusCode === 409 && error.message === "The disk holding “AFScratch A” and “AFScratch B” couldn’t be ejected. Close the files and apps using those drives, then try again.");
-  assert.deepEqual(ran, [{ command: "diskutil", args: ["eject", a.mountPath] }], "the unmount that would follow is not tried");
+  assert.deepEqual(ran, [{ command: "diskutil", args: ["eject", a.mountPath] }], "the unmount that would follow is not tried: the volume is gone already");
 
   // Its words when a file on the volume asked for is open.
-  setEjectRunnerForTests(async () => ({ code: 1, stdout: "", stderr: "Unmount of disk5 failed: at least one volume could not be unmounted\nUnmount was dissented by PID 80173 (/usr/bin/tail)\n" }));
-  await assert.rejects(ejectVolume(a, "darwin", [b, record("C", "/dev/disk4s3")]), (error: { statusCode?: number; message: string }) =>
+  const dissent = "Unmount of disk5 failed: at least one volume could not be unmounted\nUnmount was dissented by PID 80173 (/usr/bin/tail)\n";
+  setEjectRunnerForTests(async () => ({ code: 1, stdout: "", stderr: dissent }));
+  await assert.rejects(ejectVolume(a, "darwin", sure("AFScratch B", "C")), (error: { statusCode?: number; message: string }) =>
     error.statusCode === 409 && error.message === "“AFScratch A” or another drive on its disk (“AFScratch B” and “C”) is in use. Close the files and apps using them, then try again.");
-  await assert.rejects(ejectVolume(a, "darwin", ["B", "C", "D", "E", "F"].map((name) => record(name, "/dev/disk4s9"))), /\(“B”, “C”, “D”, and 2 more\) is in use/);
+  await assert.rejects(ejectVolume(a, "darwin", sure("B", "C", "D", "E", "F")), /\(“B”, “C”, “D”, and 2 more\) is in use/);
+  await assert.rejects(ejectVolume(a, "darwin", unsure("Archive")), (error: { statusCode?: number; message: string }) =>
+    error.statusCode === 409 && error.message === "“AFScratch A” is in use, or a drive that may be on its disk (“Archive”) is. Close the files and apps using them, then try again.");
   await assert.rejects(ejectVolume(a, "darwin"), /^Error: “AFScratch A” is in use\. Close the files and apps using it, then try again\.$/);
 
-  // Alone on its disk, a drive that can't be ejected is unmounted instead.
+  // Only a drive the system couldn't place beside it: the unmount is still tried, and a disk that won't go is no server error.
   ran.length = 0;
-  setEjectRunnerForTests(async (command) => { ran.push(command); return command.args[0] === "eject" ? { code: 1, stdout: "", stderr: "Volume failed to eject\n" } : { code: 0, stdout: "", stderr: "" }; });
-  await ejectVolume(a, "darwin");
+  setEjectRunnerForTests(async (command) => { ran.push(command); return { code: 1, stdout: "", stderr: command.args[0] === "eject" ? "Volume failed to eject\n" : `Unmount failed for ${a.mountPath}\n` }; });
+  await assert.rejects(ejectVolume(a, "darwin", unsure("Archive", "Spare")), (error: { statusCode?: number; message: string }) =>
+    error.statusCode === 409 && error.message === "The disk holding “AFScratch A” couldn’t be ejected. “Archive” and “Spare” may be on the same disk. Close the files and apps using those drives, then try again.");
   assert.deepEqual(ran.map((command) => command.args[0]), ["eject", "unmount"]);
+  await assert.rejects(ejectVolume(a, "darwin"), (error: { statusCode?: number; message: string }) =>
+    error.statusCode === 500 && error.message === "“AFScratch A” couldn’t be ejected: Volume failed to eject", "alone, it is what it was");
+
+  // A drive that can't be ejected is unmounted instead, with or without an unplaced drive beside it.
+  for (const alongside of [[], unsure("Archive")]) {
+    ran.length = 0;
+    setEjectRunnerForTests(async (command) => { ran.push(command); return command.args[0] === "eject" ? { code: 1, stdout: "", stderr: "Volume failed to eject\n" } : { code: 0, stdout: "", stderr: "" }; });
+    await ejectVolume(a, "darwin", alongside);
+    assert.deepEqual(ran.map((command) => command.args[0]), ["eject", "unmount"]);
+  }
+});
+
+// What the Trash and the guard share ---------------------------------------------
+
+test("the Trash looks for a drive's Trash folder only on disk volumes directly inside /Volumes", async () => {
+  const table = `${await fixture("mount-macos.txt")}${macExtraMounts}`;
+  assert.deepEqual(await listMacTrashTops({ mountTable: table }), ["/Volumes/AFScratch A", "/Volumes/AFScratch B", "/Volumes/Backup (2019)", "/Volumes/Notes on Trips"], "no share, nothing hidden or nested");
+  assert.deepEqual(await listMacTrashTops({ run: async () => ({ code: 1, stdout: "", stderr: "mount: failed" }) }), [], "an unreadable mount table gives none");
+  // The whole table keeps what the drives list leaves out.
+  assert.deepEqual(parseMacMountTable(table).filter((mount) => ["/", "/Volumes/.timemachine", "/Volumes/Outer/Inner", "/System/Volumes/Data/home"].includes(mount.mountPoint)).map((mount) => [mount.mountPoint, mount.device, mount.fileSystem]), [
+    ["/", "/dev/disk3s1s1", "apfs"],
+    ["/System/Volumes/Data/home", "map auto_home", "autofs"],
+    ["/Volumes/.timemachine", "/dev/disk3s5", "apfs"],
+    ["/Volumes/Outer/Inner", "/dev/disk8s1", "apfs"],
+  ]);
+  assert.deepEqual(parseMacMountTable("/dev/disk4s1 on /Volumes/a/../../etc (apfs, local)\n/dev/disk4s1 on relative (apfs, local)\n"), []);
+});
+
+test("one call is out on a mount at a time, whoever makes it, and a caller waits only as long as its own limit", async () => {
+  const calls = new MountCalls({ limitMs: 2_000 });
+  const order: string[] = [];
+  let finishFirst: (value: string) => void = () => undefined;
+  const first = calls.call("/Volumes/Disk", { kind: "file" }, () => { order.push("first starts"); return new Promise<string>((done) => { finishFirst = done; }); });
+  // Another reader of the same drive waits for the first to return, then makes its own call.
+  const second = calls.call("/Volumes/Disk", { kind: "file" }, async () => { order.push("second starts"); return "second"; });
+  // One with less patience gives up, and leaves the mount open: the first is not yet past its own limit.
+  assert.equal(await calls.call("/Volumes/Disk", { kind: "file", limitMs: 30 }, async () => { order.push("impatient starts"); return "never"; }), null);
+  assert.deepEqual(order, ["first starts"]);
+  finishFirst("first");
+  assert.deepEqual(await first, { value: "first" });
+  assert.deepEqual(await second, { value: "second" });
+  assert.deepEqual(order, ["first starts", "second starts"]);
+
+  // A call that outlives its limit closes the mount: every caller after gets nothing, at once, until it returns.
+  let finishStuck: (value: string) => void = () => undefined;
+  assert.equal(await calls.call("/Volumes/Disk", { kind: "file", limitMs: 30 }, () => new Promise<string>((done) => { finishStuck = done; })), null);
+  const began = Date.now();
+  assert.equal(await calls.call("/Volumes/Disk", { kind: "file", limitMs: 5_000 }, async () => "not started"), null);
+  assert.equal(await calls.measure("/Volumes/Disk", "file", async () => ({ totalBytes: 1, freeBytes: 1 })), null);
+  assert.ok(Date.now() - began < 1_000, "neither waited");
+  assert.deepEqual(await calls.call("/Volumes/Other", { kind: "file" }, async () => "another drive is untouched"), { value: "another drive is untouched" });
+  finishStuck("late");
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(await calls.call("/Volumes/Disk", { kind: "file" }, async () => "open again"), { value: "open again" });
+  // A call that throws is no answer, and does not close the mount.
+  assert.equal(await calls.call("/Volumes/Disk", { kind: "file" }, async () => { throw new Error("EIO"); }), null);
+  assert.deepEqual(await calls.call("/Volumes/Disk", { kind: "file" }, async () => "still open"), { value: "still open" });
 });

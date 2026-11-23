@@ -171,19 +171,26 @@ opaque id its listing minted; the host finds it again for every act.
   has gone cannot hold the list up. If the mount table cannot be read on
   macOS, the route fails rather than answering with no drives.
 - Measuring a drive's space does ask the drive, and a share whose server has
-  gone, or a failing disk, may never answer. The host makes one call at a
-  time to each mount. Listings that overlap share it. A drive that has not
-  answered within 1.5 seconds is listed with unknown space, and no other call
-  is started on it until that one has returned, however often the list is
-  read. A disk's volume (a `/dev` device) is measured in the host's own
-  process, one after another, and no such call is started while two are still
-  out: the list never holds more than two of the four file threads that all
-  the host's file routes share. Anything else (an SMB or NFS share, a FUSE
-  mount) is asked by `df -kP` in a process of its own, which is killed at the
-  limit; no other is started for that mount until that process has gone. This
-  bounds what the drives list does without being asked, on every refresh.
-  `GET /api/volume-space` and the routes that read a folder still call the
-  file system directly for a folder the person opens.
+  gone, or a failing disk, may never answer. One guard stands between the
+  host and every drive (`MountCalls` in `src/local/volumes.ts`), for the
+  drives list and for the macOS Trash alike. It lets one call be out on a
+  mount at a time. Listings that overlap share it, and another reader waits
+  for it, within its own limit, before making its own. A drive that has not
+  answered within 1.5 seconds is listed with unknown space and marked
+  stalled: no other call is started on it until that one has returned,
+  however often the list is read. A disk's volume (a `/dev` device) is asked
+  in the host's own process, one after another, and no such call is started
+  while two are still out, so the guarded readers never hold more than two of
+  the four file threads that all the host's file routes share. Anything else
+  (an SMB or NFS share, a FUSE mount) is asked by `df -kP` in a process of
+  its own, which is killed at the limit; no other is started for that mount
+  until that process has gone.
+
+  Not bounded: `GET /api/volume-space` and the routes that read, copy, or
+  search a folder call the file system directly for a folder the person
+  opens, and so does the Trash on Linux for each mount's trash folders. On
+  macOS the Trash is bounded up to a drive's first answer and no further
+  (below).
 - `GET /api/volumes/events` streams the whole list again whenever a drive
   appears, goes, or is renamed. The first event is the current list. It is also
   a subscription path on `POST /api/events`. A monitor runs only while someone
@@ -203,27 +210,39 @@ opaque id its listing minted; the host finds it again for every act.
   unsettled, or a background job or Automation run may be writing there.
 
   On macOS `diskutil eject` takes the drive's whole physical disk, so those
-  holds and refusals cover every listed drive that leaves with it. The host
-  asks `diskutil info -plist` which physical disks each listed disk volume is
-  on. An APFS volume's are the disks its container's physical stores are
-  partitions of, so every volume of the container and every other partition
-  of those disks counts. A share is on no disk: it is unmounted alone and is
-  checked alone. When diskutil cannot say which disk a drive is on (it is
-  missing, fails, takes more than 10 seconds, or answers something the host
-  cannot read), the host assumes the worst. A drive it cannot place counts as
-  leaving with the one being ejected, and when it is the ejected drive it
-  cannot place, every other disk drive counts. Refusing an eject that would
-  have been fine costs a second try; taking a disk from under running work
-  cannot be taken back. A refusal names the drive being ejected, the Connected
+  holds and refusals cover every mount that leaves with it, whether or not
+  the drives list shows it: a partition mounted outside `/Volumes`, under a
+  hidden name, or inside another volume leaves just the same. The host reads
+  the whole mount table and asks `diskutil info -plist` which physical disks
+  each mount is on, whatever its device is called (a FUSE driver's or a
+  snapshot's is no device node). An APFS volume's are the disks its
+  container's physical stores are partitions of, so every volume of the
+  container and every other partition of those disks counts. Two kinds of
+  mount are not asked about. One whose file system the kernel names as a
+  server's (`smbfs`, `nfs`, `afpfs`, `webdav`, `ftp`) is on no disk and is
+  unmounted alone; asking about a share whose server has gone would hold up
+  the eject that gets rid of it. The running system's own (`/`, `/System`,
+  `/dev`) cannot leave. A drive diskutil knows no disk under leaves alone
+  too.
+
+  When diskutil cannot say which disk a mount is on (it is missing, fails,
+  takes more than 10 seconds, or answers something the host cannot read),
+  the host assumes the worst. A mount it cannot place counts as leaving with
+  the drive being ejected, and when it is the ejected drive it cannot place,
+  every mount that is on some disk counts. Refusing an eject that would have
+  been fine costs a second try; taking a disk from under running work cannot
+  be taken back. A refusal names the drive being ejected, the Connected
   Folder, and the drive that Connected Folder is on when it is another one.
-  On Linux each drive is checked alone: the mount table names a partition
-  rather than its disk, and which partitions `gio mount -e` takes with it
-  depends on the drive.
+  If the mount table cannot be read, the eject does not go ahead. A
+  CoreStorage volume and an AppleRAID set are untested: there diskutil names
+  the logical disk, not the disks under it. On Linux each drive is checked
+  alone: the mount table names a partition rather than its disk, and which
+  partitions `gio mount -e` takes with it depends on the drive.
 
   A busy drive and a missing tool each get a plain message. When the rest of
-  a disk will not go, the message names the drives the disk holds; by then
-  diskutil has unmounted the volume that was asked for, and the list is read
-  again.
+  a disk will not go, the message names the drives the disk holds, and says
+  "may" of one the host could not place. By then diskutil has unmounted the
+  volume that was asked for, and the list is read again.
 - `GET /api/trash` lists the system Trash: each item's name, original path,
   deletion date, kind, size, and whether Put Back can return it.
   `POST /api/trash/put-back` returns one item to its original path. On Linux
@@ -241,7 +260,16 @@ opaque id its listing minted; the host finds it again for every act.
   a History restore point that removes the item again. If that point cannot be
   recorded, the item returns to the Trash. On macOS there is no Put Back:
   AmpleFile cannot read where Finder recorded an item came from. Reading
-  `~/.Trash` needs Full Disk Access, and a refusal says so.
+  `~/.Trash` needs Full Disk Access, and a refusal says so. A drive's Trash
+  there is `.Trashes/<uid>` on each disk volume mounted directly inside
+  `/Volumes`, taken from the mount table; a share's is never read. Finding
+  and reading that folder are the first calls on a drive, and they go through
+  the drives guard with an 8-second limit. A drive that does not answer in
+  that time, or that the guard has already marked stalled, is left out of
+  the listing and of Empty Trash without another call, and keeps its Trash
+  until it answers; so is any further drive while two file calls to drives
+  are still out. Sizing a drive's items and removing them, once it has
+  answered, are not bounded.
 
 - `POST /api/trash/delete` (Delete Immediately) and `POST /api/trash/empty`
   (Empty Trash) remove items from the system Trash for good. They are

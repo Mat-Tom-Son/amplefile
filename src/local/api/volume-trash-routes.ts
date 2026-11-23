@@ -136,11 +136,11 @@ async function placePath(kind: string | null, id: string | null, path: string): 
 
 /**
  * Ejects a drive the listing marks ejectable. Ejecting takes the drive's whole
- * disk, so the check covers every listed drive that leaves with it
- * (`volumesEjectedWith`): the other volumes of its APFS container, the other
- * partitions of its physical disk, and, when the system cannot say which disk
- * a drive is on, every other disk drive. A registered Connected Folder on any
- * of them must have settled work, as a deletion requires (AGENTS.md, "Settled
+ * disk, so the check covers every mount that leaves with it
+ * (`volumesEjectedWith`), listed as a drive or not: the other volumes of its
+ * APFS container, the other partitions of its physical disk, and any mount the
+ * system cannot place on a disk. A registered Connected Folder on any of them
+ * must have settled work, as a deletion requires (AGENTS.md, "Settled
  * deletion"): no running turn or compaction, no request still running, waiting
  * on an answer, or draining after Stop, and no background job or Automation
  * run writing there. Each such Connected Folder's History is held and the
@@ -153,7 +153,7 @@ async function ejectListedVolume(state: LocalApiState, volumeId: string): Promis
   const volume = listed.find((candidate) => candidate.id === volumeId);
   if (!volume) throw notFound("That drive isn’t connected anymore.");
   if (!volume.ejectable) throw httpError(409, `“${volume.name}” can’t be ejected from AmpleFile.`);
-  const leaving: EjectCompanion[] = [{ volume, certain: true }, ...await volumesEjectedWith(volume, listed)];
+  const leaving: EjectCompanion[] = [{ volume, certain: true }, ...await volumesEjectedWith(volume)];
   const held = (await listConnectedFolders()).flatMap((connectedFolder) => {
     const drive = driveHolding(leaving, connectedFolder.connectedFolderRoot);
     return drive ? [{ connectedFolder, drive }] : [];
@@ -169,7 +169,7 @@ async function ejectListedVolume(state: LocalApiState, volumeId: string): Promis
         }
         for (const { connectedFolder, drive } of held) await assertSettledForEject(state, connectedFolder, volume, drive);
         toolRan = true;
-        await ejectVolume(volume, process.platform, leaving.slice(1).filter((drive) => drive.certain).map((drive) => drive.volume));
+        await ejectVolume(volume, process.platform, leaving.slice(1).map((drive) => ({ name: drive.volume.name, certain: drive.certain })));
       } finally {
         for (const id of reserved) state.capabilityMutations.delete(id);
       }
@@ -192,7 +192,7 @@ function driveHolding(leaving: readonly EjectCompanion[], path: string): EjectCo
 
 /** Why a Connected Folder on another drive holds this eject up; nothing for one on the drive being ejected. */
 function onAnotherDrive(connectedFolder: { name: string }, volume: VolumeRecord, drive: EjectCompanion): string {
-  if (drive.volume.id === volume.id) return "";
+  if (drive.volume.mountPath === volume.mountPath) return "";
   return drive.certain
     ? ` ${connectedFolder.name} is on “${drive.volume.name}”, which is on the same disk and is ejected with it.`
     : ` ${connectedFolder.name} is on “${drive.volume.name}”, and AmpleFile couldn’t check whether that drive is on the same disk.`;
