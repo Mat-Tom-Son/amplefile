@@ -164,13 +164,33 @@ opaque id its listing minted; the host finds it again for every act.
   every other mount of the root disk (Fedora's btrfs `/home` subvolume) are
   left out. Labels come from `/dev/disk/by-label`. Eject is offered for mounts
   udisks made under `/run/media/<user>` or `/media`, and for removable disks.
-  On macOS the list is `/Volumes` without the startup disk and without links.
+  On macOS the list is the mounts directly inside `/Volumes`, from the
+  system's mount table as `/sbin/mount` prints it. The startup disk is not
+  one of them: its entry in `/Volumes` is a link, not a mount. On both
+  systems, finding the drives asks no drive anything, so a share whose server
+  has gone cannot hold the list up. If the mount table cannot be read on
+  macOS, the route fails rather than answering with no drives.
+- Measuring a drive's space does ask the drive, and a share whose server has
+  gone, or a failing disk, may never answer. The host makes one call at a
+  time to each mount. Listings that overlap share it. A drive that has not
+  answered within 1.5 seconds is listed with unknown space, and no other call
+  is started on it until that one has returned, however often the list is
+  read. A disk's volume (a `/dev` device) is measured in the host's own
+  process, one after another, and no such call is started while two are still
+  out: the list never holds more than two of the four file threads that all
+  the host's file routes share. Anything else (an SMB or NFS share, a FUSE
+  mount) is asked by `df -kP` in a process of its own, which is killed at the
+  limit; no other is started for that mount until that process has gone. This
+  bounds what the drives list does without being asked, on every refresh.
+  `GET /api/volume-space` and the routes that read a folder still call the
+  file system directly for a folder the person opens.
 - `GET /api/volumes/events` streams the whole list again whenever a drive
   appears, goes, or is renamed. The first event is the current list. It is also
   a subscription path on `POST /api/events`. A monitor runs only while someone
   listens. On Linux it is `findmnt --poll`, which waits on the kernel's
   mount-table notification; without it, AmpleFile watches the folders drives
-  appear in and checks every 30 seconds. On macOS it watches `/Volumes`.
+  appear in and checks every 30 seconds. On macOS it watches `/Volumes` and
+  checks every 60 seconds.
 - `GET /api/volume-space?placeKind=&placeId=&path=` reports the total and free
   bytes of the volume holding a place's folder.
 - `POST /api/volumes/eject` ejects a listed drive with the system's own tool,
@@ -180,8 +200,30 @@ opaque id its listing minted; the host finds it again for every act.
   registered Connected Folder, it holds that Connected Folder's History and
   the shared Connected Folder reservation through the eject. It refuses, as a
   deletion does, while a turn or compaction runs there, a request is
-  unsettled, or a background job or Automation run may be writing there. A busy
-  drive and a missing tool each get a plain message.
+  unsettled, or a background job or Automation run may be writing there.
+
+  On macOS `diskutil eject` takes the drive's whole physical disk, so those
+  holds and refusals cover every listed drive that leaves with it. The host
+  asks `diskutil info -plist` which physical disks each listed disk volume is
+  on. An APFS volume's are the disks its container's physical stores are
+  partitions of, so every volume of the container and every other partition
+  of those disks counts. A share is on no disk: it is unmounted alone and is
+  checked alone. When diskutil cannot say which disk a drive is on (it is
+  missing, fails, takes more than 10 seconds, or answers something the host
+  cannot read), the host assumes the worst. A drive it cannot place counts as
+  leaving with the one being ejected, and when it is the ejected drive it
+  cannot place, every other disk drive counts. Refusing an eject that would
+  have been fine costs a second try; taking a disk from under running work
+  cannot be taken back. A refusal names the drive being ejected, the Connected
+  Folder, and the drive that Connected Folder is on when it is another one.
+  On Linux each drive is checked alone: the mount table names a partition
+  rather than its disk, and which partitions `gio mount -e` takes with it
+  depends on the drive.
+
+  A busy drive and a missing tool each get a plain message. When the rest of
+  a disk will not go, the message names the drives the disk holds; by then
+  diskutil has unmounted the volume that was asked for, and the list is read
+  again.
 - `GET /api/trash` lists the system Trash: each item's name, original path,
   deletion date, kind, size, and whether Put Back can return it.
   `POST /api/trash/put-back` returns one item to its original path. On Linux

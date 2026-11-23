@@ -5,15 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { withConnectedFolderHistoryOperation } from "../src/local/connected-folder.js";
 import { startLocalApi } from "../src/local/server.js";
 import { setTrashOptionsForTests } from "../src/local/system-trash.js";
-import { ejectCommands, setEjectRunnerForTests, setVolumeSourceForTests, type EjectCommand, type VolumeRecord } from "../src/local/volumes.js";
+import { ejectCommands, setEjectRunnerForTests, setVolumeDiskSourceForTests, setVolumeSourceForTests, type EjectCommand, type VolumeRecord } from "../src/local/volumes.js";
 
 /**
  * The local API's drives and system Trash routes
  * (src/local/api/volume-trash-routes.ts): listing and change events, the
- * space on a place's volume, Eject and its refusals, and Put Back, including
- * into a Connected Folder, where History records it.
+ * space on a place's volume, Eject and its refusals (for the drive chosen and
+ * for every drive that leaves with its disk), and Put Back, including into a
+ * Connected Folder, where History records it.
  */
 
 type Api = Awaited<ReturnType<typeof startLocalApi>>;
@@ -30,9 +32,12 @@ async function sandboxApi(t: test.TestContext): Promise<{ api: Api; call: Call; 
   await mkdir(join(trash, "info"), { recursive: true });
   setTrashOptionsForTests({ platform: "linux", home, xdgDataHome: join(home, ".local", "share"), uid, volumeTops: [] });
   const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false });
+  // Each drive is alone on its disk unless a test says otherwise; the system is never asked.
+  setVolumeDiskSourceForTests(async (asked) => [asked.id]);
   t.after(async () => {
     setTrashOptionsForTests(null);
     setVolumeSourceForTests(null);
+    setVolumeDiskSourceForTests(null);
     setEjectRunnerForTests(null);
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
@@ -182,6 +187,80 @@ test("Eject refuses a drive that isn't listed or can't be ejected, and one holdi
   const missing = await call("/api/volumes/eject", { method: "POST", body: { volumeId: other.id } });
   assert.equal(missing.status, 503);
   assert.match(missing.body!.error, process.platform === "darwin" ? /diskutil isn’t available/ : /neither gio nor udisksctl/);
+});
+
+test("Eject checks the Connected Folders on every drive that leaves with the disk, and holds them through it", async (t) => {
+  const { api, call, sandbox } = await sandboxApi(t);
+  const ran: EjectCommand[] = [];
+  setEjectRunnerForTests(async (command) => { ran.push(command); return { code: 0, stdout: "", stderr: "" }; });
+  const created = await call("/api/connected-folders", { method: "POST", body: { name: "Field Notes" } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const connectedFolder = created.body!.connectedFolder as { id: string; connectedFolderRoot: string };
+  // Two volumes of one disk, a drive on a disk of its own, and a share. The Connected Folder is on the first volume.
+  const photos = volume({ id: "volume-00000000000000000002", name: "Photos", mountPath: join(sandbox, "content"), device: "/dev/disk5s1" });
+  const camera = volume({ id: "volume-00000000000000000003", name: "Camera", mountPath: join(sandbox, "camera"), device: "/dev/disk4s2" });
+  const archive = volume({ id: "volume-00000000000000000004", name: "Archive", mountPath: join(sandbox, "archive"), device: "/dev/disk6s1" });
+  const team = volume({ id: "volume-00000000000000000005", name: "Team", mountPath: join(sandbox, "team"), device: "//nas/team", fileSystem: "smbfs" });
+  setVolumeSourceForTests(async () => [photos, camera, archive, team]);
+  const disks = new Map<string, string[] | null>([[photos.id, ["disk4"]], [camera.id, ["disk4"]], [archive.id, ["disk6"]]]);
+  const asked: string[] = [];
+  setVolumeDiskSourceForTests(async (drive) => { asked.push(drive.name); return disks.get(drive.id) ?? null; });
+  const eject = (drive: VolumeRecord) => call("/api/volumes/eject", { method: "POST", body: { volumeId: drive.id } });
+  await api.requests.beginRoot({ kind: "connected-folder", owner: { connectedFolderId: connectedFolder.id, connectedFolderName: "Field Notes", conversationId: "conversation-eject-disk" }, surface: "renderer", taskId: "task-eject-disk" });
+
+  // Camera holds no Connected Folder, but ejecting it takes Photos, where unfinished work is.
+  const sameDisk = await eject(camera);
+  assert.equal(sameDisk.status, 409, JSON.stringify(sameDisk.body));
+  assert.equal(sameDisk.body!.error, "Finish or stop Field Notes’s outstanding work before ejecting “Camera”. Field Notes is on “Photos”, which is on the same disk and is ejected with it.");
+  assert.deepEqual(asked.sort(), ["Archive", "Camera", "Photos"], "the share is on no disk and is not asked about");
+  const own = await eject(photos);
+  assert.equal(own.status, 409);
+  assert.equal(own.body!.error, "Finish or stop Field Notes’s outstanding work before ejecting “Photos”.");
+  assert.deepEqual(ran, [], "no tool ran");
+
+  // A drive on another disk goes, and so does a share: it is unmounted alone.
+  assert.equal((await eject(archive)).status, 200);
+  assert.equal((await eject(team)).status, 200);
+  assert.deepEqual(ran, [ejectCommands(archive)[0], ejectCommands(team)[0]]);
+
+  // When the system can't say which disk a drive is on, that drive counts as leaving too.
+  disks.set(photos.id, null);
+  const unplaced = await eject(archive);
+  assert.equal(unplaced.status, 409, JSON.stringify(unplaced.body));
+  assert.equal(unplaced.body!.error, "Finish or stop Field Notes’s outstanding work before ejecting “Archive”. Field Notes is on “Photos”, and AmpleFile couldn’t check whether that drive is on the same disk.");
+  disks.set(photos.id, ["disk4"]);
+  disks.set(archive.id, null);
+  assert.equal((await eject(archive)).status, 409, "nor when it is the ejected drive that can't be placed");
+  assert.equal((await eject(team)).status, 200, "a share still goes");
+  disks.set(archive.id, ["disk6"]);
+
+  // The work settles. Ejecting Camera now runs, with Field Notes's History held until the disk has gone.
+  await api.requests.settleTurn("task-eject-disk", { status: "succeeded" });
+  ran.length = 0;
+  const order: string[] = [];
+  // Asked for from out here, as another request would: inside the eject, History on a held folder is reentrant.
+  let toolStarted = (): void => undefined;
+  const historyTurn = new Promise<void>((done) => { toolStarted = done; })
+    .then(() => withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => { order.push("history"); }));
+  setEjectRunnerForTests(async (command) => {
+    ran.push(command);
+    toolStarted();
+    await new Promise((done) => setTimeout(done, 80));
+    order.push("ejected");
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  const ejected = await eject(camera);
+  assert.equal(ejected.status, 200, JSON.stringify(ejected.body));
+  assert.deepEqual(ejected.body, { volumeId: camera.id, ejected: true });
+  await historyTurn;
+  assert.deepEqual(order, ["ejected", "history"], "History on the other volume's Connected Folder waited for the eject");
+  assert.deepEqual(ran, [ejectCommands(camera)[0]]);
+
+  // A disk that would not go names the drives it holds.
+  setEjectRunnerForTests(async () => ({ code: 1, stdout: "", stderr: "Volume failed to eject\n" }));
+  const stuck = await eject(camera);
+  assert.equal(stuck.status, 409);
+  assert.equal(stuck.body!.error, "The disk holding “Camera” and “Photos” couldn’t be ejected. Close the files and apps using those drives, then try again.");
 });
 
 test("the Trash lists items by opaque id, and Put Back returns one without replacing what took its name", async (t) => {

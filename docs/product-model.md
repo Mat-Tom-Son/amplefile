@@ -152,11 +152,19 @@ other surface.
   system, then every mounted drive the host lists, by name; hovering one
   shows its free and total space. Each opens in the computer place at its
   mount path, so it follows the other-folder rules. An ejectable drive has an
-  **Eject** button beside it; the host refuses while a file on it is in use
-  or a Connected Folder on it has unfinished work, and the window shows its
-  reason as it is. A drive coming or going updates the list on its own, and
-  ejecting the drive shown goes back to where the window opened. The host
-  reads `/Volumes` on this computer; nothing about a drive leaves it.
+  **Eject** button beside it. Ejecting a drive takes its whole disk, so the
+  other drives on that disk leave with it. The host refuses while a file on
+  any of them is in use or a Connected Folder on any of them has unfinished
+  work, and the window shows its reason as it is. For unfinished work the
+  reason names the drive, the Connected Folder, and the drive that Connected
+  Folder is on. When the Mac cannot say which disk a drive is on, the host
+  treats it as sharing the disk rather than risk ejecting it under running
+  work. A drive coming or going updates the list on its own, and ejecting the
+  drive shown goes back to where the window opened. A drive that has stopped
+  answering (a share whose server has gone) stays in the list without its
+  space, and the host does not ask it again until it has answered. The host
+  reads this computer's own list of mounted drives; nothing about a drive
+  leaves it.
 - **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
   area: what was moved to the Trash from any app, this window's Standard
   Folders and other folders included, with Name, Original Location, Date
