@@ -38,7 +38,8 @@ without being a security boundary. So the product works on these rules:
    item the window moves out of a Connected Folder leaves through that
    Connected Folder's delete, and one it moves from a plain folder into a
    Connected Folder is removed from the plain folder, not sent to the
-   Trash, only once its copy in the Connected Folder is whole
+   Trash, only while it is still exactly the item that was copied and its
+   copy in the Connected Folder is whole
    ([moves between places](#moves-between-places)).
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
@@ -264,29 +265,60 @@ ownership changes.
 `files move` moves inside one Connected Folder. The window also moves items
 between places ([the file manager window](product-model.md#the-file-manager-window),
 "Moves"); those moves are the window's, with no act verb, and each copies
-first, then takes every item out of its source under that place's rules:
+first, then takes every item out of its source under that place's rules. The
+copy keeps what it read of each entry of the source as it read it: which file
+it was, a file's size and modification time, where a link pointed, and how
+many entries a folder had.
 
 - **Out of a Connected Folder**, into another one or into a plain folder:
   each item leaves through this section's delete, journaled as `files.delete`
   with the `main-window` surface, one receipt per item. It has the delete's
-  restore point, Recently Deleted for what the restore point could not cover
-  and the copy did not carry, the path policy (never the Connected Folder
-  itself or a nested one), and the settled-work refusal, which comes before
-  anything is copied.
+  restore point, the path policy (never the Connected Folder itself or a
+  nested one), and the settled-work refusal, which comes before anything is
+  copied. An item the restore point could not fully cover, where the copy
+  did not carry the rest or the rest is an `.amplefile` identity, leaves
+  whole for Recently Deleted, with whatever it holds by then. Any other
+  item is erased, and only while it is still exactly what the copy read
+  (the same entries, each the same file at the same size and modification
+  time), the copy holds all of it, and no folder in it that holds something,
+  nor the folder it is in, is read-only. The first of those is checked again
+  inside the journaled step. Finder's `.DS_Store` in a folder is left out of
+  the first two.
 - **From a plain folder into a Connected Folder:** the copy has one restore
   point in the Connected Folder. Each original is then removed, as a move
   across disks removes it in Finder; it does not go to the system Trash,
-  because nothing is deleted. The removal is journaled first as `files.move`
-  with the `main-window` surface, naming the Connected Folder and that
-  restore point. It happens only once the copy is checked whole against the
-  original, and only while no Connected Folder owns the original or sits
-  inside it, which is checked before anything is copied and again inside
-  the journaled step. An original that fails either check stays, and the
-  journal records the refusal.
+  because nothing is deleted. It is removed only under the same three
+  conditions, and only while no Connected Folder owns it or sits inside it.
+  Ownership compares the path as written and as the disk resolves it, so
+  another letter case, an accent spelled the other way, or a linked folder
+  on the way names the same Connected Folder; it is checked before anything
+  is copied. The removal is journaled first as `files.move` with the
+  `main-window` surface, naming the Connected Folder and that restore point,
+  and inside the journaled step ownership, that the original is still what
+  the copy read, and that all of it can go are checked again.
+
+What the journal holds: an original that the checks before its journaled
+step refuse is never attempted, and leaves no receipt. A refusal inside the
+journaled step, and a removal that fails, are recorded as that act's error.
+An original that is already gone when its turn comes has nothing to remove
+and leaves no receipt.
+
+An original that cannot go stays whole, and the other items still move. Its
+copy stays in the target, so the item is in both places and the answer names
+it and why (`notRemoved`, `failures`). A copy that was to replace an item
+replaces it only once the checks before the journaled step have passed: when
+they refuse, the item there stays, the copy is taken back, and the answer
+names the original under `failures` alone. Removing
+a folder is not all-or-nothing, so after a removal fails the original is
+looked at again: when anything the copy read there is gone, the item counts
+as moved, since all of it is only in the target, and the answer names it as
+partly removed, with what is left still in the source (`partlyRemoved`).
+Undo then moves it back and never takes the copy away.
 
 The undo of a move a plain folder took part in is the reverse move, with the
-same rules. A move between two plain folders touches no Connected Folder and
-is not journaled.
+same rules; an item whose name is taken by now in the folder it came from is
+skipped and stays where the move put it. A move between two plain folders
+touches no Connected Folder and is not journaled.
 
 ### Recently Deleted
 
