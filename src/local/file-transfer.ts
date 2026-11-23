@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants, type Stats } from "node:fs";
-import { chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, utimes } from "node:fs/promises";
+import { access, chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, utimes } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
 import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
 import { untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
+import { comparableContains, comparablePath } from "./path-comparison.js";
 import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
 
 /**
@@ -18,10 +19,18 @@ import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
 /** Folders a copy or archive leaves behind: a Connected Folder's identity and History stay with the Connected Folder. */
 const identityFolders = new Set([".amplefile"]);
 
+/**
+ * Finder's own note about a folder's window (icon places, the view), which
+ * it writes whenever the folder is open in Finder. It is not what the folder
+ * holds: History ignores it and Compress leaves it out. A copy carries the
+ * one it finds, and the checks before an original goes do not ask about it,
+ * so Finder rewriting it while a move runs does not keep the original back.
+ */
+const finderNote = ".DS_Store";
+
+/** Whether a path is another one or inside it, as written: macOS and Windows disks ignore case and how an accent is spelled by default. */
 export function isInside(parentPath: string, childPath: string): boolean {
-  const parent = comparison(parentPath);
-  const child = comparison(childPath);
-  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
+  return comparableContains(comparablePath(parentPath), comparablePath(childPath));
 }
 
 /** "report.pdf" → "report copy.pdf", then "report copy 2.pdf", as Finder names a duplicate. */
@@ -67,9 +76,94 @@ export async function copyInto(
 export async function copyItemTo(
   source: string,
   destination: string,
-  options: { withIdentity?: boolean; operation?: FileOperationControl } = {},
+  options: { withIdentity?: boolean; operation?: FileOperationControl; read?: CopiedSource } = {},
 ): Promise<void> {
-  await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation);
+  await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation, options.read);
+}
+
+/**
+ * One entry of a source as a copy read it: what it was, which file it was
+ * (its inode), and for a file its size and modification time, exactly as the
+ * disk gave them before its bytes were read. A folder keeps how many entries
+ * it had; a link, where it pointed.
+ */
+export interface CopiedEntry { kind: "file" | "folder" | "link"; ino: number; size: number; mtimeMs: number; link?: string; entries?: number }
+
+/** What a copy read of its source, entry by entry, by path. */
+export type CopiedSource = Map<string, CopiedEntry>;
+
+/**
+ * Whether a source is still the item a copy read (`read`, filled by
+ * `copyItemTo`): every entry there now is one the copy read, the same file
+ * (inode) at the same size and the same modification time, to the disk's own
+ * precision; every link points where it did; and no folder gained or lost an
+ * entry. Nothing is allowed for a coarse clock here, unlike `copyHoldsAll`:
+ * both readings are of the same file on the same disk. This is what a move
+ * asks before an original goes, so a file written, added, or swapped while
+ * the copy was made keeps the original where it is. Finder's `.DS_Store`
+ * inside a folder is not asked about.
+ *
+ * A rewrite that keeps the size and puts the modification time back to the
+ * very same instant, in place, is not seen. A copy that left something behind
+ * (an `.amplefile` folder without `withIdentity`) never passes.
+ */
+export async function sourceUnchanged(source: string, read: CopiedSource): Promise<boolean> {
+  const was = read.get(source);
+  const info = await lstat(source).catch(() => null);
+  if (!was || !info || info.ino !== was.ino) return false;
+  if (info.isSymbolicLink()) return was.kind === "link" && await readlink(source).catch(() => null) === was.link;
+  if (info.isFile()) return was.kind === "file" && info.size === was.size && info.mtimeMs === was.mtimeMs;
+  if (!info.isDirectory() || was.kind !== "folder") return false;
+  const names = (await readdir(source).catch(() => null))?.filter((name) => name !== finderNote);
+  if (!names || names.length !== was.entries) return false;
+  for (const name of names) if (!await sourceUnchanged(join(source, name), read)) return false;
+  return true;
+}
+
+/**
+ * After a removal of `source` failed: whether part of it went. True when
+ * anything the copy read there is no longer there. A removal is not
+ * all-or-nothing, so a failed one is asked this before anyone is told the
+ * original is still where it was.
+ */
+export async function sourceLostPart(source: string, read: CopiedSource): Promise<boolean> {
+  const inside = source.endsWith(sep) ? source : `${source}${sep}`;
+  for (const path of read.keys()) {
+    if (path !== source && (!path.startsWith(inside) || basename(path) === finderNote)) continue;
+    if (!await lstat(path).catch(() => null)) return true;
+  }
+  return false;
+}
+
+/**
+ * The folder that stops `path` from being removed whole: its parent, or a
+ * folder inside it that holds something, when this user cannot take entries
+ * out of it or cannot read it. Null when nothing in sight stops it. Asked
+ * before a move's original goes, so a folder marked read-only is found
+ * while the original is still whole rather than halfway through removing it.
+ * A locked file, or a folder another rule protects, is not seen here; a
+ * removal that fails on one is asked `sourceLostPart`.
+ */
+export async function folderBlockingRemoval(path: string): Promise<string | null> {
+  if (!await canTakeEntriesOut(dirname(path))) return dirname(path);
+  return folderBlockingInside(path);
+}
+
+async function folderBlockingInside(path: string): Promise<string | null> {
+  const info = await lstat(path).catch(() => null);
+  if (!info?.isDirectory()) return null;
+  const names = await readdir(path).catch(() => null);
+  if (!names) return path;
+  if (names.length && !await canTakeEntriesOut(path)) return path;
+  for (const name of names) {
+    const blocked = await folderBlockingInside(join(path, name));
+    if (blocked) return blocked;
+  }
+  return null;
+}
+
+function canTakeEntriesOut(folder: string): Promise<boolean> {
+  return access(folder, fsConstants.W_OK | fsConstants.X_OK).then(() => true, () => false);
 }
 
 /** What a copy of `source` leaves behind: every `.amplefile` folder unless it carries the identity. */
@@ -111,7 +205,8 @@ async function measureTree(path: string, filter: ((path: string) => boolean) | u
  *
  * `withIdentity` is for a source in a plain folder, which has no Recently
  * Deleted to leave through: an `.amplefile` folder then counts as held when
- * the copy carries it whole, like any other folder.
+ * the copy carries it whole, like any other folder. Finder's `.DS_Store`
+ * inside a folder is not asked about.
  */
 export async function copyHoldsAll(source: string, copy: string, options: { withIdentity?: boolean } = {}): Promise<boolean> {
   return treeHeld(source, copy, { identity: options.withIdentity === true });
@@ -201,13 +296,19 @@ async function treeHeld(from: string, into: string, options: { identity: boolean
   }
   if (!original.isDirectory() || !other.isDirectory()) return false;
   for (const entry of await readdir(from)) {
+    if (entry === finderNote) continue;
     if (!options.identity && identityFolders.has(entry)) return false;
     if (!await treeHeld(join(from, entry), join(into, entry), options)) return false;
   }
   return true;
 }
 
-/** Disks that keep coarse times (FAT keeps two seconds) may round a copied time. */
+/**
+ * Disks that keep coarse times (FAT keeps two seconds) may round a copied
+ * time, so a copy's time may differ from its source's by this much. It is
+ * for comparing a copy with its source only: whether the source itself
+ * changed is asked exactly (`sourceUnchanged`).
+ */
 const sameTimeToleranceMs = 2_000;
 
 /** Moves a file or folder into a folder on the same computer (copying across disks), returning where it landed. */
@@ -249,10 +350,10 @@ function withoutCounts(operation: FileOperationControl): FileOperationControl {
  * or move never leaves a half-written item behind; a destination that turned
  * out to be taken is someone else's and stays.
  */
-async function copyTree(source: string, destination: string, filter: ((path: string) => boolean) | undefined, operation: FileOperationControl): Promise<void> {
+async function copyTree(source: string, destination: string, filter: ((path: string) => boolean) | undefined, operation: FileOperationControl, read?: CopiedSource): Promise<void> {
   const written = { root: false };
   try {
-    await copyEntry(source, destination, filter, operation, written);
+    await copyEntry(source, destination, filter, operation, written, read);
   } catch (error) {
     if (written.root) await removeOwnedItem(destination).catch(() => undefined);
     throw error;
@@ -277,26 +378,34 @@ async function copyEntry(
   filter: ((path: string) => boolean) | undefined,
   operation: FileOperationControl,
   written: { root: boolean },
+  read?: CopiedSource,
 ): Promise<void> {
   await operation.boundary("item");
+  // What the disk says of the entry before any of it is read: `read` keeps it (`sourceUnchanged`).
   const info = await lstat(source);
+  const seen = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs };
   operation.current(basename(source));
   const claimed = () => { written.root = true; };
   if (info.isSymbolicLink()) {
     // A link is copied as written: pointing a relative link back into the
     // source would leave it dangling once a move removes the source.
-    await symlink(await readlink(source), destination);
+    const target = await readlink(source);
+    read?.set(source, { kind: "link", ...seen, link: target });
+    await symlink(target, destination);
     claimed();
   } else if (info.isDirectory()) {
     await mkdir(destination);
     claimed();
-    for (const entry of await readdir(source)) {
+    const entries = await readdir(source);
+    read?.set(source, { kind: "folder", ...seen, entries: entries.filter((entry) => entry !== finderNote).length });
+    for (const entry of entries) {
       const child = join(source, entry);
       if (filter && !filter(child)) continue;
-      await copyEntry(child, join(destination, entry), filter, operation, written);
+      await copyEntry(child, join(destination, entry), filter, operation, written, read);
     }
     await chmod(destination, info.mode & 0o7777);
   } else if (info.isFile()) {
+    read?.set(source, { kind: "file", ...seen });
     await copyFileEntry(source, destination, info, operation, claimed);
   } else {
     throw Object.assign(new Error(`“${basename(source)}” is a special file that can’t be copied.`), { code: "ERR_FS_CP_UNKNOWN" });
@@ -458,7 +567,7 @@ async function collectArchiveEntries(
     entries.push({ kind: "folder", name, date: info.mtime, mode: info.mode & 0o7777 });
     await operation.boundary("item");
     for (const entry of (await readdir(path)).sort()) {
-      if (identityFolders.has(entry) || entry === ".DS_Store") continue;
+      if (identityFolders.has(entry) || entry === finderNote) continue;
       await collectArchiveEntries(join(path, entry), `${name}/${entry}`, entries, total, operation);
     }
     return;
@@ -530,11 +639,4 @@ async function exists(path: string): Promise<boolean> {
 
 function badRequest(message: string): Error {
   return Object.assign(new Error(message), { status: 400, statusCode: 400 });
-}
-
-
-/** macOS and Windows disks ignore case by default. */
-function comparison(value: string): string {
-  const resolved = resolve(value).replace(/[\\/]+$/, "") || sep;
-  return process.platform === "linux" ? resolved : resolved.toLocaleLowerCase();
 }

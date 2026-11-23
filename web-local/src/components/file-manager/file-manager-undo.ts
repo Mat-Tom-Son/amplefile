@@ -3,12 +3,24 @@ import type { FileManagerPlace } from "./file-manager-places";
 
 /**
  * One ⌘Z step: running it undoes the change and returns the entry that redoes
- * it. `cannot` says plainly why Undo can't put a change back (an item a
- * Replace sent to the Trash). `resumes` marks a step that keeps its place when
- * it is refused partway, so it stays on the stack and running it again goes
- * on from there.
+ * it, or a `PartialUndo` when it could not put everything back. `cannot`
+ * says plainly why Undo can't put a change back (an item a Replace sent to
+ * the Trash). `resumes` marks a step that keeps its place when it is refused
+ * partway, so it stays on the stack and running it again goes on from there.
  */
-export interface FileUndo { label: string; run: () => Promise<FileUndo | null>; cannot?: string; resumes?: boolean }
+export interface FileUndo { label: string; run: () => Promise<FileUndo | PartialUndo | null>; cannot?: string; resumes?: boolean }
+
+/**
+ * What a step answers when it did only part of its work: `said` is what the
+ * window says in place of "Undid …" (what did not go back, where it is, and
+ * why), and `reverse` redoes the part that was done. The step is over: it
+ * does not stay on the stack.
+ */
+export interface PartialUndo { said: string; reverse: FileUndo | null }
+
+export function isPartialUndo(outcome: FileUndo | PartialUndo | null): outcome is PartialUndo {
+  return Boolean(outcome) && "said" in outcome!;
+}
 
 /** ⌘Z and ⇧⌘Z remember the last 50 changes each. */
 export const fileUndoLimit = 50;
@@ -28,6 +40,9 @@ export type TransferBody = {
   sources: Array<{ place: FileManagerPlace; path: string; name?: string } | { nativePath: string }>;
   target: { place: FileManagerPlace; path: string; create?: boolean };
 };
+
+/** A folder in a place. */
+export interface FolderRef { place: FileManagerPlace; path: string }
 
 /** The Connected Folders a transfer writes History in: its target's and its sources'. */
 export function transferConnectedFolderIds(body: TransferBody): string[] {
@@ -80,38 +95,64 @@ export interface MoveAnswer {
   restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>;
   replaced?: readonly unknown[];
   merged?: readonly unknown[];
-  notRemoved?: readonly unknown[];
-  leftInTarget?: readonly unknown[];
+  notRemoved?: readonly string[];
+  leftInTarget?: readonly string[];
+}
+
+/**
+ * How ⌘Z undoes a move a plain folder took part in: the items to move back;
+ * the restore points to run afterwards (`restores`); whether ⇧⌘Z can do the
+ * move again; and the copies Undo cannot take back (`leftCopies`).
+ */
+export interface MoveBackPlan {
+  items: MovedItem[];
+  restores: MoveAnswer["restorePoints"];
+  redoable: boolean;
+  /** Copies the move left in a plain folder of items that never left their source: no History takes them back. */
+  leftCopies: { names: string[]; where: FolderRef } | null;
+  /** Set on the plan ⇧⌘Z runs, so what it says is about doing the move again. */
+  redo?: boolean;
 }
 
 /**
  * How ⌘Z undoes a move a plain folder took part in, or null when History
- * alone undoes it: the items to move back; the restore points to run
- * afterwards, which are those of a Connected Folder the items went into when
- * they replaced something there or a copy stayed in both places; and whether
- * ⇧⌘Z can do the move again. A move that replaced something or merged folders
- * is not redone: what it replaced is back, and moving the items again would
- * not take away the folders the merge had emptied.
+ * alone undoes it. The restore points are those of a Connected Folder the
+ * items went into, when they replaced something there or a copy stayed in
+ * both places. A move that replaced something or merged folders is not
+ * redone: what it replaced is back, and moving the items again would not
+ * take away the folders the merge had emptied. Copies the move left in a
+ * plain folder stay there, and Undo says so.
  */
-export function moveBackPlan(answer: MoveAnswer, target: FileManagerPlace): { items: MovedItem[]; restores: MoveAnswer["restorePoints"]; redoable: boolean } | null {
-  if (!undoneByMovingBack(answer.moves, target)) return null;
-  const restores = target.kind === "connected-folder" && (answer.replaced?.length || answer.notRemoved?.length || answer.leftInTarget?.length) ? answer.restorePoints : [];
-  return { items: movedItems(answer.moves!, target), restores, redoable: !answer.replaced?.length && !answer.merged?.length };
+export function moveBackPlan(answer: MoveAnswer, target: FolderRef): MoveBackPlan | null {
+  if (!undoneByMovingBack(answer.moves, target.place)) return null;
+  const copies = [...new Set([...(answer.notRemoved ?? []), ...(answer.leftInTarget ?? [])])];
+  const inHistory = target.place.kind === "connected-folder";
+  return {
+    items: movedItems(answer.moves!, target.place),
+    restores: inHistory && (answer.replaced?.length || copies.length) ? answer.restorePoints : [],
+    redoable: !answer.replaced?.length && !answer.merged?.length,
+    leftCopies: !inHistory && copies.length ? { names: copies.map(baseName), where: target } : null,
+  };
 }
+
+/** The request that moves items back into one folder, and the items it is for. */
+export interface MoveBackRequest { body: TransferBody & { conflicts: { apply: "skip" } }; items: MovedItem[] }
 
 /**
  * The moves that put items back: one request for each folder they came from,
  * in the order the first item of each was moved, every item under the name
- * it had, and the folder made again when a merge emptied and removed it.
+ * it had, and the folder made again when a merge emptied and removed it. An
+ * item whose name is taken at home by now is skipped, never given another
+ * name and never put in place of what is there: it stays where the move put
+ * it, and Undo says so.
  */
-export function moveBackRequests(items: readonly MovedItem[]): Array<{ body: TransferBody; items: MovedItem[] }> {
-  const groups = new Map<string, { body: TransferBody; items: MovedItem[] }>();
+export function moveBackRequests(items: readonly MovedItem[]): MoveBackRequest[] {
+  const groups = new Map<string, MoveBackRequest>();
   for (const item of items) {
-    const slash = item.home.path.lastIndexOf("/");
-    const parent = slash < 0 ? "" : item.home.path.slice(0, slash);
+    const parent = parentOf(item.home.path);
     const key = `${item.home.place.kind}\n${item.home.place.id}\n${parent}`;
-    const group = groups.get(key) ?? { body: { mode: "move" as const, sources: [], target: { place: item.home.place, path: parent, create: true } }, items: [] };
-    group.body.sources.push({ place: item.at.place, path: item.at.path, name: item.home.path.slice(slash + 1) });
+    const group = groups.get(key) ?? { body: { mode: "move" as const, sources: [], target: { place: item.home.place, path: parent, create: true }, conflicts: { apply: "skip" as const } }, items: [] };
+    group.body.sources.push({ place: item.at.place, path: item.at.path, name: baseName(item.home.path) });
     group.items.push(item);
     groups.set(key, group);
   }
@@ -129,35 +170,97 @@ export function movedBack(items: readonly MovedItem[], answerMoves: readonly Tra
   });
 }
 
-/** What a move-back step asks of the window: one transfer, and one restore of a Connected Folder's restore point. */
+/** What the engine answers a move back with: what moved, and everything that did not go as asked. */
+export interface MoveBackAnswer {
+  moves?: TransferMove[];
+  skipped?: Array<{ path: string; reason?: string }>;
+  failed?: { path: string; error: string };
+  failures?: Array<{ path: string; error: string }>;
+  notRemoved?: string[];
+  partlyRemoved?: Array<{ path: string; error: string }>;
+}
+
+/**
+ * One item a move back did not put back cleanly: its name was `taken` at
+ * home, so it stayed; it `failed` and stayed; it went back but is in `both`
+ * places; or it went back and `partly` could not be removed.
+ */
+export interface NotPutBack { item: MovedItem; why: "taken" | "failed" | "both" | "partly"; error?: string }
+
+/** The items of one request that did not go back cleanly, from its answer. An item the answer says nothing about stayed. */
+export function notPutBack(items: readonly MovedItem[], answer: MoveBackAnswer): NotPutBack[] {
+  const failures = answer.failures ?? (answer.failed ? [answer.failed] : []);
+  return items.flatMap((item): NotPutBack[] => {
+    const error = failures.find((failure) => failure.path === item.at.path)?.error;
+    const partly = answer.partlyRemoved?.find((left) => left.path === item.at.path);
+    if (answer.moves?.some((move) => move.from === item.at.path)) return partly ? [{ item, why: "partly", error: partly.error }] : [];
+    if (answer.notRemoved?.includes(item.at.path)) return [{ item, why: "both", ...(error ? { error } : {}) }];
+    if (answer.skipped?.some((skipped) => skipped.path === item.home.path)) return [{ item, why: "taken" }];
+    return [{ item, why: "failed", ...(error ? { error } : {}) }];
+  });
+}
+
+/** What a move-back step asks of the window: one transfer, one restore of a Connected Folder's restore point, and a folder's name for what it says. */
 export interface MoveBackHost {
-  transfer: (body: TransferBody) => Promise<{ moves?: TransferMove[] }>;
+  transfer: (body: MoveBackRequest["body"]) => Promise<MoveBackAnswer>;
   restore: (point: { connectedFolderId: string; checkpointId: string }) => Promise<unknown>;
+  nameOf: (folder: FolderRef) => string;
+}
+
+/**
+ * What ⌘Z (or ⇧⌘Z, with `redo`) says about the items that did not go back
+ * cleanly: each by name, where it is now, and why. Items with the same
+ * outcome between the same two folders share a sentence.
+ */
+export function moveBackReport(kept: readonly NotPutBack[], host: Pick<MoveBackHost, "nameOf">, redo = false): string[] {
+  const groups = new Map<string, NotPutBack[]>();
+  for (const one of kept) {
+    const key = [one.why, one.item.home.place.kind, one.item.home.place.id, parentOf(one.item.home.path), one.item.at.place.kind, one.item.at.place.id, parentOf(one.item.at.path)].join("\n");
+    groups.set(key, [...(groups.get(key) ?? []), one]);
+  }
+  return [...groups.values()].map((group) => {
+    const first = group[0]!;
+    const many = group.length > 1;
+    const who = quotedNames(group.map((one) => one.item.home.path));
+    const home = host.nameOf({ place: first.item.home.place, path: parentOf(first.item.home.path) });
+    const at = host.nameOf({ place: first.item.at.place, path: parentOf(first.item.at.path) });
+    const error = group.find((one) => one.error)?.error;
+    const why = error ? ` ${/[.!?]$/.test(error) ? error : `${error}.`}` : "";
+    const not = redo ? "moved again" : "put back";
+    const back = redo ? `${many ? "are" : "is"} in ${home} again` : `${many ? "are" : "is"} back in ${home}`;
+    if (first.why === "taken") return `${who} ${many ? "were" : "was"} not ${not}: ${home} has ${many ? "items with those names" : "an item with that name"} now. ${many ? "They are" : "It is"} still in ${at}.`;
+    if (first.why === "failed") return `${who} ${many ? "were" : "was"} not ${not} and ${many ? "are" : "is"} still in ${at}.${why}`;
+    if (first.why === "both") return `${who} ${back}, and ${many ? "are" : "is"} also still in ${at}.${why}`;
+    return `${who} ${back}, but part of ${many ? "them" : "it"} could not be removed from ${at} and is still there.${why}`;
+  });
 }
 
 /**
  * The ⌘Z step for a move a plain folder took part in. A plain folder has no
  * History, so each item is moved back to the folder it came from, under the
  * name it had, as a move of its own (out of a Connected Folder that is its
- * delete, refused while that Connected Folder has unfinished work).
- * `restores` are the restore points of a Connected Folder the items went
- * into, run afterwards: they bring back what the items replaced there and
- * take away a copy that stayed in both places.
+ * delete, refused while that Connected Folder has unfinished work). The
+ * plan's `restores` are the restore points of a Connected Folder the items
+ * went into, run afterwards: they bring back what the items replaced there
+ * and take away a copy that stayed in both places.
  *
- * The step keeps its place: refused partway, it goes on from there when run
- * again. Its redo, when the move can be redone (`moveBackPlan`), moves the
- * items out again from where they went back to.
+ * It never claims more than it did. An item that did not go back (its name
+ * is taken at home, or its move back failed), or went back but is also still
+ * where the move put it, is said by name with where it is and why, as a
+ * `PartialUndo`. Unless every item went back cleanly, the restore points are
+ * not run: one would take an item that is still where the move put it away
+ * from the only folder that has it. Copies the move left in a plain folder
+ * are said too.
+ *
+ * The step keeps its place when a request is refused outright (a busy
+ * Connected Folder): it goes on from there when run again. Its redo, when
+ * the move can be redone, moves the items that went back out again.
  */
-export function movesUndo(
-  label: string,
-  items: readonly MovedItem[],
-  restores: ReadonlyArray<{ connectedFolderId: string; checkpointId: string }>,
-  redoable: boolean,
-  host: MoveBackHost,
-): FileUndo {
-  let remaining = [...items];
-  let pending = [...restores];
+export function movesUndo(label: string, plan: MoveBackPlan, host: MoveBackHost): FileUndo {
+  let remaining = [...plan.items];
+  let pending = [...plan.restores];
   const back: MovedItem[] = [];
+  const kept: NotPutBack[] = [];
   return {
     label,
     resumes: true,
@@ -165,13 +268,45 @@ export function movesUndo(
       for (const request of moveBackRequests(remaining)) {
         const answer = await host.transfer(request.body);
         back.push(...movedBack(request.items, answer.moves));
+        kept.push(...notPutBack(request.items, answer));
         remaining = remaining.filter((item) => !request.items.includes(item));
       }
-      while (pending.length) {
-        await host.restore(pending[0]!);
-        pending = pending.slice(1);
+      const notes = moveBackReport(kept, host, plan.redo);
+      if (!kept.length) {
+        while (pending.length) {
+          await host.restore(pending[0]!);
+          pending = pending.slice(1);
+        }
+      } else if (pending.length) {
+        const folder = host.nameOf({ place: { kind: "connected-folder", id: pending[0]!.connectedFolderId }, path: "" });
+        notes.push(`Nothing else in ${folder} was changed back, so nothing there is taken away; its History has the restore point from before the move.`);
       }
-      return redoable && back.length ? movesUndo(label, back, [], true, host) : null;
+      if (plan.leftCopies) {
+        const { names, where } = plan.leftCopies;
+        notes.push(`The ${names.length === 1 ? "copy" : "copies"} of ${quotedNames(names)} that the move left in ${host.nameOf(where)} ${names.length === 1 ? "is" : "are"} still there.`);
+      }
+      const reverse = plan.redoable && back.length ? movesUndo(label, { items: back, restores: [], redoable: true, leftCopies: null, redo: !plan.redo }, host) : null;
+      if (!notes.length) return reverse;
+      // Never "Undid …" alone when an item did not go back cleanly.
+      const did = plan.redo ? "Redid" : "Undid";
+      const wentHome = back.length + kept.filter((one) => one.why === "both").length;
+      const lead = !kept.length ? `${did} ${label}.` : wentHome ? `${did} part of ${label}.` : `Could not ${plan.redo ? "redo" : "undo"} ${label}.`;
+      return { said: [lead, ...notes].join(" "), reverse };
     },
   };
+}
+
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? "" : path.slice(0, slash);
+}
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** Up to three names in quotes, then how many more. */
+function quotedNames(paths: readonly string[]): string {
+  const shown = paths.slice(0, 3).map((path) => `“${baseName(path)}”`).join(", ");
+  return `${shown}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`;
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import JSZip from "jszip";
 
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
-import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, finderCopyName, moveInto, removeIdentityFoldersKeptAt } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, finderCopyName, folderBlockingRemoval, isInside, moveInto, removeIdentityFoldersKeptAt, sourceLostPart, sourceUnchanged, type CopiedSource } from "../src/local/file-transfer.js";
 
 const exec = promisify(execFile);
 
@@ -236,4 +236,125 @@ test("the transfer route reads its target as a place and a path inside it", asyn
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/local/api/place-routes.ts", import.meta.url), "utf8"));
   const body = source.slice(source.indexOf("export async function transferFileEntries"));
   assert.match(body, /transferPlace\(targetRecord\?\.place\)/);
+});
+
+test("a source is still the item a copy read only while nothing in it was written, added, removed, or swapped", async (t) => {
+  const root = await folder(t);
+  let made = 0;
+  /** A fresh item and what a copy of it read. */
+  const copied = async (withIdentity = true) => {
+    const source = join(root, `Item ${made += 1}`);
+    await mkdir(join(source, "sub"), { recursive: true });
+    await writeFile(join(source, "a.txt"), "aaaa");
+    await writeFile(join(source, "sub", "b.txt"), "bbbb");
+    await symlink("a.txt", join(source, "link"));
+    await mkdir(join(source, ".amplefile"));
+    await writeFile(join(source, ".amplefile", "connected-folder.json"), "{}");
+    const read: CopiedSource = new Map();
+    await copyItemTo(source, join(root, `Copy ${made}`), { withIdentity, read });
+    return { source, read, copy: join(root, `Copy ${made}`) };
+  };
+
+  const untouched = await copied();
+  assert.equal(await sourceUnchanged(untouched.source, untouched.read), true);
+  assert.equal(await sourceLostPart(untouched.source, untouched.read), false);
+  // Reading it, or changing its mode, is not a change to what it holds.
+  await readFile(join(untouched.source, "a.txt"));
+  await chmod(join(untouched.source, "a.txt"), 0o600);
+  assert.equal(await sourceUnchanged(untouched.source, untouched.read), true);
+  assert.equal(await sourceUnchanged(untouched.source, new Map()), false, "a source no copy read is not known to be unchanged");
+
+  // The same size a moment later: a copy's time may be two seconds off, a source's own may not be off at all.
+  const rewritten = await copied();
+  await writeFile(join(rewritten.source, "sub", "b.txt"), "BBBB");
+  assert.equal(await copyHoldsAll(rewritten.source, rewritten.copy, { withIdentity: true }), true, "the copy check alone would let it go");
+  assert.equal(await sourceUnchanged(rewritten.source, rewritten.read), false);
+  assert.equal(await sourceLostPart(rewritten.source, rewritten.read), false, "nothing is missing, it only changed");
+
+  const added = await copied();
+  await writeFile(join(added.source, "sub", "late.txt"), "late");
+  assert.equal(await sourceUnchanged(added.source, added.read), false);
+
+  const removed = await copied();
+  await rm(join(removed.source, "sub", "b.txt"));
+  assert.equal(await sourceUnchanged(removed.source, removed.read), false);
+  assert.equal(await sourceLostPart(removed.source, removed.read), true);
+  assert.equal(await sourceLostPart(join(removed.source, "a.txt"), removed.read), false, "asked of one item, another's loss is not its own");
+
+  // Another file under the same name, at the same size and time.
+  const swapped = await copied();
+  const was = await lstat(join(swapped.source, "a.txt"));
+  await writeFile(join(swapped.source, "new"), "AAAA");
+  await utimes(join(swapped.source, "new"), was.atime, was.mtime);
+  await rename(join(swapped.source, "new"), join(swapped.source, "a.txt"));
+  assert.equal(await sourceUnchanged(join(swapped.source, "sub"), swapped.read), true, "the part that did not change");
+  assert.equal(await sourceUnchanged(swapped.source, swapped.read), false);
+
+  const relinked = await copied();
+  await rm(join(relinked.source, "link"));
+  await symlink("sub/b.txt", join(relinked.source, "link"));
+  assert.equal(await sourceUnchanged(relinked.source, relinked.read), false);
+
+  const gone = await copied();
+  await rm(gone.source, { recursive: true });
+  assert.equal(await sourceUnchanged(gone.source, gone.read), false);
+  assert.equal(await sourceLostPart(gone.source, gone.read), true);
+
+  // A copy that left the identity behind did not read all of the source.
+  const without = await copied(false);
+  assert.equal(await sourceUnchanged(without.source, without.read), false);
+
+  // Finder's own note about a folder's window is not what the folder holds: written or rewritten meanwhile, it changes nothing.
+  const noted = await copied();
+  await writeFile(join(noted.source, "sub", ".DS_Store"), "window");
+  assert.equal(await sourceUnchanged(noted.source, noted.read), true);
+  assert.equal(await copyHoldsAll(noted.source, noted.copy, { withIdentity: true }), true);
+  const kept = join(root, "With note");
+  await mkdir(kept);
+  await writeFile(join(kept, ".DS_Store"), "before");
+  await writeFile(join(kept, "a.txt"), "a");
+  const keptRead: CopiedSource = new Map();
+  await copyItemTo(kept, join(root, "With note copy"), { withIdentity: true, read: keptRead });
+  assert.equal(await readFile(join(root, "With note copy", ".DS_Store"), "utf8"), "before", "a copy still carries the one it finds");
+  await writeFile(join(kept, ".DS_Store"), "after, and longer");
+  assert.equal(await sourceUnchanged(kept, keptRead), true);
+  await rm(join(kept, ".DS_Store"));
+  assert.equal(await sourceUnchanged(kept, keptRead), true);
+  assert.equal(await sourceLostPart(kept, keptRead), false);
+});
+
+test("a folder that would stop a removal partway is found before anything is removed", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const root = await realpath(await folder(t));
+  const item = join(root, "Holder", "Item");
+  await mkdir(join(item, "open"), { recursive: true });
+  await mkdir(join(item, "locked", "deep"), { recursive: true });
+  await mkdir(join(item, "empty"));
+  await writeFile(join(item, "open", "a.txt"), "a");
+  await writeFile(join(item, "locked", "deep", "b.txt"), "b");
+  try {
+    assert.equal(await folderBlockingRemoval(item), null);
+    assert.equal(await folderBlockingRemoval(join(item, "open", "a.txt")), null);
+    // An empty folder goes with its parent's leave, whatever its own mode.
+    await chmod(join(item, "empty"), 0o555);
+    assert.equal(await folderBlockingRemoval(item), null);
+    // A folder that holds something and cannot be changed stops the removal.
+    await chmod(join(item, "locked"), 0o555);
+    assert.equal(await folderBlockingRemoval(item), join(item, "locked"));
+    assert.equal(await folderBlockingRemoval(join(item, "locked")), join(item, "locked"));
+    assert.equal(await folderBlockingRemoval(join(item, "locked", "deep")), join(item, "locked"), "the folder it is in");
+    assert.equal(await folderBlockingRemoval(join(item, "open")), null);
+    await chmod(join(item, "locked"), 0o755);
+    // So does the folder the item is in.
+    await chmod(join(root, "Holder"), 0o555);
+    assert.equal(await folderBlockingRemoval(item), join(root, "Holder"));
+  } finally {
+    // Before the temporary folder is removed.
+    for (const path of [join(root, "Holder"), join(item, "locked"), join(item, "empty")]) await chmod(path, 0o755).catch(() => undefined);
+  }
+});
+
+test("a folder is inside itself however its name is written, where the disk takes the spellings as one", { skip: process.platform === "linux" && "names are compared as written on Linux" }, () => {
+  assert.equal(isInside("/Volumes/Work/Caf\u00e9", "/volumes/work/Cafe\u0301/Menus"), true);
+  assert.equal(isInside("/Volumes/Work/Cafe\u0301", "/Volumes/Work/Caf\u00e9"), true);
+  assert.equal(isInside("/Volumes/Work/Caf\u00e9", "/Volumes/Work/Caf\u00e9s"), false);
 });

@@ -11,6 +11,7 @@ import {
   placeFolderWithoutReplacing,
   placeWithoutReplacing,
   removeOwnedItem,
+  type CopiedSource,
 } from "./file-transfer.js";
 
 /**
@@ -396,6 +397,8 @@ export interface PlacementRun {
   mode: "copy" | "move";
   withIdentity?: boolean;
   operation?: FileOperationControl;
+  /** A copy records here each entry of its source as it reads it (src/local/file-transfer.ts, `sourceUnchanged`). */
+  read?: CopiedSource;
 }
 
 const replaceWorkingPrefix = ".AmpleFile-replace-";
@@ -426,7 +429,7 @@ export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise
       return { unit, at: destination, renamed: false, committed: true };
     }
     const destination = await freeDestination(folder, basename(unit.destination), { duplicate: unit.duplicate });
-    await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation });
+    await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation, read: run.read });
     return { unit, at: destination, renamed: false, committed: true };
   }
   const working = claimWorkingPath(folder, replaceWorkingPrefix);
@@ -439,7 +442,7 @@ export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise
         if ((error as { code?: string }).code !== "EXDEV") throw error;
       }
     }
-    await copyItemTo(unit.source, working.path, { withIdentity: run.mode === "move" || run.withIdentity, operation });
+    await copyItemTo(unit.source, working.path, { withIdentity: run.mode === "move" || run.withIdentity, operation, read: run.read });
     return { unit, at: working.path, renamed: false, committed: false, release: working.release };
   } catch (error) {
     working.release();

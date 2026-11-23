@@ -12,7 +12,7 @@ import { parentPath } from "./file-manager-model";
 import { samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 import { trashChangedEvent } from "./file-manager-trash";
 import { copiesLeftMessage, operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
-import { historyTurn, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type TransferBody } from "./file-manager-undo";
+import { historyTurn, isPartialUndo, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type PartialUndo, type TransferBody } from "./file-manager-undo";
 import { desktopErrorText, hiddenKey } from "./file-manager-view-helpers";
 import { OperationStoppedBeforeStart, type OperationHandle, type useFileOperations } from "./useFileOperations";
 import type { useConflictQuestion } from "./ConflictDialog";
@@ -117,9 +117,9 @@ export function useFileChanges(context: FileChangesContext) {
   async function afterTransfer(result: TransferResult, target: { place: FileManagerPlace; path: string }, label: string, selectWritten: boolean) {
     const covers = undoCovers(result);
     const copiesLeft = target.place.kind === "standard" ? copiesLeftMessage(result, folderLabel(target)) : null;
-    const moveBack = moveBackPlan(result, target.place);
+    const moveBack = moveBackPlan(result, target);
     if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
-    else if (moveBack) recordUndo(movesUndo(label, moveBack.items, moveBack.restores, moveBack.redoable, moveBackHost));
+    else if (moveBack) recordUndo(movesUndo(label, moveBack, moveBackHost));
     // Nothing moved, and copies stayed in a plain folder, which has no History to take them back.
     else if (copiesLeft) recordUndo({ label, cannot: copiesLeft, run: async () => null });
     else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
@@ -154,6 +154,7 @@ export function useFileChanges(context: FileChangesContext) {
 
   /** What undoing a move by moving its items back asks of this window (file-manager-undo.ts, `movesUndo`). */
   const moveBackHost: MoveBackHost = {
+    nameOf: folderLabel,
     transfer: (body) => transfer(body),
     restore: (point) => historyTurn([point.connectedFolderId], () => api(`/api/connected-folders/${encodeURIComponent(point.connectedFolderId)}/history/checkpoints/${encodeURIComponent(point.checkpointId)}/restore`, { method: "POST", body: {} })),
   };
@@ -165,9 +166,9 @@ export function useFileChanges(context: FileChangesContext) {
     stack.current = stack.current.slice(0, -1);
     // A change History cannot put back (an item a Replace sent to the Trash) says so instead of half-undoing.
     if (entry.cannot) { showToast({ text: entry.cannot, tone: "info", durationMs: 9000 }); return; }
-    let reverse: FileUndo | null;
+    let outcome: FileUndo | PartialUndo | null;
     try {
-      reverse = await entry.run();
+      outcome = await entry.run();
     } catch (caught) {
       // A step that keeps its place stays where it was, to be run again once what refused it is over.
       if (entry.resumes) stack.current = pushUndo(stack.current, entry);
@@ -176,14 +177,19 @@ export function useFileChanges(context: FileChangesContext) {
       await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);
       return;
     }
+    // A step that put back only part of the change says what it did not, in place of "Undid …".
+    const partial = isPartialUndo(outcome) ? outcome : null;
+    const reverse = partial ? partial.reverse : outcome as FileUndo | null;
     try {
       if (reverse) {
         if (redo) undoStackRef.current = pushUndo(undoStackRef.current, reverse);
         else redoStackRef.current = pushUndo(redoStackRef.current, reverse);
       }
       await Promise.all([listing.refresh(), standard.refresh()]);
-      showToast({ text: `${redo ? "Redid" : "Undid"} ${entry.label}`, tone: "success" });
+      showToast(partial ? { text: partial.said, tone: "info", durationMs: 12000 } : { text: `${redo ? "Redid" : "Undid"} ${entry.label}`, tone: "success" });
     } catch (caught) {
+      // The step's own words are not lost to a listing that would not refresh.
+      if (partial) showToast({ text: partial.said, tone: "info", durationMs: 12000 });
       onError(errorText(caught));
     }
   }

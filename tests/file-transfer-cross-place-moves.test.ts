@@ -9,7 +9,7 @@ import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
 import { setFileOperationBoundaryHookForTests, type FileOperationBoundary, type FileOperationProgress } from "../src/local/file-operations.js";
 import { setSystemTrashHandler } from "../src/local/move-to-system-trash.js";
 import { startLocalApi } from "../src/local/server.js";
-import { moveBackPlan, movesUndo, type MoveAnswer, type MoveBackHost } from "../web-local/src/components/file-manager/file-manager-undo.js";
+import { isPartialUndo, moveBackPlan, movesUndo, type MoveAnswer, type MoveBackHost } from "../web-local/src/components/file-manager/file-manager-undo.js";
 
 /**
  * A move between a Connected Folder and a plain folder is a move
@@ -550,8 +550,9 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
     transfer: async (body) => {
       const answer = await transfer(call, body);
       if (answer.status !== 200) throw new Error(answer.body?.error ?? `status ${answer.status}`);
-      return answer.body as { moves?: Array<{ from: string; to: string; fromPlace?: Place }> };
+      return answer.body as Awaited<ReturnType<MoveBackHost["transfer"]>>;
     },
+    nameOf: (folder) => folder.path || folder.place.id,
     restore: async (point) => {
       const restored = await call(`/api/connected-folders/${point.connectedFolderId}/history/checkpoints/${point.checkpointId}/restore`, { method: "POST", body: {} });
       if (restored.status !== 200) throw new Error(restored.body?.error ?? `status ${restored.status}`);
@@ -564,10 +565,12 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
   const before = await snapshot();
 
   /** The ⌘Z step the window records for a move's answer. */
-  const undoFor = (label: string, answer: Record<string, any>, target: Place) => {
-    const plan = moveBackPlan(answer as MoveAnswer, target);
+  const undoFor = (label: string, answer: Record<string, any>, target: Place, path = "") => {
+    const plan = moveBackPlan(answer as MoveAnswer, { place: target, path });
     assert.ok(plan, "a plain folder took part, so the items are moved back");
-    return movesUndo(label, plan.items, plan.restores, plan.redoable, host);
+    const step = movesUndo(label, plan, host);
+    // Every step here puts everything back, so none answers with what it could not.
+    return { run: async () => { const outcome = await step.run(); assert.ok(!isPartialUndo(outcome), JSON.stringify(outcome)); return outcome; } };
   };
 
   // Into the Connected Folder: a folder merged keeping both, and a file kept beside the one there.
@@ -603,7 +606,7 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
   const out = await transfer(call, { mode: "move", sources: [inFolder(work, "notes.md")], target: onDisk(join(plain, "Photos")) });
   assert.equal(out.status, 200, JSON.stringify(out.body));
   assert.equal(await readFile(join(plain, "Photos", "notes.md"), "utf8"), "work notes");
-  assert.ok(await undoFor("Move notes.md", out.body!, computer).run());
+  assert.ok(await undoFor("Move notes.md", out.body!, computer, onDisk(join(plain, "Photos")).path).run());
   assert.deepEqual(await snapshot(), before);
 
   // A move into the Connected Folder that replaced: the item goes back, then the restore point returns what it replaced.
@@ -617,7 +620,7 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
   const other = await connectedFolder(call, "Other");
   const between = await transfer(call, { mode: "move", sources: [inFolder(work, "notes.md")], target: inFolder(other, "") });
   assert.equal(between.status, 200, JSON.stringify(between.body));
-  assert.equal(moveBackPlan(between.body as MoveAnswer, { kind: "connected-folder", id: other.id }), null);
+  assert.equal(moveBackPlan(between.body as MoveAnswer, { place: { kind: "connected-folder", id: other.id }, path: "" }), null);
   assert.equal(between.body!.restorePoints.length, 2);
 });
 

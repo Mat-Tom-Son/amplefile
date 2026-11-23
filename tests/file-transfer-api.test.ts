@@ -294,10 +294,15 @@ test("a move whose release across volumes fails partway says so and lists the co
       body: { mode: "move", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Old" }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
     });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
-    assert.equal(moved.body!.failed?.path, "Old");
-    assert.match(moved.body!.failed!.error, /copied Old into Recently Deleted but could not remove all of it/);
-    assert.doesNotMatch(moved.body!.failed!.error, /Nothing was deleted/);
-    assert.deepEqual(moved.body!.notRemoved, ["Old"]);
+    // Part of the original went, so it is not said to be still in the source: it moved, and what is left is named.
+    assert.equal(moved.body!.failed, undefined, JSON.stringify(moved.body));
+    assert.equal(moved.body!.notRemoved, undefined);
+    assert.deepEqual(moved.body!.partlyRemoved.map((item: { path: string }) => item.path), ["Old"]);
+    assert.match(moved.body!.partlyRemoved[0].error, /copied Old into Recently Deleted but could not remove all of it/);
+    assert.doesNotMatch(moved.body!.partlyRemoved[0].error, /Nothing was deleted/);
+    assert.deepEqual(moved.body!.written, ["Old"]);
+    assert.ok(!existsSync(join(old, "a.txt")), "part of the original is gone");
+    assert.equal(await readFile(join(old, "locked", "f.txt"), "utf8"), "f", "what could not be removed is still there");
     assert.equal(moved.body!.recentlyDeleted?.length, 1, JSON.stringify(moved.body));
     const kept = moved.body!.recentlyDeleted[0]!;
     assert.equal(kept.path, "Old");

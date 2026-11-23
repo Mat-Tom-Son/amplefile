@@ -27,8 +27,9 @@ import {
   type StandardFolderId,
 } from "../standard-folders.js";
 import { goToFolder } from "../go-to-folder.js";
+import { comparableForms, comparablePath, formsContain } from "../path-comparison.js";
 import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
-import { compressInto, copyHoldsAll, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "../file-transfer.js";
+import { compressInto, copyHoldsAll, folderBlockingRemoval, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt, sourceLostPart, sourceUnchanged, type CopiedSource } from "../file-transfer.js";
 import { assertExtractable, extractFolderName, stageExtract, type StagedExtract } from "../archive-extract.js";
 import {
   chosenForItem,
@@ -303,13 +304,44 @@ async function resolveTransferItem(place: TransferPlaceRef, path: string, purpos
   const finalLink = purpose !== "target";
   if (place.kind === "connected-folder") {
     const connectedFolder = await getConnectedFolder(place.id);
-    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink }), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
+    const abs = resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink });
+    if (purpose === "target") await assertTargetOutsideNestedFolders(connectedFolder, abs);
+    return { abs, place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
   }
   if (!isStandardFolderId(place.id)) throw notFound("That folder isn’t in the sidebar anymore.");
   const abs = purpose === "read"
     ? resolveStandardFolderPath(place.id, path, userHomedir(), { finalLink })
     : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target", finalLink });
   return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
+}
+
+/**
+ * A folder items are put in, named through a Connected Folder, is that
+ * Connected Folder's own: never a nested Connected Folder or a folder inside
+ * one, whose files belong to its own Worker and History. The window opens a
+ * nested Connected Folder as itself; this refuses a request that names it
+ * through its parent. A folder that holds a nested one is the parent's.
+ *
+ * Nested Connected Folders are the ones registered inside this one, pending
+ * removals included, and any other registered Connected Folder the disk
+ * resolves to a folder inside this one, however its path is written
+ * (src/local/path-comparison.ts).
+ */
+async function assertTargetOutsideNestedFolders(connectedFolder: ConnectedFolderSummary, target: string): Promise<void> {
+  const root = ensureSafeConnectedFolderRoot(connectedFolder.connectedFolderRoot);
+  const nested = [
+    ...(await nestedRegisteredConnectedFolderPaths(root)).map((path) => ({ name: path, root: join(root, ...path.split("/")) })),
+    ...(await listConnectedFolders()).filter((other) => other.id !== connectedFolder.id).map((other) => ({ name: other.name, root: other.connectedFolderRoot })),
+  ];
+  if (!nested.length) return;
+  const own = await comparableForms(root);
+  const asked = await comparableForms(target);
+  for (const other of nested) {
+    const registered = await comparableForms(other.root);
+    // Inside this Connected Folder, not the one this is nested in.
+    if (!formsContain(own, registered) || formsContain(registered, own) || !formsContain(registered, asked)) continue;
+    throw httpError(409, `${other.name} is a Connected Folder of its own. Open that Connected Folder to put items in it.`);
+  }
 }
 
 /**
@@ -1091,6 +1123,9 @@ async function moveRows(
 
   const staged = executed.staged;
   const stagedAt = (row: { index: number }) => staged[row.index]!;
+  // What the copy read of each source, entry by entry, before it read it:
+  // an original is erased only while it is still exactly that.
+  const read: CopiedSource = new Map();
   try {
     operation.stage("copying");
     // A moved folder keeps its `.amplefile` identity and Chats: registered
@@ -1098,7 +1133,7 @@ async function moveRows(
     // disconnected one, and the original is about to go.
     for (const row of rows) {
       await operation.boundary("item");
-      staged[row.index] = await stageUnit(row.unit, { mode: "copy", withIdentity: true, operation });
+      staged[row.index] = await stageUnit(row.unit, { mode: "copy", withIdentity: true, operation, read });
     }
   } catch (error) {
     for (const row of rows) if (staged[row.index]) await takeBackUnit(staged[row.index]!).catch(() => undefined);
@@ -1149,9 +1184,21 @@ async function moveRows(
   const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
   // Which items have left their source: only those count as moved.
   const moved = new Set<number>();
+  // Which items could not leave their source, are whole there, and have their copy in the target too.
+  const inBoth = new Set<number>();
+  /** Every item that did not move, and why. */
+  const failures: Array<{ path: string; error: string }> = [];
+  /** Items that moved, but part of whose original could not be removed and is still in the source. */
+  const partlyRemoved: Array<{ path: string; error: string }> = [];
+  const duplicateIdentities: string[] = [];
+  // Whether a replacement was begun. From then on the target's restore point
+  // may be the only thing that brings back the item it took the place of
+  // (a replacement can fail after that item went), so it is never discarded
+  // or narrowed.
+  let replacementBegun = false;
   const result = (stop: Record<string, unknown>) => {
-    // An item not moved is not in the target either, unless it could not be taken back.
-    const view: ExecutedPlacement = { ...executed, staged: staged.map((unit, index) => unit && (moved.has(index) || stop.keepCopies) ? unit : null) };
+    // An item is in the target when it moved, or when it stayed in its source and its copy stayed too.
+    const view: ExecutedPlacement = { ...executed, staged: staged.map((unit, index) => unit && (moved.has(index) || inBoth.has(index)) ? unit : null) };
     const outcome = placementResult(plan, view, toRoot, names);
     return {
       mode: "move" as const,
@@ -1160,9 +1207,15 @@ async function moveRows(
       restorePoints,
       ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
       ...(policy ? outcome.extras : {}),
-      ...Object.fromEntries(Object.entries(stop).filter(([key]) => key !== "keepCopies")),
+      // `failed` is the first failure, as an answer with one failure always gave it.
+      ...(failures.length ? { failed: failures[0]!, failures } : {}),
+      ...(inBoth.size ? { notRemoved: rows.filter((row) => inBoth.has(row.index)).map((row) => rowPath(row.unit)) } : {}),
+      ...(partlyRemoved.length ? { partlyRemoved } : {}),
+      ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
+      ...stop,
     };
   };
+  const changedWhileCopied = (source: string) => httpError(409, `“${basename(source)}” changed while it was being copied, so it stays where it was.`);
   operation.stage("removing");
   for (const [position, row] of rows.entries()) {
     try {
@@ -1171,21 +1224,35 @@ async function moveRows(
       if (!isFileOperationCancelled(error)) throw error;
       return stopMoveBeforeRemoving(position);
     }
-    operation.current(basename(row.unit.source));
+    const source = row.unit.source;
+    operation.current(basename(source));
+    // Whether the removal began: only then can part of the original be gone.
+    let removing = false;
     try {
-      // A plain original goes only once its copy is whole, which is checked before the copy replaces anything.
-      if (!from && !await copyHoldsAll(row.unit.source, stagedAt(row).at!, { withIdentity: true })) {
-        throw httpError(409, `“${basename(row.unit.source)}” changed while it was being copied, so it stays where it was.`);
-      }
+      // An original that is gone by now has nothing to remove: the item is where the move put it.
+      const there = Boolean(await lstat(source).catch(() => null));
+      // An item that leaves a Connected Folder whole, for Recently Deleted,
+      // loses nothing whatever it holds by now. Any other original is erased,
+      // so it goes only while it is still the item that was copied (the same
+      // files, unchanged since the copy read them), the copy holds all of
+      // it, and no folder of it stands in the way of removing all of it.
+      // All three are checked before the copy replaces anything.
+      const erased = there && (!from || !uncovered[position]!.length);
+      if (erased && !(await sourceUnchanged(source, read) && await copyHoldsAll(source, stagedAt(row).at!, { withIdentity: true }))) throw changedWhileCopied(source);
+      if (erased) await assertRemovableWhole(source);
       if (row.unit.action === "replace") {
+        replacementBegun = true;
         const committed = await commitUnit(stagedAt(row), to ? (path) => disposeInConnectedFolder(state, to, targetSafety!, path) : disposeToSystemTrash, { mode: "copy" });
         if (committed.replaced) executed.replaced.push(committed.replaced);
       }
-      if (from) {
+      if (there && from) {
         // Each item leaving the source is that Connected Folder's delete,
         // with the delete's own receipt, as the delete routes record it.
         const movedTo = to ? to.id : "a plain folder";
         const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+          // Rechecked as it goes.
+          if (erased && !await sourceUnchanged(source, read)) throw changedWhileCopied(source);
+          removing = true;
           const value = await applyConnectedFolderDelete(state, from, rowPath(row.unit), uncovered[position]!, safety!.checkpointId, { receiptId: requestId });
           return {
             value,
@@ -1195,8 +1262,8 @@ async function moveRows(
           };
         });
         if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: rowPath(row.unit), entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
-      } else {
-        await removeMovedPlainSource(state, to!, entries[row.unit.top]!, row.unit.source, targetSafety?.checkpointId ?? null);
+      } else if (there) {
+        await removeMovedPlainSource(state, to!, entries[row.unit.top]!, source, read, targetSafety?.checkpointId ?? null, () => { removing = true; });
       }
       moved.add(row.index);
     } catch (error) {
@@ -1204,38 +1271,46 @@ async function moveRows(
       // copy in Recently Deleted; it is listed with the rest.
       const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
       if (kept) recentlyDeleted.push({ path: rowPath(row.unit), entryId: kept.entryId, restoreBy: kept.restoreBy });
-      // Everything placed is already in the target; what could not leave the
-      // source stays there, and the restore points still apply. A
-      // replacement not yet committed is taken back. A copied identity whose
-      // original is still whole in the source goes from the copy, so no
-      // identity exists twice; one whose original did not survive stays in
-      // the copy. One that could not be removed from the copy is named, not
-      // hidden.
-      const duplicateIdentities: string[] = [];
-      for (const rest of rows.slice(position)) {
-        const copy = stagedAt(rest);
-        if (!copy.committed) { await takeBackUnit(copy).catch(() => undefined); staged[rest.index] = null; continue; }
-        const left = await removeIdentityFoldersKeptAt(copy.at!, rest.unit.source).catch(() => [copy.at!]);
-        duplicateIdentities.push(...left.map((path) => relativeTo(toRoot, path)));
+      // A removal is not all-or-nothing. When part of the original went
+      // before it failed, the whole item is only in the target: it counts as
+      // moved, so Undo moves it back and never takes the copy away, and what
+      // is left in the source is named.
+      if (removing && await sourceLostPart(source, read)) {
+        moved.add(row.index);
+        partlyRemoved.push({ path: rowPath(row.unit), error: errorMessage(error) });
+        continue;
       }
-      return result({
-        keepCopies: true,
-        failed: { path: rowPath(row.unit), error: errorMessage(error) },
-        notRemoved: rows.slice(position).map((rest) => rowPath(rest.unit)),
-        ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
-      });
+      // Otherwise the original is where it was, all of it, and the next item
+      // still goes. A replacement not yet made is taken back, so the item
+      // there stays. A copy already placed stays, so the item is in both
+      // places: without a copied identity whose original is whole in the
+      // source (no identity exists twice); one that could not be removed
+      // from the copy is named, not hidden.
+      failures.push({ path: rowPath(row.unit), error: errorMessage(error) });
+      const copy = stagedAt(row);
+      if (!copy.committed) { await takeBackUnit(copy).catch(() => undefined); staged[row.index] = null; continue; }
+      inBoth.add(row.index);
+      const left = await removeIdentityFoldersKeptAt(copy.at!, source).catch(() => [copy.at!]);
+      duplicateIdentities.push(...left.map((path) => relativeTo(toRoot, path)));
     }
   }
   await removeEmptiedMergeSources(plan);
+  if (!moved.size && !inBoth.size && !replacementBegun) {
+    // Nothing is in the target and nothing left the source: no restore point has anything to put back.
+    if (to && targetSafety) await discardConnectedFolderCheckpoint(toRoot, targetSafety.checkpointId).catch(() => undefined);
+    await discardSourcePoint();
+    restorePoints.splice(0, restorePoints.length);
+  }
   return result({});
 
   /**
    * A cancel before item `position` leaves its source: that item and the
-   * rest stay where they are and their copies go, so nothing is in two
+   * rest stay where they are and their copies go, so none of them is in two
    * places. With no replacement made yet, a target Connected Folder's
-   * restore point is narrowed to what moved (a new one first, so the old one
-   * is discarded only once it is replaced); with nothing moved, every
-   * restore point goes. Once an item was replaced the target's restore point
+   * restore point is narrowed to what is in the target (a new one first, so
+   * the old one is discarded only once it is replaced); with nothing there,
+   * every restore point goes. Once a replacement was begun, the target's
+   * restore point is kept as taken. Once an item was replaced the target's restore point
    * stays as taken: it captured every item to be replaced, and those not
    * replaced are unchanged.
    */
@@ -1244,7 +1319,6 @@ async function moveRows(
     // first restore point, which covers it; its identity goes as when an
     // item cannot leave its source.
     const leftInTarget: string[] = [];
-    const duplicateIdentities: string[] = [];
     for (const rest of rows.slice(position)) {
       const copy = stagedAt(rest);
       try {
@@ -1257,17 +1331,16 @@ async function moveRows(
       }
     }
     const notDone = entries.filter((_, top) => rows.some((rest) => rest.unit.top === top && !moved.has(rest.index))).map((entry) => entry.path);
-    if (leftInTarget.length) {
-      return result({ cancelled: true, notDone, leftInTarget, ...(duplicateIdentities.length ? { duplicateIdentities } : {}) });
-    }
-    const movedPaths = rows.filter((rest) => moved.has(rest.index)).map(finalPath);
-    if (!movedPaths.length) {
+    if (leftInTarget.length) return result({ cancelled: true, notDone, leftInTarget });
+    // What is in the target: the items that moved, and the copies of items that could not leave their source.
+    const movedPaths = rows.filter((rest) => moved.has(rest.index) || inBoth.has(rest.index)).map(finalPath);
+    if (!movedPaths.length && !replacementBegun) {
       if (to && targetSafety) await discardConnectedFolderCheckpoint(toRoot, targetSafety.checkpointId).catch(() => undefined);
       await discardSourcePoint();
       restorePoints.splice(0, restorePoints.length);
       return result({ cancelled: true, notDone });
     }
-    if (to && targetSafety && !executed.replaced.length) {
+    if (to && targetSafety && movedPaths.length && !replacementBegun) {
       const narrowed = await createConnectedFolderMutationCheckpoint(toRoot, { deleteOnRestore: movedPaths, reason: "pre_move", label }).catch(() => null);
       if (narrowed) {
         await discardConnectedFolderCheckpoint(toRoot, targetSafety.checkpointId).catch(() => undefined);
@@ -1281,23 +1354,68 @@ async function moveRows(
 /**
  * Takes an item a move copied into a Connected Folder out of the plain
  * folder it came from. The removal is journaled before it happens
- * (`files.move`, the main window's surface), and refused, leaving the
- * original, when a Connected Folder has come to own the top-level item it
- * belongs to, or to sit inside it, since the move began.
+ * (`files.move`, the main window's surface) and rechecked as it happens: it
+ * is refused, leaving the original whole, when a Connected Folder has come
+ * to own the top-level item it belongs to or to sit inside it, when the
+ * original is no longer exactly what the copy read, or when a folder of it
+ * cannot be changed. The journal records a refusal or a failure as the
+ * act's error.
+ *
+ * `began` is called as the removal starts. Removing a folder is not
+ * all-or-nothing, so a failure after that may have taken part of the
+ * original; the caller asks what is left (`sourceLostPart`) before it says
+ * where the item is.
  */
 async function removeMovedPlainSource(
   state: LocalApiState,
   to: ConnectedFolderSummary,
   entry: MoveEntry,
   absolutePath: string,
+  read: CopiedSource,
   checkpointId: string | null,
+  began: () => void,
 ): Promise<void> {
+  const name = basename(absolutePath);
   await runDesktopSettingsAct(state, "files.move", async () => {
     const top = await assertStandardFolderPathUnowned(entry.place.id as StandardFolderId, entry.path, userHomedir(), { finalLink: true });
-    if (!isInside(top, absolutePath)) throw httpError(409, `“${basename(absolutePath)}” is not where it was, so it stays.`);
-    await rm(absolutePath, { recursive: true, force: false });
+    if (!isInside(top, absolutePath)) throw httpError(409, `“${name}” is not where it was, so it stays.`);
+    if (!await sourceUnchanged(absolutePath, read)) throw httpError(409, `“${name}” changed while it was being copied, so it stays where it was.`);
+    await assertRemovableWhole(absolutePath);
+    began();
+    try {
+      await rm(absolutePath, { recursive: true, force: false });
+    } catch (error) {
+      const reason = removalFailure(error);
+      throw httpError(409, await sourceLostPart(absolutePath, read)
+        ? `Part of “${name}” could not be removed: ${reason}. What is left of it is still where it was; all of it is in ${to.name}.`
+        : `“${name}” could not be removed: ${reason}. It stays where it was.`);
+    }
     return { value: null, detail: `Connected Folder ${to.id}; moved in from a plain folder${checkpointId ? `; checkpoint ${checkpointId}` : ""}` };
   });
+}
+
+/**
+ * Refuses to start removing an original that could not go whole: a folder in
+ * it, or the folder it is in, cannot be changed (src/local/file-transfer.ts,
+ * `folderBlockingRemoval`). The original's own permissions are the person's;
+ * they are never widened to remove it.
+ */
+async function assertRemovableWhole(source: string): Promise<void> {
+  const blocked = await folderBlockingRemoval(source);
+  if (!blocked) return;
+  const name = basename(source);
+  if (comparablePath(blocked) === comparablePath(source)) throw httpError(409, `“${name}” can’t be changed, so it stays where it was.`);
+  throw httpError(409, isInside(source, blocked)
+    ? `“${basename(blocked)}” in “${name}” can’t be changed, so “${name}” stays where it was.`
+    : `“${basename(blocked) || blocked}”, the folder “${name}” is in, can’t be changed, so “${name}” stays where it was.`);
+}
+
+/** Why a removal failed, in a few words: the item it stopped at when the disk names one. */
+function removalFailure(error: unknown): string {
+  const { code, path } = error as { code?: string; path?: unknown };
+  const at = typeof path === "string" && path ? basename(path) : null;
+  if ((code === "EPERM" || code === "EACCES") && at) return `“${at}” is locked or can’t be changed`;
+  return errorMessage(error).replace(/\.$/u, "");
 }
 
 async function compressEntries(body: { place?: unknown; paths?: unknown; operationId?: unknown }) {

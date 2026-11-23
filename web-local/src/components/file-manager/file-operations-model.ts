@@ -72,13 +72,18 @@ export interface TransferAnswer {
   cancelled?: boolean;
   notDone?: string[];
   leftInTarget?: string[];
-  /** Items a move copied that could not leave their source: they are in both places. */
+  /** Items a move copied that could not leave their source, where they are still whole: they are in both places. */
   notRemoved?: string[];
+  /** Items a move took out of their source except for a part it could not remove, which is still there. */
+  partlyRemoved?: Array<{ path: string; error: string }>;
   replaced?: ReplacedItem[];
   skipped?: Array<{ path: string; reason: string }>;
   skippedClashes?: Array<{ path: string; reason: string }>;
   merged?: string[];
+  /** The first item that did not go as asked, and why. */
   failed?: { path: string; error: string };
+  /** Every item a move could not take out of its source, and why. */
+  failures?: Array<{ path: string; error: string }>;
   recentlyDeleted?: Array<{ path: string; entryId: string; restoreBy: string }>;
   conflicts?: TransferConflict[];
   // Paste through the desktop.

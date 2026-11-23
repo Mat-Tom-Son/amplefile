@@ -4,7 +4,7 @@ import test from "node:test";
 import { freshHistory, pushLocation, stepBack, stepForward } from "../web-local/src/components/file-manager/file-manager-navigation.js";
 import { droppedInternalPaths, dropGoesNowhere, internalDragLifetimeMs, listDropTarget } from "../web-local/src/components/file-manager/file-manager-drops.js";
 import { itemMenuCapabilities, selectionMenuCapabilities } from "../web-local/src/components/file-manager/file-manager-menus.js";
-import { fileUndoLimit, moveBackPlan, moveBackRequests, movedBack, movedItems, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, undoneByMovingBack, type FileUndo, type TransferBody, type TransferMove } from "../web-local/src/components/file-manager/file-manager-undo.js";
+import { fileUndoLimit, isPartialUndo, moveBackPlan, moveBackReport, moveBackRequests, movedBack, movedItems, movesUndo, notPutBack, pushUndo, transferConnectedFolderIds, transferLabel, undoneByMovingBack, type FileUndo, type MoveBackAnswer, type MoveBackHost, type MoveBackPlan, type TransferBody, type TransferMove } from "../web-local/src/components/file-manager/file-manager-undo.js";
 import type { FileManagerLocation, FileManagerPlace } from "../web-local/src/components/file-manager/file-manager-places.js";
 import type { TreeEntry } from "../web-local/src/types.js";
 
@@ -107,14 +107,20 @@ test("a move a plain folder took part in is undone by moving its items back wher
 
   // What ⌘Z needs: the items, a target Connected Folder's restore points when it replaced there or a copy stayed, and whether ⇧⌘Z applies.
   const point = { connectedFolderId: "lab", checkpointId: "before" };
-  assert.equal(moveBackPlan({ moves: [], restorePoints: [point] }, lab), null, "History alone undoes it");
+  const inLab = { place: lab, path: "" };
+  const inDocuments = { place: documents, path: "Inbox" };
+  assert.equal(moveBackPlan({ moves: [], restorePoints: [point] }, inLab), null, "History alone undoes it");
   const intoLab = { moves: [{ from: "a.md", to: "a.md", fromPlace: documents }], restorePoints: [point] };
-  assert.deepEqual(moveBackPlan(intoLab, lab), { items: [{ at: { place: lab, path: "a.md" }, home: { place: documents, path: "a.md" } }], restores: [], redoable: true });
-  assert.deepEqual(moveBackPlan({ ...intoLab, replaced: [{}] }, lab)?.restores, [point]);
-  assert.equal(moveBackPlan({ ...intoLab, replaced: [{}] }, lab)?.redoable, false);
-  assert.deepEqual(moveBackPlan({ ...intoLab, notRemoved: ["b.md"] }, lab)?.restores, [point], "a copy that stayed in both places goes with the restore point");
-  assert.equal(moveBackPlan({ ...intoLab, merged: ["Photos"] }, lab)?.redoable, false);
-  assert.deepEqual(moveBackPlan({ moves: [{ from: "a.md", to: "a.md", fromPlace: lab }], restorePoints: [point], replaced: [] }, documents)?.restores, [], "the Connected Folder the items left is not restored: they are moved back into it");
+  assert.deepEqual(moveBackPlan(intoLab, inLab), { items: [{ at: { place: lab, path: "a.md" }, home: { place: documents, path: "a.md" } }], restores: [], redoable: true, leftCopies: null });
+  assert.deepEqual(moveBackPlan({ ...intoLab, replaced: [{}] }, inLab)?.restores, [point]);
+  assert.equal(moveBackPlan({ ...intoLab, replaced: [{}] }, inLab)?.redoable, false);
+  assert.deepEqual(moveBackPlan({ ...intoLab, notRemoved: ["b.md"] }, inLab)?.restores, [point], "a copy that stayed in both places goes with the restore point");
+  assert.equal(moveBackPlan({ ...intoLab, notRemoved: ["b.md"] }, inLab)?.leftCopies, null, "History takes it back, so nothing is left over");
+  assert.equal(moveBackPlan({ ...intoLab, merged: ["Photos"] }, inLab)?.redoable, false);
+  const outOfLab = { moves: [{ from: "a.md", to: "Inbox/a.md", fromPlace: lab }], restorePoints: [point], replaced: [] };
+  assert.deepEqual(moveBackPlan(outOfLab, inDocuments)?.restores, [], "the Connected Folder the items left is not restored: they are moved back into it");
+  // A copy the move left in a plain folder has no History to take it back: ⌘Z says it is still there.
+  assert.deepEqual(moveBackPlan({ ...outOfLab, notRemoved: ["Notes/b.md"], leftInTarget: ["Inbox/c.md"] }, inDocuments)?.leftCopies, { names: ["b.md", "c.md"], where: inDocuments });
 
   // One request for each folder the items came from, each item under the name it had, the folder made again if it is gone.
   const items = movedItems([
@@ -126,10 +132,10 @@ test("a move a plain folder took part in is undone by moving its items back wher
   ], documents);
   const requests = moveBackRequests(items);
   assert.deepEqual(requests.map((request) => request.body), [
-    { mode: "move", sources: [{ place: documents, path: "Inbox/a copy.md", name: "a.md" }], target: { place: lab, path: "", create: true } },
-    { mode: "move", sources: [{ place: documents, path: "Inbox/Photos/Trip/b.jpg", name: "b.jpg" }, { place: documents, path: "Inbox/Photos/Trip/c copy.jpg", name: "c.jpg" }], target: { place: lab, path: "Photos/Trip", create: true } },
-    { mode: "move", sources: [{ place: documents, path: "Inbox/d.txt", name: "d.txt" }], target: { place: desktop, path: "Desk", create: true } },
-    { mode: "move", sources: [{ place: documents, path: "Inbox/e.txt", name: "e.txt" }], target: { place: documents, path: "", create: true } },
+    { mode: "move", sources: [{ place: documents, path: "Inbox/a copy.md", name: "a.md" }], target: { place: lab, path: "", create: true }, conflicts: { apply: "skip" } },
+    { mode: "move", sources: [{ place: documents, path: "Inbox/Photos/Trip/b.jpg", name: "b.jpg" }, { place: documents, path: "Inbox/Photos/Trip/c copy.jpg", name: "c.jpg" }], target: { place: lab, path: "Photos/Trip", create: true }, conflicts: { apply: "skip" } },
+    { mode: "move", sources: [{ place: documents, path: "Inbox/d.txt", name: "d.txt" }], target: { place: desktop, path: "Desk", create: true }, conflicts: { apply: "skip" } },
+    { mode: "move", sources: [{ place: documents, path: "Inbox/e.txt", name: "e.txt" }], target: { place: documents, path: "", create: true }, conflicts: { apply: "skip" } },
   ]);
   assert.deepEqual(requests.map((request) => request.items.length), [1, 2, 1, 1]);
   assert.deepEqual(transferConnectedFolderIds(requests[0]!.body), ["lab"], "a move back into a Connected Folder waits its turn in its History");
@@ -139,7 +145,7 @@ test("a move a plain folder took part in is undone by moving its items back wher
   const redo = movedBack(second.items, [{ from: "Inbox/Photos/Trip/b.jpg", to: "Photos/Trip/b.jpg", fromPlace: documents }]);
   assert.deepEqual(redo, [{ at: { place: lab, path: "Photos/Trip/b.jpg" }, home: { place: documents, path: "Inbox/Photos/Trip/b.jpg" } }], "an item that did not go back is not redone");
   assert.deepEqual(moveBackRequests(redo).map((request) => request.body), [
-    { mode: "move", sources: [{ place: lab, path: "Photos/Trip/b.jpg", name: "b.jpg" }], target: { place: documents, path: "Inbox/Photos/Trip", create: true } },
+    { mode: "move", sources: [{ place: lab, path: "Photos/Trip/b.jpg", name: "b.jpg" }], target: { place: documents, path: "Inbox/Photos/Trip", create: true }, conflicts: { apply: "skip" } },
   ]);
   assert.deepEqual(movedBack(second.items, undefined), []);
 });
@@ -153,17 +159,19 @@ test("the step that moves items back keeps its place when it is refused partway,
   const sent: TransferBody[] = [];
   const restored: string[] = [];
   let refuse = true;
-  const host = {
-    transfer: async (body: TransferBody) => {
+  const host: MoveBackHost = {
+    transfer: async (body) => {
       // The second folder's request is refused once, as a busy Connected Folder refuses.
       if (body.target.path === "Pics" && refuse) { refuse = false; throw new Error("Finish or stop Lab’s outstanding work before moving items out of it."); }
       sent.push(body);
       const moves: TransferMove[] = body.sources.flatMap((source) => "place" in source ? [{ from: source.path, to: `${body.target.path}/${source.name}`, fromPlace: source.place }] : []);
       return { moves };
     },
-    restore: async (point: { checkpointId: string }) => { restored.push(point.checkpointId); },
+    restore: async (point) => { restored.push(point.checkpointId); },
+    nameOf: placeName,
   };
-  const undo = movesUndo("Move 2 items", items, [{ connectedFolderId: "lab", checkpointId: "before-move" }], true, host);
+  const plan = (over: Partial<MoveBackPlan>): MoveBackPlan => ({ items, restores: [], redoable: true, leftCopies: null, ...over });
+  const undo = movesUndo("Move 2 items", plan({ restores: [{ connectedFolderId: "lab", checkpointId: "before-move" }] }), host);
   assert.equal(undo.resumes, true);
   await assert.rejects(undo.run(), /outstanding work/);
   assert.deepEqual(sent.map((body) => body.target.path), ["Docs"], "the first folder's items went back");
@@ -179,13 +187,75 @@ test("the step that moves items back keeps its place when it is refused partway,
   sent.length = 0;
   const undoAgain = await redo.run();
   assert.deepEqual(sent, [
-    { mode: "move", sources: [{ place: documents, path: "Docs/a.md", name: "a.md" }, { place: documents, path: "Pics/b.jpg", name: "b.jpg" }], target: { place: lab, path: "", create: true } },
+    { mode: "move", sources: [{ place: documents, path: "Docs/a.md", name: "a.md" }, { place: documents, path: "Pics/b.jpg", name: "b.jpg" }], target: { place: lab, path: "", create: true }, conflicts: { apply: "skip" } },
   ]);
+  assert.ok(undoAgain && !isPartialUndo(undoAgain));
   assert.deepEqual(restored, ["before-move"]);
   assert.ok(undoAgain);
 
   // A move that replaced something puts it back from the restore point and is not redone.
-  const replaced = movesUndo("Move a.md", items.slice(0, 1), [{ connectedFolderId: "lab", checkpointId: "held-replaced" }], false, host);
+  const replaced = movesUndo("Move a.md", plan({ items: items.slice(0, 1), restores: [{ connectedFolderId: "lab", checkpointId: "held-replaced" }], redoable: false }), host);
   assert.equal(await replaced.run(), null);
   assert.equal(restored.at(-1), "held-replaced");
+});
+
+/** A folder by its name, or its place's, as the window names it. */
+function placeName(folder: { place: FileManagerPlace; path: string }): string {
+  return folder.path ? folder.path.slice(folder.path.lastIndexOf("/") + 1) : ({ lab: "Lab", documents: "Documents", desktop: "Desktop", home: "Home" } as Record<string, string>)[folder.place.id] ?? folder.place.id;
+}
+
+test("⌘Z never says it undid a move when an item did not go back, and says where each one is and why", async () => {
+  const documents: FileManagerPlace = { kind: "standard", id: "documents" };
+  const items = movedItems([
+    { from: "Docs/a.md", to: "a.md", fromPlace: documents },
+    { from: "Docs/b.md", to: "b.md", fromPlace: documents },
+    { from: "Docs/c.md", to: "c.md", fromPlace: documents },
+    { from: "Docs/d", to: "d", fromPlace: documents },
+    { from: "Docs/e.md", to: "e.md", fromPlace: documents },
+  ], lab);
+  // The engine's answer to the move back: one went, one's name is taken, one failed, one is in both places, one left a part behind.
+  const answer: MoveBackAnswer = {
+    moves: [{ from: "a.md", to: "Docs/a.md", fromPlace: lab }, { from: "d", to: "Docs/d", fromPlace: lab }],
+    skipped: [{ path: "Docs/b.md", reason: "chosen" }],
+    failed: { path: "c.md", error: "“c.md” changed while it was being copied, so it stays where it was." },
+    failures: [{ path: "c.md", error: "“c.md” changed while it was being copied, so it stays where it was." }, { path: "e.md", error: "Operation not permitted" }],
+    notRemoved: ["e.md"],
+    partlyRemoved: [{ path: "d", error: "Part of “d” could not be removed" }],
+  };
+  const kept = notPutBack(items, answer);
+  assert.deepEqual(kept.map((one) => [one.item.at.path, one.why]), [["b.md", "taken"], ["c.md", "failed"], ["d", "partly"], ["e.md", "both"]]);
+  assert.deepEqual(notPutBack(items.slice(0, 1), {}).map((one) => one.why), ["failed"], "an item the answer says nothing about stayed");
+  assert.deepEqual(moveBackReport(kept, { nameOf: placeName }), [
+    "“b.md” was not put back: Docs has an item with that name now. It is still in Lab.",
+    "“c.md” was not put back and is still in Lab. “c.md” changed while it was being copied, so it stays where it was.",
+    "“d” is back in Docs, but part of it could not be removed from Lab and is still there. Part of “d” could not be removed.",
+    "“e.md” is back in Docs, and is also still in Lab. Operation not permitted.",
+  ]);
+  assert.deepEqual(moveBackReport([kept[0]!, { ...kept[0]!, item: items[2]! }], { nameOf: placeName }, true), [
+    "“b.md”, “c.md” were not moved again: Docs has items with those names now. They are still in Lab.",
+  ], "items with the same outcome share a sentence, and ⇧⌘Z speaks of moving again");
+
+  const restored: string[] = [];
+  const sent: Array<TransferBody & { conflicts?: unknown }> = [];
+  const host: MoveBackHost = { transfer: async (body) => { sent.push(body); return answer; }, restore: async (point) => { restored.push(point.checkpointId); }, nameOf: placeName };
+  const undo = movesUndo("Move 5 items", { items, restores: [{ connectedFolderId: "lab", checkpointId: "before-move" }], redoable: true, leftCopies: null }, host);
+  const outcome = await undo.run();
+  assert.ok(isPartialUndo(outcome));
+  assert.deepEqual(sent.map((body) => body.conflicts), [{ apply: "skip" }], "a name taken at home is skipped, never given “ copy” and never replaced");
+  assert.match(outcome.said, /^Undid part of Move 5 items\. “b\.md” was not put back/);
+  assert.match(outcome.said, /Nothing else in Lab was changed back/);
+  assert.deepEqual(restored, [], "no restore point runs over an item that is still where the move put it");
+  assert.ok(outcome.reverse, "what did go back can be moved out again");
+
+  // Nothing went back at all.
+  const none = await movesUndo("Move b.md", { items: items.slice(1, 2), restores: [], redoable: true, leftCopies: null }, { ...host, transfer: async () => ({ moves: [], skipped: [{ path: "Docs/b.md" }] }) }).run();
+  assert.ok(isPartialUndo(none));
+  assert.equal(none.said, "Could not undo Move b.md. “b.md” was not put back: Docs has an item with that name now. It is still in Lab.");
+  assert.equal(none.reverse, null);
+
+  // Every item went back, but the move had left a copy in a plain folder, which no History takes away.
+  const out = movedItems([{ from: "a.md", to: "Inbox/a.md", fromPlace: lab }], documents);
+  const left = await movesUndo("Move 2 items", { items: out, restores: [], redoable: true, leftCopies: { names: ["b.md"], where: { place: documents, path: "Inbox" } } }, { ...host, transfer: async () => ({ moves: [{ from: "Inbox/a.md", to: "a.md", fromPlace: documents }] }) }).run();
+  assert.ok(isPartialUndo(left));
+  assert.equal(left.said, "Undid Move 2 items. The copy of “b.md” that the move left in Inbox is still there.");
 });
