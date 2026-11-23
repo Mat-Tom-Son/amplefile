@@ -219,6 +219,14 @@ Apple submission.
   line. The signed candidate launched on a temporary profile and read the
   source repository's feed before publication; an installed update from
   `0.1.7` to `0.1.8` is not recorded here.
+- **0.1.9** was published to `Mat-Tom-Son/amplefile` on November 23, 2026,
+  from the annotated source tag `v0.1.9` (commit `5e9807a`): the window as a
+  full file manager on the Mac, with any folder on the computer, Drives with
+  Eject, the system Trash, folder tabs, and more than one window, and Finder's
+  Open With for folders. The signed candidate was not launched before
+  publication. `npm run desktop:verify:feed:mac -- --version 0.1.9` reported
+  that the source repository's feed offers it; an installed update from
+  `0.1.8` to `0.1.9` is not recorded here.
 
 ## Release procedure
 
