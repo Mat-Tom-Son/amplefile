@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,7 +12,7 @@ import { gzipSync } from "node:zlib";
 import JSZip from "jszip";
 
 import { abandonedCompressAfterMs, compressInto } from "../src/local/file-transfer.js";
-import { archiveEntrySegments, extractArchive, extractFolderName, linkStaysInside } from "../src/local/archive-extract.js";
+import { archiveEntrySegments, extractArchive, extractClash, extractFolderName, linkStaysInside } from "../src/local/archive-extract.js";
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
 import { setZip64ForTests } from "../src/local/zip-writer.js";
 
@@ -20,12 +20,13 @@ const exec = promisify(execFile);
 import { cancelFileOperation, runFileOperation, setFileOperationBoundaryHookForTests } from "../src/local/file-operations.js";
 
 /**
- * Extract (src/local/archive-extract.ts): an archive becomes a folder beside
+ * Extract (src/local/archive-extract.ts): an archive's one file or folder
+ * lands beside it as itself, several items land in a new folder named after
  * it, and every archive is treated as hostile.
  */
 
 async function folder(t: test.TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "archive-extract-"));
+  const root = await mkdtemp(join(await realpath(tmpdir()), "archive-extract-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
@@ -92,16 +93,17 @@ async function listTree(path: string, prefix = ""): Promise<string[]> {
   return found;
 }
 
-test("an archive extracts into a new folder beside it, named after it, never replacing one", async (t) => {
+test("an archive of several items extracts into a new folder beside it, named after it, never replacing one", async (t) => {
   const root = await folder(t);
   await writeFile(join(root, "Photos.zip"), await zipWith({ "a.jpg": { content: "a" }, "Trip/b.jpg": { content: "b" }, "Empty/": { dir: true } }));
   const first = await extractArchive(join(root, "Photos.zip"));
-  assert.equal(first.folder, join(root, "Photos"));
-  assert.deepEqual(await listTree(first.folder), ["Empty/", "Trip/", "Trip/b.jpg", "a.jpg"]);
-  assert.equal(await readFile(join(first.folder, "Trip", "b.jpg"), "utf8"), "b");
+  assert.equal(first.path, join(root, "Photos"));
+  assert.equal(first.kind, "folder");
+  assert.deepEqual(await listTree(first.path), ["Empty/", "Trip/", "Trip/b.jpg", "a.jpg"]);
+  assert.equal(await readFile(join(first.path, "Trip", "b.jpg"), "utf8"), "b");
   assert.equal(first.files, 2);
   const second = await extractArchive(join(root, "Photos.zip"));
-  assert.equal(second.folder, join(root, "Photos copy"), "a taken name gets “copy”");
+  assert.equal(second.path, join(root, "Photos copy"), "a taken name gets “copy”");
   assert.equal(await readFile(join(root, "Photos", "a.jpg"), "utf8"), "a", "the first folder stays");
   assert.deepEqual((await readdir(root)).sort(), ["Photos", "Photos copy", "Photos.zip"], "no working folder is left");
   assert.equal(extractFolderName("backup.tar.gz"), "backup");
@@ -115,8 +117,103 @@ test("a compressed folder extracts back to the folder, not a folder inside one",
   const archive = await compressInto([join(root, "Trip")], root);
   await rm(join(root, "Trip"), { recursive: true });
   const extracted = await extractArchive(archive);
-  assert.equal(extracted.folder, join(root, "Trip"));
+  assert.equal(extracted.path, join(root, "Trip"));
   assert.equal(await readFile(join(root, "Trip", "Day 1", "plan.md"), "utf8"), "plan");
+});
+
+test("an archive of one file extracts as that file beside it, as Finder's Archive Utility does", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "report.txt"), "the report");
+  await chmod(join(root, "report.txt"), 0o755);
+  const archive = await compressInto([join(root, "report.txt")], root);
+  assert.equal(archive, join(root, "report.txt.zip"));
+  // Beside the file it came from, it keeps both, Finder's way.
+  const beside = await extractArchive(archive);
+  assert.equal(beside.path, join(root, "report copy.txt"));
+  assert.equal(beside.kind, "file");
+  assert.equal(await readFile(beside.path, "utf8"), "the report");
+  assert.equal((await stat(beside.path)).mode & 0o7777, 0o755, "its execute bits come back");
+  await rm(join(root, "report.txt"));
+  await rm(beside.path);
+  const back = await extractArchive(archive);
+  assert.equal(back.path, join(root, "report.txt"), "not report.txt/report.txt");
+  assert.deepEqual((await readdir(root)).sort(), ["report.txt", "report.txt.zip"], "no working folder is left");
+
+  await writeFile(join(root, "notes.tgz"), gzipSync(tar(tarEntry("notes.md", { content: "notes" }))));
+  const tarred = await extractArchive(join(root, "notes.tgz"));
+  assert.equal(tarred.path, join(root, "notes.md"));
+  assert.equal(await readFile(tarred.path, "utf8"), "notes");
+});
+
+test("an archive of one folder extracts as that folder, whatever its name, and its links must stay inside it", async (t) => {
+  const root = await folder(t);
+  // Archive Utility's zips carry __MACOSX beside the folder: it is not an item.
+  await writeFile(join(root, "Photos.zip"), await zipWith({ "Holiday/day1.jpg": { content: "1" }, "Holiday/Inner/day2.jpg": { content: "2" }, "__MACOSX/Holiday/._day1.jpg": { content: "fork" } }));
+  const zipped = await extractArchive(join(root, "Photos.zip"));
+  assert.equal(zipped.path, join(root, "Holiday"), "not Photos/Holiday");
+  assert.equal(zipped.kind, "folder");
+  assert.deepEqual(await listTree(zipped.path), ["Inner/", "Inner/day2.jpg", "day1.jpg"]);
+
+  await writeFile(join(root, "outside"), "not to be reached");
+  await writeFile(join(root, "tool.tar"), tar(
+    tarEntry("Tool/", { type: "5" }),
+    tarEntry("Tool/lib/real", { content: "real" }),
+    tarEntry("Tool/bin/run", { type: "2", linkName: "../lib/real" }),
+    // Inside the archive's top, but outside the folder once it lands beside the archive.
+    tarEntry("Tool/up", { type: "2", linkName: "../outside" }),
+    tarEntry("Tool", { type: "2", linkName: "elsewhere" }),
+  ));
+  const tarred = await extractArchive(join(root, "tool.tar"));
+  assert.equal(tarred.path, join(root, "Tool"));
+  assert.equal(await readFile(join(tarred.path, "bin", "run"), "utf8"), "real");
+  assert.ok(!(await lstat(join(tarred.path, "up")).catch(() => null)), "a link leading out of the folder is left out");
+  assert.deepEqual(tarred.skipped.map((item) => `${item.reason}:${item.path}`).sort(), ["link:Tool/up", "repeat:Tool"]);
+  assert.equal(tarred.links, 1);
+});
+
+test("an archive whose one top item is a link, or that holds nothing, still makes a folder", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "shortcut.tar"), tar(tarEntry("shortcut", { type: "2", linkName: "target" })));
+  const linked = await extractArchive(join(root, "shortcut.tar"));
+  assert.equal(linked.path, join(root, "shortcut"), "the link stays inside a new folder, where it was checked");
+  assert.equal(linked.kind, "folder");
+  assert.equal(await readlink(join(linked.path, "shortcut")), "target");
+
+  await writeFile(join(root, "empty.zip"), await zipWith({ "__MACOSX/._x": { content: "fork" } }));
+  const empty = await extractArchive(join(root, "empty.zip"));
+  assert.equal(empty.path, join(root, "empty"));
+  assert.deepEqual(await readdir(empty.path), []);
+});
+
+test("the name-clash check names what Extract will make, reading no more of the archive than it must", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "report.txt.zip"), await zipWith({ "report.txt": { content: "r" } }));
+  assert.equal(await extractClash(join(root, "report.txt.zip")), null, "a free name is no clash");
+  await writeFile(join(root, "report.txt"), "old");
+  assert.deepEqual(await extractClash(join(root, "report.txt.zip")), { name: "report.txt", kind: "file", single: true });
+
+  await writeFile(join(root, "Photos.zip"), await zipWith({ "Holiday/a.jpg": { content: "a" } }));
+  assert.equal(await extractClash(join(root, "Photos.zip")), null);
+  await mkdir(join(root, "Photos"));
+  assert.equal(await extractClash(join(root, "Photos.zip")), null, "a taken archive name does not matter when the one folder's is free");
+  await mkdir(join(root, "Holiday"));
+  assert.deepEqual(await extractClash(join(root, "Photos.zip")), { name: "Holiday", kind: "folder", single: true });
+
+  // The first item's name is taken, but a second item makes it a folder of the archive's name, which is free.
+  await writeFile(join(root, "mixed.tgz"), gzipSync(tar(tarEntry("Holiday/a.jpg", { content: "a" }), tarEntry("b.jpg", { content: "b" }))));
+  assert.equal(await extractClash(join(root, "mixed.tgz")), null);
+  await mkdir(join(root, "mixed"));
+  assert.deepEqual(await extractClash(join(root, "mixed.tgz")), { name: "mixed", kind: "folder", single: false });
+
+  // A folder of the archive's own name is its name either way: the rest, here damaged, is never read.
+  const whole = gzipSync(tar(tarEntry("bundle/", { type: "5" }), tarEntry("bundle/big.bin", { content: randomBytes(400_000) })));
+  await writeFile(join(root, "bundle.tgz"), whole.subarray(0, whole.length - 200_000));
+  await mkdir(join(root, "bundle"));
+  assert.deepEqual(await extractClash(join(root, "bundle.tgz")), { name: "bundle", kind: "folder", single: false });
+  await rm(join(root, "bundle"), { recursive: true });
+  assert.equal(await extractClash(join(root, "bundle.tgz")), null, "nor when neither name is taken");
+  await assert.rejects(extractArchive(join(root, "bundle.tgz")), "extracting still reads all of it");
+  assert.ok(!existsSync(join(root, "bundle")));
 });
 
 test("tar and gzipped tar archives extract, with long names", async (t) => {
@@ -133,11 +230,11 @@ test("tar and gzipped tar archives extract, with long names", async (t) => {
   await writeFile(join(root, "bundle2.tgz"), gzipSync(body));
   for (const [archive, name] of [["bundle.tar", "bundle"], ["bundle2.tgz", "bundle2"]] as const) {
     const result = await extractArchive(join(root, archive));
-    assert.equal(result.folder, join(root, name));
-    assert.equal(await readFile(join(result.folder, "docs", "readme.txt"), "utf8"), "hello");
-    assert.equal(await readFile(join(result.folder, ...longName.split("/")), "utf8"), "long");
-    assert.equal((await stat(join(result.folder, "big.bin"))).size, 3000);
-    assert.ok(!existsSync(join(result.folder, "ignored-name")));
+    assert.equal(result.path, join(root, name));
+    assert.equal(await readFile(join(result.path, "docs", "readme.txt"), "utf8"), "hello");
+    assert.equal(await readFile(join(result.path, ...longName.split("/")), "utf8"), "long");
+    assert.equal((await stat(join(result.path, "big.bin"))).size, 3000);
+    assert.ok(!existsSync(join(result.path, "ignored-name")));
   }
 });
 
@@ -179,7 +276,7 @@ test("links leading outside, hard links, special files, and Connected Folder or 
     "__MACOSX/._keep.txt": { content: "fork" },
   }));
   const zipped = await extractArchive(join(root, "mixed.zip"));
-  assert.deepEqual(await listTree(zipped.folder), ["Sub/", "keep.txt"]);
+  assert.deepEqual(await listTree(zipped.path), ["Sub/", "keep.txt"]);
   assert.deepEqual(zipped.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
     "configuration:.amplefile/connected-folder.json",
     "configuration:Sub/.AmpleFile/x.json",
@@ -199,7 +296,9 @@ test("links leading outside, hard links, special files, and Connected Folder or 
     tarEntry("to-config", { type: "2", linkName: ".pi/settings.json" }),
   ));
   const tarred = await extractArchive(join(root, "mixed.tar"));
-  assert.deepEqual(await listTree(tarred.folder), ["keep.txt"]);
+  // What is left out is not an item: the one file left lands beside the archive.
+  assert.equal(tarred.path, join(root, "keep.txt"));
+  assert.equal(tarred.kind, "file");
   assert.deepEqual(tarred.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
     "configuration:.pi/settings.json", "hard-link:hardlink", "link:symlink", "link:to-config", "link:up", "special:device", "special:pipe",
   ]);
@@ -222,12 +321,12 @@ test("links that stay inside the new folder are made, and one that escapes throu
   ));
   await writeFile(join(root, "outside"), "not to be reached");
   const result = await extractArchive(join(root, "links.tar"));
-  assert.equal(await readFile(join(result.folder, "bin", "thing"), "utf8"), "library", "a link inside the folder works");
-  assert.equal(await readlink(join(result.folder, "bin", "thing")), "../lib/libthing.so", "kept as written");
-  assert.equal(await readlink(join(result.folder, "dangling")), "not-in-the-archive");
-  assert.ok(existsSync(join(result.folder, "here")));
-  assert.ok(!existsSync(join(result.folder, "escape")), "a link reaching outside through another link is removed");
-  assert.ok(!(await lstat(join(result.folder, "loop")).catch(() => null)), "a link to itself is removed");
+  assert.equal(await readFile(join(result.path, "bin", "thing"), "utf8"), "library", "a link inside the folder works");
+  assert.equal(await readlink(join(result.path, "bin", "thing")), "../lib/libthing.so", "kept as written");
+  assert.equal(await readlink(join(result.path, "dangling")), "not-in-the-archive");
+  assert.ok(existsSync(join(result.path, "here")));
+  assert.ok(!existsSync(join(result.path, "escape")), "a link reaching outside through another link is removed");
+  assert.ok(!(await lstat(join(result.path, "loop")).catch(() => null)), "a link to itself is removed");
   assert.deepEqual(result.skipped.map((item) => `${item.reason}:${item.path}`).sort(), ["link:escape", "link:loop"]);
   assert.equal(result.links, 4);
 });
@@ -240,7 +339,7 @@ test("Extract keeps the execute bits an archive records, never a set-id or stick
     "bin/": { dir: true, unixPermissions: 0o041777 },
   }));
   const zipped = await extractArchive(join(root, "tools.zip"));
-  const mode = async (path: string) => (await stat(join(zipped.folder, path))).mode & 0o7777;
+  const mode = async (path: string) => (await stat(join(zipped.path, path))).mode & 0o7777;
   assert.equal(await mode("run.sh"), 0o755);
   assert.equal(await mode("notes.txt"), 0o644, "not writable by others");
   assert.equal(await mode("own.sh"), 0o744);
@@ -248,8 +347,8 @@ test("Extract keeps the execute bits an archive records, never a set-id or stick
 
   await writeFile(join(root, "tools.tar"), tar(tarEntry("run.sh", { content: "#!/bin/sh\n", mode: 0o6777 }), tarEntry("data", { content: "d", mode: 0o600 })));
   const tarred = await extractArchive(join(root, "tools.tar"));
-  assert.equal((await stat(join(tarred.folder, "run.sh"))).mode & 0o7777, 0o755);
-  assert.equal((await stat(join(tarred.folder, "data"))).mode & 0o7777, 0o644);
+  assert.equal((await stat(join(tarred.path, "run.sh"))).mode & 0o7777, 0o755);
+  assert.equal((await stat(join(tarred.path, "data"))).mode & 0o7777, 0o644);
 
   // What Compress writes keeps its modes, so an executable round-trips.
   await mkdir(join(root, "Tool"));
@@ -258,7 +357,7 @@ test("Extract keeps the execute bits an archive records, never a set-id or stick
   const archive = await compressInto([join(root, "Tool")], root);
   await rm(join(root, "Tool"), { recursive: true });
   const back = await extractArchive(archive);
-  assert.equal((await stat(join(back.folder, "go"))).mode & 0o7777, 0o755);
+  assert.equal((await stat(join(back.path, "go"))).mode & 0o7777, 0o755);
 });
 test("a zip entry that inflates past its declared size is refused, and the disk guard stops what does not fit", async (t) => {
   const root = await folder(t);
@@ -302,8 +401,8 @@ test("Extract takes any number of items, and Compress writes the 64-bit records 
   }
   await rm(join(root, "Many"), { recursive: true });
   const back = await extractArchive(archive);
-  assert.equal((await readdir(back.folder)).length, 301);
-  assert.equal(await readFile(join(back.folder, "f299.txt"), "utf8"), "file 299");
+  assert.equal((await readdir(back.path)).length, 301);
+  assert.equal(await readFile(join(back.path, "f299.txt"), "utf8"), "file 299");
   assert.equal(back.files, 301);
 });
 test("damaged, protected, and unknown archives are refused plainly", async (t) => {
@@ -359,5 +458,5 @@ test("Extract clears working folders an interrupted Extract left", async (t) => 
   await utimes(stale, old, old);
   await writeFile(join(root, "a.zip"), await zipWith({ "a.txt": { content: "a" } }));
   await extractArchive(join(root, "a.zip"));
-  assert.deepEqual((await readdir(root)).sort(), ["a", "a.zip"]);
+  assert.deepEqual((await readdir(root)).sort(), ["a.txt", "a.zip"]);
 });

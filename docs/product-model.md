@@ -280,7 +280,7 @@ other surface.
   Compress, and dragging it. A copied or moved link is made again as a link
   pointing where it did (a relative link is kept as written, so it can read
   as broken in its new folder); Compress stores it as a link, and Extract
-  makes a link again when it points inside the new folder. History keeps no
+  makes a link again when it points inside what Extract made. History keeps no
   copy of a link, so a link deleted in a Connected Folder waits in Recently
   Deleted, and History's restore point undoes its rename or move. Nothing
   is ever written through a link or into a linked folder: a link is never
@@ -349,16 +349,22 @@ other surface.
     under a hidden working name, at any size (with the 64-bit zip records a
     large archive needs) and with each item's Unix mode, and stores a link
     as a link; it refuses to start, and stops, when the disk would keep less
-    than 256 MB free. **Extract** turns a `.zip`, `.tar`, `.tar.gz`, or
-    `.tgz` into a new folder beside it named after it (an archive whose
-    whole content is one folder of that name gives that folder), at any
-    size, and selects it when done; it is the archive's menu item, and
-    double-clicking an archive still opens it in its default app. Nothing
-    extracted is runnable beyond the execute bits the archive records
-    (never setuid, setgid, or sticky); a link is made only when it points
-    inside the new folder; hard links, special files, and entries that would
-    land outside the folder are left out or refused; and the same 256 MB
-    disk guard applies. A damaged or password-protected archive says so.
+    than 256 MB free. **Extract** works as Finder's Archive Utility does: a
+    `.zip`, `.tar`, `.tar.gz`, or `.tgz` whose whole content is one file or
+    one folder, of any name, gives that item beside it, so Compress then
+    Extract gives the item back; an archive of several items gives a new
+    folder beside it named after it. Archive Utility's `__MACOSX` and what
+    Extract leaves out are not items. It works at any size and selects what
+    it made when done; a taken name asks the name-clash question about that
+    name (reading only enough of the archive to know it); it is the
+    archive's menu item, and double-clicking an archive still opens it in
+    its default app. Nothing extracted is runnable beyond the execute bits
+    the archive records (never setuid, setgid, or sticky); a link is made
+    only when it points inside what Extract made (inside the one folder,
+    when that is all the archive holds); hard links, special files, and
+    entries that would land outside are left out or refused; and the same
+    256 MB disk guard applies. A damaged or password-protected archive says
+    so.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it, above the place's top too, where
   it lives (see **Other folders**); a long path keeps the disk and its

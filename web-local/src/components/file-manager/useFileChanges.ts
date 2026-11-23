@@ -228,9 +228,10 @@ export function useFileChanges(context: FileChangesContext) {
   }
 
   /**
-   * Extract: a `.zip`, `.tar`, `.tar.gz`, or `.tgz` becomes a new folder
-   * beside it, named after it, with progress, Stop, and the name-clash
-   * question when that name is taken; the new folder is selected when done.
+   * Extract: a `.zip`, `.tar`, `.tar.gz`, or `.tgz` gives its one file or
+   * folder beside it, or a new folder named after it holding its several
+   * items, with progress, Stop, and the name-clash question when that name is
+   * taken; what was made is selected when done.
    */
   async function extractArchive(entry: TreeEntry) {
     if (entry.kind !== "file" || entry.link || !isExtractableArchive(entry.name)) return;

@@ -59,7 +59,7 @@ export interface ReplacedItem { path: string; recovery: "history" | "recently-de
 /** The transfer engine's answer to a copy, move, Duplicate, paste, Compress, or Extract, every optional part included. */
 export interface TransferAnswer {
   mode?: string;
-  /** Compress and Extract: the new archive or folder, or null when nothing was made. */
+  /** Compress and Extract: the new archive, or what Extract made (the archive's one item or a new folder), or null when nothing was made. */
   path?: string | null;
   written: string[];
   restorePoints: TransferRestorePoint[];

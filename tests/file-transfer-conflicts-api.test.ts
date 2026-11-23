@@ -368,6 +368,45 @@ test("Extract of an archive with loose items asks about the new folder's name li
   assert.deepEqual(await visible(folder.connectedFolderRoot), ["photos", "photos.zip"], "no working folder is left");
 });
 
+test("Extract of an archive holding one file lands that file beside it and asks about its name", async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  await writeFile(join(folder.connectedFolderRoot, "report.txt"), "old report");
+  const place = { kind: "connected-folder", id: folder.id };
+  const compressed = await call("/api/file-transfer/compress", { method: "POST", body: { place, paths: ["report.txt"] } });
+  assert.equal(compressed.status, 201, JSON.stringify(compressed.body));
+  assert.equal(compressed.body!.path, "report.txt.zip");
+  // A newer report travels in the archive.
+  const zip = new JSZip();
+  zip.file("report.txt", "new report");
+  await writeFile(join(folder.connectedFolderRoot, "report.txt.zip"), await zip.generateAsync({ type: "nodebuffer" }));
+  const extract = (conflicts?: unknown) => call("/api/file-transfer/extract", { method: "POST", body: { place, path: "report.txt.zip", ...(conflicts ? { conflicts } : {}) } });
+
+  const check = await extract({ check: true });
+  assert.equal(check.status, 200, JSON.stringify(check.body));
+  assert.deepEqual(check.body!.conflicts.map((conflict: any) => [conflict.key, conflict.source.kind, conflict.existing.kind, conflict.canMerge]), [["report.txt", "file", "file", false]]);
+
+  const skipped = await extract({ items: { "report.txt": "skip" } });
+  assert.equal(skipped.status, 200, JSON.stringify(skipped.body));
+  assert.equal(skipped.body!.path, null);
+  assert.deepEqual(skipped.body!.skippedClashes, [{ path: "report.txt", reason: "chosen" }]);
+  assert.deepEqual(await visible(folder.connectedFolderRoot), ["report.txt", "report.txt.zip"], "a skipped Extract writes nothing");
+
+  const replaced = await extract({ items: { "report.txt": "replace" } });
+  assert.equal(replaced.status, 201, JSON.stringify(replaced.body));
+  assert.equal(replaced.body!.path, "report.txt", "the file itself, not a folder holding it");
+  assert.deepEqual(replaced.body!.replaced, [{ path: "report.txt", recovery: "history" }]);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "report.txt"), "utf8"), "new report");
+  assert.deepEqual(await visible(folder.connectedFolderRoot), ["report.txt", "report.txt.zip"], "no working folder is left");
+  await restore(call, replaced.body!.restorePoints);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "report.txt"), "utf8"), "old report");
+
+  const kept = await extract({ items: { "report.txt": "keep-both" } });
+  assert.equal(kept.status, 201, JSON.stringify(kept.body));
+  assert.equal(kept.body!.path, "report copy.txt");
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "report copy.txt"), "utf8"), "new report");
+});
+
 test("a replaced item History cannot keep goes whole into Recently Deleted", async (t) => {
   const { api, call } = await sandboxApi(t);
   const source = await connectedFolder(call, "Source");
