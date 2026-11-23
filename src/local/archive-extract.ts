@@ -1,9 +1,12 @@
+import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
-import { basename, dirname, join, posix, sep } from "node:path";
+import { basename, dirname, join, posix, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
+import { promisify } from "node:util";
 import { createGunzip, createInflateRaw, crc32 } from "node:zlib";
 
+import { isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
 import {
   claimWorkingPath,
@@ -20,11 +23,15 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
  * content is one file or folder gives that item beside it, under its own name
  * ("report.txt.zip" → "report.txt", "Trip.zip" → "Trip"), and an archive of
  * several items gives a new folder beside it named after it ("Photos.zip" →
- * "Photos"). A taken name gets " copy" unless the caller chose otherwise
- * (src/local/file-conflicts.ts). Everything is written under a hidden working
- * name and takes its name only once complete, so a refused, failed, or
- * cancelled Extract leaves nothing behind. Compressing an item and extracting
- * the archive gives the item back.
+ * "Photos"). A lone link, a lone hidden item, a lone file or folder named as
+ * Pi's project instructions (`AGENTS.md`, `CLAUDE.md`), and an empty archive
+ * also give that folder, so Extract never puts something hidden or read as
+ * instructions straight beside the archive, and never names its folder with a
+ * leading dot (".agents.zip" → "agents"). A taken name gets " copy" unless the
+ * caller chose otherwise (src/local/file-conflicts.ts). Everything is written
+ * under a hidden working name and takes its name only once complete, so a
+ * refused, failed, or cancelled Extract leaves nothing behind. Compressing an
+ * item and extracting the archive gives the item back.
  *
  * Every archive is treated as hostile:
  * - an entry that would land outside what Extract makes (an absolute path, a
@@ -32,7 +39,12 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
  * - a symbolic link is made only when it points inside what Extract makes,
  *   the one folder when that is all the archive holds (it is checked again
  *   once made); hard links and special files are left out;
- * - nothing is written into `.amplefile/` or `.pi/`;
+ * - nothing is written into `.amplefile/`, `.pi/`, or `.work-fold/`
+ *   (src/local/connected-folder-path-policy.ts);
+ * - on a Mac, an archive marked as downloaded (`com.apple.quarantine`) passes
+ *   that mark to everything Extract makes before it takes its name, as
+ *   Archive Utility does, so Gatekeeper checks an app from it when it first
+ *   opens;
  * - a file keeps the execute bits the archive records, never a set-id or
  *   sticky bit and never more than 0755; folders are 0755;
  * - a zip entry that inflates past the size it declares, or whose checksum
@@ -91,13 +103,30 @@ export function archiveFormat(name: string): ArchiveFormat | null {
   return null;
 }
 
-/** The folder an archive of several items extracts into: its name without the archive's extension. */
+/**
+ * The folder an archive of several items extracts into: its name without the
+ * archive's extension, and without a leading dot, so the folder is never
+ * hidden (".agents.zip" → "agents").
+ */
 export function extractFolderName(name: string): string {
   const lower = name.toLowerCase();
+  let folder = `${name} folder`;
   for (const extension of [".tar.gz", ".tgz", ".tar", ".zip"]) {
-    if (lower.endsWith(extension) && name.length > extension.length) return name.slice(0, -extension.length);
+    if (lower.endsWith(extension) && name.length > extension.length) { folder = name.slice(0, -extension.length); break; }
   }
-  return `${name} folder`;
+  return folder.replace(/^\.+/, "") || `${name.replace(/^\.+/, "")} folder`;
+}
+
+/** The files Pi reads as a folder's instructions (its resource loader's context files), in any case. */
+const instructionFileNames = new Set(["agents.md", "agents.override.md", "claude.md"]);
+
+/**
+ * Whether an archive's lone item may land beside it as itself: not when it is
+ * hidden (`.env`, `.agents/`), where a person would not see it arrive and Pi
+ * may load it, and not when Pi would read it as the folder's instructions.
+ */
+function landsAsItself(name: string): boolean {
+  return !name.startsWith(".") && !instructionFileNames.has(name.toLowerCase());
 }
 
 /** Checks that `archive` is one Extract opens, before anything is written. */
@@ -128,7 +157,10 @@ export async function extractArchive(archive: string, operation: FileOperationCo
  * written, and the archive is read by the rules Extract writes by, only as
  * far as it must be: a zip's directory; a tar's headers up to its first
  * item, then on to a second item or the end only when that item's name or
- * the archive's is taken and they could differ.
+ * the archive's is taken and they could differ. A tar is read for at most
+ * 64 MB each time; one whose second item is further
+ * in is taken to hold one item, and should it hold more, they extract into a
+ * folder that keeps both names rather than replacing anything.
  */
 export async function extractClash(archive: string): Promise<Pick<ExtractTarget, "name" | "kind"> | null> {
   await assertExtractable(archive);
@@ -152,6 +184,7 @@ export async function stageExtract(archive: string, operation: FileOperationCont
   const format = archiveFormat(basename(archive))!;
   const info = await lstat(archive);
   const parent = dirname(archive);
+  const quarantine = await readQuarantine(archive);
   await removeAbandonedWorkingItems(parent, extractWorkingPrefix);
   const working = claimWorkingPath(parent, extractWorkingPrefix);
   const discard = async () => {
@@ -173,9 +206,11 @@ export async function stageExtract(archive: string, operation: FileOperationCont
     let target = writer.top.target(basename(archive));
     // What the entries said is what was written; should it not be, the items go in a folder as any several do.
     if (target.single && !await holdsOnly(working.path, target)) target = { name: extractFolderName(basename(archive)), kind: "folder", single: false };
+    const path = target.single ? join(working.path, target.name) : working.path;
+    if (quarantine) await applyQuarantine(quarantine, path, operation);
     return {
       ...target,
-      path: target.single ? join(working.path, target.name) : working.path,
+      path,
       parent,
       files: writer.files,
       folders: writer.folders,
@@ -198,13 +233,85 @@ async function holdsOnly(folder: string, target: ExtractTarget): Promise<boolean
   return target.kind === "folder" ? info.isDirectory() : info.isFile();
 }
 
-/** Reads an archive's entry names, writing nothing, until `enough` items are at its top or it ends. */
+/** The most of a tar's content the clash check reads, each time, before taking what it has seen as the answer. */
+const defaultSurveyReadLimit = 64 * 1024 * 1024;
+let surveyReadLimit = defaultSurveyReadLimit;
+
+/** Lets a test lower the clash check's reading limit; null restores it. */
+export function setSurveyReadLimitForTests(bytes: number | null): void {
+  surveyReadLimit = bytes ?? defaultSurveyReadLimit;
+}
+
+/**
+ * Reads an archive's entry names, writing nothing, until `enough` items are
+ * at its top, it ends, or a tar's reading reaches the survey's limit.
+ */
 async function surveyArchive(archive: string, enough: number): Promise<TopLevelItems> {
-  const survey = new ExtractSurvey(enough);
+  const survey = new ExtractSurvey(enough, surveyReadLimit);
   const format = archiveFormat(basename(archive))!;
   if (format === "zip") await surveyZip(archive, (await lstat(archive)).size, survey);
-  else await readTar(archive, format === "tar.gz", survey, untrackedFileOperation);
+  else {
+    try {
+      await readTar(archive, format === "tar.gz", survey, untrackedFileOperation);
+    } catch (error) {
+      if (!(error instanceof ReadLimitReached)) throw error;
+    }
+  }
   return survey.top;
+}
+
+// ---- quarantine ----
+
+const quarantineAttribute = "com.apple.quarantine";
+const execFileAsync = promisify(execFile);
+
+/**
+ * The quarantine mark macOS keeps on a downloaded archive, as hex, or null
+ * when it has none or this is not a Mac. Read with the system's `xattr`, no
+ * shell; failing to read it refuses the Extract rather than dropping it.
+ */
+async function readQuarantine(archive: string): Promise<string | null> {
+  if (process.platform !== "darwin") return null;
+  try {
+    const { stdout } = await execFileAsync("/usr/bin/xattr", ["-p", "-x", quarantineAttribute, resolve(archive)], { encoding: "utf8" });
+    const hex = stdout.replace(/\s+/g, "");
+    if (/^(?:[0-9a-f]{2})+$/i.test(hex)) return hex;
+  } catch (error) {
+    if (/no such xattr/i.test(String((error as { stderr?: unknown }).stderr ?? ""))) return null;
+  }
+  throw badRequest("AmpleFile couldn’t read whether this archive was downloaded. Nothing was extracted.");
+}
+
+/** The most paths one `xattr` call names, and the most characters they take together. */
+const quarantineBatch = { paths: 256, characters: 128 * 1024 };
+
+/**
+ * Marks `top` and everything inside it with the archive's quarantine, never
+ * through a link (a link is marked itself), before any of it takes its name.
+ */
+async function applyQuarantine(hex: string, top: string, operation: FileOperationControl): Promise<void> {
+  let batch: string[] = [];
+  let characters = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    await operation.boundary("entry");
+    try {
+      await execFileAsync("/usr/bin/xattr", ["-w", "-x", "-s", quarantineAttribute, hex, ...batch]);
+    } catch {
+      throw badRequest("This archive was downloaded, and AmpleFile couldn’t mark what it extracted as downloaded too. Nothing was extracted.");
+    }
+    batch = [];
+    characters = 0;
+  };
+  const pending = [resolve(top)];
+  while (pending.length) {
+    const path = pending.pop()!;
+    batch.push(path);
+    characters += path.length + 1;
+    if (batch.length >= quarantineBatch.paths || characters >= quarantineBatch.characters) await flush();
+    if ((await lstat(path)).isDirectory()) for (const name of await readdir(path)) pending.push(join(path, name));
+  }
+  await flush();
 }
 
 /**
@@ -232,10 +339,13 @@ class TopLevelItems {
     return null;
   }
 
-  /** The archive's one file or folder, or null when it holds several items, a link, or nothing. */
+  /**
+   * The archive's one file or folder, or null when it holds several items, a
+   * link, a hidden item or Pi's instructions alone, or nothing.
+   */
   single(): { name: string; kind: "file" | "folder" } | null {
     const only = this.items.size === 1 ? this.first() : null;
-    return only && only.kind !== "link" ? { name: only.name, kind: only.kind } : null;
+    return only && only.kind !== "link" && landsAsItself(only.name) ? { name: only.name, kind: only.kind } : null;
   }
 
   /** What Extract makes of them beside an archive named `archiveName`. */
@@ -244,9 +354,6 @@ class TopLevelItems {
     return single ? { ...single, single: true } : { name: extractFolderName(archiveName), kind: "folder", single: false };
   }
 }
-
-/** Folder names an archive never writes into: a Connected Folder's identity and Pi's project configuration. */
-const configurationFolders = new Set([".amplefile", ".pi"]);
 
 /**
  * The path segments an archive entry names, or why it is left out. An entry
@@ -261,9 +368,11 @@ export function archiveEntrySegments(raw: string): { segments: string[] } | { sk
   if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) throw refusedEntry(raw);
   const segments = normalized.split("/").filter((segment) => segment !== "" && segment !== ".");
   if (segments.some((segment) => segment === "..")) throw refusedEntry(raw);
-  if (segments.some((segment) => configurationFolders.has(segment.toLowerCase()))) return { skip: "configuration" };
-  // The resource forks a Mac's Archive Utility stores beside each file.
-  if (segments[0] === "__MACOSX") return { skip: "metadata" };
+  // Never into a Connected Folder's identity or Pi's project configuration.
+  if (segments.some(isReservedConnectedFolderPathSegment)) return { skip: "configuration" };
+  // The resource forks and extended attributes a Mac stores beside each item:
+  // Archive Utility's `__MACOSX` folder, and the `._Name` files a Mac's tar writes.
+  if (segments[0] === "__MACOSX" || segments.some((segment) => segment.startsWith("._"))) return { skip: "metadata" };
   return { segments };
 }
 
@@ -276,7 +385,7 @@ export function linkStaysInside(segments: readonly string[], target: string): bo
   if (!target || target.includes("\0") || target.includes("\\") || target.startsWith("/") || /^[A-Za-z]:/.test(target)) return false;
   const resolved = posix.normalize(posix.join(...segments.slice(0, -1), target));
   if (resolved === ".." || resolved.startsWith("../") || posix.isAbsolute(resolved)) return false;
-  return !resolved.split("/").some((segment) => configurationFolders.has(segment.toLowerCase()));
+  return !resolved.split("/").some(isReservedConnectedFolderPathSegment);
 }
 
 function refusedEntry(raw: string): Error {
@@ -301,7 +410,12 @@ interface EntrySink {
   wrote(count: number): Promise<void>;
   /** True once the rest of the archive need not be read. */
   readonly settled: boolean;
+  /** The most of a tar's content to read before giving up with {@link ReadLimitReached}; none when undefined. */
+  readonly readLimit?: number;
 }
+
+/** A survey read as far as it may. */
+class ReadLimitReached extends Error {}
 
 /** Extract's rules for which entries are written: what is left out and why, and what lands at the top. */
 class EntryRules {
@@ -343,7 +457,7 @@ class EntryRules {
 
 /** Notes an archive's entries without writing anything, until `enough` items are at its top. */
 class ExtractSurvey extends EntryRules implements EntrySink {
-  constructor(private readonly enough: number) {
+  constructor(private readonly enough: number, readonly readLimit?: number) {
     super();
   }
 
@@ -750,7 +864,7 @@ async function readTar(archive: string, gzipped: boolean, writer: EntrySink, ope
   if (gzipped) raw.on("data", (chunk) => operation.bytesDone(chunk.length));
   const content: Readable = gzipped ? raw.pipe(createGunzip()) : raw;
   raw.once("error", (error) => content.destroy(error));
-  const blocks = new BlockReader(content[Symbol.asyncIterator]() as AsyncIterator<Buffer>, gzipped ? undefined : (length) => operation.bytesDone(length));
+  const blocks = new BlockReader(content[Symbol.asyncIterator]() as AsyncIterator<Buffer>, gzipped ? undefined : (length) => operation.bytesDone(length), writer.readLimit);
   try {
     let longName: string | null = null;
     let longLink: string | null = null;
@@ -877,9 +991,15 @@ function parsePax(record: Buffer): Record<string, string> {
 class BlockReader {
   private buffered: Buffer[] = [];
   private bufferedLength = 0;
+  private consumed = 0;
   private done = false;
 
-  constructor(private readonly source: AsyncIterator<Buffer>, private readonly onChunk?: (length: number) => void) {}
+  constructor(
+    private readonly source: AsyncIterator<Buffer>,
+    private readonly onChunk?: (length: number) => void,
+    /** Throws {@link ReadLimitReached} once more than this has been read. */
+    private readonly limit?: number,
+  ) {}
 
   private async fill(length: number): Promise<void> {
     while (this.bufferedLength < length && !this.done) {
@@ -887,7 +1007,9 @@ class BlockReader {
       if (next.done) { this.done = true; break; }
       this.buffered.push(next.value);
       this.bufferedLength += next.value.length;
+      this.consumed += next.value.length;
       this.onChunk?.(next.value.length);
+      if (this.limit !== undefined && this.consumed > this.limit) throw new ReadLimitReached();
     }
   }
 

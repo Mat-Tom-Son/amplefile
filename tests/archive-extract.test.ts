@@ -7,12 +7,12 @@ import test from "node:test";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import JSZip from "jszip";
 
 import { abandonedCompressAfterMs, compressInto } from "../src/local/file-transfer.js";
-import { archiveEntrySegments, extractArchive, extractClash, extractFolderName, linkStaysInside } from "../src/local/archive-extract.js";
+import { archiveEntrySegments, extractArchive, extractClash, extractFolderName, linkStaysInside, setSurveyReadLimitForTests } from "../src/local/archive-extract.js";
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
 import { setZip64ForTests } from "../src/local/zip-writer.js";
 
@@ -185,6 +185,143 @@ test("an archive whose one top item is a link, or that holds nothing, still make
   assert.deepEqual(await readdir(empty.path), []);
 });
 
+test("a lone hidden item, or Pi's instructions alone, extracts into a folder named after the archive, never straight beside it", async (t) => {
+  const root = await folder(t);
+  // Where Pi discovers a folder's Skills, and a secrets file a person would not see arrive.
+  await writeFile(join(root, "photos.zip"), await zipWith({ ".agents/skills/evil/SKILL.md": { content: "---\nname: evil\n---" } }));
+  const skills = await extractArchive(join(root, "photos.zip"));
+  assert.equal(skills.path, join(root, "photos"));
+  assert.equal(skills.kind, "folder");
+  assert.deepEqual(await listTree(skills.path), [".agents/", ".agents/skills/", ".agents/skills/evil/", ".agents/skills/evil/SKILL.md"]);
+  assert.ok(!existsSync(join(root, ".agents")));
+
+  await writeFile(join(root, "notes.tgz"), gzipSync(tar(tarEntry(".env", { content: "TOKEN=x" }))));
+  const hidden = await extractArchive(join(root, "notes.tgz"));
+  assert.equal(hidden.path, join(root, "notes"));
+  assert.deepEqual(await readdir(hidden.path), [".env"]);
+
+  // The files Pi reads as a folder's instructions, in any case, file or folder.
+  for (const [archive, name] of [["docs.zip", "AGENTS.md"], ["rules.zip", "claude.MD"], ["override.zip", "AGENTS.override.md"]] as const) {
+    await writeFile(join(root, archive), await zipWith({ [name]: { content: "Do as this says." } }));
+    const result = await extractArchive(join(root, archive));
+    assert.equal(result.path, join(root, extractFolderName(archive)), name);
+    assert.deepEqual(await readdir(result.path), [name]);
+  }
+  await writeFile(join(root, "Guide.tar"), tar(tarEntry("CLAUDE.md/", { type: "5" }), tarEntry("CLAUDE.md/x.txt", { content: "x" })));
+  assert.equal((await extractArchive(join(root, "Guide.tar"))).path, join(root, "Guide"));
+
+  // An archive named with a leading dot makes a folder that is not hidden.
+  assert.equal(extractFolderName(".agents.zip"), "agents");
+  assert.equal(extractFolderName("..pi.tar.gz"), "pi");
+  assert.equal(extractFolderName(".zip"), "zip folder");
+  await writeFile(join(root, ".agents.zip"), await zipWith({ "skills/evil/SKILL.md": { content: "x" }, "README": { content: "r" } }));
+  const dotted = await extractArchive(join(root, ".agents.zip"));
+  assert.equal(dotted.path, join(root, "agents"));
+  assert.ok(!existsSync(join(root, ".agents")));
+
+  // The clash check names the folder too.
+  await writeFile(join(root, ".env"), "mine");
+  await rm(join(root, "notes"), { recursive: true });
+  assert.equal(await extractClash(join(root, "notes.tgz")), null, "a hidden item of that name beside the archive is no clash");
+  await mkdir(join(root, "notes"));
+  assert.deepEqual(await extractClash(join(root, "notes.tgz")), { name: "notes", kind: "folder" });
+  assert.equal(await readFile(join(root, ".env"), "utf8"), "mine");
+});
+
+test("the AppleDouble files a Mac's tar writes beside each item are left out, so one item still extracts as itself", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "report.txt.tar"), tar(tarEntry("._report.txt", { content: "attributes" }), tarEntry("report.txt", { content: "r" })));
+  const single = await extractArchive(join(root, "report.txt.tar"));
+  assert.equal(single.path, join(root, "report.txt"));
+  assert.equal(single.kind, "file");
+  assert.deepEqual(single.skipped, [], "metadata is not reported as left out");
+  assert.deepEqual(archiveEntrySegments("Trip/._a.jpg"), { skip: "metadata" });
+  assert.deepEqual(archiveEntrySegments("._Trip/a.jpg"), { skip: "metadata" });
+});
+
+test("a tar made by a Mac's own tar extracts as its one item, without AppleDouble files", { skip: process.platform !== "darwin" }, async (t) => {
+  const root = await folder(t);
+  const source = join(root, "source");
+  await mkdir(join(source, "Trip"), { recursive: true });
+  await writeFile(join(source, "AGENTS-notes.txt"), "notes");
+  await writeFile(join(source, "Trip", "a.jpg"), "a");
+  // An extended attribute is what makes a Mac's tar write a "._" file beside an item.
+  for (const path of [join(source, "AGENTS-notes.txt"), join(source, "Trip"), join(source, "Trip", "a.jpg")]) {
+    await exec("/usr/bin/xattr", ["-w", "com.example.amplefile-test", "yes", path]);
+  }
+  const env = { ...process.env };
+  delete env.COPYFILE_DISABLE;
+  await exec("/usr/bin/tar", ["-czf", join(root, "notes.tgz"), "AGENTS-notes.txt"], { cwd: source, env });
+  await exec("/usr/bin/tar", ["-cf", join(root, "Trip.tar"), "Trip"], { cwd: source, env });
+  // A Mac's `tar -t` hides these entries, so look in the bytes.
+  assert.ok(gunzipSync(await readFile(join(root, "notes.tgz"))).includes("._AGENTS-notes.txt"), "the archive holds an AppleDouble file");
+  assert.ok((await readFile(join(root, "Trip.tar"))).includes("Trip/._a.jpg"));
+
+  const file = await extractArchive(join(root, "notes.tgz"));
+  assert.equal(file.path, join(root, "AGENTS-notes.txt"));
+  assert.equal(file.kind, "file");
+  assert.equal(await readFile(file.path, "utf8"), "notes");
+  const trip = await extractArchive(join(root, "Trip.tar"));
+  assert.equal(trip.path, join(root, "Trip"));
+  assert.deepEqual(await listTree(trip.path), ["a.jpg"]);
+  assert.deepEqual((await readdir(root)).sort(), ["AGENTS-notes.txt", "Trip", "Trip.tar", "notes.tgz", "source"]);
+});
+
+test("a downloaded archive passes its quarantine to everything Extract makes, so Gatekeeper checks an app from it", { skip: process.platform !== "darwin" }, async (t) => {
+  const root = await folder(t);
+  const quarantine = "0083;65f0a1b2;Safari;0B4AB1A6-4A1D-4C5E-9F8B-1E2A3B4C5D6E";
+  const quarantineOf = async (path: string) => (await exec("/usr/bin/xattr", ["-p", "-s", "com.apple.quarantine", path]).catch(() => null))?.stdout.trim() ?? null;
+  const download = async (name: string, bytes: Buffer) => {
+    await writeFile(join(root, name), bytes);
+    await exec("/usr/bin/xattr", ["-w", "com.apple.quarantine", quarantine, join(root, name)]);
+  };
+  const everything = async (top: string) => [top, ...(await lstat(top)).isDirectory() ? (await listTree(top)).map((item) => join(top, item.replace(/\/$/, ""))) : []];
+
+  // The headline case: a zip holding only an app extracts as the app, and every part of it is marked.
+  await download("Invoice.zip", await zipWith({
+    "Evil.app/Contents/Info.plist": { content: "<plist/>" },
+    "Evil.app/Contents/MacOS/Evil": { content: "#!/bin/sh\n", unixPermissions: 0o755 },
+    "Evil.app/Contents/Current": { content: "MacOS", unixPermissions: 0o120777 },
+  }));
+  const app = await extractArchive(join(root, "Invoice.zip"));
+  assert.equal(app.path, join(root, "Evil.app"));
+  assert.equal(app.links, 1);
+  const parts = await everything(app.path);
+  assert.equal(parts.length, 6);
+  for (const path of parts) assert.equal(await quarantineOf(path), quarantine, path);
+  assert.equal(await quarantineOf(join(root, "Evil.app", "Contents", "MacOS")), quarantine, "a link is marked itself, and what it points to is marked as part of the app");
+
+  // Several items: the new folder and all it holds; a gzipped tar of one file.
+  await download("Photos.zip", await zipWith({ "a.jpg": { content: "a" }, "Trip/b.jpg": { content: "b" } }));
+  const photos = await extractArchive(join(root, "Photos.zip"));
+  for (const path of await everything(photos.path)) assert.equal(await quarantineOf(path), quarantine, path);
+  await download("tool.tgz", gzipSync(tar(tarEntry("tool", { content: "#!/bin/sh\n", mode: 0o755 }))));
+  assert.equal(await quarantineOf((await extractArchive(join(root, "tool.tgz"))).path), quarantine);
+
+  // An archive with no quarantine marks nothing.
+  await writeFile(join(root, "Local.zip"), await zipWith({ "Tool.app/Contents/Info.plist": { content: "<plist/>" } }));
+  const local = await extractArchive(join(root, "Local.zip"));
+  for (const path of await everything(local.path)) assert.equal(await quarantineOf(path), null, path);
+});
+
+test("the name-clash check reads a tar only so far, taking a first item it cannot see past as the one item", async (t) => {
+  const root = await folder(t);
+  setSurveyReadLimitForTests(64 * 1024);
+  t.after(() => setSurveyReadLimitForTests(null));
+  const whole = gzipSync(tar(tarEntry("Big/", { type: "5" }), tarEntry("Big/data.bin", { content: randomBytes(400_000) }), tarEntry("second.txt", { content: "2" })));
+  await writeFile(join(root, "bundle.tgz"), whole);
+  await mkdir(join(root, "Big"));
+  assert.deepEqual(await extractClash(join(root, "bundle.tgz")), { name: "Big", kind: "folder" }, "the second item is past the limit");
+  await writeFile(join(root, "cut.tgz"), whole.subarray(0, whole.length - 200_000));
+  assert.deepEqual(await extractClash(join(root, "cut.tgz")), { name: "Big", kind: "folder" }, "nor is the damage past it read");
+  // Should it hold more, the folder named after it keeps both names, replacing nothing.
+  await mkdir(join(root, "bundle"));
+  const result = await extractArchive(join(root, "bundle.tgz"));
+  assert.equal(result.path, join(root, "bundle copy"));
+  setSurveyReadLimitForTests(null);
+  assert.deepEqual(await extractClash(join(root, "bundle.tgz")), { name: "bundle", kind: "folder" }, "read whole, it names the folder");
+});
+
 test("the name-clash check names what Extract will make, reading no more of the archive than it must", async (t) => {
   const root = await folder(t);
   await writeFile(join(root, "report.txt.zip"), await zipWith({ "report.txt": { content: "r" } }));
@@ -255,7 +392,7 @@ test("an entry that would land outside its folder refuses the whole archive and 
   for (const name of ["../x", "/x", "C:\\x", "a/../../x", "x\0y"]) assert.throws(() => archiveEntrySegments(name), /outside its folder/, name);
   assert.deepEqual(archiveEntrySegments("./a//b/./c"), { segments: ["a", "b", "c"] });
   assert.equal(linkStaysInside(["bin", "tool"], "../lib/tool"), true);
-  for (const target of ["../x", "/etc/passwd", "C:/x", "a\\..\\..\\x", "", ".amplefile/connected-folder.json"]) assert.equal(linkStaysInside(["tool"], target), false, target);
+  for (const target of ["../x", "/etc/passwd", "C:/x", "a\\..\\..\\x", "", ".amplefile/connected-folder.json", ".work-fold/x"]) assert.equal(linkStaysInside(["tool"], target), false, target);
 
   await writeFile(join(root, "bad.tar"), tar(tarEntry("fine.txt", { content: "fine" }), tarEntry("../../escape.txt", { content: "evil" })));
   await assert.rejects(extractArchive(join(root, "bad.tar")), /outside its folder/);
@@ -273,6 +410,7 @@ test("links leading outside, hard links, special files, and Connected Folder or 
     ".amplefile/connected-folder.json": { content: "{}" },
     "Sub/.pi/extensions/run.ts": { content: "export default () => {}" },
     "Sub/.AmpleFile/x.json": { content: "{}" },
+    "Sub/.Work-Fold/x.json": { content: "{}" },
     "__MACOSX/._keep.txt": { content: "fork" },
   }));
   const zipped = await extractArchive(join(root, "mixed.zip"));
@@ -280,6 +418,7 @@ test("links leading outside, hard links, special files, and Connected Folder or 
   assert.deepEqual(zipped.skipped.map((item) => `${item.reason}:${item.path}`).sort(), [
     "configuration:.amplefile/connected-folder.json",
     "configuration:Sub/.AmpleFile/x.json",
+    "configuration:Sub/.Work-Fold/x.json",
     "configuration:Sub/.pi/extensions/run.ts",
     "link:link",
     "special:fifo",
