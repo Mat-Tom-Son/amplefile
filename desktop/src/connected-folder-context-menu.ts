@@ -3,7 +3,7 @@
  * same actions as the in-app menu other platforms show.
  */
 export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
+  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab";
 
 export interface NativeConnectedFolderMenuRequest {
   /**
@@ -25,6 +25,8 @@ export interface NativeConnectedFolderMenuRequest {
      * managed one (it moves to Recently Deleted).
      */
     remove?: boolean; removeDeletes?: boolean;
+    /** The file manager's sidebar: open the folder in a new folder tab. */
+    openInNewTab?: boolean;
   };
   point: { x: number; y: number };
 }
@@ -35,7 +37,7 @@ export type NativeConnectedFolderMenuItem =
 
 const requestKeys = new Set(["actions", "point"]);
 const actionKeys = new Set(["newChat", "customize", "organize", "reveal"]);
-const optionalActionKeys = new Set(["skills", "settings", "manage", "putToWork", "removeFromSidebar", "createConnectedFolder", "useExistingFolder", "remove", "removeDeletes"]);
+const optionalActionKeys = new Set(["skills", "settings", "manage", "putToWork", "removeFromSidebar", "createConnectedFolder", "useExistingFolder", "remove", "removeDeletes", "openInNewTab"]);
 const pointKeys = new Set(["x", "y"]);
 
 export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeConnectedFolderMenuRequest {
@@ -64,6 +66,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
       ...(actions.useExistingFolder === true ? { useExistingFolder: true } : {}),
       ...(actions.remove === true ? { remove: true } : {}),
       ...(actions.removeDeletes === true ? { removeDeletes: true } : {}),
+      ...(actions.openInNewTab === true ? { openInNewTab: true } : {}),
     },
     point: {
       x: Math.max(0, Math.min(1_000_000, Math.round(point.x as number))),
@@ -75,6 +78,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
 export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMenuRequest, platform: NodeJS.Platform = "darwin"): NativeConnectedFolderMenuItem[] {
   const { actions } = request;
   const items: NativeConnectedFolderMenuItem[] = [];
+  if (actions.openInNewTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
   if (actions.createConnectedFolder) items.push({ type: "item", label: "New Connected Folder…", command: "create-connected-folder" });
   if (actions.useExistingFolder) items.push({ type: "item", label: "Connect Folder…", command: "use-existing-folder" });
   if (actions.newChat) items.push({ type: "item", label: "New Chat", command: "new-chat" });

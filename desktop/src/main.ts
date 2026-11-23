@@ -265,7 +265,7 @@ let rendererRecoveryInFlight = false;
 let rendererRecoveryAttempts = 0;
 let rendererRecoveryFailurePromptShown = false;
 let createWindowPromise: Promise<void> | null = null;
-let rendererMenuState: RendererMenuState = { connectedFolderOpen: false, showHiddenFiles: false };
+let rendererMenuState: RendererMenuState = { connectedFolderOpen: false, showHiddenFiles: false, folderTabsOpen: false, showTabBar: false };
 let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
@@ -1302,13 +1302,16 @@ function registerIpc(): void {
   ipcMain.on("amplefile:window:control", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const window = mainWindow;
-    if (process.platform !== "linux" || !window || window.isDestroyed()) return;
+    if (!window || window.isDestroyed()) return;
+    // Closing the last folder tab closes the window on every platform, through the window's own close rules.
+    if (value === "close") { window.close(); return; }
+    if (process.platform !== "linux") return;
     if (value === "minimize") window.minimize();
     else if (value === "toggle-maximize") {
       if (window.isFullScreen()) window.setFullScreen(false);
       else if (window.isMaximized()) window.unmaximize();
       else window.maximize();
-    } else if (value === "close") window.close();
+    }
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1474,7 +1477,11 @@ type RendererMenuCommand =
   | "open-keyboard-shortcuts"
   | "toggle-sidebar"
   | "toggle-agent-panel"
-  | "toggle-hidden-files";
+  | "toggle-hidden-files"
+  | "new-tab"
+  | "next-tab"
+  | "previous-tab"
+  | "toggle-tab-bar";
 
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
@@ -1482,6 +1489,10 @@ interface RendererMenuState {
   connectedFolderOpen: boolean;
   /** The file manager window's Show Hidden Files, which the View menu checks. */
   showHiddenFiles: boolean;
+  /** The file manager window is showing, with its folder tabs: New Tab, Close Tab, and the tab keys act on it. */
+  folderTabsOpen: boolean;
+  /** View → Show Tab Bar: the folder tab strip shows even with one tab. */
+  showTabBar: boolean;
 }
 
 function configureMenu(): void {
@@ -1522,6 +1533,9 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
       ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
+      // A folder tab at the folder shown. The window owns the key, so it works wherever the keyboard is and the
+      // Browser pane keeps its own ⌘T while it has the keyboard; the menu shows the key without registering it.
+      { id: "new-tab", label: "New Tab", accelerator: "CommandOrControl+T", registerAccelerator: false, enabled: rendererMenuState.folderTabsOpen, click: () => sendRendererMenuCommand("new-tab") },
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("new-chat") },
       { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("reload-connected-folder-state") },
@@ -1537,15 +1551,17 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       // tab; the window keeps the conventional Shift+Cmd+W.
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.folderTabsOpen, click: () => sendRendererMenuCommand("close-tab") },
         { role: "close", accelerator: "Shift+CommandOrControl+W" },
       );
     } else if (process.platform === "linux") {
-      // As on the Mac, Ctrl+W closes the browser tab in front, and Shift+Ctrl+W
-      // closes the window (the host and accepted work keep running).
+      // As on the Mac, Ctrl+W closes the folder tab in front (the browser tab in
+      // front while the Browser pane has the keyboard; the last folder tab closes
+      // the window), and Shift+Ctrl+W closes the window (the host and accepted
+      // work keep running).
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: rendererMenuState.folderTabsOpen, click: () => sendRendererMenuCommand("close-tab") },
         { role: "close", label: "Close Window", accelerator: "Shift+Control+W" },
         { role: "quit", accelerator: "Control+Q" },
       );
@@ -1588,6 +1604,19 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
         enabled: rendererMenuState.connectedFolderOpen,
         click: () => sendRendererMenuCommand("toggle-hidden-files"),
       },
+      // Folder tabs: the strip shows with more than one tab, or always with Show Tab Bar on. The window owns the next and
+      // previous tab keys (Ctrl+Tab and Ctrl+Shift+Tab everywhere, as listed here per platform).
+      {
+        id: "show-tab-bar",
+        label: "Show Tab Bar",
+        type: "checkbox",
+        checked: rendererMenuState.showTabBar,
+        enabled: rendererMenuState.folderTabsOpen,
+        click: () => sendRendererMenuCommand("toggle-tab-bar"),
+      },
+      { id: "previous-tab", label: "Show Previous Tab", accelerator: process.platform === "darwin" ? "Shift+Command+[" : "Control+PageUp", registerAccelerator: false, enabled: rendererMenuState.folderTabsOpen, click: () => sendRendererMenuCommand("previous-tab") },
+      { id: "next-tab", label: "Show Next Tab", accelerator: process.platform === "darwin" ? "Shift+Command+]" : "Control+PageDown", registerAccelerator: false, enabled: rendererMenuState.folderTabsOpen, click: () => sendRendererMenuCommand("next-tab") },
+      { type: "separator" },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
       { type: "separator" },
@@ -1707,6 +1736,8 @@ function updateApplicationMenuState(value: unknown): void {
   rendererMenuState = {
     connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : rendererMenuState.connectedFolderOpen,
     showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : rendererMenuState.showHiddenFiles,
+    folderTabsOpen: typeof record.folderTabsOpen === "boolean" ? record.folderTabsOpen : rendererMenuState.folderTabsOpen,
+    showTabBar: typeof record.showTabBar === "boolean" ? record.showTabBar : rendererMenuState.showTabBar,
   };
   const menu = Menu.getApplicationMenu();
   const showHidden = menu?.getMenuItemById("show-hidden-files");
@@ -1714,7 +1745,10 @@ function updateApplicationMenuState(value: unknown): void {
   setMenuItemEnabled(menu, "show-hidden-files", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "close-tab", rendererMenuState.folderTabsOpen);
+  const showTabBar = menu?.getMenuItemById("show-tab-bar");
+  if (showTabBar) showTabBar.checked = rendererMenuState.showTabBar;
+  for (const id of ["new-tab", "show-tab-bar", "previous-tab", "next-tab"]) setMenuItemEnabled(menu, id, rendererMenuState.folderTabsOpen);
   setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.connectedFolderOpen);
