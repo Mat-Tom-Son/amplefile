@@ -36,9 +36,15 @@ Changes apply immediately. AmpleFile reads the portal with GLib's `gdbus`; one
 `gdbus`, a portal, or a key, each setting keeps its earlier behavior: no
 device accent, the GTK theme's light or dark, and normal contrast.
 
-**File** has Close Tab (Ctrl+W, closing the browser tab in front, as ⌘W does on
-a Mac), Close Window (Shift+Ctrl+W, which keeps AmpleFile running) and Quit
-(Ctrl+Q). **Edit** has Paste and Match Style (Shift+Ctrl+V), which pastes text
+**File** has New Tab (Ctrl+T, a folder tab at the folder shown), Close Tab
+(Ctrl+W: the folder tab in front, or the browser tab in front while the
+Browser pane has the keyboard, as ⌘W does on a Mac; closing the last folder tab
+closes the window), Close Window (Shift+Ctrl+W, which keeps AmpleFile running)
+and Quit (Ctrl+Q). **View** has Show Tab Bar, Show Previous Tab (Ctrl+PageUp),
+and Show Next Tab (Ctrl+PageDown), as GNOME Files has them; Ctrl+Tab and
+Ctrl+Shift+Tab change folder tabs too. A middle click on a folder or a sidebar
+place opens it in a new tab behind the one in front
+([Folder tabs](product-model.md#the-file-manager-window)). **Edit** has Paste and Match Style (Shift+Ctrl+V), which pastes text
 without its formatting.
 
 ## Build and run
