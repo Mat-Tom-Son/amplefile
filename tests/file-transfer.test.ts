@@ -87,6 +87,10 @@ test("a copy holds its source only when every file is there the same, and never 
   await mkdir(join(copy, "node_modules", "pkg", ".amplefile"));
   await writeFile(join(copy, "node_modules", "pkg", "index.js"), "12");
   assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), false, "an identity is never counted as held");
+  // Leaving a plain folder, which has no Recently Deleted, an identity the copy carries whole counts like any folder.
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules"), { withIdentity: true }), true);
+  await writeFile(join(root, "App", "node_modules", "pkg", ".amplefile", "connected-folder.json"), "{}");
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules"), { withIdentity: true }), false, "one the copy lacks part of does not");
 });
 
 test("a copy keeps relative links as written, and a link counts as held only when it points where its original does", async (t) => {

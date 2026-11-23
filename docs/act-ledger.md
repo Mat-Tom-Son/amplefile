@@ -34,7 +34,12 @@ without being a security boundary. So the product works on these rules:
    tried), and in the window the person can Put Back from the Trash, or
    empty it or delete items from it for good after a dialog that says so
    ([the file manager window](product-model.md#the-file-manager-window)).
-   No agent or CLI verb deletes from it.
+   No agent or CLI verb deletes from it. A move is not a destruction: an
+   item the window moves out of a Connected Folder leaves through that
+   Connected Folder's delete, and one it moves from a plain folder into a
+   Connected Folder is removed from the plain folder, not sent to the
+   Trash, only once its copy in the Connected Folder is whole
+   ([moves between places](#moves-between-places)).
 4. **Disclosure is after the fact.** Receipts and
    [the overview](amplefile-agent-overview.md) say what happened. "Needs
    you" means an agent asked a question, never that an action waits for
@@ -254,6 +259,35 @@ uncovered content, protects nested Connected Folders and excluded
 descendants, and reserves affected work against concurrent launches and
 ownership changes.
 
+#### Moves between places
+
+`files move` moves inside one Connected Folder. The window also moves items
+between places ([the file manager window](product-model.md#the-file-manager-window),
+"Moves"); those moves are the window's, with no act verb, and each copies
+first, then takes every item out of its source under that place's rules:
+
+- **Out of a Connected Folder**, into another one or into a plain folder:
+  each item leaves through this section's delete, journaled as `files.delete`
+  with the `main-window` surface, one receipt per item. It has the delete's
+  restore point, Recently Deleted for what the restore point could not cover
+  and the copy did not carry, the path policy (never the Connected Folder
+  itself or a nested one), and the settled-work refusal, which comes before
+  anything is copied.
+- **From a plain folder into a Connected Folder:** the copy has one restore
+  point in the Connected Folder. Each original is then removed, as a move
+  across disks removes it in Finder; it does not go to the system Trash,
+  because nothing is deleted. The removal is journaled first as `files.move`
+  with the `main-window` surface, naming the Connected Folder and that
+  restore point. It happens only once the copy is checked whole against the
+  original, and only while no Connected Folder owns the original or sits
+  inside it, which is checked before anything is copied and again inside
+  the journaled step. An original that fails either check stays, and the
+  journal records the refusal.
+
+The undo of a move a plain folder took part in is the reverse move, with the
+same rules. A move between two plain folders touches no Connected Folder and
+is not journaled.
+
 ### Recently Deleted
 
 Recently Deleted is the machine-local store under the state root
@@ -264,7 +298,9 @@ so the family takes no `--connected-folder`.
 
 What goes there:
 
-- `files delete` of an item the safety checkpoint could not fully cover;
+- `files delete` of an item the safety checkpoint could not fully cover,
+  which includes an item a move takes out of a Connected Folder when its
+  copy did not carry what the checkpoint could not cover;
 - `connected-folders delete`: the managed folder, together with its
   machine-local History;
 - deleting a Worker Chat or an AmpleFile Agent Chat: its transcript;
@@ -295,7 +331,9 @@ product.
 
 Deletion waits for settled work. Deleting a file, a Chat, or a Connected
 Folder is refused while the affected work is running, waiting on an answer,
-or still draining after Stop; no second confirmation is added. Deleting a
+or still draining after Stop; no second confirmation is added. Moving items
+out of a Connected Folder is that delete for each item, so it is refused the
+same way, before anything is copied. Deleting a
 managed parent is refused until its nested Connected Folders are
 disconnected.
 

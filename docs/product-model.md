@@ -306,9 +306,11 @@ other surface.
     window stays usable meanwhile, and several run at once. Stop ends at the
     next safe point and the notice says what was done and what was not: the
     finished items stay (with their restore point), the item in hand is
-    taken back, and the rest are not done; a stopped move between Connected
-    Folders leaves everything where it was unless items had already left
-    their source. A stopped Compress or Extract makes nothing.
+    taken back, and the rest are not done; a stopped move that copies first
+    (out of a Connected Folder, or from a plain folder into one) leaves
+    everything where it was unless items had already left their source, and
+    then those stay moved and nothing is in two places. A stopped Compress
+    or Extract makes nothing.
   - **Taken names:** when a copy, move, paste, drop, or Extract would land
     on names already taken, the window asks once, before anything is
     written: one clash at a time, both items' kind, size, and date, and
@@ -318,7 +320,17 @@ other surface.
     Apply to All never replaces a folder with a file or a file with a
     folder; those are replaced only when chosen for that item. Duplicate
     always keeps both with the " copy" name. An item that is, holds, or sits
-    in a nested Connected Folder is never replaced or merged into. After a
+    in a nested Connected Folder is never replaced or merged into.
+    **Merge** puts a folder's items into the folder already there, and its
+    answer about same-named items inside is that folder's own: each one,
+    however deep, is kept beside the item there, skipped, or replaces it
+    under Replace's rules, and folders of the same name inside are merged
+    the same way. Two folders merged in one operation each follow the answer
+    given for them, and a Merge applied to all gives its answer to every
+    folder it merges. The question is asked when the folders hold same-named
+    items; Extract always asks it, without a count, because an archive is
+    not read until it is extracted. A folder whose items were all skipped is
+    left as it was. After a
     Replace the notice says where the old item went: History keeps it in a
     Connected Folder (⌘Z brings it back), Recently Deleted holds what
     History could not keep, the system Trash takes it in a plain folder, and
@@ -326,9 +338,19 @@ other surface.
   - **History and Undo:** every change keeps a History restore point in
     each Connected Folder it touches (a Standard Folder has none), and ⌘Z and
     ⇧⌘Z undo and redo the last file change; a move inside or between plain
-    folders is undone by moving the items back. When a Replace sent
-    something to the Trash or it is gone, ⌘Z says plainly that it cannot
-    bring it back.
+    folders is undone by moving the items back. So is a move between a
+    Connected Folder and a plain folder, where History has only the Connected
+    Folder's side: each item goes back to the folder it came from, under the
+    name it had, and a folder a merge emptied and removed is made again. That
+    is a move of its own with the rules under **Moves**, so putting items
+    back out of a Connected Folder waits for its unfinished work; ⌘Z then
+    says so and keeps the step for when the work is over. What the move
+    replaced in the Connected Folder comes back from its restore point. ⇧⌘Z
+    does such a move again unless it replaced something or merged folders.
+    When a Replace sent something to the Trash or
+    it is gone, ⌘Z says plainly that it cannot bring it back, and so it does
+    when a move left only copies in a plain folder because nothing could
+    leave where it was.
   - **Moves:** a move inside one Connected Folder is History's move. A move
     between plain folders (Standard Folders, folders added to the sidebar,
     and any other folder) is a plain move, as Finder's. A move between
@@ -343,8 +365,26 @@ other surface.
     source through Recently Deleted rather than being erased, and an item
     that cannot leave its source stays there and the move says so; its copy
     then drops the `.amplefile/` the source still holds, and the move names
-    any it could not drop. A move between a Connected Folder and a plain
-    folder copies and says the original stays.
+    any it could not drop. A move out of a Connected Folder into a plain
+    folder is that same move with one restore point, the Connected Folder's:
+    the same copy, the same delete and receipt for each item, the same
+    refusals before anything is copied, and Recently Deleted for what
+    History could not keep; an item it replaces in the plain folder goes to
+    the system Trash. A move from a plain folder into a Connected Folder
+    copies the items under one restore point there, then removes each
+    original, as Finder does after a move across disks, and never to the
+    Trash: the item is not deleted, it is in the Connected Folder, where
+    History has it from then on. An original goes only once its copy is
+    whole (every folder, every file at the same size and date, every link,
+    and any `.amplefile/` it carried), never while a Connected Folder owns it
+    or sits inside it (checked before anything is copied and again as it
+    goes), and each removal is journaled first; an original that changed
+    meanwhile, or that cannot go, stays, and the move says its copy is in
+    both places. A plain folder has no Worker, so nothing there is waited
+    for; a Replace in the Connected Folder waits for its unfinished work, as
+    any Replace there does. Items taken in one move from more than one
+    Connected Folder, or from a Connected Folder and a plain folder
+    together, are copied, and the notice says the originals stay.
   - **Compress and Extract:** Compress writes the archive beside the items
     under a hidden working name, at any size (with the 64-bit zip records a
     large archive needs) and with each item's Unix mode, and stores a link

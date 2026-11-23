@@ -11,8 +11,8 @@ import type { TreeEntry } from "../../types";
 import { parentPath } from "./file-manager-model";
 import { samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 import { trashChangedEvent } from "./file-manager-trash";
-import { operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
-import { historyTurn, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type TransferBody } from "./file-manager-undo";
+import { copiesLeftMessage, operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
+import { historyTurn, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type TransferBody } from "./file-manager-undo";
 import { desktopErrorText, hiddenKey } from "./file-manager-view-helpers";
 import { OperationStoppedBeforeStart, type OperationHandle, type useFileOperations } from "./useFileOperations";
 import type { useConflictQuestion } from "./ConflictDialog";
@@ -110,13 +110,19 @@ export function useFileChanges(context: FileChangesContext) {
   /**
    * After any transfer: its undo, a fresh listing, and the new items selected
    * when they are in the folder shown. When a Replace sent something to the
-   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back.
+   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back. A move a
+   * plain folder took part in is undone by moving the items back, since
+   * History has only a Connected Folder's side of it.
    */
   async function afterTransfer(result: TransferResult, target: { place: FileManagerPlace; path: string }, label: string, selectWritten: boolean) {
     const covers = undoCovers(result);
+    const copiesLeft = target.place.kind === "standard" ? copiesLeftMessage(result, folderLabel(target)) : null;
+    const moveBack = moveBackPlan(result, target.place);
     if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
+    else if (moveBack) recordUndo(movesUndo(label, moveBack.items, moveBack.restores, moveBack.redoable, moveBackHost));
+    // Nothing moved, and copies stayed in a plain folder, which has no History to take them back.
+    else if (copiesLeft) recordUndo({ label, cannot: copiesLeft, run: async () => null });
     else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
-    else if (result.moves?.length && target.place.kind === "standard") recordUndo(standardMovesUndo(label, target.place, result.moves));
     await Promise.all([listing.refresh(), standard.refresh()]);
     if (selectWritten && samePlace(target.place, place) && target.path === location.path && result.written.length) select(result.written);
   }
@@ -146,22 +152,11 @@ export function useFileChanges(context: FileChangesContext) {
     };
   }
 
-  /** A plain folder has no History: undoing a move there moves each item back, to the place it came from. */
-  function standardMovesUndo(label: string, target: FileManagerPlace, moves: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>): FileUndo {
-    return {
-      label,
-      run: async () => {
-        const back: Array<{ from: string; to: string; fromPlace: FileManagerPlace }> = [];
-        for (const move of moves) {
-          const home = move.fromPlace ?? target;
-          const result = await transfer({ mode: "move", sources: [{ place: target, path: move.to }], target: { place: home, path: parentPath(move.from) } });
-          back.push({ from: move.to, to: result.written[0] ?? move.from, fromPlace: target });
-        }
-        // The redo moves them out again, from where they went back to.
-        return standardMovesUndo(label, moves[0]?.fromPlace ?? target, back);
-      },
-    };
-  }
+  /** What undoing a move by moving its items back asks of this window (file-manager-undo.ts, `movesUndo`). */
+  const moveBackHost: MoveBackHost = {
+    transfer: (body) => transfer(body),
+    restore: (point) => historyTurn([point.connectedFolderId], () => api(`/api/connected-folders/${encodeURIComponent(point.connectedFolderId)}/history/checkpoints/${encodeURIComponent(point.checkpointId)}/restore`, { method: "POST", body: {} })),
+  };
 
   async function undoFileChange(redo = false) {
     const stack = redo ? redoStackRef : undoStackRef;
@@ -179,7 +174,10 @@ export function useFileChanges(context: FileChangesContext) {
       await Promise.all([listing.refresh(), standard.refresh()]);
       showToast({ text: `${redo ? "Redid" : "Undid"} ${entry.label}`, tone: "success" });
     } catch (caught) {
+      // A step that keeps its place stays where it was, to be run again once what refused it is over.
+      if (entry.resumes) stack.current = pushUndo(stack.current, entry);
       onError(errorText(caught));
+      await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);
     }
   }
 

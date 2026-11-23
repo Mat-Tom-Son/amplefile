@@ -81,6 +81,59 @@ test("choices resolve per item or for all, never replace across kinds without th
   assert.throws(() => parseConflictRequest({ inside: "merge" }), /inside a merged folder/);
 });
 
+test("each merged folder follows its own answer for same-named items inside", async (t) => {
+  const root = await folder(t);
+  for (const name of ["Docs", "Pics", "Mail"]) {
+    await mkdir(join(root, "From", name, "Deep"), { recursive: true });
+    await mkdir(join(root, "To", name, "Deep"), { recursive: true });
+    await writeFile(join(root, "From", name, "same.txt"), "new");
+    await writeFile(join(root, "To", name, "same.txt"), "old");
+    await writeFile(join(root, "From", name, "Deep", "same.txt"), "new");
+    await writeFile(join(root, "To", name, "Deep", "same.txt"), "old");
+    await writeFile(join(root, "From", name, "only.txt"), "only");
+  }
+  const items = ["Docs", "Pics", "Mail"].map((name) => ({ source: join(root, "From", name), key: name }));
+  const summary = (plan: Awaited<ReturnType<typeof planPlacements>>) => plan.units.map((unit) => `${unit.action}:${unit.source.slice(root.length + 6)}`);
+
+  // Docs and Pics were each answered; Mail takes the answer for every merge.
+  const each = await planPlacements(items, join(root, "To"), { apply: "merge", inside: "keep-both", insideItems: { Docs: "replace", Pics: "skip" } });
+  assert.deepEqual(summary(each), [
+    "replace:Docs/Deep/same.txt", "place:Docs/only.txt", "replace:Docs/same.txt",
+    "skip:Pics/Deep/same.txt", "place:Pics/only.txt", "skip:Pics/same.txt",
+    "place:Mail/Deep/same.txt", "place:Mail/only.txt", "place:Mail/same.txt",
+  ], "the answer reaches every same-named item, however deep");
+  assert.deepEqual(each.units.filter((unit) => unit.action === "skip").map((unit) => unit.reason), ["chosen", "chosen"]);
+  // With no answer of its own or for every merge, a folder takes the choice for all when it is one that fits an item inside.
+  const fallback = await planPlacements(items, join(root, "To"), { items: { Docs: "merge", Pics: "merge", Mail: "merge" }, apply: "skip", insideItems: { Docs: "replace" } });
+  assert.deepEqual(summary(fallback).filter((line) => line.endsWith("/same.txt") && !line.includes("Deep")), ["replace:Docs/same.txt", "skip:Pics/same.txt", "skip:Mail/same.txt"]);
+
+  // Read from a request, the answers are checked like the others.
+  const read = parseConflictRequest({ items: { Docs: "merge" }, insideItems: { Docs: "skip" } }).policy!;
+  assert.deepEqual({ items: { ...read.items }, insideItems: { ...read.insideItems } }, { items: { Docs: "merge" }, insideItems: { Docs: "skip" } });
+  assert.throws(() => parseConflictRequest({ insideItems: { Docs: "merge" } }), /inside a merged folder/);
+  assert.throws(() => parseConflictRequest({ insideItems: ["skip"] }), /inside each merged folder/);
+});
+
+test("an item's name is never mistaken for a choice", async (t) => {
+  // "constructor" and "toString" are names every object answers to; a file may be called either.
+  const root = await folder(t);
+  await mkdir(join(root, "From", "Box"), { recursive: true });
+  await mkdir(join(root, "To", "Box"), { recursive: true });
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    await writeFile(join(root, "From", name), "new");
+    await writeFile(join(root, "To", name), "old");
+    await writeFile(join(root, "From", "Box", name), "new");
+    await writeFile(join(root, "To", "Box", name), "old");
+  }
+  const items = ["constructor", "toString", "__proto__", "Box"].map((name) => ({ source: join(root, "From", name), key: name }));
+  const actions = (plan: Awaited<ReturnType<typeof planPlacements>>) => plan.units.map((unit) => `${unit.action}:${unit.source.slice(root.length + 6)}`);
+  const keepBoth = await planPlacements(items, join(root, "To"), parseConflictRequest({ apply: "keep-both", items: { Box: "merge" }, insideItems: {} }).policy);
+  assert.deepEqual(actions(keepBoth), ["place:constructor", "place:toString", "place:__proto__", "place:Box/__proto__", "place:Box/constructor", "place:Box/toString"], "nothing is replaced that was not chosen");
+  // A choice made for such a name is that item's own.
+  const chosen = await planPlacements(items, join(root, "To"), parseConflictRequest(JSON.parse('{"apply":"skip","items":{"__proto__":"replace","constructor":"keep-both","Box":"merge"},"insideItems":{"Box":"replace"}}')).policy);
+  assert.deepEqual(actions(chosen), ["place:constructor", "skip:toString", "replace:__proto__", "replace:Box/__proto__", "replace:Box/constructor", "replace:Box/toString"]);
+});
+
 test("the Trash: the desktop's own when registered, else the freedesktop.org home Trash on Linux", async (t) => {
   const root = await folder(t);
   await writeFile(join(root, "old.txt"), "old");

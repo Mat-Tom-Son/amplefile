@@ -151,6 +151,110 @@ test("a merged folder combines contents, applying the inner choice, and its rest
   assert.deepEqual((await readdir(join(photos, "Trip"))).sort(), ["b copy.jpg", "b.jpg", "c.jpg"]);
 });
 
+test("two folders merged at once each follow their own answer, and what a merge replaces goes where its place can recover it", async (t) => {
+  const { api, call, sandbox } = await sandboxApi(t);
+  const source = await connectedFolder(call, "Source");
+  const target = await connectedFolder(call, "Target");
+  const plain = join(sandbox, "Plain");
+  for (const root of [source.connectedFolderRoot, target.connectedFolderRoot, plain]) {
+    const age = root === source.connectedFolderRoot ? "new" : "old";
+    for (const name of ["Docs", "Pics", "Mail"]) {
+      await mkdir(join(root, name), { recursive: true });
+      await writeFile(join(root, name, "same.txt"), `${age} ${name}`);
+    }
+    // History keeps no copy of a file over its limit.
+    await writeFile(join(root, "Docs", "large.bin"), `${age} and larger than the limit History keeps`);
+  }
+  await writeFile(join(source.connectedFolderRoot, "Pics", "only.txt"), "only");
+  const previousCap = process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
+  process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "16";
+  t.after(() => { if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES; else process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = previousCap; });
+  const sources = ["Docs", "Pics", "Mail"].map((path) => ({ place: { kind: "connected-folder", id: source.id }, path }));
+  const conflicts = { items: { Docs: "merge", Pics: "merge", Mail: "merge" }, insideItems: { Docs: "replace", Pics: "skip", Mail: "keep-both" } };
+
+  // In a Connected Folder: History keeps what was replaced, and Recently Deleted what History could not.
+  const inFolder = await call("/api/file-transfer", { method: "POST", body: { mode: "copy", sources, target: { place: { kind: "connected-folder", id: target.id }, path: "" }, conflicts } });
+  assert.equal(inFolder.status, 200, JSON.stringify(inFolder.body));
+  assert.deepEqual(inFolder.body!.merged, ["Docs", "Pics", "Mail"]);
+  assert.equal(await readFile(join(target.connectedFolderRoot, "Docs", "same.txt"), "utf8"), "new Docs", "Docs: replaced");
+  assert.equal(await readFile(join(target.connectedFolderRoot, "Pics", "same.txt"), "utf8"), "old Pics", "Pics: skipped");
+  assert.deepEqual((await readdir(join(target.connectedFolderRoot, "Pics"))).sort(), ["only.txt", "same.txt"], "what was only in the folder coming in arrives");
+  assert.deepEqual((await readdir(join(target.connectedFolderRoot, "Mail"))).sort(), ["same copy.txt", "same.txt"], "Mail: both kept");
+  assert.equal(await readFile(join(target.connectedFolderRoot, "Mail", "same.txt"), "utf8"), "old Mail");
+  assert.deepEqual(inFolder.body!.skipped, [{ path: "Pics/same.txt", reason: "chosen" }]);
+  const recovered = Object.fromEntries(inFolder.body!.replaced.map((item: any) => [item.path, item.recovery]));
+  assert.deepEqual(recovered, { "Docs/large.bin": "recently-deleted", "Docs/same.txt": "history" });
+  assert.deepEqual((await api.recentlyDeleted.list()).entries.map((entry) => entry.originalPath), ["Docs/large.bin"]);
+
+  // In a plain folder: the system Trash, or gone when no Trash can take it.
+  const trashed: string[] = [];
+  setSystemTrashHandler(async (path) => {
+    const content = await readFile(path, "utf8");
+    if (content.includes("larger")) throw new Error("no Trash");
+    trashed.push(content);
+    await rm(path);
+  });
+  t.after(() => setSystemTrashHandler(null));
+  const inPlain = await call("/api/file-transfer", { method: "POST", body: { mode: "copy", sources, target: { place: { kind: "standard", id: "computer" }, path: relative("/", plain) }, conflicts } });
+  assert.equal(inPlain.status, 200, JSON.stringify(inPlain.body));
+  assert.equal(await readFile(join(plain, "Docs", "same.txt"), "utf8"), "new Docs");
+  assert.equal(await readFile(join(plain, "Pics", "same.txt"), "utf8"), "old Pics");
+  assert.deepEqual((await readdir(join(plain, "Mail"))).sort(), ["same copy.txt", "same.txt"]);
+  assert.deepEqual(trashed, ["old Docs"]);
+  assert.deepEqual(Object.fromEntries(inPlain.body!.replaced.map((item: any) => [relative(plain, join("/", item.path)), item.recovery])), { "Docs/large.bin": "gone", "Docs/same.txt": "trash" });
+});
+
+test("a merge never replaces or merges into a nested Connected Folder", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const source = await connectedFolder(call, "Source");
+  await mkdir(join(source.connectedFolderRoot, "Photos", "Trip"), { recursive: true });
+  await writeFile(join(source.connectedFolderRoot, "Photos", "a.jpg"), "new a");
+  await writeFile(join(source.connectedFolderRoot, "Photos", "Trip", "b.jpg"), "new b");
+  const sources = [{ place: { kind: "connected-folder", id: source.id }, path: "Photos" }];
+  const conflicts = { items: { Photos: "merge" }, insideItems: { Photos: "replace" } };
+  setSystemTrashHandler(async (path) => { await rm(path, { recursive: true }); });
+  t.after(() => setSystemTrashHandler(null));
+
+  // A Connected Folder nested in the target Connected Folder.
+  const targetRoot = join(sandbox, "target");
+  await mkdir(join(targetRoot, "Photos", "Trip"), { recursive: true });
+  await writeFile(join(targetRoot, "Photos", "a.jpg"), "old a");
+  await writeFile(join(targetRoot, "Photos", "Trip", "b.jpg"), "the nested Connected Folder's b");
+  const target = (await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: targetRoot } })).body!.connectedFolder;
+  assert.equal((await call(`/api/connected-folders/${target.id}/nested-folders`, { method: "POST", body: { path: "Photos/Trip" } })).status, 201);
+  // And one inside a plain folder.
+  const plain = join(sandbox, "Plain");
+  await mkdir(join(plain, "Photos", "Trip"), { recursive: true });
+  await writeFile(join(plain, "Photos", "a.jpg"), "old a");
+  await writeFile(join(plain, "Photos", "Trip", "b.jpg"), "the Connected Folder's b");
+  assert.equal((await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: join(plain, "Photos", "Trip") } })).status, 201);
+
+  const nestedContent = (root: string) => root === plain ? "the Connected Folder's b" : "the nested Connected Folder's b";
+  for (const [root, at] of [[targetRoot, { kind: "connected-folder", id: target.id }], [plain, { kind: "standard", id: "computer" }]] as const) {
+    const inside = (path: string) => ({ place: at, path: root === plain ? relative("/", join(plain, path)) : path });
+    // A folder that holds a Connected Folder is not merged into: the choice for it keeps both.
+    const merged = await call("/api/file-transfer", { method: "POST", body: { mode: "copy", sources, target: inside(""), conflicts } });
+    assert.equal(merged.status, 200, `${root}: ${JSON.stringify(merged.body)}`);
+    assert.deepEqual(merged.body!.merged, [], root);
+    assert.deepEqual(merged.body!.replaced, [], root);
+    assert.deepEqual(await visible(root), ["Photos", "Photos copy"], root);
+    assert.equal(await readFile(join(root, "Photos", "a.jpg"), "utf8"), "old a", root);
+    // The Connected Folder itself is neither replaced nor merged into, whichever is chosen for it by name.
+    for (const choice of ["replace", "merge"]) {
+      const onto = await call("/api/file-transfer", {
+        method: "POST",
+        body: { mode: "copy", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Photos/Trip" }], target: inside("Photos"), conflicts: { items: { "Photos/Trip": choice }, inside: "replace" } },
+      });
+      assert.equal(onto.status, 200, `${root} ${choice}: ${JSON.stringify(onto.body)}`);
+      assert.deepEqual(onto.body!.replaced, [], `${root} ${choice}`);
+      assert.deepEqual(onto.body!.merged, [], `${root} ${choice}`);
+      assert.equal(await readFile(join(root, "Photos", "Trip", "b.jpg"), "utf8"), nestedContent(root), `${root} ${choice}`);
+      assert.deepEqual((await readdir(join(root, "Photos", "Trip"))).filter((name) => !name.startsWith(".")), ["b.jpg"], `${root} ${choice}`);
+    }
+    assert.deepEqual(await visible(join(root, "Photos")), ["Trip", "Trip copy", "Trip copy 2", "a.jpg"], root);
+  }
+});
+
 test("a replace outside a Connected Folder sends the old item to the Trash, or says it is gone", async (t) => {
   const { call, sandbox } = await sandboxApi(t);
   await mkdir(join(sandbox, "Here", "From"), { recursive: true });
@@ -308,6 +412,23 @@ test("Extract asks first, then skips, replaces, or merges into the folder alread
   const check = await extract({ check: true });
   assert.equal(check.status, 200, JSON.stringify(check.body));
   assert.deepEqual(check.body!.conflicts.map((conflict: any) => [conflict.key, conflict.source.kind, conflict.existing.kind, conflict.canMerge]), [["Trip", "folder", "folder", true]]);
+  // A check does not read the archive, so it cannot count what clashes inside: null has the dialog ask what to do about it all the same.
+  assert.equal(check.body!.conflicts[0].insideClashes, null);
+
+  // Merge follows the answer for the same-named items inside: skip leaves the one there, keep-both adds a copy.
+  const kept = await extract({ items: { Trip: "merge" }, insideItems: { Trip: "skip" } });
+  assert.equal(kept.status, 201, JSON.stringify(kept.body));
+  assert.deepEqual(kept.body!.skippedClashes, [{ path: "Trip/plan.md", reason: "chosen" }]);
+  assert.deepEqual(kept.body!.replaced, []);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "Trip", "plan.md"), "utf8"), "old plan");
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "Trip"))).sort(), ["map.png", "notes.md", "plan.md"]);
+  await restore(call, kept.body!.restorePoints);
+  const both = await extract({ items: { Trip: "merge" }, insideItems: { Trip: "keep-both" } });
+  assert.equal(both.status, 201, JSON.stringify(both.body));
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "Trip"))).sort(), ["map.png", "notes.md", "plan copy.md", "plan.md"]);
+  assert.equal(await readFile(join(folder.connectedFolderRoot, "Trip", "plan copy.md"), "utf8"), "new plan");
+  await restore(call, both.body!.restorePoints);
+  assert.deepEqual((await readdir(join(folder.connectedFolderRoot, "Trip"))).sort(), ["notes.md", "plan.md"]);
 
   const skipped = await extract({ apply: "skip" });
   assert.equal(skipped.status, 200, JSON.stringify(skipped.body));

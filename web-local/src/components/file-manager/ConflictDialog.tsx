@@ -29,8 +29,10 @@ interface ConflictQuestion {
  * The name-clash question (docs/product-model.md, "Finder's file actions"),
  * asked once before anything is written: one clash at a time, both items'
  * kind, size, and date, and Keep Both, Skip, Replace, or for two folders
- * Merge, with "Apply to all" while more clashes wait. Stop answers null and
- * nothing happens.
+ * Merge, with "Apply to all" while more clashes wait. Each Merge carries its
+ * own answer about same-named items inside, asked when the engine counted
+ * some or could not count them (an archive is not read before Extract).
+ * Stop answers null and nothing happens.
  */
 export function useConflictQuestion() {
   const [question, setQuestion] = useState<ConflictQuestion | null>(null);
@@ -111,7 +113,7 @@ function ConflictDialog({ question, onDone }: { question: ConflictQuestion; onDo
 function choiceHint(choice: ConflictChoice, conflict: TransferConflict): string {
   if (choice === "keep-both") return "Keep both: the new item gets a name with “copy”.";
   if (choice === "skip") return "Leave the item that is already there, and don’t bring this one.";
-  if (choice === "merge") return "Put the folder’s items into the folder that is already there.";
+  if (choice === "merge") return "Put the folder’s items into the folder that is already there. Items inside with the same name follow the choice above.";
   return conflict.existing.kind === "folder" ? "Replace the folder that is already there, and everything in it." : "Replace the item that is already there.";
 }
 

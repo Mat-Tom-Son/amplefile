@@ -108,9 +108,13 @@ async function measureTree(path: string, filter: ((path: string) => boolean) | u
  * anywhere in the source never counts as held: a Connected Folder's identity
  * and Chats leave their source only by moving whole into Recently Deleted.
  * A source that is no longer there has nothing left to lose.
+ *
+ * `withIdentity` is for a source in a plain folder, which has no Recently
+ * Deleted to leave through: an `.amplefile` folder then counts as held when
+ * the copy carries it whole, like any other folder.
  */
-export async function copyHoldsAll(source: string, copy: string): Promise<boolean> {
-  return treeHeld(source, copy, { identity: false });
+export async function copyHoldsAll(source: string, copy: string, options: { withIdentity?: boolean } = {}): Promise<boolean> {
+  return treeHeld(source, copy, { identity: options.withIdentity === true });
 }
 
 /**
