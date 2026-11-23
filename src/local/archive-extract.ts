@@ -158,9 +158,9 @@ export async function extractArchive(archive: string, operation: FileOperationCo
  * far as it must be: a zip's directory; a tar's headers up to its first
  * item, then on to a second item or the end only when that item's name or
  * the archive's is taken and they could differ. A tar is read for at most
- * 64 MB each time; one whose second item is further
- * in is taken to hold one item, and should it hold more, they extract into a
- * folder that keeps both names rather than replacing anything.
+ * 64 MB each time; one whose second item is further in is taken to hold one
+ * item, and should it hold more, they extract into a folder that keeps both
+ * names rather than replacing anything.
  */
 export async function extractClash(archive: string): Promise<Pick<ExtractTarget, "name" | "kind"> | null> {
   await assertExtractable(archive);
@@ -267,8 +267,9 @@ const execFileAsync = promisify(execFile);
 
 /**
  * The quarantine mark macOS keeps on a downloaded archive, as hex, or null
- * when it has none or this is not a Mac. Read with the system's `xattr`, no
- * shell; failing to read it refuses the Extract rather than dropping it.
+ * when it has none, its volume keeps no extended attributes (so it can carry
+ * none), or this is not a Mac. Read with the system's `xattr`, no shell; any
+ * other failure to read it refuses the Extract rather than dropping it.
  */
 async function readQuarantine(archive: string): Promise<string | null> {
   if (process.platform !== "darwin") return null;
@@ -277,7 +278,7 @@ async function readQuarantine(archive: string): Promise<string | null> {
     const hex = stdout.replace(/\s+/g, "");
     if (/^(?:[0-9a-f]{2})+$/i.test(hex)) return hex;
   } catch (error) {
-    if (/no such xattr/i.test(String((error as { stderr?: unknown }).stderr ?? ""))) return null;
+    if (/no such xattr|not supported/i.test(String((error as { stderr?: unknown }).stderr ?? ""))) return null;
   }
   throw badRequest("AmpleFile couldn’t read whether this archive was downloaded. Nothing was extracted.");
 }
