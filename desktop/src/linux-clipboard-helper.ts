@@ -12,6 +12,7 @@ import {
   uriListFormat,
   type LinuxClipboardFiles,
   type LinuxFileClipboardAccess,
+  type LinuxFileClipboardOperation,
 } from "./linux-file-clipboard.js";
 
 /**
@@ -44,17 +45,19 @@ export interface LinuxClipboardOffer {
 }
 
 /**
- * Every target a copy of `paths` offers: GNOME's copy list, the URI list,
- * then the absolute paths as newline-separated text. `STRING` (Latin-1 by
- * definition) is offered only when every path is Latin-1, so it never
- * carries mangled names.
+ * Every target a copy (or Cut) of `paths` offers: GNOME's list marked `copy`
+ * or `cut`, the URI list, KDE's cut-selection marker for a Cut, then the
+ * absolute paths as newline-separated text. `STRING` (Latin-1 by definition)
+ * is offered only when every path is Latin-1, so it never carries mangled
+ * names.
  */
-export function linuxFileClipboardOffers(paths: readonly string[]): LinuxClipboardOffer[] {
+export function linuxFileClipboardOffers(paths: readonly string[], operation: LinuxFileClipboardOperation = "copy"): LinuxClipboardOffer[] {
   if (!paths.length) throw new Error("Choose items to copy.");
   const text = paths.join("\n");
   const offers: LinuxClipboardOffer[] = [
-    { target: gnomeCopiedFilesFormat, data: Buffer.from(formatGnomeCopiedFiles(paths), "utf8") },
+    { target: gnomeCopiedFilesFormat, data: Buffer.from(formatGnomeCopiedFiles(paths, operation), "utf8") },
     { target: uriListFormat, data: Buffer.from(formatUriList(paths), "utf8") },
+    ...(operation === "cut" ? [{ target: kdeCutSelectionFormat, data: Buffer.from("1", "utf8") }] : []),
     ...linuxPlainTextTargets.map((target) => ({ target, data: Buffer.from(text, "utf8") })),
   ];
   // eslint-disable-next-line no-control-regex

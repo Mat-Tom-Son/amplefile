@@ -68,7 +68,7 @@ const localEventMultiplexer = createLocalEventMultiplexer((subscriptions, receiv
 });
 
 export function createEventSource(path: string): LocalEventStream {
-  if (/^\/api\/(?:amplefile-agent\/control-events|amplefile-agent\/conversations\/[^/]+\/events|connected-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
+  if (/^\/api\/(?:amplefile-agent\/control-events|file-transfer\/events|amplefile-agent\/conversations\/[^/]+\/events|connected-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
     return localEventMultiplexer.subscribe(path);
   }
   return createDirectEventSource(path).source;

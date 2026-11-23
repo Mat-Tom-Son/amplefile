@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, existsSync, lstatSync } from "node:fs";
+import { homedir } from "node:os";
+import { createReadStream, existsSync, lstatSync, type Dirent, type Stats } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -8,6 +9,7 @@ import {
   open,
   readFile,
   readdir,
+  readlink,
   realpath,
   rename,
   rm,
@@ -36,6 +38,7 @@ import {
 } from "./state-paths.js";
 import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
 import { containsReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
+import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
 import { productIdentity } from "../shared/product-identity.js";
 
 import type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
@@ -53,6 +56,26 @@ export interface TreeEntry {
   children?: TreeEntry[];
   /** This folder is its own registered Connected Folder: the walk stops at its boundary. */
   nestedFolder?: true;
+  /**
+   * Present only when the listing asked for links (`includeLinks`): this entry
+   * is a symbolic link. It is never followed. `kind`, `sizeBytes`, and
+   * `updatedAt` describe its target when the target is there (a missing
+   * target lists as a file dated by the link itself), and a linked folder
+   * lists with no children: no route reads, lists, or writes through a link.
+   */
+  link?: TreeEntryLink;
+  /**
+   * Present only when the listing asked for hidden entries (`includeHidden`):
+   * the system file manager hides this entry by default (hidden-entries.ts).
+   */
+  hidden?: true;
+}
+
+export interface TreeEntryLink {
+  /** What the link points to now; `missing` covers a broken link and a link loop. */
+  target: "file" | "folder" | "missing";
+  /** The target's absolute path, resolved through every link, for display; for a missing target, the path the link names. */
+  targetPath: string;
 }
 
 export interface ConnectedFolderEntryInfo {
@@ -87,6 +110,20 @@ export interface ConnectedFolderCreatedEntry {
 
 export interface ConnectedFolderTreeOptions {
   includeIgnored?: boolean;
+  /** List symbolic links as entries carrying `link`. Off by default: links are left out, as they always were. */
+  includeLinks?: boolean;
+  /**
+   * Mark each entry the system file manager hides with `hidden: true`. A
+   * Connected Folder listing already includes those entries; this only marks
+   * them. `platform` and `home` default to this computer's.
+   */
+  markHidden?: boolean | { platform?: NodeJS.Platform; home?: string };
+  /**
+   * The entry bound for a one-level listing (`maxDepth` 0), up to
+   * `maxOneLevelTreeEntries`. Without it a listing keeps the walk's usual
+   * bound. A recursive listing always keeps the usual bound.
+   */
+  maxEntries?: number;
   /**
    * Relative paths of Connected Folders registered inside this one. Each is listed as a
    * boundary entry with no children, the same separate ownership History and
@@ -503,6 +540,19 @@ export interface ConnectedFolderTreeScan {
   truncated: boolean;
 }
 
+/**
+ * The most entries one one-level listing returns when it asks for more than
+ * the usual bound. 100,000 direct children list in about a second and 12 MB
+ * of JSON on a local disk; this leaves room above that without letting one
+ * request grow without limit.
+ */
+export const maxOneLevelTreeEntries = 200_000;
+
+interface TreeScanListing {
+  includeLinks: boolean;
+  hidden: { platform: NodeJS.Platform; home: string } | null;
+}
+
 interface TreeScanBudget {
   remaining: number;
   truncated: boolean;
@@ -515,6 +565,10 @@ export async function scanConnectedFolderTree(
   options: ConnectedFolderTreeOptions = {},
 ): Promise<ConnectedFolderTreeScan> {
   const safeRoot = ensureSafeConnectedFolderRoot(connectedFolderRoot);
+  const depthLimit = Math.min(Math.max(maxDepth, 0), 50);
+  if (options.maxEntries !== undefined && (depthLimit !== 0 || !Number.isInteger(options.maxEntries) || options.maxEntries < 1)) {
+    throw Object.assign(new Error("maxEntries is a whole number of entries for a one-level listing (maxDepth 0)."), { status: 400, statusCode: 400 });
+  }
   const scanRoot = resolveConnectedFolderPath(safeRoot, relativePath || ".");
   const info = await stat(scanRoot).catch(() => null);
   if (!info?.isDirectory()) throw new Error("Requested Connected Folder tree path is not a folder.");
@@ -531,17 +585,29 @@ export async function scanConnectedFolderTree(
   // A Connected Folder is an arbitrary folder and may hold far more entries than a
   // navigator can present. The walk stops at a total entry budget and says so,
   // so a partial tree is never mistaken for the whole Connected Folder.
-  const budget: TreeScanBudget = { remaining: maxTreeEntries(), truncated: false };
+  const bound = options.maxEntries !== undefined ? Math.min(options.maxEntries, maxOneLevelTreeEntries) : maxTreeEntries();
+  const budget: TreeScanBudget = { remaining: bound, truncated: false };
+  const markHidden = options.markHidden;
+  const listing: TreeScanListing = {
+    includeLinks: options.includeLinks === true,
+    hidden: markHidden
+      ? {
+        platform: (typeof markHidden === "object" ? markHidden.platform : undefined) ?? process.platform,
+        home: (typeof markHidden === "object" ? markHidden.home : undefined) ?? homedir(),
+      }
+      : null,
+  };
   const entries = await scanDirectory(
     safeRoot,
     scanRoot,
     0,
-    Math.min(Math.max(maxDepth, 0), 50),
+    depthLimit,
     ignoreState.patterns,
     options.includeIgnored !== false,
     createFilesystemLimiter(treeScanConcurrency),
     budget,
     boundaries,
+    listing,
   );
   return { entries, truncated: budget.truncated };
 }
@@ -716,15 +782,15 @@ async function prepareConnectedFolderMove(
   if (targetFolderPath === sourcePath || targetFolderPath.startsWith(`${sourcePath}/`)) throw new Error("Folders cannot be moved into themselves.");
   await assertOutsideNestedFolders(root, sourcePath);
   if (targetFolderPath) await assertOutsideNestedFolders(root, `${targetFolderPath}/${basename(sourcePath)}`);
-  const source = resolveConnectedFolderPath(root, sourcePath);
+  const source = resolveConnectedFolderPath(root, sourcePath, { finalLink: true });
   if (samePath(source, root)) throw new Error("The Connected Folder root cannot be moved.");
-  const sourceInfo = await stat(source).catch(() => null);
-  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory())) throw notFound(`Connected Folder item not found: ${sourcePath}`);
+  const sourceInfo = await lstat(source).catch(() => null);
+  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory() && !sourceInfo.isSymbolicLink())) throw notFound(`Connected Folder item not found: ${sourcePath}`);
   const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
   if (!(await stat(targetFolder)).isDirectory()) throw new Error("Move items into a folder.");
   if (dirname(source) === targetFolder) throw new Error(`${basename(source)} is already in the selected folder.`);
   const destination = join(targetFolder, basename(source));
-  if (existsSync(destination)) throw new Error(`A file or folder named ${basename(source)} already exists there.`);
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${basename(source)} already exists there.`);
   return { sourcePath, source, destination };
 }
 
@@ -773,7 +839,7 @@ export async function moveConnectedFolderEntry(
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const { sourcePath, source, destination } = await prepareConnectedFolderMove(root, input);
   await rename(source, destination);
-  const movedInfo = await stat(destination);
+  const movedInfo = await lstat(destination);
   await touchConnectedFolder(root);
   return {
     fromPath: sourcePath,
@@ -793,16 +859,16 @@ export async function renameConnectedFolderEntry(
   if (!sourcePath || sourcePath === ".") throw new Error("Select a file or folder to rename.");
   const newName = safeFileName(input.newName);
   await assertOutsideNestedFolders(root, sourcePath);
-  const source = resolveConnectedFolderPath(root, sourcePath);
+  const source = resolveConnectedFolderPath(root, sourcePath, { finalLink: true });
   if (samePath(source, root)) throw new Error("The Connected Folder root cannot be renamed.");
-  const sourceInfo = await stat(source).catch(() => null);
-  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory())) throw notFound("Connected Folder item not found.");
+  const sourceInfo = await lstat(source).catch(() => null);
+  if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory() && !sourceInfo.isSymbolicLink())) throw notFound("Connected Folder item not found.");
   if (basename(source) === newName) throw new Error("That item already has this name.");
   const destination = join(dirname(source), newName);
-  resolveConnectedFolderPath(root, normalizeRelative(relative(root, destination)));
-  if (existsSync(destination)) throw new Error(`A file or folder named ${newName} already exists there.`);
+  resolveConnectedFolderPath(root, normalizeRelative(relative(root, destination)), { finalLink: true });
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${newName} already exists there.`);
   await rename(source, destination);
-  const renamedInfo = await stat(destination);
+  const renamedInfo = await lstat(destination);
   await touchConnectedFolder(root);
   return {
     fromPath: sourcePath,
@@ -875,10 +941,11 @@ export async function resolveConnectedFolderDeleteTarget(
   const normalized = normalizeRelative(relativePath);
   if (!normalized || normalized === ".") throw new Error("Select a file or folder to delete.");
   await assertOutsideNestedFolders(root, normalized);
-  const path = resolveConnectedFolderPath(root, normalized);
+  const path = resolveConnectedFolderPath(root, normalized, { finalLink: true });
   if (samePath(path, root)) throw new Error("The Connected Folder root cannot be deleted.");
-  const info = await stat(path).catch(() => null);
-  if (!info || (!info.isFile() && !info.isDirectory())) throw notFound("Connected Folder item not found.");
+  // A symbolic link is deleted as itself (kind "file"); what it points to is untouched.
+  const info = await lstat(path).catch(() => null);
+  if (!info || (!info.isFile() && !info.isDirectory() && !info.isSymbolicLink())) throw notFound("Connected Folder item not found.");
   return { absolutePath: path, path: normalized, kind: info.isDirectory() ? "folder" : "file" };
 }
 
@@ -955,7 +1022,14 @@ export async function copyPathIntoConnectedFolder(
   return normalizeRelative(relative(connectedFolderRoot, destination));
 }
 
-export function resolveConnectedFolderPath(connectedFolderRoot: string, relativePath: string): string {
+/**
+ * A path inside a Connected Folder (or a place resolved under its policy): no
+ * `..`, no reserved metadata, and no symbolic link along the way. With
+ * `finalLink` the last segment may itself be a link, for the operations that
+ * act on a link as an item (rename, delete, copy, move, Compress, drag); the
+ * link is never followed, and a link earlier in the path is still refused.
+ */
+export function resolveConnectedFolderPath(connectedFolderRoot: string, relativePath: string, options: { finalLink?: boolean } = {}): string {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const normalized = normalizeRelative(relativePath || ".");
   if (isAbsolute(relativePath) || normalized.split("/").includes("..")) {
@@ -966,8 +1040,46 @@ export function resolveConnectedFolderPath(connectedFolderRoot: string, relative
   }
   const path = resolve(root, normalized || ".");
   if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error("Path escapes the selected Connected Folder.");
-  assertNoLinkSegments(root, path);
+  assertNoLinkSegments(root, path, options.finalLink === true);
   return path;
+}
+
+export interface ListedSymbolicLink {
+  /** The link itself, inside the place: what Show in Finder would select. */
+  linkPath: string;
+  /** Its target, resolved through every link; it may lie outside the place. */
+  targetPath: string;
+  target: "file" | "folder";
+}
+
+/**
+ * The target of a symbolic link a listing showed (`TreeEntry.link`), resolved
+ * now, for the desktop to open or reveal on the person's request. The folder
+ * holding the link is held to the place's path policy (no link segments, no
+ * `.amplefile/` or `.pi/`, nothing outside the place); only the last segment
+ * may be a link, and it must still be one. The target may be anywhere, as a
+ * link opened in the system file manager would be: this answers where it
+ * points and never reads, lists, or writes through it. A missing target or a
+ * loop is a 404, and a target that is not a file or folder is refused.
+ */
+export async function resolveListedSymbolicLink(placeRoot: string, relativePath: string): Promise<ListedSymbolicLink> {
+  const root = ensureSafeConnectedFolderRoot(placeRoot);
+  const normalized = normalizeRelative(relativePath);
+  const name = normalized.split("/").pop() ?? "";
+  if (!normalized || isAbsolute(relativePath) || name === "." || name === "..") throw Object.assign(new Error("Choose a link inside the folder."), { status: 400, statusCode: 400 });
+  const parent = resolveConnectedFolderPath(root, normalized.includes("/") ? normalized.slice(0, normalized.lastIndexOf("/")) : ".");
+  if (containsReservedConnectedFolderPathSegment(normalized) || isAlwaysHiddenConnectedFolderEntry(name)) {
+    throw new Error("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
+  }
+  const linkPath = join(parent, name);
+  const info = await lstat(linkPath).catch(() => null);
+  if (!info) throw notFound("That link isn’t there anymore.");
+  if (!info.isSymbolicLink()) throw Object.assign(new Error("That item isn’t a symbolic link."), { status: 400, statusCode: 400 });
+  const targetPath = await realpath(linkPath).catch(() => null);
+  const target = targetPath ? await stat(targetPath).catch(() => null) : null;
+  if (!targetPath || !target) throw notFound("The item this link points to isn’t there.");
+  if (!target.isFile() && !target.isDirectory()) throw Object.assign(new Error("This link points to something that isn’t a file or folder."), { status: 400, statusCode: 400 });
+  return { linkPath, targetPath, target: target.isDirectory() ? "folder" : "file" };
 }
 
 export function ensureSafeConnectedFolderRoot(connectedFolderRoot: string): string {
@@ -1677,6 +1789,22 @@ async function atomicJsonWrite(file: string, value: unknown): Promise<void> {
   }
 }
 
+interface ScanCandidate {
+  entry: Dirent;
+  path: string;
+  relativePath: string;
+  ignored: boolean;
+  folder: boolean;
+  link: ListedLink | null;
+}
+
+interface ListedLink extends TreeEntryLink {
+  /** The target's own stats; null when the target is missing. */
+  targetInfo: Stats | null;
+  /** The link's own stats, which date a link whose target is missing. */
+  linkInfo: Stats;
+}
+
 async function scanDirectory(
   root: string,
   directory: string,
@@ -1687,23 +1815,38 @@ async function scanDirectory(
   limit: FilesystemLimiter,
   budget: TreeScanBudget,
   boundaries: ReadonlySet<string> = new Set(),
+  listing: TreeScanListing = { includeLinks: false, hidden: null },
 ): Promise<TreeEntry[]> {
   if (budget.remaining <= 0) {
     budget.truncated = true;
     return [];
   }
-  const entries = (await limit(() => readdir(directory, { withFileTypes: true })))
-    .filter((entry) => !entry.isSymbolicLink() && !isAlwaysHiddenConnectedFolderEntry(entry.name) && !isOfficeLockFileName(entry.name))
-    .filter((entry) => entry.isDirectory() || entry.isFile())
-    .map((entry) => {
-      const path = join(directory, entry.name);
-      const relativePath = normalizeRelative(relative(root, path));
-      return { entry, path, relativePath, ignored: isConnectedFolderIgnored(relativePath, ignorePatterns) };
-    })
-    .filter((item) => includeIgnored || !item.ignored)
-    .sort((left, right) => left.entry.isDirectory() === right.entry.isDirectory()
+  // Built once per folder: a folder of 100,000 entries pays for every
+  // per-entry path operation 100,000 times.
+  const directoryRelative = relative(root, directory);
+  const candidates: ScanCandidate[] = [];
+  for (const entry of await limit(() => readdir(directory, { withFileTypes: true }))) {
+    if (isAlwaysHiddenConnectedFolderEntry(entry.name) || isOfficeLockFileName(entry.name)) continue;
+    if (entry.isSymbolicLink() ? !listing.includeLinks : !entry.isDirectory() && !entry.isFile()) continue;
+    const relativePath = normalizeRelative(directoryRelative ? `${directoryRelative}${sep}${entry.name}` : entry.name);
+    const ignored = isConnectedFolderIgnored(relativePath, ignorePatterns);
+    if (!includeIgnored && ignored) continue;
+    candidates.push({ entry, path: join(directory, entry.name), relativePath, ignored, folder: entry.isDirectory(), link: null });
+  }
+  // A link sorts and lists by what it points to, so its target is looked at
+  // before the folder is ordered. Links are few; a vanished link, or one to
+  // something other than a file or folder, is left out like any such entry.
+  const links = candidates.filter((item) => item.entry.isSymbolicLink());
+  if (links.length) {
+    await Promise.all(links.map(async (item) => {
+      item.link = await inspectSymbolicLink(item.path, limit);
+      item.folder = item.link?.target === "folder";
+    }));
+  }
+  const entries = (links.length ? candidates.filter((item) => !item.entry.isSymbolicLink() || item.link) : candidates)
+    .sort((left, right) => left.folder === right.folder
       ? left.entry.name.localeCompare(right.entry.name)
-      : left.entry.isDirectory() ? -1 : 1);
+      : left.folder ? -1 : 1);
 
   // The budget is applied before inspection, not after. A folder can hold far
   // more entries than the whole walk is allowed to return, and statting all of
@@ -1715,6 +1858,7 @@ async function scanDirectory(
   // folder's entries together turns one round trip per entry into one bounded
   // batch per folder, which is what a Connected Folder with a large flat folder pays for.
   const inspected = await Promise.all(considered.map(async (item) => {
+    if (item.link) return { ...item, info: item.link.linkInfo };
     // A tree walk races ordinary file activity, so an entry that disappears
     // between readdir and stat is skipped rather than failing the whole Connected Folder.
     const info = await limit(() => stat(item.path).catch(() => null));
@@ -1722,6 +1866,8 @@ async function scanDirectory(
     return { ...item, info };
   }));
 
+  const hidden = listing.hidden;
+  const hiddenContext = hidden ? { platform: hidden.platform, atHomeFolder: isHomeFolder(directory, hidden.home, hidden.platform) } : null;
   const result: TreeEntry[] = [];
   for (const item of inspected) {
     if (!item) continue;
@@ -1730,6 +1876,24 @@ async function scanDirectory(
       break;
     }
     budget.remaining -= 1;
+    const hiddenMark = hiddenContext && isSystemHiddenEntry(item.entry.name, hiddenContext) ? { hidden: true as const } : {};
+    if (item.link) {
+      // Listed, never entered: the walk does not descend through a link, and
+      // a linked folder offers no children to open in place.
+      const { target, targetPath, targetInfo, linkInfo } = item.link;
+      result.push({
+        name: item.entry.name,
+        path: item.relativePath,
+        kind: target === "folder" ? "folder" : "file",
+        ...(target === "file" && targetInfo ? { sizeBytes: targetInfo.size } : {}),
+        updatedAt: (targetInfo ?? linkInfo).mtime.toISOString(),
+        ...(item.ignored ? { ignored: true } : {}),
+        ...(target === "folder" ? { hasChildren: false, children: [] } : {}),
+        link: { target, targetPath },
+        ...hiddenMark,
+      });
+      continue;
+    }
     if (item.entry.isDirectory() && boundaries.size && boundaryKeys(boundaries).has(comparableRelative(item.relativePath))) {
       result.push({
         name: item.entry.name,
@@ -1740,13 +1904,14 @@ async function scanDirectory(
         hasChildren: false,
         children: [],
         nestedFolder: true,
+        ...hiddenMark,
       });
       continue;
     }
     if (item.entry.isDirectory()) {
       const childrenLoaded = depth < maxDepth;
       const children = childrenLoaded
-        ? await scanDirectory(root, item.path, depth + 1, maxDepth, ignorePatterns, includeIgnored, limit, budget, boundaries)
+        ? await scanDirectory(root, item.path, depth + 1, maxDepth, ignorePatterns, includeIgnored, limit, budget, boundaries, listing)
         : [];
       // An empty child list means "no children" only when the walk was free to
       // look. If the budget ran out first, the folder has to be probed, or a
@@ -1762,8 +1927,9 @@ async function scanDirectory(
         ...(descendantIgnoredCount ? { descendantIgnoredCount } : {}),
         hasChildren: childrenAreComplete
           ? children.length > 0
-          : children.length > 0 || await directoryHasVisibleEntries(root, item.path, ignorePatterns, includeIgnored, limit),
+          : children.length > 0 || await directoryHasVisibleEntries(root, item.path, ignorePatterns, includeIgnored, limit, listing.includeLinks),
         children,
+        ...hiddenMark,
       });
     } else {
       result.push({
@@ -1773,10 +1939,30 @@ async function scanDirectory(
         sizeBytes: item.info.size,
         updatedAt: item.info.mtime.toISOString(),
         ...(item.ignored ? { ignored: true } : {}),
+        ...hiddenMark,
       });
     }
   }
   return result.sort((left, right) => left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === "folder" ? -1 : 1);
+}
+
+/**
+ * What a listed symbolic link points to, from the link's own metadata and its
+ * target's: never its contents. Null when the link vanished or now names a
+ * socket, device, or pipe, which a listing leaves out like any such entry.
+ */
+async function inspectSymbolicLink(path: string, limit: FilesystemLimiter): Promise<ListedLink | null> {
+  const linkInfo = await limit(() => lstat(path).catch(() => null));
+  if (!linkInfo?.isSymbolicLink()) return null;
+  // `stat` fails for a broken link and for a loop (ELOOP); both are missing.
+  const targetInfo = await limit(() => stat(path).catch(() => null));
+  if (targetInfo && !targetInfo.isFile() && !targetInfo.isDirectory()) return null;
+  const targetPath = await limit(() => realpath(path).catch(async () => {
+    const named = await readlink(path).catch(() => null);
+    return named === null ? null : resolve(dirname(path), named);
+  }));
+  if (targetPath === null) return null;
+  return { target: targetInfo ? targetInfo.isDirectory() ? "folder" : "file" : "missing", targetPath, targetInfo, linkInfo };
 }
 
 async function directoryHasVisibleEntries(
@@ -1785,10 +1971,11 @@ async function directoryHasVisibleEntries(
   ignorePatterns: string[],
   includeIgnored: boolean,
   limit: FilesystemLimiter,
+  includeLinks = false,
 ): Promise<boolean> {
   for (const entry of await limit(() => readdir(directory, { withFileTypes: true }).catch(() => []))) {
-    if (entry.isSymbolicLink() || isAlwaysHiddenConnectedFolderEntry(entry.name) || isOfficeLockFileName(entry.name)) continue;
-    if (!entry.isDirectory() && !entry.isFile()) continue;
+    if (isAlwaysHiddenConnectedFolderEntry(entry.name) || isOfficeLockFileName(entry.name)) continue;
+    if (entry.isSymbolicLink() ? !includeLinks : !entry.isDirectory() && !entry.isFile()) continue;
     const relativePath = normalizeRelative(relative(root, join(directory, entry.name)));
     if (!includeIgnored && isConnectedFolderIgnored(relativePath, ignorePatterns)) continue;
     return true;
@@ -1805,7 +1992,11 @@ type FilesystemLimiter = <T>(task: () => Promise<T>) => Promise<T>;
  */
 function createFilesystemLimiter(limit: number): FilesystemLimiter {
   let active = 0;
-  const waiting: Array<() => void> = [];
+  // A large flat folder queues one waiter per entry. Taking waiters from a
+  // moving head keeps each hand-off constant time; `Array.shift` on a queue of
+  // 100,000 waiters moves the whole array every time.
+  let waiting: Array<() => void> = [];
+  let head = 0;
   return async <T>(task: () => Promise<T>): Promise<T> => {
     // A finished task hands its slot directly to the next waiter instead of
     // releasing it and waking one. Releasing first lets a fresh caller claim
@@ -1816,7 +2007,11 @@ function createFilesystemLimiter(limit: number): FilesystemLimiter {
     try {
       return await task();
     } finally {
-      const next = waiting.shift();
+      const next = head < waiting.length ? waiting[head++] : undefined;
+      if (head === waiting.length) {
+        waiting = [];
+        head = 0;
+      }
       if (next) next();
       else active -= 1;
     }
@@ -1889,14 +2084,20 @@ async function nextAvailablePath(desired: string): Promise<string> {
   return info.isDirectory() ? nextAvailableDirectory(dirname(desired), basename(desired)) : nextAvailableFile(desired);
 }
 
-function assertNoLinkSegments(root: string, path: string): void {
+function assertNoLinkSegments(root: string, path: string, finalLink = false): void {
   const rel = relative(root, path);
   if (!rel || rel === ".") return;
   let cursor = root;
-  for (const segment of rel.split(sep).filter(Boolean)) {
+  const segments = rel.split(sep).filter(Boolean);
+  for (const [index, segment] of segments.entries()) {
     cursor = join(cursor, segment);
-    if (!existsSync(cursor)) return;
-    if (lstatSync(cursor).isSymbolicLink()) throw new Error("Connected Folder paths cannot traverse symbolic links or junctions.");
+    // The item itself may be a link the caller acts on as a link; nothing past it is reached.
+    if (finalLink && index === segments.length - 1) return;
+    // The link itself, not what it names: a broken link is still a link, and
+    // `existsSync` (which follows it) would let its name through.
+    const info = lstatSync(cursor, { throwIfNoEntry: false });
+    if (!info) return;
+    if (info.isSymbolicLink()) throw new Error("Connected Folder paths cannot traverse symbolic links or junctions.");
   }
 }
 

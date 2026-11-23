@@ -11,6 +11,7 @@ import { FileManagerWelcome } from "./components/file-manager/FileManagerWelcome
 import { onConnectAiRequested } from "./lib/connect-ai";
 import { type ModelScope } from "./components/panes/connectedFolderPanes";
 import { FileManagerView } from "./components/file-manager/FileManagerView";
+import type { FileManagerOpenRequest } from "./components/file-manager/file-manager-places";
 import type { ConnectedFolderUiFixture } from "./fixtures/connected-folder-fixture";
 import { useApplicationAppearance } from "./hooks/useApplicationAppearance";
 import { ConnectedFolderAppearanceProvider } from "./lib/connected-folder-appearance-context";
@@ -24,10 +25,12 @@ import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateS
 import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
 import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
+import { readStoredJsonValue, writeStoredJsonValue } from "./lib/storage";
+import { showsFileManager, welcomeDoneStorageKey } from "./components/file-manager/file-manager-welcome-model";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
 
-type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder";
+type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "toggle-hidden-files" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder";
 /** A cross-cutting request handled by the open Connected Folder view. */
 type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string };
 
@@ -85,7 +88,13 @@ export function App() {
   const [settingsBackAction, setSettingsBackAction] = useState<(() => void) | null>(null);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const [modelConfigurationRevision, modelConfigurationChanged] = useModelConfigurationRevision(!fixtureRequested);
-  const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string } | null>(null);
+  // A folder or file the system asked AmpleFile to open, held until the window shows it.
+  const [openLocationRequest, setOpenLocationRequest] = useState<FileManagerOpenRequest | null>(null);
+  // First run's welcome is for a fresh profile; once left (Browse Files) or once a folder is connected, the window is the file manager.
+  const [welcomeDone, setWelcomeDoneState] = useState<boolean>(() => !fixtureRequested && readStoredJsonValue(welcomeDoneStorageKey, (value) => value === true, false));
+  const setWelcomeDone = useCallback(() => { setWelcomeDoneState(true); if (!fixtureRequested) writeStoredJsonValue(welcomeDoneStorageKey, true); }, []);
+  // A folder handed to AmpleFile during first run is shown; the welcome never holds it back.
+  const [locationHanded, setLocationHanded] = useState(false);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
   // The Linux preview (`&platform=linux`) draws the Linux title bar too, buttons included.
@@ -173,17 +182,16 @@ export function App() {
   }, [activeConnectedFolder?.id, activeConnectedFolder?.name, activeConnectedFolder?.connectedFolderRoot]);
   useEffect(() => {
     const desktopConnectedFolder = window.ampleFileDesktop?.connectedFolder;
-    if (!desktopConnectedFolder?.onOpenConnectedFolder || !boot) return;
-    return desktopConnectedFolder.onOpenConnectedFolder((connectedFolderId) => {
-      setPendingConnectedFolderOpen({ id: Date.now(), connectedFolderId });
-      if (!boot.connectedFolders.some((connectedFolder) => connectedFolder.id === connectedFolderId)) void refreshBootstrap();
+    if (!desktopConnectedFolder?.onOpenLocation || !boot) return;
+    return desktopConnectedFolder.onOpenLocation(({ place, path, select }) => {
+      setLocationHanded(true);
+      setOpenLocationRequest({ id: Date.now(), location: { place, path }, select });
+      // The window goes to a Connected Folder it knows; one registered since it last looked is read first.
+      if (place.kind === "connected-folder" && !boot.connectedFolders.some((connectedFolder) => connectedFolder.id === place.id)) void refreshBootstrap();
     });
   }, [boot?.connectedFolders, refreshBootstrap]);
-  useEffect(() => {
-    if (!pendingConnectedFolderOpen || !boot?.connectedFolders.some((connectedFolder) => connectedFolder.id === pendingConnectedFolderOpen.connectedFolderId)) return;
-    setActiveConnectedFolderId(pendingConnectedFolderOpen.connectedFolderId);
-    setPendingConnectedFolderOpen(null);
-  }, [pendingConnectedFolderOpen, boot?.connectedFolders]);
+  const openLocationReady = openLocationRequest && (openLocationRequest.location.place.kind !== "connected-folder"
+    || Boolean(boot?.connectedFolders.some((connectedFolder) => connectedFolder.id === openLocationRequest.location.place.id))) ? openLocationRequest : null;
   useEffect(() => {
     // `&update=<phase>` previews an update phase in Settings → About and the sidebar.
     if (fixtureRequested) {
@@ -209,7 +217,7 @@ export function App() {
       else if (command === "open-settings") openSettings();
       else if (command === "open-about") openSettings("about");
       else if (command === "open-keyboard-shortcuts") openKeyboardShortcuts();
-      else if (command === "new-chat" || command === "reload-connected-folder-state" || command === "open-capabilities" || command === "open-skills" || command === "open-extensions" || command === "open-command-palette" || command === "close-tab" || command === "toggle-sidebar" || command === "toggle-agent-panel") {
+      else if (command === "new-chat" || command === "reload-connected-folder-state" || command === "open-capabilities" || command === "open-skills" || command === "open-extensions" || command === "open-command-palette" || command === "close-tab" || command === "toggle-sidebar" || command === "toggle-agent-panel" || command === "toggle-hidden-files") {
         setDesktopAction({ id: Date.now(), command });
       }
     });
@@ -294,8 +302,11 @@ export function App() {
     } catch (caught) { setError(errorText(caught)); }
   }
 
+  // Once a Connected Folder exists, the welcome is behind the person for good.
+  useEffect(() => { if (boot?.connectedFolders.length && !welcomeDone) setWelcomeDone(); }, [boot?.connectedFolders.length, welcomeDone, setWelcomeDone]);
+  const fileManagerShown = showsFileManager({ connectedFolders: boot?.connectedFolders.length ?? 0, welcomeDone, locationHanded });
   // In the file manager an error is a notice like the others: one card style, stacked, never a bar over the window.
-  const errorsAsNotices = Boolean(activeConnectedFolder);
+  const errorsAsNotices = fileManagerShown;
   useEffect(() => {
     if (!errorsAsNotices || !error) return;
     showToast({ text: error, tone: "error" });
@@ -305,9 +316,9 @@ export function App() {
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}
-    {activeConnectedFolder ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} setUpOffers={fixture ? (fixtureSetUpOffer ? [fixture.activeConnectedFolderId] : []) : setUpOffers} newSetUpOffers={newSetUpOffers} onOfferSetUp={offerSetUp} onCloseSetUpOffer={fixture ? () => setFixtureSetUpOffer(false) : closeSetUpOffer} onError={setError} /></ConnectedFolderAppearanceProvider>
-    : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
-    {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
+    {fileManagerShown ? <ConnectedFolderAppearanceProvider palette={appearance.preferences.palette}><FileManagerView connectedFolder={activeConnectedFolder} connectedFolders={boot.connectedFolders} appearance={boot.appearance} agent={boot.agent} desktopAction={desktopAction} fixture={fixture} modelConfigurationRevision={modelConfigurationRevision} onSwitchConnectedFolder={(connectedFolder) => setActiveConnectedFolderId(connectedFolder.id)} openLocationRequest={openLocationReady} onOpenedLocation={(id) => setOpenLocationRequest((current) => current?.id === id ? null : current)} onOpenSettings={openSettings} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onRefreshBootstrap={refreshBootstrap} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} setUpOffers={fixture ? (fixtureSetUpOffer ? [fixture.activeConnectedFolderId] : []) : setUpOffers} newSetUpOffers={newSetUpOffers} onOfferSetUp={offerSetUp} onCloseSetUpOffer={fixture ? () => setFixtureSetUpOffer(false) : closeSetUpOffer} onError={setError} /></ConnectedFolderAppearanceProvider>
+    : <FileManagerWelcome agentConfigured={Boolean(boot.agent?.configured)} fixtureMode={Boolean(fixture)} onBrowse={setWelcomeDone} onAiConnected={aiConnected} onPutToWork={putStandardFolderToWork} onCreateConnectedFolder={() => setCreateConnectedFolderOpen(true)} onOpenFolder={() => void openFolder()} onOpenSettings={() => openSettings("ai-models", "agent", true)} />}
+    {error && !fileManagerShown ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}
     {connectAiOpen ? <ConnectAiDialog fixtureMode={Boolean(fixture)} onClose={() => { afterConnectAi.current = undefined; setConnectAiOpen(false); }} onConnected={(connected) => { aiConnected(connected.status); const then = afterConnectAi.current; afterConnectAi.current = undefined; then?.(); }} onOpenSettings={() => { setConnectAiOpen(false); openSettings("ai-models", "agent", true); }} /> : null}
     {settingsOpen ? <DesktopSettingsModal appearance={appearance} onCustomizeConnectedFolder={(connectedFolderId) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "customize-connected-folder", connectedFolderId }); }} connectedFolder={settingsWorkerConnectedFolderId ? boot.connectedFolders.find((item) => item.id === settingsWorkerConnectedFolderId) ?? null : activeConnectedFolder} agentStatus={boot.agent} fixtureMode={Boolean(fixture)} initialPage={settingsInitialPage} initialModelScope={settingsModelScope} focusAiModel={settingsFocusAiModel} focusWorkerInstructions={settingsFocusWorkerInstructions} onAgentConfigured={(agent) => setBoot((current) => current ? { ...current, agent } : current)} onModelChanged={modelConfigurationChanged} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onBackToCustomization={settingsBackAction ? () => { setSettingsOpen(false); setSettingsBackAction(null); settingsBackAction(); } : undefined} onClose={closeSettings} /> : null}

@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.invoke("amplefile:connected-folder:open-path", { connectedFolderId, path, action })
     ),
     openPathWith: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:open-path-with", { connectedFolderId, path }),
-    startDrag: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:start-drag", { connectedFolderId, path }),
+    startDrag: (connectedFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:connected-folder:start-drag", { connectedFolderId, paths }),
     previewFile: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:preview-file", { connectedFolderId, path }),
     ...(process.platform === "darwin" ? {
       popupFileMenu: (request: {
@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
         standardFolderId?: string;
         path: string;
         kind: "file" | "folder";
-        capabilities: { open: boolean; attach: boolean; history: boolean; upload: boolean; rename: boolean; delete: boolean; worker?: boolean; organize?: boolean; paste?: boolean };
+        capabilities: { open: boolean; attach: boolean; history: boolean; upload: boolean; rename: boolean; delete: boolean; worker?: boolean; organize?: boolean; paste?: boolean; link?: boolean };
         selection?: { files: number; folders: number };
         point: { x: number; y: number };
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-file-menu", request),
@@ -75,26 +75,30 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-header-menu", request),
     } : {}),
     setActiveConnectedFolder: (connectedFolderId: string | null) => ipcRenderer.invoke("amplefile:connected-folder:set-active-connected-folder", connectedFolderId),
-    onOpenConnectedFolder: (callback: (connectedFolderId: string) => void) => {
+    /** A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select. */
+    onOpenLocation: (callback: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null }) => void) => {
       let disposed = false;
       const deliveredTokens = new Set<string>();
       const deliver = (value: unknown) => {
         if (disposed || !value || typeof value !== "object" || Array.isArray(value)) return;
-        const request = value as { token?: unknown; connectedFolderId?: unknown };
-        if (typeof request.token !== "string" || !request.token || request.token.length > 128
-          || typeof request.connectedFolderId !== "string" || !request.connectedFolderId || request.connectedFolderId.length > 512) return;
+        const request = value as { token?: unknown; location?: { place?: { kind?: unknown; id?: unknown }; path?: unknown; select?: unknown } };
+        const location = request.location;
+        if (typeof request.token !== "string" || !request.token || request.token.length > 128 || !location || typeof location !== "object") return;
+        const place = location.place;
+        if (!place || (place.kind !== "connected-folder" && place.kind !== "standard") || typeof place.id !== "string" || !place.id || place.id.length > 512) return;
+        if (typeof location.path !== "string" || location.path.length > 4096 || (location.select !== null && (typeof location.select !== "string" || location.select.length > 4096))) return;
         if (deliveredTokens.has(request.token)) return;
         deliveredTokens.add(request.token);
         if (deliveredTokens.size > 32) deliveredTokens.delete(deliveredTokens.values().next().value as string);
-        callback(request.connectedFolderId);
-        ipcRenderer.send("amplefile:connected-folder:ack-open-connected-folder", request.token);
+        callback({ place: { kind: place.kind, id: place.id }, path: location.path, select: location.select });
+        ipcRenderer.send("amplefile:file-manager:ack-open-location", request.token);
       };
       const listener = (_event: unknown, value: unknown) => deliver(value);
-      ipcRenderer.on("amplefile:connected-folder:open-connected-folder", listener);
-      void ipcRenderer.invoke("amplefile:connected-folder:take-open-connected-folder").then(deliver).catch(() => undefined);
+      ipcRenderer.on("amplefile:file-manager:open-location", listener);
+      void ipcRenderer.invoke("amplefile:file-manager:take-open-location").then(deliver).catch(() => undefined);
       return () => {
         disposed = true;
-        ipcRenderer.removeListener("amplefile:connected-folder:open-connected-folder", listener);
+        ipcRenderer.removeListener("amplefile:file-manager:open-location", listener);
       };
     },
     onOpenFolder: (callback: () => void) => {
@@ -109,14 +113,20 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.invoke("amplefile:standard-folder:open-path", { standardFolderId, path, action })
     ),
     openPathWith: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:open-path-with", { standardFolderId, path }),
-    startDrag: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:start-drag", { standardFolderId, path }),
+    startDrag: (standardFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:standard-folder:start-drag", { standardFolderId, paths }),
     previewFile: (standardFolderId: string, path: string) => ipcRenderer.invoke("amplefile:standard-folder:preview-file", { standardFolderId, path }),
     trash: (standardFolderId: string, paths: string[]) => ipcRenderer.invoke("amplefile:standard-folder:trash", { standardFolderId, paths }),
     add: () => ipcRenderer.invoke("amplefile:standard-folder:add"),
   },
+  // A symbolic link a listing showed, in any place: open what it points to (a file), or show the link itself.
+  placeLink: {
+    open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => ipcRenderer.invoke("amplefile:place:open-link", { place, path, action }),
+  },
   fileClipboard: {
-    write: (paths: string[]) => ipcRenderer.invoke("amplefile:file-clipboard:write", paths),
-    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
+    // A Copy, or with "cut" a Cut, which a Linux file manager pastes as a move.
+    write: (paths: string[], operation: "copy" | "cut" = "copy") => ipcRenderer.invoke("amplefile:file-clipboard:write", operation === "cut" ? { paths, operation } : paths),
+    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[]; cut?: boolean } | null; operationId?: string; conflicts?: unknown }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
+    holds: (nativePaths: string[]) => ipcRenderer.invoke("amplefile:file-clipboard:holds", nativePaths),
   },
   agent: {
     // A file dropped on the AmpleFile Agent panel becomes a path reference, as in the popover.
@@ -247,6 +257,12 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     removeSkill: (target: "claude" | "codex") => ipcRenderer.invoke("amplefile:command-line:remove-skill", target),
     skill: () => ipcRenderer.invoke("amplefile:command-line:skill"),
   },
+  // Settings → File Manager: Linux only.
+  ...(process.platform === "linux" ? { fileManagerIntegration: {
+    status: () => ipcRenderer.invoke("amplefile:file-manager-integration:status"),
+    setShowFilesFromOtherApps: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-show-files-from-other-apps", enabled),
+    setOpenFoldersByDefault: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-open-folders-by-default", enabled),
+  } } : {}),
   menu: {
     setState: (state: unknown) => ipcRenderer.send("amplefile:menu:set-state", state),
     popup: (menuId: unknown, bounds: unknown) => ipcRenderer.invoke("amplefile:menu:popup", menuId, bounds),

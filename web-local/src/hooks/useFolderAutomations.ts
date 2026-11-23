@@ -43,7 +43,8 @@ export function useFolderAutomations(activeConnectedFolderId: string, fixtureMod
   }, [fixtureMode]);
 
   useEffect(() => {
-    if (fixtureMode) return;
+    // No Connected Folder (the window with none registered) has no Automations to read.
+    if (fixtureMode || !activeConnectedFolderId) return;
     void refresh(activeConnectedFolderId);
     const onFocus = () => { void refresh(activeConnectedFolderId); };
     const onChange = () => {

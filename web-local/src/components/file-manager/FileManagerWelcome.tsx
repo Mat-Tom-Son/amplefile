@@ -3,6 +3,7 @@ import { Checkmark16Regular, ChevronRight16Regular, FolderAdd20Regular, FolderOp
 
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
+import "./file-manager-places.css";
 import type { AgentStatus } from "../../types";
 import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { ConnectAi, type ConnectedAi } from "../onboarding/ConnectAi";
@@ -29,11 +30,14 @@ const standardFolderPitch: Record<string, string> = {
  * tools, and the first folder, shown in a file manager window, as macOS's Setup
  * Assistant shows its steps in a window. The sidebar already lists the
  * Standard Folders, and the last step offers each one to put to work in one
- * click, beside Connect Folder and New Connected Folder.
+ * click, beside Connect Folder and New Connected Folder. Every step can be
+ * left with Browse Files: the window is a file manager without any of this.
  */
-export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected, onPutToWork, onCreateConnectedFolder, onOpenFolder, onOpenSettings }: {
+export function FileManagerWelcome({ agentConfigured, fixtureMode, onBrowse, onAiConnected, onPutToWork, onCreateConnectedFolder, onOpenFolder, onOpenSettings }: {
   agentConfigured: boolean;
   fixtureMode: boolean;
+  /** Leaves the welcome for the file manager, at the home folder, with nothing connected. */
+  onBrowse: () => void;
   onAiConnected: (status: AgentStatus) => void;
   onPutToWork: (standardFolderId: string) => Promise<void>;
   onCreateConnectedFolder: () => void;
@@ -165,6 +169,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
           </div>
 
           <footer className="fm-welcome-footer">
+            <button type="button" className="fm-btn fm-welcome-browse" onClick={onBrowse}>Browse Files</button>
             {index > 0 ? <button type="button" className="fm-btn fm-welcome-back" onClick={back}>Back</button> : null}
             {step === "connect" && !connected ? <button type="button" className="fm-btn" onClick={next}>Skip for Now</button> : null}
             {step === "welcome" ? <button type="button" className="fm-btn is-primary" onClick={next} autoFocus>Get Started</button> : null}

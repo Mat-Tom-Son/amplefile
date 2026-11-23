@@ -39,6 +39,25 @@ test("a copy offers GNOME's list, the URI list and the paths as text", () => {
   assert.ok(!offers.some((offer) => offer.target === "application/x-kde-cutselection"), "AmpleFile's Copy never says cut");
 });
 
+test("a Cut is marked the way GNOME Files and Dolphin mark theirs, and reads back as a cut", () => {
+  const offers = linuxFileClipboardOffers(["/tmp/a b", "/tmp/c"], "cut");
+  assert.deepEqual(offers.map((offer) => offer.target), [
+    "x-special/gnome-copied-files", "text/uri-list", "application/x-kde-cutselection", "text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "TEXT", "STRING",
+  ]);
+  const byTarget = new Map(offers.map((offer) => [offer.target, offer.data]));
+  assert.equal(byTarget.get("x-special/gnome-copied-files")?.toString("utf8"), "cut\nfile:///tmp/a%20b\nfile:///tmp/c");
+  assert.equal(byTarget.get("application/x-kde-cutselection")?.toString("utf8"), "1");
+  // What another app (or this one, on the next paste) reads from those offers.
+  const read = readLinuxClipboardFiles(clipboardAccessFromResults(new Map(offers.map((offer) => [offer.target, offer.data]))));
+  assert.deepEqual(read, { paths: ["/tmp/a b", "/tmp/c"], operation: "cut" });
+  // Dolphin's form alone (a URI list with KDE's marker) reads as a cut too.
+  const dolphin = readLinuxClipboardFiles(clipboardAccessFromResults(new Map([
+    ["text/uri-list", byTarget.get("text/uri-list")!],
+    ["application/x-kde-cutselection", Buffer.from("1")],
+  ])));
+  assert.deepEqual(dolphin, { paths: ["/tmp/a b", "/tmp/c"], operation: "cut" });
+});
+
 test("STRING is Latin-1, and left out when a name is not", () => {
   const latin = linuxFileClipboardOffers(["/tmp/Café"]).find((offer) => offer.target === "STRING");
   assert.deepEqual(latin?.data, Buffer.from([...Buffer.from("/tmp/Caf", "latin1"), 0xe9]));
@@ -302,5 +321,5 @@ test("the packaged helper ships with its provenance and licenses", async () => {
   const verify = await readFile(join(root, "scripts/verify-linux-packages.mjs"), "utf8");
   assert.match(verify, /resources\/clipboard-helper\/amplefile-clipboard/);
   const main = await readFile(join(root, "desktop/src/main.ts"), "utf8");
-  assert.match(main, /owner && await owner\.offer\(linuxFileClipboardOffers\(paths\)\)\) return;\n\s*writeLinuxClipboardFiles\(clipboard, paths\);/);
+  assert.match(main, /owner && await owner\.offer\(linuxFileClipboardOffers\(paths, operation\)\)\) return;\n\s*writeLinuxClipboardFiles\(clipboard, paths\);/);
 });

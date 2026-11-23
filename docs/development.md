@@ -169,7 +169,8 @@ argument; none imports from `server.ts`.
 | `reservations.ts` | Capability and Connected Folder mutation reservations, the settled-deletion check, and the History restore and safety wrappers |
 | `conversation-clients.ts`, `turn-acceptance.ts`, `turn-run.ts`, `chat-routes.ts` | A Chat's Pi client, turn acceptance with steering and the queued message, running a turn to its settled record, and a Connected Folder's Chat routes |
 | `request-routes.ts`, `request-records.ts`, `background-jobs.ts` | Request routes, the request-level stop, and settle evaluation; the collaboration verbs' ownership rules, views, and results; the host side of background jobs |
-| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Recents, and Go to Folder |
+| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Extract, their progress events and cancel, Recents, and Go to Folder (the file engine is `src/local/file-transfer.ts`, `file-conflicts.ts`, `archive-extract.ts`, `zip-writer.ts`, `disk-space.ts`, `move-to-system-trash.ts`, and `file-operations.ts`) |
+| `thumbnail-routes.ts` | Picture and PDF thumbnails and folder sizes in every kind of place (`src/local/thumbnails.ts` with its PDF worker, `image-header.ts`, and `folder-size.ts`) |
 | `history-routes.ts`, `recently-deleted-routes.ts` | History routes; Settings → Recently Deleted and its restores |
 | `connected-folder-routes.ts` | Health, the bootstrap read, and creating, connecting, renaming, removing, and customizing Connected Folders |
 | `ai-model-routes.ts`, `capability-routes.ts` | Settings → AI Models and Worker instructions; Skills & Extensions and the included tools |

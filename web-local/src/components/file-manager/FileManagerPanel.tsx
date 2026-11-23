@@ -15,9 +15,14 @@ import type { FolderAutomationView } from "../../../../src/shared/automation-pre
 import { automationCardRows, type AutomationCardRow } from "./file-manager-automations";
 import type { ConversationSummary, FileVersionEntry, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
 import { fileKindLabel, fileManagerIcon, formatFileManagerDate, historyTimeLabel } from "./file-manager-model";
-import { placeApiBase, type FileManagerPlace } from "./file-manager-places";
+import { isComputerPlace, placeApiBase, type FileManagerPlace } from "./file-manager-places";
+import { linkKindLabel } from "./file-manager-layout";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
+import { canThumbnail, thumbnailSize, useThumbnail } from "./file-manager-thumbnails";
+import { folderSizeText, useFolderSize } from "./file-manager-folder-size";
+import { trashDifferenceText, trashLocationText, trashSizeText, type TrashItem } from "./file-manager-trash";
+import "./file-manager-places.css";
 
 type PanelTab = "info" | "history";
 const tabStorageKey = "amplefile.file-manager.panel-tab.v1";
@@ -33,10 +38,10 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
 /**
  * The file manager's right panel (docs/product-model.md, "The file
  * manager window"), as the design draws it. In a Connected Folder, Info says what
- * the selection is and History lists its Chats and changes. A standard folder
- * offers to put the folder to work.
+ * the selection is and History lists its Chats and changes. A Standard Folder's
+ * top, and any folder shown in the computer place, offers to connect it.
  */
-export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
+export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError, trashSelection = null, aiConnected = true, onSetUpAi }: {
   place: FileManagerPlace;
   connectedFolder: ConnectedFolderSummary | null;
   placeName: string;
@@ -74,41 +79,52 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   onOpenChat: (conversationId: string, title: string) => void;
   onRestored: () => void;
   onError: (message: string | null) => void;
+  /** While the Trash is shown: the Trash items selected there (Info describes them), else null. */
+  trashSelection?: readonly TrashItem[] | null;
+  /** Whether an AI model is connected; outside a Connected Folder the panel's foot offers Set Up AI when not. */
+  aiConnected?: boolean;
+  onSetUpAi?: () => void;
 }) {
   const [storedTab, setTabState] = useState<PanelTab>(() => readStoredJsonValue(tabStorageKey, (value) => value === "history" ? "history" : "info", "info"));
   const setTab = (next: PanelTab) => { setTabState(next); writeStoredJsonValue(tabStorageKey, next); };
   useEffect(() => { if (infoRequest) setTab("info"); }, [infoRequest]);
   // Only a Connected Folder has a Worker and History; elsewhere the panel is Info alone.
-  const tabsShown = Boolean(connectedFolder);
+  const tabsShown = Boolean(connectedFolder) && !trashSelection;
   const tab = tabsShown ? storedTab : "info";
   const single = selection.length === 1 ? selection[0]! : null;
   const apiBase = placeApiBase(place);
   const fixtureMode = Boolean(fixture);
+  // A folder shown in the computer place stands on its own, as a Standard Folder's top does: it offers Connect This Folder.
+  const computerFolder = !connectedFolder && isComputerPlace(place);
   const where = (path: string) => [placeName, ...path.split("/").filter(Boolean).slice(0, -1)].join(" › ");
 
   let info;
-  if (searchItem) {
+  if (trashSelection) {
+    info = <TrashInfo selection={trashSelection} />;
+  } else if (searchItem) {
     info = <ItemInfo apiBase={searchItem.apiBase} entry={searchItem.entry} where={searchItem.where} fixtureMode={fixtureMode} />;
   } else if (single) {
-    info = <ItemInfo apiBase={apiBase} entry={single} where={where(single.path)} fixtureMode={fixtureMode} />;
+    info = <ItemInfo apiBase={apiBase} place={place} entry={single} where={where(single.path)} fixtureMode={fixtureMode} />;
   } else if (selection.length > 1) {
     info = <SelectionInfo selection={selection} sizeOf={(entry) => entry.kind === "folder" ? "--" : typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : ""} />;
-  } else if (folderPath) {
-    info = <ItemInfo apiBase={apiBase} entry={{ name: folderName, path: folderPath, kind: "folder" }} where={where(folderPath)} fixtureMode={fixtureMode} itemCount={itemCount} />;
+  } else if (folderPath && !computerFolder) {
+    info = <ItemInfo apiBase={apiBase} place={place} entry={{ name: folderName, path: folderPath, kind: "folder" }} where={where(folderPath)} fixtureMode={fixtureMode} itemCount={itemCount} />;
   } else if (connectedFolder) {
     info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
   } else {
-    info = <>
-      <FolderHeader name={folderName} color={null} itemCount={itemCount} />
-      <section className="fm-sec">
-        <div className="fm-cta">
-          <div className="fm-cta-t">No Worker here yet</div>
-          <div className="fm-cta-s">Adds a Worker and History. Nothing moves.</div>
-          <button type="button" className="fm-btn is-primary" onClick={onPutToWork}>Connect This Folder</button>
-        </div>
-      </section>
-    </>;
+    // A Standard Folder's top, or the disk itself; Connect This Folder is at the panel's foot, where a Chat would be.
+    info = <FolderHeader name={folderName} color={null} itemCount={itemCount} />;
   }
+  // Outside a Connected Folder there is no Worker to message: the foot offers to connect the folder shown (never the
+  // disk itself) and, with no AI connected, to set one up.
+  const connectable = !trashSelection && !(computerFolder && !folderPath);
+  const plainFoot = !connectedFolder && !composer && (connectable || !aiConnected) ? <div className="fm-plain-foot">
+    <p className="fm-plain-foot-t">{connectable ? `No Worker here yet. Connect This Folder adds a Worker and History to “${folderName}”. Nothing moves.` : "Set up AI to give a folder a Worker."}</p>
+    <div className="fm-plain-foot-actions">
+      {connectable ? <button type="button" className="fm-btn is-primary" onClick={onPutToWork}>Connect This Folder</button> : null}
+      {!aiConnected && onSetUpAi ? <button type="button" className="fm-btn" onClick={onSetUpAi}>Set Up AI…</button> : null}
+    </div>
+  </div> : null;
 
   const chatShown = Boolean(chat?.open);
   // Motion: Info and History slide in from the side of the tab
@@ -140,11 +156,11 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
       <div key={tab} className="fm-pane" data-from={paneFromRef.current}>
         {tab === "info" || !connectedFolder
           ? <>{receipt}{info}</>
-          : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
+          : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" && !single.link ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
       </div>
     </div>}
     {chat ? <div className="fm-chat" hidden={!chatShown}>{chat.content}</div> : null}
-    {chatShown || !composer ? null : composer({ showSuggestions: tab === "info" })}
+    {chatShown ? null : composer ? composer({ showSuggestions: tab === "info" }) : plainFoot}
   </aside>;
 }
 
@@ -216,48 +232,56 @@ function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount
 }
 
 /** One file or folder: the preview (a picture shows itself), then where it is, when it changed, and its size. */
-function ItemInfo({ apiBase, entry, where, fixtureMode, itemCount }: { apiBase: string | null; entry: TreeEntry; where: string; fixtureMode: boolean; itemCount?: number }) {
+function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount }: { apiBase: string | null; place?: FileManagerPlace | null; entry: TreeEntry; where: string; fixtureMode: boolean; itemCount?: number }) {
   const [modifiedAt, setModifiedAt] = useState<string | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  // A link's own details come from the listing; the place's routes never read through one.
+  const link = entry.link ?? null;
   useEffect(() => {
     setModifiedAt(null);
-    if (fixtureMode || !apiBase) return;
+    if (fixtureMode || !apiBase || link) return;
     let cancelled = false;
     // Info shows only the date, so the host need not hash the file.
     void api<{ modifiedAt: string }>(`${apiBase}/file-info?path=${encodeURIComponent(entry.path)}&hash=0`)
       .then((result) => { if (!cancelled) setModifiedAt(result.modifiedAt); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [apiBase, entry.path, fixtureMode]);
+  }, [apiBase, entry.path, fixtureMode, link]);
   // A selected folder says how many items it holds, as the design does.
   useEffect(() => {
     setCount(null);
-    if (entry.kind !== "folder" || itemCount !== undefined || fixtureMode || !apiBase) return;
+    if (entry.kind !== "folder" || itemCount !== undefined || fixtureMode || !apiBase || link) return;
     let cancelled = false;
     void api<{ tree: TreeEntry[] }>(`${apiBase}/tree?maxDepth=0&path=${encodeURIComponent(entry.path)}`)
       .then((result) => { if (!cancelled) setCount(result.tree.length); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [apiBase, entry.kind, entry.path, fixtureMode, itemCount]);
+  }, [apiBase, entry.kind, entry.path, fixtureMode, itemCount, link]);
+  // A picture or PDF shows the host's larger thumbnail; a picture it cannot draw (SVG, say) shows itself as before.
+  const thumbnail = useThumbnail(apiBase ?? "", entry, thumbnailSize("info"), Boolean(apiBase) && !fixtureMode && !link);
+  const thumbnailAsked = canThumbnail(entry) && Boolean(apiBase) && !fixtureMode && !link;
+  const folderSize = useFolderSize(place, apiBase, entry.path, entry.kind === "folder" && !link && !fixtureMode && Boolean(place));
   useEffect(() => {
     setImageUrl(null);
-    if (fixtureMode || !apiBase || entry.kind !== "file" || !previewableImage.test(entry.name)) return;
+    if (fixtureMode || !apiBase || link || entry.kind !== "file" || !previewableImage.test(entry.name) || thumbnailAsked) return;
     const controller = new AbortController();
     let url: string | null = null;
     void rawFileObjectUrlAt(apiBase, entry.path, controller.signal)
       .then((created) => { url = created; if (!controller.signal.aborted) setImageUrl(created); else URL.revokeObjectURL(created); })
       .catch(() => undefined);
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [apiBase, entry.kind, entry.name, entry.path, fixtureMode]);
+  }, [apiBase, entry.kind, entry.name, entry.path, fixtureMode, link, thumbnailAsked]);
   const icon = fileManagerIcon(entry);
+  const shownImage = thumbnail ?? imageUrl;
+  const measured = folderSize.state.status === "done" ? folderSizeText(folderSize.state.size) : null;
   const folderCount = itemCount ?? count;
-  const meta = entry.kind === "folder"
+  const meta = link ? linkKindLabel(link) : entry.kind === "folder"
     ? folderCount === null ? "Folder" : folderCount === 1 ? "1 item" : `${folderCount} items`
     : `${fileKindLabel(entry)}${typeof entry.sizeBytes === "number" ? ` · ${formatBytes(entry.sizeBytes)}` : ""}`;
   return <>
     <div className="fm-hd">
-      <div className="fm-pv">{imageUrl ? <img className="fm-pv-image" src={imageUrl} alt="" /> : <span className={icon.className} data-label={icon.label} aria-hidden="true" />}</div>
+      <div className="fm-pv">{shownImage ? <img className="fm-pv-image" src={shownImage} alt="" /> : <span className={icon.className} data-label={icon.label} aria-hidden="true" />}</div>
       <div className="fm-pv-name" title={entry.name}>{entry.name}</div>
       <div className="fm-pv-meta">{meta}</div>
     </div>
@@ -265,9 +289,49 @@ function ItemInfo({ apiBase, entry, where, fixtureMode, itemCount }: { apiBase: 
       <h2 className="fm-sec-h">Information</h2>
       <div className="fm-card">
         <div className="fm-crow"><span className="fm-crow-l">Where</span><span className="fm-crow-v" title={where}>{where}</span></div>
+        {link ? <div className="fm-crow"><span className="fm-crow-l">{link.target === "missing" ? "Missing" : "Original"}</span><span className="fm-crow-v" title={link.targetPath}>{link.targetPath}</span></div> : null}
         {modifiedAt ?? entry.updatedAt ? <div className="fm-crow"><span className="fm-crow-l">Modified</span><span className="fm-crow-v">{formatFileManagerDate(modifiedAt ?? entry.updatedAt)}</span></div> : null}
         {entry.kind === "file" && typeof entry.sizeBytes === "number" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v">{formatBytes(entry.sizeBytes)}</span></div> : null}
+        {folderSize.state.status === "calculating" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" aria-live="polite">Calculating…</span></div> : null}
+        {measured ? <>
+          <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={measured.items}>{measured.size}</span><button type="button" className="fm-text-button" title="Measure again" onClick={folderSize.recalculate}>Recalculate</button></div>
+          <div className="fm-crow"><span className="fm-crow-l">Contains</span><span className="fm-crow-v">{measured.items}</span></div>
+        </> : null}
+        {folderSize.state.status === "error" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={folderSize.state.message}>Couldn’t measure</span><button type="button" className="fm-text-button" onClick={folderSize.recalculate}>Try Again</button></div> : null}
       </div>
+      {measured?.note ? <div className="fm-size-note">{measured.note}</div> : null}
+    </section>
+  </>;
+}
+
+/** Info while the Trash is shown: what it is, or the item chosen there. */
+function TrashInfo({ selection }: { selection: readonly TrashItem[] }) {
+  if (selection.length !== 1) {
+    return <>
+      <div className="fm-hd">
+        <div className="fm-pv"><span className="fm-ic fm-ic-folder" aria-hidden="true" /></div>
+        <div className="fm-pv-name">{selection.length ? `${selection.length} items` : "Trash"}</div>
+        <div className="fm-pv-meta">{selection.length ? "In the Trash" : "The computer’s Trash"}</div>
+      </div>
+      <section className="fm-sec"><p className="fm-size-note">{trashDifferenceText}</p></section>
+    </>;
+  }
+  const item = selection[0]!;
+  const icon = fileManagerIcon({ name: item.name, kind: item.kind === "folder" ? "folder" : "file" });
+  return <>
+    <div className="fm-hd">
+      <div className="fm-pv"><span className={icon.className} data-label={icon.label} aria-hidden="true" /></div>
+      <div className="fm-pv-name" title={item.name}>{item.name}</div>
+      <div className="fm-pv-meta">In the Trash</div>
+    </div>
+    <section className="fm-sec">
+      <h2 className="fm-sec-h">Information</h2>
+      <div className="fm-card">
+        <div className="fm-crow"><span className="fm-crow-l">Was in</span><span className="fm-crow-v" title={item.originalPath ?? undefined}>{trashLocationText(item)}</span></div>
+        {item.deletedAt ? <div className="fm-crow"><span className="fm-crow-l">Deleted</span><span className="fm-crow-v">{formatFileManagerDate(item.deletedAt)}</span></div> : null}
+        <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v">{trashSizeText(item)}</span></div>
+      </div>
+      {!item.canPutBack && item.putBackNote ? <p className="fm-size-note">{item.putBackNote}</p> : null}
     </section>
   </>;
 }

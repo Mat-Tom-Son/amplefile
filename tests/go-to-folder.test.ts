@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -43,8 +43,29 @@ test("Go to Folder completes names in the typed folder and says plainly what it 
   assert.deepEqual(partial.suggestions.map((item) => item.name), ["Recipes", "Roomcraft"]);
   const listed = await goToFolder("~/Documents/Projects/", [], root);
   assert.deepEqual(listed.suggestions.map((item) => item.name), ["Recipes", "Roomcraft"], "dot folders stay hidden");
-  const outside = await goToFolder("/System/Library", [], root);
-  assert.equal(outside.target, null);
-  assert.match(outside.message ?? "", /home folder, iCloud Drive, a Connected Folder/);
+  const missing = await goToFolder(join(root, "Nowhere", "at all"), [], root);
+  assert.equal(missing.target, null);
+  assert.equal(missing.message, "There’s no folder or file at that path.");
+  await mkdir(join(root, "Documents", "Projects", "Roomcraft", ".amplefile"));
+  const hidden = await goToFolder("~/Documents/Projects/Roomcraft/.amplefile", [], root);
+  assert.equal(hidden.target, null);
+  assert.match(hidden.message ?? "", /hidden AmpleFile or Pi data/);
+  assert.deepEqual((await goToFolder("~/Documents/Projects/Roomcraft/.amplefile/", [], root)).suggestions, [], "nothing inside it is listed");
   assert.equal(expandTypedPath("relative/name", root), null, "names relative to the folder shown are resolved in the window");
+});
+
+test("Go to Folder opens any folder on the computer, and completes names outside the places too", async (t) => {
+  const root = await home(t);
+  const elsewhere = await realpath(await mkdtemp(join(tmpdir(), "go-to-folder-elsewhere-")));
+  t.after(() => rm(elsewhere, { recursive: true, force: true }));
+  await mkdir(join(elsewhere, "Shared", "Scans"), { recursive: true });
+  await writeFile(join(elsewhere, "Shared", "Scans", "page1.png"), "png");
+  // Outside every Connected Folder and Standard Folder, the computer place holds it, by its path from the disk's root.
+  const folder = await goToFolder(join(elsewhere, "Shared", "Scans"), [], root);
+  assert.deepEqual(folder.target, { place: { kind: "standard", id: "computer" }, path: join(elsewhere, "Shared", "Scans").slice(1), select: null });
+  const file = await goToFolder(join(elsewhere, "Shared", "Scans", "page1.png"), [], root);
+  assert.deepEqual(file.target, { place: { kind: "standard", id: "computer" }, path: join(elsewhere, "Shared", "Scans").slice(1), select: join(elsewhere, "Shared", "Scans", "page1.png").slice(1) });
+  assert.deepEqual((await goToFolder(join(elsewhere, "Shared", "Sc"), [], root)).suggestions.map((item) => item.name), ["Scans"]);
+  const disk = await goToFolder("/", [], root);
+  assert.deepEqual(disk.target, { place: { kind: "standard", id: "computer" }, path: "", select: null });
 });

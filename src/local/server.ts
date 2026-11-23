@@ -84,6 +84,8 @@ import { forgetOpenLocalApi, handlePlaceRoutes, rememberOpenLocalApi } from "./a
 import { createPreparedActAdapters, createPreparedActFence } from "./api/prepared-act-adapters.js";
 import { handleSettingsRoutes } from "./api/recently-deleted-routes.js";
 import { handleRequestRoutes } from "./api/request-routes.js";
+import { handleThumbnailRoutes } from "./api/thumbnail-routes.js";
+import { handleVolumeAndTrashRoutes } from "./api/volume-trash-routes.js";
 import type { LocalApiOptions, LocalApiRequest, LocalApiState } from "./api/state.js";
 import { recoverDurableTurnState, yieldBackgroundCompaction } from "./api/turn-run.js";
 
@@ -490,7 +492,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (await handleConnectedFolderAutomationRoutes(request)) return;
   if (await handleConnectedFolderAppearanceRoutes(request)) return;
   if (await handleSearchRoutes(request)) return;
+  if (await handleThumbnailRoutes(request)) return;
   if (await handlePlaceRoutes(request)) return;
+  if (await handleVolumeAndTrashRoutes(request)) return;
   if (await handleFileRoutes(request)) return;
   if (await handleHistoryRoutes(request)) return;
   if (await handleAiModelRoutes(request)) return;

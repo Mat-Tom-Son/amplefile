@@ -1,10 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Globe20Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
 import { ChevronLeft, ChevronRight, Search, X } from "../chrome/icons";
-import { FileContextMenu } from "../tree/FileContextMenu";
 import { TextInputModal } from "../modals/TextInputModal";
 import { NewFolderModal, type NewFolderTarget } from "../modals/NewFolderModal";
 import { FileVersionHistoryModal } from "../modals/FileVersionHistoryModal";
@@ -17,7 +16,7 @@ import { api, apiForm, errorText } from "../../lib/api";
 import { collectDroppedUploadFiles } from "../../lib/dropped-files";
 import { copyToClipboard } from "../../lib/clipboard";
 import { canOpenDirectly, nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
-import { formatBytes, formatItemCount } from "../../lib/format";
+import { formatItemCount } from "../../lib/format";
 import { untitledChatLabel } from "../../constants";
 import { desktopPlatform, isMacOS, connectedFolderEntryNativePath, systemFileManagerName } from "../../lib/platform";
 import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
@@ -34,13 +33,12 @@ import { requestConfirm, showToast } from "../../ui/feedback";
 import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import type { ConnectedFolderAppearanceState } from "../../../../src/shared/connected-folder-appearance";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
-import type { AgentStatus, ChatSendRequest, ConversationSummary, DesktopUpdateStatus, FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { AgentStatus, ChatSendRequest, ConversationSummary, DesktopUpdateStatus, TreeEntry, ConnectedFolderSummary } from "../../types";
 import {
   closedSidebarParents,
   defaultFileManagerSort,
   navigationSide,
   fileKindLabel,
-  fileManagerIcon,
   collapseCrumbs,
   fileManagerPathBar,
   historyTimeLabel,
@@ -60,15 +58,35 @@ import {
   sidebarConnectedFolderRows,
 } from "./file-manager-model";
 import { FilePreview } from "./FilePreview";
+import { EntryIcon, FileEntries, rowDomId, type EntriesLayout, type EntryHandlers, type FolderLook } from "./FileEntries";
+import {
+  bandHits,
+  bandRect,
+  bandSelection,
+  canDropInto,
+  dragPayload,
+  isShowHiddenFilesKey,
+  linkKindLabel,
+  revealScrollTop,
+  folderListingMaxEntries,
+  shownEntries,
+} from "./file-manager-layout";
 import { previewSpaceAction } from "./file-preview-model";
 import {
+  computerName,
+  computerRoot,
+  enclosingNativeFolder,
+  homePlace,
+  isComputerPlace,
   placeApiBase,
   placeKey,
+  placeNativePath,
   sameLocation,
   samePlace,
   sidebarStandardFolders,
   standardFolderNames,
   type FileManagerLocation,
+  type FileManagerOpenRequest,
   type FileManagerPlace,
   type StandardFolderSummary,
 } from "./file-manager-places";
@@ -85,18 +103,35 @@ import { useBrowserPages } from "../../hooks/useBrowserPages";
 import { browserHost, browserWorkerChat, clampBrowserFraction, effectiveBrowserLayout, type BrowserPaneLayout } from "../../lib/browser-pages";
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
 import { UpdateIndicator } from "./UpdateIndicator";
-import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
+import { useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
 import { moveResultMessage } from "./move-result";
-import { StandardFolderGlyph } from "./file-manager-glyphs";
+import { useFileOperations, OperationStoppedBeforeStart, type OperationHandle } from "./useFileOperations";
+import { FileOperationsTray } from "./FileOperationsTray";
+import { useConflictQuestion } from "./ConflictDialog";
+import { operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
+import { fileMenuItems, isExtractableArchive, type FileMenuCapabilities } from "../../../../src/shared/file-menu";
+import { StandardFolderGlyph, TrashGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 import { useFolderAutomations } from "../../hooks/useFolderAutomations";
 import { useCalendarDay } from "../../hooks/useCalendarDay";
+// Drives, the Trash, thumbnails, folder sizes, plain-folder search, and the window with no Connected Folder.
+import { currentDriveKey, driveRows, ejectMessage, locationIsOnDrive, statusWithSpace, type DriveRow } from "./file-manager-drives";
+import { useDrives, useVolumeSpace } from "./useDrives";
+import { SidebarDrives, SidebarTrashRow } from "./FileManagerSidebarPlaces";
+import { TrashView } from "./TrashView";
+import { trashChangedEvent, type TrashItem } from "./file-manager-trash";
+import { useRememberedFolderSizes } from "./file-manager-folder-size";
+import { stoppedEarlyText, usePlainFolderSearch } from "./usePlainFolderSearch";
 
 const viewStorageKey = "amplefile.file-manager.view.v1";
 const panelStorageKey = "amplefile.file-manager.panel.v1";
 const sortStorageKey = "amplefile.file-manager.sort.v1";
+/** Show Hidden Files, for the whole window, kept on this computer like the view. */
+const showHiddenStorageKey = "amplefile.file-manager.show-hidden.v1";
+/** What the window puts on a drag inside it where the desktop has no drag of its own (the browser preview). */
+const internalDragType = "application/x-amplefile-items";
 /** Connected Folders whose nested Connected Folders are shown in the sidebar. */
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
 /** The Browser pane's share of the main area when the folder and the browser are both shown. */
@@ -116,17 +151,20 @@ const noSetUpOffers: readonly string[] = [];
 interface PlaceFileBridge {
   open: (path: string, action: "open" | "open-native" | "reveal") => Promise<void>;
   openWith: ((path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>) | null;
-  drag: (path: string) => Promise<unknown>;
+  drag: (paths: string[]) => Promise<unknown>;
   preview: (path: string) => Promise<boolean>;
 }
 
 /**
  * The file manager layout (docs/product-model.md, "The file manager
  * window"): a Finder-style window over the same local API and desktop bridge
- * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
+ * Files uses. The sidebar opens the Standard Folders and every Connected Folder;
+ * any other folder opens in the computer place (Go to Folder, the path bar,
+ * Command-Up, or a folder handed to AmpleFile).
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
-  connectedFolder: ConnectedFolderSummary;
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, openLocationRequest = null, onOpenedLocation, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
+  /** The Connected Folder the window opened in; null when none is registered (the window opens at the home folder). */
+  connectedFolder: ConnectedFolderSummary | null;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
   /** Menu-bar commands meant for the window in front, and Settings' Customize button. */
@@ -136,6 +174,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** Bumped when a model choice changes in Settings or elsewhere, so model rows re-read it. */
   modelConfigurationRevision?: number;
   onSwitchConnectedFolder: (connectedFolder: ConnectedFolderSummary) => void;
+  /** A folder or file handed to AmpleFile, as the host resolved it: the window goes there and selects the item. */
+  openLocationRequest?: FileManagerOpenRequest | null;
+  /** The window has shown that request. */
+  onOpenedLocation?: (id: number) => void;
   onOpenSettings: (page?: SettingsPage, modelScope?: ModelScope, focusAiModel?: boolean, workerConnectedFolderId?: string, focusWorkerInstructions?: boolean, backToCustomization?: () => void) => void;
   /** The desktop updater's status, shown at the foot of the sidebar when it needs the person. */
   updateStatus?: DesktopUpdateStatus | null;
@@ -172,7 +214,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const customizingConnectedFolder = customizing ? connectedFolders.find((item) => item.id === customizing.connectedFolderId) ?? null : null;
   const standard = useStandardFolders(fixtureMode);
 
-  const [location, setLocation] = useState<FileManagerLocation>(() => ({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" }));
+  // With no Connected Folder the window is still a file manager: it opens at the home folder.
+  const startLocation = (): FileManagerLocation => activeConnectedFolder ? { place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" } : { place: homePlace, path: "" };
+  const [location, setLocation] = useState<FileManagerLocation>(startLocation);
   const [back, setBack] = useState<FileManagerLocation[]>([]);
   const [forward, setForward] = useState<FileManagerLocation[]>([]);
   const place = location.place;
@@ -210,19 +254,27 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (closed.length) setSidebarOpen([...sidebarOpen, ...closed]);
   }, [connectedFolder?.id, connectedFolders]); // eslint-disable-line react-hooks/exhaustive-deps
   const standardFolder = place.kind === "standard" ? standard.folders.find((item) => item.id === place.id) ?? null : null;
+  const inComputerPlace = isComputerPlace(place);
   const placeName = connectedFolder?.name
     ?? standardFolder?.name
+    ?? (inComputerPlace ? computerName() : null)
     ?? standardFolderNames[place.id] ?? place.id;
-  const placeRoot = connectedFolder?.connectedFolderRoot ?? standardFolder?.root ?? "";
+  const placeRoot = connectedFolder?.connectedFolderRoot ?? standardFolder?.root ?? (inComputerPlace ? computerRoot : "");
   /** Any place's name, for messages about files moved from it. */
   const nameOfPlace = (target: FileManagerPlace): string => target.kind === "connected-folder"
     ? connectedFolders.find((item) => item.id === target.id)?.name ?? "the original Connected Folder"
-    : standard.folders.find((item) => item.id === target.id)?.name ?? standardFolderNames[target.id] ?? target.id;
+    : isComputerPlace(target) ? computerName() : standard.folders.find((item) => item.id === target.id)?.name ?? standardFolderNames[target.id] ?? target.id;
   const apiBase = placeApiBase(place);
   const fixtureTree = fixture
     ? place.kind === "connected-folder" ? fixture.trees[place.id] ?? [] : place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : []
     : undefined;
-  const listing = useFolderListing(place, location.path, fixtureTree);
+  const [showHidden, setShowHiddenState] = useState<boolean>(() => readStoredJsonValue(showHiddenStorageKey, (value) => value === true, false));
+  const setShowHidden = (next: boolean) => { setShowHiddenState(next); writeStoredJsonValue(showHiddenStorageKey, next); };
+  const toggleShowHiddenRef = useRef<() => void>(() => undefined);
+  toggleShowHiddenRef.current = () => setShowHidden(!showHidden);
+  // The View menu's check mark follows the window.
+  useEffect(() => { window.ampleFileDesktop?.menu?.setState({ showHiddenFiles: showHidden }); }, [showHidden]);
+  const listing = useFolderListing(place, location.path, fixtureTree, { showHidden });
   const bridge = useMemo(() => placeFileBridge(place), [placeKey(place)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [view, setViewState] = useState<FileManagerViewMode>(() => readStoredJsonValue(viewStorageKey, normalizeFileManagerView, "list"));
@@ -250,7 +302,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     setPanelOpen(true);
     setInfoRequest((value) => value + 1);
   }, [setUpOffers, connectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder.id, fixtureMode);
+  const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder?.id ?? "", fixtureMode);
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<FileManagerSearchScope>("here");
   const [searchSelection, setSearchSelection] = useState<string | null>(null);
@@ -285,8 +337,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     return () => { root.removeProperty("--fm-notice-left"); root.removeProperty("--fm-notice-right"); };
   }, [sidebarWidth, panelWidth, panelOpen]);
   const typeSelectRef = useRef<{ text: string; timer: number | null }>({ text: "", timer: null });
+  // When the folder list last handled ⌘C, ⌘X, or ⌘V itself, so the Edit menu's own command for the same key does not repeat it.
+  const clipboardKeyAtRef = useRef(0);
+  const clipboardActionsRef = useRef<{ copy: () => void; cut: () => void; paste: () => void }>({ copy: () => undefined, cut: () => undefined, paste: () => undefined });
 
-  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
   const [renaming, setRenaming] = useState<TreeEntry | null>(null);
   const [newFolderTarget, setNewFolderTarget] = useState<NewFolderTarget | null>(null);
   const [newStandardFolderParent, setNewStandardFolderParent] = useState<string | null>(null);
@@ -298,14 +352,26 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recents, setRecents] = useState<RecentItem[] | null>(null);
   const [recentSelection, setRecentSelection] = useState<string | null>(null);
+  // The system Trash, shown in the list area like Recents; the items chosen there, for Info.
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashSelection, setTrashSelection] = useState<TrashItem[]>([]);
+  const [trashCount, setTrashCount] = useState<number | null>(null);
+  // Mounted drives, kept current by the host's events, and the one being ejected.
+  const drives = useDrives(fixtureMode);
+  const [ejecting, setEjecting] = useState<string | null>(null);
   // The window's key handler is installed once; it reaches the current undo through this.
   const undoFileChangeRef = useRef<(redo: boolean) => Promise<void>>(async () => undefined);
   // Where a drag would land: "" for the folder shown, a folder row's path, or null.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // The files dragged out of this list, so dropping them back on a folder row moves them rather than copying.
   const internalDragRef = useRef<{ place: FileManagerPlace; paths: string[]; at: number } | null>(null);
-  // What ⌘C copied here: the items by place (so ⌥⌘V can move them) and as paths on the system pasteboard.
-  const fileClipboardRef = useRef<{ place: FileManagerPlace; paths: string[]; nativePaths: string[] } | null>(null);
+  // What ⌘C copied or ⌘X cut here: the items by place (so a Cut or ⌥⌘V moves them) and as paths on the system pasteboard.
+  const fileClipboardRef = useRef<{ place: FileManagerPlace; paths: string[]; nativePaths: string[]; cut: boolean } | null>(null);
+  // Items cut and not yet pasted, drawn dimmed until they are pasted or the clipboard holds something else.
+  const [cutItems, setCutItems] = useState<{ place: FileManagerPlace; paths: ReadonlySet<string> } | null>(null);
+  // Copies, moves, Compresses, and Extracts running now, with their progress and Stop; and the name-clash question.
+  const fileOperations = useFileOperations(!fixtureMode);
+  const conflictQuestion = useConflictQuestion();
   // ⌘Z and ⇧⌘Z for file changes: each entry undoes one change and returns the entry that redoes it.
   const undoStackRef = useRef<FileUndo[]>([]);
   const redoStackRef = useRef<FileUndo[]>([]);
@@ -462,9 +528,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
   useEffect(() => {
-    if (place.kind === "connected-folder" && place.id === activeConnectedFolder.id) return;
+    if (!activeConnectedFolder || (place.kind === "connected-folder" && place.id === activeConnectedFolder.id)) return;
     navigate({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
-  }, [activeConnectedFolder.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeConnectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Files dropped on the message box belong to the folder shown.
   useEffect(() => { setAttachedPaths([]); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -476,12 +542,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   // A Connected Folder removed elsewhere leaves nothing to show; fall back to the active one.
   useEffect(() => {
-    if (place.kind === "connected-folder" && !connectedFolder) setLocation({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
-  }, [activeConnectedFolder.id, place, connectedFolder]);
+    if (place.kind === "connected-folder" && !connectedFolder) setLocation(startLocation());
+  }, [activeConnectedFolder?.id, place, connectedFolder]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const entries = listing.entries;
-  // The Kind column names a Connected Folder nested here the way the rest of the window does.
-  const kindLabel = (entry: TreeEntry) => entry.nestedFolder ? "Connected Folder" : fileKindLabel(entry);
+  // Hidden items (dotfiles, and what the system file manager hides) only while Show Hidden Files is on.
+  const entries = useMemo(() => shownEntries(listing.entries, showHidden), [listing.entries, showHidden]);
+  // The Kind column names a Connected Folder nested here the way the rest of the window does, and says a link is one.
+  const kindLabel = (entry: TreeEntry) => entry.link ? linkKindLabel(entry.link) : entry.nestedFolder ? "Connected Folder" : fileKindLabel(entry);
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     const shown = entries.filter((entry) => !hiddenPaths.has(hiddenKey(place, entry.path)) && (!needle || entry.name.toLocaleLowerCase().includes(needle)));
@@ -489,23 +556,39 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }, [entries, hiddenPaths, query, sort, placeKey(place)]); // eslint-disable-line react-hooks/exhaustive-deps
   const order = useMemo(() => visible.map((entry) => entry.path), [visible]);
   const byPath = useMemo(() => new Map(visible.map((entry) => [entry.path, entry])), [visible]);
+  const indexByPath = useMemo(() => new Map(order.map((path, index) => [path, index])), [order]);
+  const indexByPathRef = useRef(indexByPath);
+  indexByPathRef.current = indexByPath;
   const selected = useMemo(() => new Set(selection.filter((path) => byPath.has(path))), [byPath, selection]);
+  // The selected items in shown order, read once per selection rather than on every render.
+  const selectedShown = useMemo(() => selected.size ? visible.filter((entry) => selected.has(entry.path)) : [], [visible, selected]);
+  // Where the drawn items are (FileEntries publishes it), for scrolling one into view and for the selection rectangle.
+  const entriesLayoutRef = useRef<EntriesLayout | null>(null);
   const focusPath = selection.length ? selection[selection.length - 1] ?? null : null;
   // The built-in Preview follows the selected item, so the arrow keys move it.
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Selection belongs to the folder shown; leaving it starts fresh.
   useEffect(() => { setSelection([]); anchorRef.current = null; setQuery(""); setPreviewOpen(false); }, [placeKey(place), location.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  // An item to select once its folder's listing is here (Go to Folder's file, Command-Up's folder, a file handed to AmpleFile).
+  const pendingSelectRef = useRef<{ key: string; path: string } | null>(null);
+  useEffect(() => {
+    const pending = pendingSelectRef.current;
+    if (!pending || pending.key !== listing.key || listing.status === "loading") return;
+    pendingSelectRef.current = null;
+    if (listing.status === "ready") select([pending.path]);
+  }, [listing.key, listing.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
+    setTrashOpen(false);
     // Going somewhere brings the folder back when the browser had the whole area.
     setBrowserLayout((current) => current === "full" ? "split" : current);
     if (sameLocation(next, location)) return;
     navMotionRef.current = { key: `${placeKey(next.place)}\0${next.path}`, from: navigationSide({ placeKey: placeKey(location.place), path: location.path }, { placeKey: placeKey(next.place), path: next.path }, history) };
     if (history === "push") { setBack((items) => [...items, location]); setForward([]); }
     setLocation(next);
-    if (next.place.kind === "connected-folder" && next.place.id !== activeConnectedFolder.id) {
+    if (next.place.kind === "connected-folder" && next.place.id !== activeConnectedFolder?.id) {
       const nextId = next.place.id;
       const target = switchTo ?? connectedFolders.find((item) => item.id === nextId);
       if (target) onSwitchConnectedFolder(target);
@@ -526,20 +609,75 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     navigate(next, "forward");
   }
   function goToEnclosingFolder() {
-    if (!location.path) return;
+    if (!location.path) {
+      // At a place's top, the enclosing folder is wherever the host says the folder above lives, down to the disk.
+      if (placeRoot && enclosingNativeFolder(placeRoot)) void openNativeFolder(placeRoot, true);
+      return;
+    }
     const from = location.path;
     navigate({ place, path: parentPath(location.path) });
     window.setTimeout(() => select([from]), 0);
   }
+  /**
+   * Shows a folder on this computer by its path, at the place the host says
+   * holds it (a Connected Folder, a Standard Folder, or the computer place).
+   * With `reveal`, the folder's enclosing folder opens with it selected.
+   */
+  async function openNativeFolder(nativePath: string, reveal = false) {
+    if (fixtureMode) return;
+    try {
+      const query = new URLSearchParams({ path: nativePath });
+      if (reveal) query.set("reveal", "1");
+      const { location: found } = await api<{ location: { place: FileManagerPlace; path: string; select: string | null } }>(`/api/folder-location?${query.toString()}`);
+      showLocation({ place: found.place, path: found.path }, found.select);
+    } catch (caught) {
+      onError(errorText(caught));
+    }
+  }
+  /** Goes to a location the host resolved, selecting an item there once its folder is shown. */
+  function showLocation(next: FileManagerLocation, selectPath: string | null) {
+    const switchTo = next.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === next.place.id) : undefined;
+    if (selectPath && sameLocation(next, location)) select([selectPath]);
+    else if (selectPath) pendingSelectRef.current = { key: `${placeKey(next.place)}\0${next.path}`, path: selectPath };
+    navigate(next, "push", switchTo);
+    window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
+  }
+  // A folder or file handed to AmpleFile (a launcher, Finder, a second launch) opens where the host resolved it.
+  useEffect(() => {
+    if (!openLocationRequest) return;
+    showLocation(openLocationRequest.location, openLocationRequest.select);
+    onOpenedLocation?.(openLocationRequest.id);
+  }, [openLocationRequest?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function select(paths: string[], anchor = paths.at(-1) ?? null) {
     setSelection(paths);
     anchorRef.current = anchor;
     const last = paths.at(-1);
-    if (last) window.requestAnimationFrame(() => contentRef.current?.querySelector<HTMLElement>(`[data-fm-path="${cssEscape(last)}"]`)?.scrollIntoView({ block: "nearest" }));
+    if (last) window.requestAnimationFrame(() => revealPath(last));
+  }
+
+  /**
+   * Scrolls an item into view. A large folder draws only the rows in view, so
+   * this works from the layout rather than from the item's row, which may not
+   * be drawn yet.
+   */
+  function revealPath(path: string) {
+    const scroller = contentRef.current;
+    const layout = entriesLayoutRef.current;
+    const index = indexByPathRef.current.get(path);
+    if (!scroller || !layout || index === undefined) {
+      scroller?.querySelector<HTMLElement>(`[data-fm-path="${cssEscape(path)}"]`)?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const target = layout.kind === "list"
+      ? revealScrollTop({ index, itemSize: layout.itemSize, offset: layout.offset, scrollTop: scroller.scrollTop, viewport: scroller.clientHeight, stickyTop: layout.stickyTop })
+      : revealScrollTop({ index: Math.floor(index / layout.columns), itemSize: layout.rowSize, itemHeight: layout.tileHeight, offset: layout.offset, scrollTop: scroller.scrollTop, viewport: scroller.clientHeight });
+    if (target !== null) scroller.scrollTop = target;
   }
 
   function clickEntry(entry: TreeEntry, event: MouseEvent<HTMLElement>) {
+    // The click that ends a selection rectangle is not a click on the row it ended over.
+    if (bandJustEnded()) return;
     contentRef.current?.focus({ preventScroll: true });
     const toggle = mac ? event.metaKey : event.ctrlKey;
     if (event.shiftKey) { select(rangeSelection(order, anchorRef.current, entry.path), anchorRef.current ?? entry.path); return; }
@@ -551,6 +689,121 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     select([entry.path]);
   }
 
+  // ---- The selection rectangle ----
+  // Dragging from empty space (or, in the list, from a row outside its icon
+  // and name, as in Finder) draws a rectangle that selects what it touches;
+  // Shift or Command (Ctrl) adds to the selection. It works from the layout,
+  // so rows scrolled out of the drawn range still count, and the list scrolls
+  // while the pointer is near its top or bottom edge.
+  const bandRef = useRef<HTMLDivElement | null>(null);
+  const bandStateRef = useRef<{ start: { x: number; y: number }; client: { x: number; y: number }; base: string[]; additive: boolean; active: boolean; hits: string; frame: number | null } | null>(null);
+  const bandEndedRef = useRef(0);
+  const bandJustEnded = () => Date.now() - bandEndedRef.current < 80;
+
+  function contentPoint(client: { x: number; y: number }): { x: number; y: number } {
+    const scroller = contentRef.current!;
+    const box = scroller.getBoundingClientRect();
+    return { x: client.x - box.left + scroller.scrollLeft, y: client.y - box.top + scroller.scrollTop };
+  }
+
+  function startBand(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || searchMode || recentsOpen || listing.status !== "ready" || !visible.length) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a[href], input, textarea, select, [contenteditable='true'], .fm-list-head")) return;
+    const row = target.closest<HTMLElement>("[data-fm-path]");
+    if (row && (view === "icons" || target.closest(".fm-row-icon, .fm-row-name"))) return;
+    const scroller = contentRef.current;
+    if (!scroller) return;
+    const box = scroller.getBoundingClientRect();
+    // A press on the scroll bar scrolls.
+    if (scroller.clientWidth && event.clientX - box.left >= scroller.clientWidth) return;
+    if (scroller.clientHeight && event.clientY - box.top >= scroller.clientHeight) return;
+    // Nothing under the pointer starts its own drag, and no text is selected.
+    event.preventDefault();
+    scroller.focus({ preventScroll: true });
+    const additive = event.shiftKey || (mac ? event.metaKey : event.ctrlKey);
+    const client = { x: event.clientX, y: event.clientY };
+    bandStateRef.current = { start: contentPoint(client), client, base: additive ? selection.filter((path) => byPath.has(path)) : [], additive, active: false, hits: "", frame: null };
+  }
+
+  const bandActionsRef = useRef<{ update: () => void; end: () => void }>({ update: () => undefined, end: () => undefined });
+  bandActionsRef.current = {
+    update: () => {
+      const band = bandStateRef.current;
+      const scroller = contentRef.current;
+      if (!band || !scroller) return;
+      const point = contentPoint(band.client);
+      if (!band.active) {
+        if (Math.abs(point.x - band.start.x) < 4 && Math.abs(point.y - band.start.y) < 4) return;
+        band.active = true;
+        band.frame = window.requestAnimationFrame(autoScrollBand);
+      }
+      const rect = bandRect(band.start, point);
+      const drawn = bandRef.current;
+      if (drawn) {
+        drawn.style.display = "block";
+        drawn.style.transform = `translate(${rect.left}px, ${rect.top}px)`;
+        drawn.style.width = `${rect.right - rect.left}px`;
+        drawn.style.height = `${rect.bottom - rect.top}px`;
+      }
+      const layout = entriesLayoutRef.current;
+      const hits = layout ? bandHits(rect, layout) : [];
+      const key = hits.length ? `${hits[0]}:${hits.at(-1)}:${hits.length}` : "";
+      if (key === band.hits) return;
+      band.hits = key;
+      const next = bandSelection(order, hits, band.base, band.additive);
+      setSelection(next);
+      anchorRef.current = next.at(-1) ?? null;
+    },
+    end: () => {
+      const band = bandStateRef.current;
+      bandStateRef.current = null;
+      if (!band) return;
+      if (band.frame !== null) window.cancelAnimationFrame(band.frame);
+      if (bandRef.current) bandRef.current.style.display = "none";
+      if (band.active) bandEndedRef.current = Date.now();
+    },
+  };
+
+  /** While the pointer is near the top or bottom edge, the list scrolls under the rectangle, faster the further out it is. */
+  function autoScrollBand() {
+    const band = bandStateRef.current;
+    const scroller = contentRef.current;
+    if (!band || !band.active || !scroller) return;
+    const box = scroller.getBoundingClientRect();
+    // The visible band of the list: under the column headings, above any horizontal scroll bar.
+    const top = box.top + (entriesLayoutRef.current?.stickyTop ?? 0);
+    const bottom = box.top + scroller.clientHeight;
+    const edge = 28;
+    let step = 0;
+    if (bottom - top > 2 * edge) {
+      if (band.client.y < top + edge) step = -Math.min(40, Math.ceil((top + edge - band.client.y) / 2));
+      else if (band.client.y > bottom - edge) step = Math.min(40, Math.ceil((band.client.y - (bottom - edge)) / 2));
+    }
+    if (step) {
+      const before = scroller.scrollTop;
+      scroller.scrollTop = before + step;
+      if (scroller.scrollTop !== before) bandActionsRef.current.update();
+    }
+    band.frame = window.requestAnimationFrame(autoScrollBand);
+  }
+
+  useEffect(() => {
+    const move = (event: globalThis.MouseEvent) => {
+      const band = bandStateRef.current;
+      if (!band) return;
+      band.client = { x: event.clientX, y: event.clientY };
+      bandActionsRef.current.update();
+    };
+    const up = () => { if (bandStateRef.current) bandActionsRef.current.end(); };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    window.addEventListener("blur", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); window.removeEventListener("blur", up); };
+  }, []);
+  // A rectangle never outlives the folder it was drawn in.
+  useEffect(() => { bandActionsRef.current.end(); }, [placeKey(place), location.path, view]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** The registered Connected Folder a nested folder row stands for. */
   function nestedConnectedFolder(entry: TreeEntry): ConnectedFolderSummary | undefined {
     if (!entry.nestedFolder || !placeRoot) return undefined;
@@ -558,16 +811,57 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   async function openEntry(entry: TreeEntry) {
+    if (entry.link) { await openLink(entry); return; }
     if (entry.kind === "folder") {
       const nested = nestedConnectedFolder(entry);
       if (nested) { navigate({ place: { kind: "connected-folder", id: nested.id }, path: "" }); return; }
+      // A folder that is a Standard Folder opens as that one, so the sidebar shows where you are.
+      const sidebarFolder = place.kind === "standard" && placeRoot
+        ? standard.folders.find((item) => !item.connectedFolderId && sameFolder(item.root, placeNativePath(placeRoot, entry.path)))
+        : undefined;
+      if (sidebarFolder) { navigate({ place: { kind: "standard", id: sidebarFolder.id }, path: "" }); return; }
       navigate({ place, path: entry.path });
       return;
     }
     await openLocal(entry.path, nativeOpenLabel(entry).office ? "open-native" : "open");
   }
 
+  /**
+   * Opening a symbolic link: a linked folder shows where it really is (the
+   * host resolves the link again now); a linked file opens what it points to
+   * in its default app; a broken link says so and opens nothing.
+   */
+  async function openLink(entry: TreeEntry) {
+    const link = entry.link;
+    if (!link) return;
+    if (link.target === "missing") { showToast({ text: `“${entry.name}” is a broken link. What it points to isn’t there.`, tone: "info" }); return; }
+    if (link.target === "folder") {
+      if (fixtureMode) { showToast({ text: "Opening links is disabled in the preview", tone: "info" }); return; }
+      await openNativeFolder(placeNativePath(placeRoot, entry.path));
+      return;
+    }
+    await openLinkInDesktop(entry, "open");
+  }
+
+  /** A link's file opens, or the link itself is shown in the system file manager, through the desktop. */
+  async function openLinkInDesktop(entry: TreeEntry, action: "open" | "reveal") {
+    if (fixtureMode) { showToast({ text: "Opening files is disabled in the preview", tone: "info" }); return; }
+    const placeLink = window.ampleFileDesktop?.placeLink;
+    if (!placeLink) { showToast({ text: "Opening files is available in the Mac app", tone: "info" }); return; }
+    try {
+      await placeLink.open(place, entry.path, action);
+    } catch (caught) {
+      onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
+    }
+  }
+
   async function openLocal(path: string, action: "reveal" | "open" | "open-native" | "open-with") {
+    const linked = byPath.get(path);
+    if (linked?.link) {
+      if (action === "reveal") await openLinkInDesktop(linked, "reveal");
+      else if (action === "open") await openLink(linked);
+      return;
+    }
     if (fixtureMode) { showToast({ text: "Opening files is disabled in the preview", tone: "info" }); return; }
     if (!bridge) { showToast({ text: "Opening files is available in the Mac app", tone: "info" }); return; }
     try {
@@ -584,9 +878,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   function quickLook(path: string | null) {
+    // A link is opened, shown, or its path copied; nothing previews it.
+    const target = path ? byPath.get(path) ?? null : null;
+    if (target?.link) return;
     // Another desktop's window draws its own Preview, which Space opens and closes.
     if (builtInPreview) {
-      const action = previewSpaceAction(previewShown, path ? byPath.get(path) ?? null : null);
+      const action = previewSpaceAction(previewShown, target);
       if (action) setPreviewOpen(action === "open");
       return;
     }
@@ -597,44 +894,85 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     void bridge.preview(entry.path).catch((caught) => onError(errorText(caught)));
   }
 
+  /**
+   * A drag from the list: a selected item carries the whole selection, an
+   * unselected one just itself, files and folders alike (never a link or a
+   * Connected Folder nested here). The desktop drags them out to any app;
+   * dropped back on a folder row or a sidebar place, they move there. The
+   * browser preview, which cannot drag files out, drags them inside the
+   * window only.
+   */
   function startDrag(entry: TreeEntry, event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    if (entry.kind !== "file" || !bridge) return;
-    internalDragRef.current = { place, paths: [entry.path], at: Date.now() };
-    void bridge.drag(entry.path).catch((caught) => onError(errorText(caught)));
+    const items = dragPayload(entry, selection.filter((path) => byPath.has(path)), byPath);
+    if (!items.length) { event.preventDefault(); return; }
+    if (!selected.has(entry.path)) select([entry.path]);
+    const paths = items.map((item) => item.path);
+    internalDragRef.current = { place, paths, at: Date.now() };
+    if (bridge && !fixtureMode) {
+      event.preventDefault();
+      void bridge.drag(paths).catch((caught) => onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, "")));
+      return;
+    }
+    event.dataTransfer.effectAllowed = "copyMove";
+    event.dataTransfer.setData(internalDragType, JSON.stringify({ place, paths }));
+    // A drag that ends anywhere else carries nothing into a later drop.
+    const started = internalDragRef.current;
+    window.addEventListener("dragend", () => window.setTimeout(() => { if (internalDragRef.current === started) internalDragRef.current = null; }, 0), { once: true });
+    event.dataTransfer.setData("text/plain", paths.map((path) => connectedFolderEntryNativePath(placeRoot, path)).join("\n"));
+  }
+
+  /** A drag the window can take: files from another app, or items dragged inside the window. */
+  function isItemDrag(event: DragEvent<HTMLElement>): boolean {
+    return event.dataTransfer.types.includes("Files") || event.dataTransfer.types.includes(internalDragType);
   }
 
   /**
-   * Dropping onto the list:
-   * files from Finder are added to the folder shown, or to the folder row they
-   * land on; a file dragged out of this list onto a folder row moves there.
-   * Both keep History, as every change here does. A Standard Folder is
-   * changed in Finder, so a drop there says so.
+   * Dropping onto the list, in any place: items from another app are copied
+   * into the folder shown, or the folder row they land on; items dragged out
+   * of this list onto a folder row move there. Both go through the transfer
+   * route paste uses, so a Connected Folder keeps History for them, and
+   * anything a Connected Folder owns inside a Standard Folder or an other
+   * folder is refused there and changed through that Connected Folder.
    */
   function dropTargetFor(event: DragEvent<HTMLElement>): string {
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-fm-path]");
     const entry = row ? byPath.get(row.dataset.fmPath ?? "") : undefined;
-    return entry && entry.kind === "folder" && !entry.nestedFolder ? entry.path : location.path;
+    // A folder row takes the drop, unless it is a link, a Connected Folder nested here, or one of the items dragged.
+    const dragged = internalDragRef.current && samePlace(internalDragRef.current.place, place) ? internalDragRef.current.paths : [];
+    return entry && entry.kind === "folder" && !entry.nestedFolder && !entry.link && canDropInto(entry.path, dragged) ? entry.path : location.path;
   }
 
+  /** The items a drop carries when they were dragged out of this window: matched by name (the desktop's drag) or by the window's own drag. */
   function internalDrag(event: DragEvent<HTMLElement>): string[] | null {
     const current = internalDragRef.current;
     if (!current || Date.now() - current.at > 60_000) return null;
+    if (event.dataTransfer.types.includes(internalDragType)) {
+      try {
+        const carried = JSON.parse(event.dataTransfer.getData(internalDragType)) as { place?: FileManagerPlace; paths?: unknown };
+        return carried.place && samePlace(carried.place, current.place) && Array.isArray(carried.paths) && carried.paths.length === current.paths.length && carried.paths.every((path, index) => path === current.paths[index]) ? current.paths : null;
+      } catch {
+        return null;
+      }
+    }
     const names = Array.from(event.dataTransfer.files).map((file) => file.name);
     const dragged = current.paths.map((path) => path.slice(path.lastIndexOf("/") + 1));
     return names.length === dragged.length && names.every((name) => dragged.includes(name)) ? current.paths : null;
   }
 
   function dragOverList(event: DragEvent<HTMLDivElement>) {
-    if (searchMode || !event.dataTransfer.types.includes("Files")) return;
+    if (searchMode || recentsOpen || !isItemDrag(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = connectedFolder ? (internalDragRef.current ? "move" : "copy") : "none";
-    const target = connectedFolder ? dropTargetFor(event) : null;
-    setDropTarget((current) => current === target ? current : target);
+    const target = dropTargetFor(event);
+    const internal = internalDragRef.current;
+    // Dropping items back where they already are does nothing.
+    const nowhere = Boolean(internal && samePlace(internal.place, place) && internal.paths.every((path) => parentPath(path) === target || !canDropInto(target, [path])));
+    event.dataTransfer.dropEffect = nowhere ? "none" : internal ? "move" : "copy";
+    const shown = nowhere ? null : target;
+    setDropTarget((current) => current === shown ? current : shown);
   }
 
   async function dropOnList(event: DragEvent<HTMLDivElement>) {
-    if (searchMode || !event.dataTransfer.types.includes("Files")) return;
+    if (searchMode || recentsOpen || !isItemDrag(event)) return;
     event.preventDefault();
     const target = dropTargetFor(event);
     setDropTarget(null);
@@ -657,19 +995,24 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (fixtureMode) { showToast({ text: "Adding files is disabled in the preview", tone: "info" }); return []; }
     try {
       if (moving && movingPlace) {
-        const sources = moving.filter((path) => !(samePlace(movingPlace, target.place) && (parentPath(path) === target.path || path === target.path)));
+        // Items already in the target stay; none goes into itself or a folder inside it.
+        const sources = moving.filter((path) => !(samePlace(movingPlace, target.place) && (parentPath(path) === target.path || !canDropInto(target.path, [path]))));
         if (!sources.length) return [];
-        const result = await transfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target });
+        const result = await startTransfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target }, targetName, transferLabel(sources));
+        if (!result) return [];
         await afterTransfer(result, target, `Move ${transferLabel(sources)}`, options.select ?? samePlace(target.place, place));
+        if (reportOutcome("move", result) && result.cancelled) return result.written;
         showToast(result.copiedInstead
           ? { text: `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.`, tone: "success" }
           : moveResultMessage(transferLabel(sources), targetName, nameOfPlace(movingPlace), result));
         return result.written;
       }
       if (nativePaths.length) {
-        const result = await transfer({ mode: "copy", sources: nativePaths.map((nativePath) => ({ nativePath })), target });
+        const result = await startTransfer({ mode: "copy", sources: nativePaths.map((nativePath) => ({ nativePath })), target }, targetName, transferLabel(nativePaths));
+        if (!result) return [];
         await afterTransfer(result, target, `Add ${transferLabel(nativePaths)}`, options.select ?? samePlace(target.place, place));
-        showToast({ text: `Added ${transferLabel(nativePaths)} to ${targetName}`, tone: "success" });
+        if (reportOutcome("copy", result) && result.cancelled) return result.written;
+        if (result.written.length) showToast({ text: `Added ${transferLabel(nativePaths)} to ${targetName}`, tone: "success" });
         return result.written;
       }
       // A browser without file paths can still upload into a Connected Folder.
@@ -694,12 +1037,62 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // ---- Copy, paste, duplicate, compress, and ⌘Z ----
   undoFileChangeRef.current = (redo) => undoFileChange(redo);
 
-  interface TransferResult { mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }> }
+  type TransferResult = TransferAnswer;
+  type TransferBody = { mode: "copy" | "move" | "duplicate"; sources: Array<{ place: FileManagerPlace; path: string } | { nativePath: string }>; target: { place: FileManagerPlace; path: string } };
 
-  function transfer(body: { mode: "copy" | "move" | "duplicate"; sources: Array<{ place: FileManagerPlace; path: string } | { nativePath: string }>; target: { place: FileManagerPlace; path: string } }): Promise<TransferResult> {
-    const connectedFolderIds = [body.target.place, ...body.sources.map((source) => "place" in source ? source.place : null)]
+  function transfer(body: TransferBody & { operationId?: string; conflicts?: ConflictPolicy }, beforeSend?: () => void): Promise<TransferResult> {
+    return historyTurn(transferConnectedFolderIds(body), () => { beforeSend?.(); return api<TransferResult>("/api/file-transfer", { method: "POST", body }); });
+  }
+
+  function transferConnectedFolderIds(body: TransferBody): string[] {
+    return [body.target.place, ...body.sources.map((source) => "place" in source ? source.place : null)]
       .flatMap((item) => item?.kind === "connected-folder" ? [item.id] : []);
-    return historyTurn(connectedFolderIds, () => api<TransferResult>("/api/file-transfer", { method: "POST", body }));
+  }
+
+  /**
+   * One operation with progress and Stop (useFileOperations): it carries an
+   * `operationId`, shows in the operations area once it takes a moment, and
+   * a Stop that comes while it still waits its turn means it never starts.
+   */
+  async function runOperation(kind: FileOperationKind, title: string, work: (handle: OperationHandle) => Promise<TransferResult>): Promise<TransferResult> {
+    try {
+      return await fileOperations.run(kind, title, work);
+    } catch (caught) {
+      if (caught instanceof OperationStoppedBeforeStart) return { written: [], restorePoints: [], cancelled: true, notDone: [] };
+      throw caught;
+    }
+  }
+
+  /**
+   * Asks about taken names first (the engine's conflicts-first answer: nothing
+   * is written), then runs with the person's choices. Null when they chose Stop.
+   */
+  async function withConflictChoices(check: () => Promise<TransferResult>, verb: string, where: string): Promise<{ policy: ConflictPolicy | undefined } | null> {
+    const asked = await check();
+    if (asked.nothing) return { policy: undefined };
+    if (!asked.conflicts?.length) return { policy: undefined };
+    const policy = await conflictQuestion.ask(asked.conflicts, verb, where);
+    return policy ? { policy } : null;
+  }
+
+  /** A copy, move, or Duplicate with progress, Stop, and (except Duplicate, which keeps both) the name-clash question. */
+  async function startTransfer(body: TransferBody, where: string, what: string): Promise<TransferResult | null> {
+    const kind: FileOperationKind = body.mode;
+    if (body.mode !== "duplicate") {
+      const verb = body.mode === "move" ? "Moving" : "Copying";
+      const choices = await withConflictChoices(() => api<TransferResult>("/api/file-transfer", { method: "POST", body: { ...body, conflicts: { check: true } } }), verb, where);
+      if (!choices) return null;
+      return runOperation(kind, operationTitle(kind, what, where), (handle) => transfer({ ...body, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) }, handle.beforeSend));
+    }
+    return runOperation(kind, operationTitle(kind, what, null), (handle) => transfer({ ...body, operationId: handle.operationId }, handle.beforeSend));
+  }
+
+  /** What the window says after an operation: what Stop left undone, and where anything replaced went. */
+  function reportOutcome(kind: FileOperationKind, result: TransferResult): boolean {
+    if (result.cancelled) { showToast({ text: stoppedMessage(kind, result), tone: "info" }); return true; }
+    const replaced = replacedMessage(result);
+    if (replaced) showToast({ text: replaced, tone: "info", durationMs: 9000 });
+    return Boolean(replaced);
   }
 
   /**
@@ -718,12 +1111,23 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     return only.slice(Math.max(only.lastIndexOf("/"), only.lastIndexOf("\\")) + 1);
   }
 
-  /** After any transfer: its undo, a fresh listing, and the new items selected when they are in the folder shown. */
+  /** Where a folder in a place is, by name, for messages. */
+  function folderLabel(target: { place: FileManagerPlace; path: string }): string {
+    return target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : nameOfPlace(target.place);
+  }
+
+  /**
+   * After any transfer: its undo, a fresh listing, and the new items selected
+   * when they are in the folder shown. When a Replace sent something to the
+   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back.
+   */
   async function afterTransfer(result: TransferResult, target: { place: FileManagerPlace; path: string }, label: string, selectWritten: boolean) {
-    if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
+    const covers = undoCovers(result);
+    if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
+    else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
     else if (result.moves?.length && target.place.kind === "standard") recordUndo(standardMovesUndo(label, target.place, result.moves));
     await Promise.all([listing.refresh(), standard.refresh()]);
-    if (selectWritten && samePlace(target.place, place) && target.path === location.path) select(result.written);
+    if (selectWritten && samePlace(target.place, place) && target.path === location.path && result.written.length) select(result.written);
   }
 
   function recordUndo(entry: FileUndo) {
@@ -746,17 +1150,19 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     };
   }
 
-  /** A Standard Folder has no History: undoing a move there moves each item back. */
-  function standardMovesUndo(label: string, target: FileManagerPlace, moves: Array<{ from: string; to: string }>): FileUndo {
+  /** A plain folder has no History: undoing a move there moves each item back, to the place it came from. */
+  function standardMovesUndo(label: string, target: FileManagerPlace, moves: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>): FileUndo {
     return {
       label,
       run: async () => {
-        const back: Array<{ from: string; to: string }> = [];
+        const back: Array<{ from: string; to: string; fromPlace: FileManagerPlace }> = [];
         for (const move of moves) {
-          const result = await transfer({ mode: "move", sources: [{ place: target, path: move.to }], target: { place: target, path: parentPath(move.from) } });
-          back.push({ from: move.to, to: result.written[0] ?? move.from });
+          const home = move.fromPlace ?? target;
+          const result = await transfer({ mode: "move", sources: [{ place: target, path: move.to }], target: { place: home, path: parentPath(move.from) } });
+          back.push({ from: move.to, to: result.written[0] ?? move.from, fromPlace: target });
         }
-        return standardMovesUndo(label, target, back);
+        // The redo moves them out again, from where they went back to.
+        return standardMovesUndo(label, moves[0]?.fromPlace ?? target, back);
       },
     };
   }
@@ -766,6 +1172,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const entry = stack.current.at(-1);
     if (!entry) { showToast({ text: redo ? "Nothing to redo" : "Nothing to undo", tone: "info" }); return; }
     stack.current = stack.current.slice(0, -1);
+    // A change History cannot put back (an item a Replace sent to the Trash) says so instead of half-undoing.
+    if (entry.cannot) { showToast({ text: entry.cannot, tone: "info", durationMs: 9000 }); return; }
     try {
       const reverse = await entry.run();
       if (reverse) {
@@ -779,47 +1187,90 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
+  /** The selected items Copy, Cut, Duplicate, Compress, and the rest act on: a link as itself, never a nested Connected Folder. */
   function selectedEntries(): TreeEntry[] {
     return selection.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder);
   }
 
   /** ⌘C: the selection, here and on the system pasteboard, so Finder can paste it too. */
   async function copySelection(entries = selectedEntries()) {
-    if (!entries.length) return;
-    const nativePaths = entries.map((entry) => connectedFolderEntryNativePath(placeRoot, entry.path));
-    fileClipboardRef.current = { place, paths: entries.map((entry) => entry.path), nativePaths };
-    await window.ampleFileDesktop?.fileClipboard?.write(nativePaths).catch(() => false);
+    await putOnClipboard(entries, false);
   }
 
   /**
-   * ⌘V pastes what was copied (here or in Finder) into a folder; ⌥⌘V moves what
-   * was copied here. The desktop process reads the pasteboard and pastes; the
-   * window never reads it, and learns only what landed.
+   * ⌘X: Cut. The items stay where they are, dimmed, until Paste moves them
+   * (through the same move rules as ⌥⌘V). On Linux the pasteboard carries the
+   * cut marker GNOME Files and Dolphin read, so they paste it as a move too; a
+   * Mac's pasteboard has none, so there a Cut is this window's own.
+   */
+  async function cutSelection(entries = selectedEntries()) {
+    await putOnClipboard(entries, true);
+  }
+
+  async function putOnClipboard(entries: readonly TreeEntry[], cut: boolean) {
+    if (!entries.length) return;
+    const nativePaths = entries.map((entry) => connectedFolderEntryNativePath(placeRoot, entry.path));
+    const paths = entries.map((entry) => entry.path);
+    fileClipboardRef.current = { place, paths, nativePaths, cut };
+    setCutItems(cut ? { place, paths: new Set(paths) } : null);
+    await window.ampleFileDesktop?.fileClipboard?.write(nativePaths, cut ? "cut" : "copy").catch(() => false);
+  }
+
+  /** Paste emptied the Cut, or the clipboard holds something else now: nothing is drawn as cut. */
+  function forgetCut() {
+    if (fileClipboardRef.current?.cut) fileClipboardRef.current = null;
+    setCutItems(null);
+  }
+
+  /**
+   * ⌘V pastes what was copied or cut (here, in Finder, or in a Linux file
+   * manager) into a folder; ⌥⌘V moves what was copied. A Cut pastes as a move.
+   * The desktop process reads the pasteboard and pastes; the window never
+   * reads it, and learns only what landed. Taken names are asked about first.
    */
   async function pasteInto(targetPath = location.path, mode: "copy" | "move" = "copy") {
     if (fixtureMode) { showToast({ text: "Pasting is disabled in the preview", tone: "info" }); return; }
     const internal = fileClipboardRef.current;
     const target = { place, path: targetPath };
+    const where = folderLabel(target);
     const paste = window.ampleFileDesktop?.fileClipboard?.paste;
     try {
-      let result: TransferResult & { nothing?: boolean; fromHere?: boolean; count?: number };
+      let result: TransferResult;
+      let kind: FileOperationKind;
       if (paste) {
+        const request = { target, mode, internal: internal ? { place: internal.place, paths: internal.paths, nativePaths: internal.nativePaths, cut: internal.cut } : null };
+        let asked: TransferResult = { written: [], restorePoints: [] };
+        const choices = await withConflictChoices(async () => (asked = await paste({ ...request, conflicts: { check: true } })), mode === "move" || internal?.cut ? "Moving" : "Copying", where);
+        if (asked.nothing) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
+        if (!choices) return;
+        kind = asked.moved ? "move" : "copy";
+        const what = asked.fromHere && internal ? transferLabel(internal.paths) : `${asked.count ?? 0} items`;
         const touched = [target.place, internal?.place].flatMap((item) => item?.kind === "connected-folder" ? [item.id] : []);
-        result = await historyTurn(touched, () => paste({ target, mode, internal: internal ? { place: internal.place, paths: internal.paths, nativePaths: internal.nativePaths } : null }));
+        result = await runOperation(kind, operationTitle(kind, what, where), (handle) => historyTurn(touched, () => {
+          handle.beforeSend();
+          return paste({ ...request, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) });
+        }));
       } else {
         if (!internal) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
-        result = { ...(await transfer({ mode, sources: internal.paths.map((path) => ({ place: internal.place, path })), target })), fromHere: true, count: internal.paths.length };
+        const moving = internal.cut || mode === "move";
+        kind = moving ? "move" : "copy";
+        const answer = await startTransfer({ mode: kind, sources: internal.paths.map((path) => ({ place: internal.place, path })), target }, where, transferLabel(internal.paths));
+        if (!answer) return;
+        result = { ...answer, fromHere: true, count: internal.paths.length, moved: moving, cut: internal.cut };
       }
       if (result.nothing) { showToast({ text: "Nothing to paste", tone: "info" }); return; }
-      const moved = Boolean(result.fromHere) && mode === "move" && !result.copiedInstead;
+      const moved = Boolean(result.moved) && !result.copiedInstead;
       const label = result.fromHere && internal ? transferLabel(internal.paths) : result.count === 1 ? transferLabel(result.written) : `${result.count ?? result.written.length} items`;
       await afterTransfer(result, target, `${moved ? "Move" : "Paste"} ${label}`, true);
-      if (moved) fileClipboardRef.current = null;
+      if (result.cancelled) { reportOutcome(kind, result); return; }
+      // A Cut (or a move by ⌥⌘V) is pasted once; the items are no longer drawn as cut.
+      if (result.fromHere && (moved || result.cut)) { fileClipboardRef.current = null; setCutItems(null); }
+      const said = reportOutcome(kind, result);
       if (result.copiedInstead) showToast({ text: `Copied ${label}. The original stays where it was.`, tone: "info" });
       else if (moved) {
         // A plain move says nothing, as Finder's does; one that left something behind says so.
-        const message = moveResultMessage(label, target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : placeName, internal ? nameOfPlace(internal.place) : "the original folder", result);
-        if (message.tone !== "success" || message.text.includes("Recently Deleted")) showToast(message);
+        const message = moveResultMessage(label, where, internal && result.fromHere ? nameOfPlace(internal.place) : "the original folder", result);
+        if (!said && (message.tone !== "success" || message.text.includes("Recently Deleted"))) showToast(message);
       }
     } catch (caught) {
       onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
@@ -831,8 +1282,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (fixtureMode) { showToast({ text: "Duplicating is disabled in the preview", tone: "info" }); return; }
     const target = { place, path: parentPath(entries[0]!.path) };
     try {
-      const result = await transfer({ mode: "duplicate", sources: entries.map((entry) => ({ place, path: entry.path })), target });
-      await afterTransfer(result, target, `Duplicate ${transferLabel(entries.map((entry) => entry.path))}`, true);
+      const paths = entries.map((entry) => entry.path);
+      const result = await startTransfer({ mode: "duplicate", sources: paths.map((path) => ({ place, path })), target }, folderLabel(target), transferLabel(paths));
+      if (!result) return;
+      await afterTransfer(result, target, `Duplicate ${transferLabel(paths)}`, true);
+      reportOutcome("duplicate", result);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -841,11 +1295,52 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   async function compressSelection(entries = selectedEntries()) {
     if (!entries.length) return;
     if (fixtureMode) { showToast({ text: "Compressing is disabled in the preview", tone: "info" }); return; }
+    const paths = entries.map((entry) => entry.path);
+    const at = place;
     try {
-      const result = await historyTurn(place.kind === "connected-folder" ? [place.id] : [], () => api<{ path: string; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }> }>("/api/file-transfer/compress", { method: "POST", body: { place, paths: entries.map((entry) => entry.path) } }));
-      if (result.restorePoints.length) recordUndo(restorePointsUndo(`Compress ${transferLabel(entries.map((entry) => entry.path))}`, result.restorePoints));
+      const result = await runOperation("compress", operationTitle("compress", transferLabel(paths), null), (handle) => historyTurn(at.kind === "connected-folder" ? [at.id] : [], () => {
+        handle.beforeSend();
+        return api<TransferResult>("/api/file-transfer/compress", { method: "POST", body: { place: at, paths, operationId: handle.operationId } });
+      }));
+      if (reportOutcome("compress", result) && result.cancelled) return;
+      if (result.restorePoints.length) recordUndo(restorePointsUndo(`Compress ${transferLabel(paths)}`, result.restorePoints));
       await listing.refresh();
-      select([result.path]);
+      if (result.path && samePlace(at, place)) select([result.path]);
+    } catch (caught) {
+      onError(errorText(caught));
+    }
+  }
+
+  /** Empty Trash and Delete Immediately (TrashView): a "delete" operation, with progress and Stop in the operations area. */
+  function runTrashDeletion<T>(title: string, request: (operationId: string | null) => Promise<T>): Promise<T> {
+    return fileOperations.run("delete", title, (handle) => { handle.beforeSend(); return request(handle.operationId); });
+  }
+
+  /**
+   * Extract: a `.zip`, `.tar`, `.tar.gz`, or `.tgz` becomes a new folder
+   * beside it, named after it, with progress, Stop, and the name-clash
+   * question when that name is taken; the new folder is selected when done.
+   */
+  async function extractArchive(entry: TreeEntry) {
+    if (entry.kind !== "file" || entry.link || !isExtractableArchive(entry.name)) return;
+    if (fixtureMode) { showToast({ text: "Extracting is disabled in the preview", tone: "info" }); return; }
+    const at = place;
+    const where = folderLabel({ place: at, path: parentPath(entry.path) });
+    try {
+      const choices = await withConflictChoices(() => api<TransferResult>("/api/file-transfer/extract", { method: "POST", body: { place: at, path: entry.path, conflicts: { check: true } } }), "Extracting", where);
+      if (!choices) return;
+      const result = await runOperation("extract", operationTitle("extract", entry.name, null), (handle) => historyTurn(at.kind === "connected-folder" ? [at.id] : [], () => {
+        handle.beforeSend();
+        return api<TransferResult>("/api/file-transfer/extract", { method: "POST", body: { place: at, path: entry.path, operationId: handle.operationId, ...(choices.policy ? { conflicts: choices.policy } : {}) } });
+      }));
+      if (result.cancelled) { reportOutcome("extract", result); return; }
+      const label = `Extract ${entry.name}`;
+      const covers = undoCovers(result);
+      if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
+      else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
+      await listing.refresh();
+      reportOutcome("extract", result);
+      if (result.path && samePlace(at, place)) select([result.path]);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -876,7 +1371,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /** Dropping onto a sidebar place: into the top of that Connected Folder or Standard Folder. */
   function sidebarDragOver(target: FileManagerPlace, event: DragEvent<HTMLElement>) {
-    if (!event.dataTransfer.types.includes("Files")) return;
+    if (!isItemDrag(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = internalDragRef.current && target.kind === "connected-folder" && internalDragRef.current.place.kind === "connected-folder" ? "move" : "copy";
     const key = placeKey(target);
@@ -884,7 +1379,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   async function sidebarDropInto(target: FileManagerPlace, name: string, event: DragEvent<HTMLElement>) {
-    if (!event.dataTransfer.types.includes("Files")) return;
+    if (!isItemDrag(event)) return;
     event.preventDefault();
     setSidebarDrop(null);
     await dropInto({ place: target, path: "" }, event, name, { select: false });
@@ -892,7 +1387,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /** Dropping onto the message box: the files join the message's references (from Finder, they are added to this folder first). */
   async function composerDropFiles(event: DragEvent<HTMLElement>) {
-    if (!event.dataTransfer.types.includes("Files") || !connectedFolder) return;
+    if (!isItemDrag(event) || !connectedFolder) return;
     event.preventDefault();
     setComposerDrop(false);
     const internal = internalDrag(event);
@@ -911,6 +1406,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   async function deletePaths(paths: readonly string[]) {
+    // A link is deleted as itself (Move to Trash in a plain folder; in a Connected Folder it waits in Recently Deleted, since History keeps no copy of a link).
     const entriesToDelete = paths.map((path) => byPath.get(path)).filter((entry): entry is TreeEntry => Boolean(entry) && !entry!.nestedFolder);
     if (!entriesToDelete.length) return;
     if (fixtureMode) { showToast({ text: "Deleting is disabled in the preview", tone: "info" }); return; }
@@ -937,15 +1433,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         if (target.kind === "standard") {
           const result = await trash!(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
+          window.dispatchEvent(new Event(trashChangedEvent));
         } else if (target.kind === "connected-folder" && entriesToDelete.length === 1) {
           const pending: PendingDelete = { connectedFolderId: target.id, path: entriesToDelete[0]!.path, name: entriesToDelete[0]!.name, selectedPath: null, deletedTabPaths: new Set() };
-          const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string };
-          // Once it has happened, ⌘Z brings it back through History.
-          replaceDeleteUndo(entriesToDelete[0]!.name, target.id, result.safetyCheckpointId);
+          const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string; recentlyDeleted?: { entryId: string } };
+          // Once it has happened, ⌘Z brings it back through History, and from Recently Deleted what History could not keep (a link, a large file).
+          replaceDeleteUndo(entriesToDelete[0]!.name, target.id, result.safetyCheckpointId, result.recentlyDeleted ? [result.recentlyDeleted.entryId] : []);
         } else if (target.kind === "connected-folder") {
           const result = await deleteLocalFilesRequest(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
-          replaceDeleteUndo(`${entriesToDelete.length} items`, target.id, result.safetyCheckpointId);
+          replaceDeleteUndo(`${entriesToDelete.length} items`, target.id, result.safetyCheckpointId, result.deleted.flatMap((row) => row.recentlyDeleted ? [row.recentlyDeleted.entryId] : []));
         }
       } catch (caught) {
         onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
@@ -965,11 +1462,28 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     });
   }
 
-  /** The pending delete's undo, swapped for History's once the delete has happened. */
-  function replaceDeleteUndo(name: string, connectedFolderId: string, checkpointId: string | undefined) {
+  /**
+   * The pending delete's undo, swapped for the real one once the delete has
+   * happened: items History could not keep (a link, a large file) come back
+   * from Recently Deleted first, then History's restore point puts back the rest.
+   */
+  function replaceDeleteUndo(name: string, connectedFolderId: string, checkpointId: string | undefined, recentlyDeletedIds: readonly string[] = []) {
     const label = `Delete ${name}`;
     undoStackRef.current = undoStackRef.current.filter((entry) => entry.label !== label);
-    if (checkpointId) undoStackRef.current = [...undoStackRef.current.slice(-49), restorePointsUndo(label, [{ connectedFolderId, checkpointId }])];
+    const history = checkpointId ? restorePointsUndo(label, [{ connectedFolderId, checkpointId }]) : null;
+    if (!recentlyDeletedIds.length) {
+      if (history) undoStackRef.current = [...undoStackRef.current.slice(-49), history];
+      return;
+    }
+    undoStackRef.current = [...undoStackRef.current.slice(-49), {
+      label,
+      run: async () => {
+        for (const entryId of recentlyDeletedIds) await api(`/api/settings/recently-deleted/${encodeURIComponent(entryId)}/restore`, { method: "POST", body: {} });
+        // What came back from Recently Deleted is redone with a new delete, not a restore point.
+        if (history) await history.run();
+        return null;
+      },
+    }];
   }
 
   async function renameEntry(entry: TreeEntry, name: string) {
@@ -1012,7 +1526,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       await Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
       onOfferSetUp?.(created.id);
       const open = () => navigate({ place: { kind: "connected-folder", id: created.id }, path: "" }, "push", created);
-      if (target.kind === "standard" && !path) {
+      if (target.kind === "standard" && (!path || (samePlace(target, place) && path === location.path))) {
         // The folder itself is a Connected Folder now, and the sidebar lists it there.
         open();
         showToast({ text: `${created.name} is now a Connected Folder.`, tone: "success" });
@@ -1084,12 +1598,18 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   useEffect(() => {
     if (!desktopAction) return;
     const { command } = desktopAction;
-    if (["open-capabilities", "open-skills", "open-extensions"].includes(command)) setSkillsFor(connectedFolder ?? activeConnectedFolder);
+    if (["open-capabilities", "open-skills", "open-extensions"].includes(command)) {
+      const target = connectedFolder ?? activeConnectedFolder;
+      // Skills & Extensions is pinned to a Connected Folder; with none, there is nothing to open it for yet.
+      if (target) setSkillsFor(target);
+      else showToast({ text: "Skills & Extensions belong to a Connected Folder. Connect a folder first.", tone: "info" });
+    }
     else if (command === "new-chat" && connectedFolder) {
       setPanelOpen(true);
       setPanelChat((current) => current ? { ...current, open: false } : current);
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+    else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W) from the menu closes the browser tab in front only while the Browser pane has the keyboard and
     // no dialog is open: never from a Chat's message box, the folder's list, or behind Settings. A page that has the
@@ -1141,7 +1661,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         .map((entry) => ({ name: entry.name, kind: entry.kind, path: `${listed}/${entry.name}` }))
       : [];
     const target = holder(clean);
-    if (!target) return { target: null, suggestions, message: "AmpleFile opens folders in your home folder, iCloud Drive, a Connected Folder, or a folder in the sidebar." };
+    if (!target) return { target: null, suggestions, message: "The preview opens only its sample folders." };
     const relativePath = clean.slice(target.root.length + 1);
     if (!relativePath) return { target: { place: target.place, path: "", select: null }, suggestions, message: null };
     const parent = relativePath.includes("/") ? relativePath.slice(0, relativePath.lastIndexOf("/")) : "";
@@ -1153,10 +1673,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   function goTo(target: NonNullable<GoToFolderLookup["target"]>) {
     setGoToOpen(false);
     setQuery("");
-    const switchTo = target.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === target.place.id) : undefined;
-    navigate({ place: target.place, path: target.path }, "push", switchTo);
-    if (target.select) window.setTimeout(() => select([target.select!]), 0);
-    window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
+    showLocation({ place: target.place, path: target.path }, target.select);
   }
 
   /** Clicking a path bar item copies its path; the last item is the folder shown, or the item selected. */
@@ -1166,9 +1683,51 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     showToast({ text: "Path copied", tone: "success" });
   }
 
+  // The Edit menu's Cut, Copy, and Paste act on the selected items while the folder list has the keyboard.
+  clipboardActionsRef.current = { copy: () => void copySelection(), cut: () => void cutSelection(), paste: () => void pasteInto(location.path, "copy") };
+  useEffect(() => {
+    function clipboardCommand(event: ClipboardEvent) {
+      const list = contentRef.current;
+      if (!list || !(document.activeElement instanceof HTMLElement) || !list.contains(document.activeElement)) return;
+      if (document.activeElement.closest("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      if (Date.now() - clipboardKeyAtRef.current < 400) return;
+      clipboardActionsRef.current[event.type as "copy" | "cut" | "paste"]();
+    }
+    document.addEventListener("copy", clipboardCommand);
+    document.addEventListener("cut", clipboardCommand);
+    document.addEventListener("paste", clipboardCommand);
+    return () => {
+      document.removeEventListener("copy", clipboardCommand);
+      document.removeEventListener("cut", clipboardCommand);
+      document.removeEventListener("paste", clipboardCommand);
+    };
+  }, []);
+  // Items cut here stay dimmed until pasted or until the clipboard holds something else (another app copied).
+  useEffect(() => {
+    if (!cutItems) return;
+    const holds = window.ampleFileDesktop?.fileClipboard?.holds;
+    if (!holds) return;
+    const check = () => {
+      const current = fileClipboardRef.current;
+      if (!current?.cut) return;
+      void holds(current.nativePaths).then((still) => { if (!still && fileClipboardRef.current === current) forgetCut(); }).catch(() => undefined);
+    };
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, [cutItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ⌘F searches names and contents, and ⇧⌘G goes to a folder by its path, as in Finder.
   useEffect(() => {
     function keydown(event: globalThis.KeyboardEvent) {
+      // Show Hidden Files: ⇧⌘. on a Mac, Ctrl+H elsewhere, as the system file manager has it; not while typing.
+      if (isShowHiddenFilesKey(event, mac)) {
+        const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName));
+        if (typing || document.querySelector('[role="dialog"]')) return;
+        event.preventDefault();
+        toggleShowHiddenRef.current();
+        return;
+      }
       const command = mac ? event.metaKey : event.ctrlKey;
       if (!command || event.altKey) return;
       if (document.querySelector('[role="dialog"]')) return;
@@ -1236,7 +1795,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   async function removeStandardFolder(folder: StandardFolderSummary) {
     try {
       await api(`/api/standard-folders/${encodeURIComponent(folder.id)}`, { method: "DELETE" });
-      if (place.kind === "standard" && place.id === folder.id) navigate({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
+      if (place.kind === "standard" && place.id === folder.id) navigate(startLocation());
       await standard.refresh();
       showToast({ text: `${folder.name} was removed from the sidebar. The folder is still on your computer.`, tone: "success" });
     } catch (caught) { onError(errorText(caught)); }
@@ -1323,6 +1882,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const showChatFile = useCallback((path: string) => showChatFileRef.current(path), []);
 
   function requestRename(entry: TreeEntry | undefined) {
+    // A link is renamed as itself.
     if (!entry || entry.nestedFolder) return;
     if (fixtureMode) { showToast({ text: "Renaming is disabled in the preview", tone: "info" }); return; }
     setRenaming(entry);
@@ -1334,6 +1894,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (place.kind === "standard") setNewStandardFolderParent(parent);
   }
 
+  /**
+   * The item menu (src/shared/file-menu.ts): the native menu on the Mac, the
+   * window's own menu elsewhere, with the same items. A link offers Open and
+   * Show Original, which reach what it points to, and the ordinary actions,
+   * which act on the link itself.
+   */
   async function openContextMenu(entry: TreeEntry | null, event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -1344,48 +1910,77 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const target: TreeEntry = entry ?? { name: location.path.split("/").pop() || placeName, path: location.path, kind: "folder" };
     const several = entry && paths.length > 1 ? paths.map((path) => byPath.get(path)).filter((item): item is TreeEntry => Boolean(item)) : null;
     const owner = place.kind === "standard" ? { connectedFolderId: "", standardFolderId: place.id } : { connectedFolderId: place.id };
+    const capabilities = several ? selectionMenuCapabilities(several) : await itemMenuCapabilities(target, Boolean(entry));
+    const selectionCounts = several ? { files: several.filter((item) => item.kind === "file").length, folders: several.filter((item) => item.kind === "folder").length } : null;
+    const run = (command: string | null) => several ? runSelectionCommand(command, several) : runMenuCommand(command, target);
     const popupFileMenu = window.ampleFileDesktop?.connectedFolder.popupFileMenu;
     if (mac && popupFileMenu) {
       try {
-        if (several) {
-          const files = several.filter((item) => item.kind === "file").length;
-          const command = await popupFileMenu({ ...owner, path: target.path, kind: target.kind, capabilities: { open: false, attach: false, history: false, upload: false, rename: false, delete: !several.some((item) => item.nestedFolder), organize: !several.some((item) => item.nestedFolder) }, selection: { files, folders: several.length - files }, point });
-          if (command === "copy-path") await copyPaths(several.map((item) => item.path));
-          else if (command === "delete") await deletePaths(several.map((item) => item.path));
-          else if (command === "copy") await copySelection(several);
-          else if (command === "duplicate") await duplicateSelection(several);
-          else if (command === "compress") await compressSelection(several);
-          else if (command === "new-folder-with-selection") await groupSelection(several);
-          return;
-        }
-        const command = await popupFileMenu({
-          ...owner,
-          path: target.path,
-          kind: target.kind,
-          capabilities: {
-            open: target.kind === "folder" || canOpenDirectly(target.path),
-            attach: false,
-            history: place.kind === "connected-folder" && target.kind === "file",
-            upload: false,
-            rename: Boolean(target.path) && !target.nestedFolder,
-            delete: Boolean(entry) && !target.nestedFolder,
-            worker: !fixtureMode && target.kind === "folder" && !target.nestedFolder && (place.kind === "standard" || Boolean(target.path)),
-            organize: Boolean(entry) && !target.nestedFolder,
-            paste: target.kind === "folder" && !target.nestedFolder && await canPaste(),
-          },
-          point,
-        });
-        await runMenuCommand(command, target);
+        const command = await popupFileMenu({ ...owner, path: target.path, kind: target.kind, capabilities, ...(selectionCounts ? { selection: selectionCounts } : {}), point });
+        await run(command);
       } catch (caught) { onError(errorText(caught)); }
       return;
     }
-    setContextMenu({ entry: target, ...(several ? { selection: several } : {}), x: Math.min(point.x, window.innerWidth - 250), y: Math.min(point.y, window.innerHeight - 380), returnFocusTarget: contentRef.current });
+    const items = fileMenuItems({
+      ...(place.kind === "standard" ? { standardFolderId: place.id } : {}),
+      path: target.path,
+      kind: target.kind,
+      capabilities,
+      ...(selectionCounts ? { selection: selectionCounts } : {}),
+    }, desktopPlatform() ?? (mac ? "darwin" : "linux"))
+      // Open With needs the desktop's app chooser.
+      .filter((item) => item.type === "separator" || item.command !== "open-with" || (!fixtureMode && Boolean(bridge?.openWith)))
+      .map((item) => item.type === "separator" ? { label: "", command: "-" } : { label: item.label, command: item.command });
+    const height = items.reduce((total, item) => total + (item.command === "-" ? 11 : 24), 12);
+    setQuickMenu({
+      x: Math.min(point.x, window.innerWidth - 260),
+      y: Math.max(8, Math.min(point.y, window.innerHeight - height - 8)),
+      items,
+      run: (command) => { void run(command); },
+    });
+  }
+
+  /** What one row (or the folder shown) offers in its menu. */
+  async function itemMenuCapabilities(target: TreeEntry, isItem: boolean): Promise<FileMenuCapabilities> {
+    if (target.link) {
+      const there = target.link.target !== "missing";
+      return { open: there, original: there, attach: false, history: false, upload: false, rename: true, delete: true, organize: true, link: true };
+    }
+    return {
+      open: target.kind === "folder" || canOpenDirectly(target.path),
+      attach: false,
+      history: place.kind === "connected-folder" && target.kind === "file",
+      upload: false,
+      rename: Boolean(target.path) && !target.nestedFolder,
+      delete: isItem && !target.nestedFolder,
+      worker: !fixtureMode && target.kind === "folder" && !target.nestedFolder && (place.kind === "standard" || Boolean(target.path)),
+      organize: isItem && !target.nestedFolder,
+      paste: target.kind === "folder" && !target.nestedFolder && await canPaste(),
+      extract: isItem && target.kind === "file" && isExtractableArchive(target.name),
+    };
+  }
+
+  /** Several rows: only what applies to all of them; a nested Connected Folder among them is changed only from itself. */
+  function selectionMenuCapabilities(several: readonly TreeEntry[]): FileMenuCapabilities {
+    const locked = several.some((item) => item.nestedFolder);
+    return { open: false, attach: false, history: false, upload: false, rename: false, delete: !locked, organize: !locked };
+  }
+
+  async function runSelectionCommand(command: string | null, several: readonly TreeEntry[]) {
+    if (command === "copy-path") await copyPaths(several.map((item) => item.path));
+    else if (command === "delete") await deletePaths(several.map((item) => item.path));
+    else if (command === "copy") await copySelection([...several]);
+    else if (command === "cut") await cutSelection([...several]);
+    else if (command === "duplicate") await duplicateSelection([...several]);
+    else if (command === "compress") await compressSelection([...several]);
+    else if (command === "new-folder-with-selection") await groupSelection([...several]);
   }
 
   async function runMenuCommand(command: string | null, target: TreeEntry) {
     if (command === "open") await openEntry(target);
     else if (command === "open-with") await openLocal(target.path, "open-with");
     else if (command === "reveal") await openLocal(target.path, "reveal");
+    else if (command === "show-original") await showOriginal(target);
     else if (command === "copy-path") await copyPaths([target.path]);
     else if (command === "version-history" && connectedFolder) setVersionHistory(target);
     else if (command === "new-folder") requestNewFolder(target.kind === "folder" ? target.path : parentPath(target.path));
@@ -1394,25 +1989,37 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (command === "rename") requestRename(target);
     else if (command === "delete") await deletePaths([target.path]);
     else if (command === "copy") await copySelection([target]);
-    else if (command === "paste") await pasteInto(target.kind === "folder" ? target.path : parentPath(target.path));
+    else if (command === "cut") await cutSelection([target]);
+    else if (command === "paste") await pasteInto(target.kind === "folder" && !target.link ? target.path : parentPath(target.path));
     else if (command === "duplicate") await duplicateSelection([target]);
     else if (command === "compress") await compressSelection([target]);
+    else if (command === "extract") await extractArchive(target);
     else if (command === "new-folder-with-selection") await groupSelection([target]);
   }
 
-  /** Paste Here is offered once something was copied here; ⌘V also pastes what Finder copied. */
+  /** Show Original: the window goes to where the link's target really is, with it selected. */
+  async function showOriginal(entry: TreeEntry) {
+    const link = entry.link;
+    if (!link) return;
+    if (link.target === "missing") { showToast({ text: `“${entry.name}” is a broken link. What it points to isn’t there.`, tone: "info" }); return; }
+    if (fixtureMode) { showToast({ text: "Showing originals is disabled in the preview", tone: "info" }); return; }
+    await openNativeFolder(link.targetPath, true);
+  }
+
+  /** Paste Here is offered once something was copied or cut here; ⌘V also pastes what Finder or a Linux file manager copied. */
   async function canPaste(): Promise<boolean> {
     return Boolean(fileClipboardRef.current);
   }
 
+  /** Icon view's tiles to a row, as last drawn. */
   function iconColumns(): number {
-    const grid = contentRef.current?.querySelector<HTMLElement>(".fm-grid");
-    if (!grid) return 1;
-    return Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length);
+    const layout = entriesLayoutRef.current;
+    return layout?.kind === "grid" ? layout.columns : 1;
   }
 
   async function openRecents() {
     setQuery("");
+    setTrashOpen(false);
     setRecentsOpen(true);
     setRecentSelection(null);
     if (fixtureMode) { setRecents(fixtureRecents()); return; }
@@ -1423,6 +2030,32 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       setRecents([]);
       onError(errorText(caught));
     }
+  }
+
+  /** The sidebar's Trash: the system Trash in the list area, read again each time it is shown. */
+  function openTrash() {
+    setQuery("");
+    setRecentsOpen(false);
+    setTrashSelection([]);
+    setTrashCount(null);
+    setTrashOpen(true);
+    setBrowserLayout((current) => current === "full" ? "split" : current);
+  }
+
+  /** A drive in the sidebar opens in the computer place at its mount path. */
+  function openDrive(row: DriveRow) {
+    navigate(row.location);
+  }
+
+  /** Eject: the host's plain reason when the drive is busy or refused; leaving it first when it is the folder shown. */
+  async function ejectDrive(row: DriveRow) {
+    if (!row.volume) return;
+    if (fixtureMode) { showToast({ text: "Ejecting is disabled in the preview", tone: "info" }); return; }
+    setEjecting(row.key);
+    const outcome = await drives.eject(row.volume);
+    setEjecting(null);
+    if (outcome.ok && locationIsOnDrive(location, row.volume)) navigate(startLocation());
+    showToast(ejectMessage(row.name, outcome));
   }
 
   function fixtureRecents(): RecentItem[] {
@@ -1497,8 +2130,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
-  /** The Worker that looks when search asks: the Connected Folder shown, else the one this window opened in. */
-  const askConnectedFolder = connectedFolder ?? activeConnectedFolder;
+  /** The Worker that looks when search asks: the Connected Folder shown, else, searching every Connected Folder, the one this window opened in. A plain folder has no Worker to ask. */
+  const askConnectedFolder = connectedFolder ?? (searchScope === "all" ? activeConnectedFolder : null);
 
   /** Ask in search: a Chat in the panel asking the Worker to find the file by what the person remembers. */
   function askToFind(text: string) {
@@ -1518,6 +2151,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /** Open a search result: a folder here, a file in its default app. */
   async function openSearchResult(result: FileManagerSearchResult) {
+    // A result in a Standard Folder or the computer place: a folder opens there, a file in its default app.
+    if (result.place) {
+      if (result.kind === "folder") { setQuery(""); navigate({ place: result.place, path: result.path }); return; }
+      await openLocal(result.path, nativeOpenLabel({ name: result.name, path: result.path, kind: "file" }).office ? "open-native" : "open");
+      return;
+    }
     const target = connectedFolders.find((item) => item.id === result.connectedFolderId);
     if (!target) return;
     if (result.kind === "folder") {
@@ -1575,10 +2214,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       if (event.shiftKey) select(rangeSelection(order, anchorRef.current ?? focusPath ?? path, path), anchorRef.current ?? focusPath ?? path);
       else select([path]);
     };
-    // Finder's Copy, Paste, Move Item Here (⌥⌘V), and Duplicate; codes, since ⌥ changes the letter.
-    if (command && !event.shiftKey && event.code === "KeyC") { event.preventDefault(); void copySelection(); return; }
-    if (command && !event.shiftKey && event.code === "KeyV") { event.preventDefault(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
-    if (command && !event.shiftKey && event.code === "KeyD") { event.preventDefault(); void duplicateSelection(); return; }
+    // Finder's Copy, Cut, Paste, Move Item Here (⌥⌘V), and Duplicate; codes, since ⌥ changes the letter.
+    if (command && !event.shiftKey && letterKey(event, "c")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void copySelection(); return; }
+    if (command && !event.shiftKey && !event.altKey && letterKey(event, "x")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void cutSelection(); return; }
+    if (command && !event.shiftKey && letterKey(event, "v")) { event.preventDefault(); clipboardKeyAtRef.current = Date.now(); void pasteInto(location.path, event.altKey ? "move" : "copy"); return; }
+    if (command && !event.shiftKey && letterKey(event, "d")) { event.preventDefault(); void duplicateSelection(); return; }
     if (command && event.key === "ArrowDown") { event.preventDefault(); const entry = focusPath ? byPath.get(focusPath) : null; if (entry && selection.length === 1) void openEntry(entry); return; }
     if (command && event.key === "ArrowUp") { event.preventDefault(); goToEnclosingFolder(); return; }
     if (command && event.key === "[") { event.preventDefault(); goBack(); return; }
@@ -1627,28 +2267,40 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     swapMotionRef.current = { recentsOpen, searching };
     if (previous.recentsOpen !== recentsOpen || previous.searching !== searching) settleIn([contentRef.current]);
   }, [recentsOpen, searching]);
-  const searchMode = searching && (searchScope === "all" || place.kind === "connected-folder");
+  // A Standard Folder or the computer place searches names and text below it through the host's folder search.
+  const plainSearch = place.kind === "standard" && searchScope === "here";
+  const searchMode = searching && !trashOpen && (searchScope === "all" || place.kind === "connected-folder" || plainSearch);
   const previewEntry = builtInPreview && previewOpen && !searchMode && !recentsOpen && focusPath ? byPath.get(focusPath) ?? null : null;
   const previewShown = Boolean(previewEntry);
   // Nothing left to show (the selection was cleared, a search or Recents took the list): the Preview is put away.
   useEffect(() => { if (previewOpen && !previewShown) setPreviewOpen(false); }, [previewOpen, previewShown]);
   const closePreview = () => { setPreviewOpen(false); contentRef.current?.focus({ preventScroll: true }); };
-  const search = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
+  const connectedFolderSearch = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode && !plainSearch, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
+  const plainFolderSearch = usePlainFolderSearch({ query, place, path: location.path, includeHidden: showHidden, enabled: searchMode && plainSearch, fixtureTree: fixture && place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : null });
+  const search = plainSearch
+    ? { results: plainFolderSearch.results, status: plainFolderSearch.status === "done" || plainFolderSearch.status === "error" ? "done" as const : "searching" as const }
+    : connectedFolderSearch;
   const searchChosen = searchMode && searchSelection ? search.results.find((result) => result.key === searchSelection) ?? null : null;
   const searchChosenConnectedFolder = searchChosen ? connectedFolders.find((item) => item.id === searchChosen.connectedFolderId) ?? null : null;
   useEffect(() => { setSearchSelection(null); }, [query, searchScope]);
   const recentChosen = recentsOpen && recentSelection ? (recents ?? []).find((item) => recentKey(item) === recentSelection) ?? null : null;
-  const crumbs = recentsOpen && !searchMode
+  const crumbs = trashOpen
+    ? [{ label: "Trash", path: null, nativePath: "" }]
+    : recentsOpen && !searchMode
     ? recentChosen
       ? fileManagerPathBar(recentRoot(recentChosen), parentPath(recentChosen.path), recentChosen.name).map((crumb) => ({ ...crumb, path: null }))
       : [{ label: "Recents", path: null, nativePath: "" }]
     : searchMode
-    ? searchChosen && searchChosenConnectedFolder
+    ? searchChosen && searchChosen.place
+      ? fileManagerPathBar(placeRoot, parentPath(searchChosen.path), searchChosen.name).map((crumb) => ({ ...crumb, path: null }))
+      : searchChosen && searchChosenConnectedFolder
       ? fileManagerPathBar(searchChosenConnectedFolder.connectedFolderRoot, parentPath(searchChosen.path), searchChosen.name).map((crumb) => ({ ...crumb, path: null }))
       : [{ label: searchScope === "here" ? `Searching “${folderName}”` : "Searching all Connected Folders", path: null, nativePath: "" }]
     : fileManagerPathBar(placeRoot, location.path, single?.name);
   const status = listing.status;
-  const statusText = recentsOpen && !searchMode
+  const statusText = trashOpen
+    ? trashCount === null ? "Loading…" : fileManagerStatusText(trashCount, trashSelection.length)
+    : recentsOpen && !searchMode
     ? recents ? fileManagerStatusText(recents.length, recentChosen ? 1 : 0) : "Loading…"
     : searchMode
     ? search.status === "done" ? fileManagerStatusText(search.results.length, searchChosen ? 1 : 0) : "Searching…"
@@ -1660,7 +2312,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     { key: "size", label: "Size" },
     { key: "kind", label: "Kind" },
   ];
-  const isCurrent = (candidate: FileManagerPlace) => !recentsOpen && samePlace(candidate, place);
+  const isCurrent = (candidate: FileManagerPlace) => !recentsOpen && !trashOpen && samePlace(candidate, place);
+  // The path bar adds the free space on the folder's drive, as Finder's status bar does.
+  const volumeSpace = useVolumeSpace(trashOpen || recentsOpen ? null : place, location.path, listing.changeCount, fixtureMode);
+  const statusLine = trashOpen || recentsOpen || searchMode || status !== "ready" ? statusText : statusWithSpace(statusText, volumeSpace);
+  const sidebarDrives = useMemo(() => driveRows(drives.volumes, computerName()), [drives.volumes]);
+  const currentDrive = recentsOpen || trashOpen ? null : currentDriveKey(sidebarDrives, location);
+  const folderSizes = useRememberedFolderSizes(place, order);
   const activity = useFileManagerActivity(connectedFolders, fixtureMode, panelChat?.open && panelChat.activeId ? chatActivityKey(panelChat.connectedFolderId, panelChat.activeId) : null);
   // Another Connected Folder's folder inside this one belongs to its own Worker.
   // A reply that ran in the background (an Automation, another window) settles here too.
@@ -1689,8 +2347,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   // Suggestions written from the folder, when AI is connected; the plain ones cover a selection and the wait.
 
+  // The message box's references: never a nested Connected Folder or a link.
   const references = [
-    ...visible.filter((entry) => selected.has(entry.path) && !entry.nestedFolder),
+    ...selectedShown.filter((entry) => !entry.nestedFolder && !entry.link),
     ...attachedPaths.filter((path) => !selected.has(path)).map((path) => byPath.get(path) ?? { name: path.slice(path.lastIndexOf("/") + 1), path, kind: "file" as const }),
   ];
   const composerPlaceholder = references.length === 1
@@ -1711,6 +2370,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             <span className="fm-sidebar-icon"><RecentsGlyph /></span>
             <span className="fm-sidebar-name">Recents</span>
           </button></li>
+          <SidebarTrashRow current={trashOpen} onOpen={openTrash} />
         </ul>
         <div className="fm-sidebar-heading"><span id="fm-standard-heading">Standard Folders</span><button type="button" className="fm-heading-add" aria-label="Add a Folder to the Sidebar" title="Add a Folder" onClick={() => void addStandardFolder()}><Add16Regular /></button></div>
         {sidebarStandard.length ? <>
@@ -1764,6 +2424,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             </li>;
           })}
         </ul>
+        <SidebarDrives rows={sidebarDrives} currentKey={currentDrive} ejecting={ejecting} onOpen={openDrive} onEject={(row) => void ejectDrive(row)} />
       </div>
       {onUpdateAction ? <UpdateIndicator status={updateStatus} onUpdateAction={onUpdateAction} onOpenAbout={() => onOpenSettings("about")} /> : null}
     </nav>
@@ -1776,8 +2437,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <button type="button" className="fm-tool" onClick={goForward} disabled={!forward.length} aria-label="Forward" title="Forward"><ChevronRight size={16} /></button>
         </div>
         <h1 className="fm-title">
-          {recentsOpen ? <span className="fm-title-glyph" aria-hidden="true"><RecentsGlyph /></span> : !location.path && connectedFolder ? <TintedFolder {...folderLook(connectedFolder)} /> : <span className="fm-ic fm-ic-folder" aria-hidden="true" />}
-          <span className="fm-title-text">{recentsOpen ? "Recents" : folderName}</span>
+          {trashOpen ? <span className="fm-title-glyph" aria-hidden="true"><TrashGlyph /></span> : recentsOpen ? <span className="fm-title-glyph" aria-hidden="true"><RecentsGlyph /></span> : !location.path && connectedFolder ? <TintedFolder {...folderLook(connectedFolder)} /> : <span className="fm-ic fm-ic-folder" aria-hidden="true" />}
+          <span className="fm-title-text">{trashOpen ? "Trash" : recentsOpen ? "Recents" : folderName}</span>
         </h1>
         <div className="fm-toolbar-space" />
         <div className="fm-capsule" role="group" aria-label="View">
@@ -1802,15 +2463,17 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       </header>
       {/* The folder's half of the main area. With the browser given the whole area it folds away, still mounted. */}
       <div className="fm-files" inert={browserLayout === "full"}>
-      {searching ? <div className="fm-scope" role="group" aria-label="Search">
+      {searching && !trashOpen ? <div className="fm-scope" role="group" aria-label="Search">
         <span>Search:</span>
-        <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button>
+        {connectedFolders.length ? <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button> : null}
         <button type="button" className={`fm-pill${searchScope === "here" ? " is-on" : ""}`} aria-pressed={searchScope === "here"} onClick={() => setSearchScope("here")} title={folderName}>“{folderName}”</button>
       </div> : null}
 
+      {trashOpen ? <TrashView fixtureMode={fixtureMode} query={query} onShow={(next, selectPath) => showLocation(next, selectPath)} onSelectionChange={setTrashSelection} onCount={setTrashCount} onError={onError} runDeletion={runTrashDeletion} /> : null}
       <div
         className={`fm-content${searchMode ? " is-search" : ""}${dropTarget === location.path ? " is-drop-target" : ""}`}
         ref={contentRef}
+        hidden={trashOpen}
         onDragOver={dragOverList}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
         onDrop={(event) => void dropOnList(event)}
@@ -1822,7 +2485,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           : searchMode ? (searchSelection ? listItemDomId("result", searchSelection) : undefined)
           : focusPath ? rowDomId(focusPath) : undefined}
         onKeyDown={handleKeyDown}
-        onClick={(event) => { if (!(event.target as HTMLElement).closest("[data-fm-path]")) select([]); }}
+        onMouseDown={startBand}
+        onClick={(event) => { if (!bandJustEnded() && !(event.target as HTMLElement).closest("[data-fm-path]")) select([]); }}
         onContextMenu={(event) => { if (!(event.target as HTMLElement).closest("[data-fm-path]")) void openContextMenu(null, event); }}
       >
         {recentsOpen && !searchMode ? <>
@@ -1859,13 +2523,15 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <div className="fm-list-head" role="row">
             <span role="columnheader" className="fm-col fm-col-name">Name</span>
             <span role="columnheader" className="fm-col fm-col-match">Match</span>
-            <span role="columnheader" className="fm-col fm-col-where">Connected Folder</span>
+            <span role="columnheader" className="fm-col fm-col-where">{plainSearch ? "Where" : "Connected Folder"}</span>
           </div>
-          {search.status === "done" && !search.results.length ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
+          {plainSearch && plainFolderSearch.status === "error" ? <div className="fm-empty">
+            <span className="fm-empty-text">{plainFolderSearch.error ?? "Couldn’t search this folder."}</span>
+          </div> : search.status === "done" && !search.results.length && !(plainSearch && plainFolderSearch.stoppedEarly) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
           <div className="fm-rows" role="rowgroup">
             {search.results.map((result, index) => {
               const entry: TreeEntry = { name: result.name, path: result.path, kind: result.kind, ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}) };
-              const where = connectedFolders.find((item) => item.id === result.connectedFolderId);
+              const where = result.place ? { name: [placeName, ...result.path.split("/").slice(0, -1)].join(" › ") } : connectedFolders.find((item) => item.id === result.connectedFolderId);
               return <div
                 key={result.key}
                 id={listItemDomId("result", result.key)}
@@ -1887,6 +2553,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               </div>;
             })}
           </div>
+          {/* A plain folder's search reads a bounded amount at a time: it says when it stopped early, and goes on when asked. */}
+          {plainSearch && plainFolderSearch.stoppedEarly ? <p className="fm-search-note" role="status">
+            <span>{stoppedEarlyText(plainFolderSearch.stoppedEarly, plainFolderSearch.scannedFiles)}</span>
+            <button type="button" className="fm-text-button" disabled={plainFolderSearch.status === "searching"} onClick={plainFolderSearch.continueSearch}>{plainFolderSearch.status === "searching" ? "Searching…" : "Keep Searching"}</button>
+          </p> : null}
+          {plainSearch && plainFolderSearch.status === "done" && plainFolderSearch.incomplete ? <p className="fm-search-note">Some folders couldn’t be read, so they weren’t searched.</p> : null}
+          {plainSearch && plainFolderSearch.connectedFoldersInside.length ? <p className="fm-search-note">
+            <span>{plainFolderSearch.connectedFoldersInside.length === 1 ? "A Connected Folder inside is searched with its own rules." : "Connected Folders inside are searched with their own rules."}</span>
+            <button type="button" className="fm-text-button" onClick={() => setSearchScope("all")}>Search All Connected Folders</button>
+          </p> : null}
           {/* Ask in search: the Worker looks for it by meaning, not only by name or text. */}
           {search.status === "done" && askConnectedFolder ? <button type="button" className="fm-ask-row" onClick={() => askToFind(query.trim())}>
             <span className="fm-ask-icon" aria-hidden="true"><Sparkle16Regular /></span>
@@ -1919,42 +2595,30 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         </div> : null}
         {status === "ready" && !visible.length ? <p className="fm-empty">{query.trim() ? `No items match “${query.trim()}”` : "This folder is empty."}</p> : null}
 
-        {view === "list" ? <div className="fm-rows" role="rowgroup">
-          {visible.map((entry, index) => {
-            const tint = nestedTint(entry);
-            return <FileRow
-              key={entry.path}
-              entry={entry}
-              odd={index % 2 === 1}
-              selected={selected.has(entry.path)}
-              dropTarget={dropTarget === entry.path && entry.path !== location.path}
-              marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
-              kind={kindLabel(entry)}
-              day={calendarDay}
-              tintColor={tint?.color}
-              tintSymbol={tint?.symbol}
-              handlers={entryHandlers}
-            />;
-          })}
-        </div> : <div className="fm-grid" role="row">
-          {visible.map((entry) => {
-            const tint = nestedTint(entry);
-            return <FileTile
-              key={entry.path}
-              entry={entry}
-              selected={selected.has(entry.path)}
-              dropTarget={dropTarget === entry.path && entry.path !== location.path}
-              marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
-              tintColor={tint?.color}
-              tintSymbol={tint?.symbol}
-              handlers={entryHandlers}
-            />;
-          })}
-        </div>}
+        {visible.length ? <FileEntries
+          view={view}
+          entries={visible}
+          selected={selected}
+          focusPath={focusPath}
+          dropTarget={dropTarget !== location.path ? dropTarget : null}
+          markedPaths={markedPaths}
+          cutPaths={cutItems && samePlace(cutItems.place, place) ? cutItems.paths : null}
+          kindLabel={kindLabel}
+          day={calendarDay}
+          tintFor={nestedTint}
+          handlers={entryHandlers}
+          scrollRef={contentRef}
+          layoutRef={entriesLayoutRef}
+          thumbnailPlace={fixtureMode ? null : place}
+          folderSizes={folderSizes}
+        /> : null}
         </>}
-        {listing.truncated ? <p className="fm-note">Some items are not shown. This folder holds more than AmpleFile lists at once.</p> : null}
+        <div className="fm-band" ref={bandRef} aria-hidden="true" />
+        {listing.truncated && !searchMode && !recentsOpen ? <p className="fm-note">Some items are not shown. This folder holds more than the {folderListingMaxEntries.toLocaleString()} items AmpleFile lists at once.</p> : null}
       </div>
 
+      {/* Copies, moves, Compresses, and Extracts that take a moment: progress and Stop, while the folder stays usable. */}
+      <FileOperationsTray operations={fileOperations.shown} onStop={(id) => { void fileOperations.stop(id).then((problem) => { if (problem) onError(problem); }); }} />
       {/* Finder's path bar: click an item to copy its path, double-click a folder to open it; ⇧⌘G goes anywhere by path. */}
       <footer className="fm-pathbar">
         <button type="button" className="fm-goto-button" title={`Go to Folder… (${desktopShortcutText([desktopShortcutModifierKey(), "Shift", "G"])})`} aria-label="Go to Folder" onClick={() => setGoToOpen(true)}><FolderArrowRight16Regular /></button>
@@ -1965,13 +2629,18 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               type="button"
               className="fm-crumb"
               disabled={!crumb.nativePath}
-              title={crumb.nativePath ? `${crumb.hidden ? crumb.hidden.join(" › ") : crumb.nativePath}\nClick to copy the path${crumb.path !== null && !searchMode ? " · Double-click to open" : ""}` : undefined}
+              title={crumb.nativePath ? `${crumb.hidden ? crumb.hidden.join(" › ") : crumb.nativePath}\nClick to copy the path${!searchMode && (crumb.path !== null || (!crumb.hidden && !recentsOpen)) ? " · Double-click to open" : ""}` : undefined}
               onClick={() => void copyNativePath(crumb.nativePath)}
-              onDoubleClick={() => { if (crumb.path !== null && !searchMode) navigate({ place, path: crumb.path }); }}
+              onDoubleClick={() => {
+                if (searchMode) return;
+                if (crumb.path !== null) navigate({ place, path: crumb.path });
+                // A folder above the place's top opens wherever it lives.
+                else if (crumb.nativePath && !crumb.hidden && !recentsOpen) void openNativeFolder(crumb.nativePath);
+              }}
             >{crumb.label}</button>
           </span>)}
         </nav>
-        <span className="fm-status">{statusText}</span>
+        <span className="fm-status">{statusLine}</span>
       </footer>
       </div>
       {/* The band between the folder and the browser: the slider beside the folder, a plain band over the folded strip. */}
@@ -2000,7 +2669,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       folderName={folderName}
       folderColor={!location.path && placeIdentity ? placeIdentity.color : null}
       folderSymbol={!location.path && connectedFolder ? folderLook(connectedFolder).symbol : null}
-      receipt={setUpOffered && connectedFolder ? <SetUpOffer
+      receipt={trashOpen ? null : setUpOffered && connectedFolder ? <SetUpOffer
         name={connectedFolder.name}
         onSetUp={() => setUp(connectedFolder)}
         onDismiss={() => onCloseSetUpOffer?.(connectedFolder.id)}
@@ -2011,7 +2680,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         onDone={worker.done}
       /> : null}
       itemCount={visible.length}
-      selection={visible.filter((entry) => selected.has(entry.path))}
+      selection={selectedShown}
       automations={connectedFolder ? folderAutomations.byConnectedFolder[connectedFolder.id] ?? [] : []}
       fixture={fixture}
       chat={panelChat && chatConnectedFolder ? {
@@ -2051,16 +2720,23 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           onAgentFinished={() => Promise.all([listing.refresh(), onRefreshBootstrap()]).then(() => undefined)}
         />,
       } : null}
-      searchItem={recentChosen && !searchMode ? {
+      trashSelection={trashOpen ? trashSelection : null}
+      aiConnected={fixtureMode || Boolean(agent?.configured)}
+      onSetUpAi={() => requestConnectAi()}
+      searchItem={trashOpen ? null : recentChosen && !searchMode ? {
         apiBase: recentChosen.place.kind === "connected-folder" ? `/api/connected-folders/${encodeURIComponent(recentChosen.place.id)}` : `/api/standard-folders/${encodeURIComponent(recentChosen.place.id)}`,
         entry: { name: recentChosen.name, path: recentChosen.path, kind: "file", ...(recentChosen.sizeBytes !== undefined ? { sizeBytes: recentChosen.sizeBytes } : {}), updatedAt: recentChosen.updatedAt },
         where: [recentChosen.where, ...recentChosen.path.split("/").slice(0, -1)].join(" › "),
+      } : searchChosen && searchChosen.place ? {
+        apiBase: placeApiBase(searchChosen.place),
+        entry: { name: searchChosen.name, path: searchChosen.path, kind: searchChosen.kind, ...(searchChosen.sizeBytes !== undefined ? { sizeBytes: searchChosen.sizeBytes } : {}), ...(searchChosen.updatedAt ? { updatedAt: searchChosen.updatedAt } : {}) },
+        where: [placeName, ...searchChosen.path.split("/").slice(0, -1)].join(" › "),
       } : searchChosen && searchChosenConnectedFolder ? {
         apiBase: `/api/connected-folders/${encodeURIComponent(searchChosenConnectedFolder.id)}`,
         entry: { name: searchChosen.name, path: searchChosen.path, kind: searchChosen.kind, ...(searchChosen.sizeBytes !== undefined ? { sizeBytes: searchChosen.sizeBytes } : {}), ...(searchChosen.updatedAt ? { updatedAt: searchChosen.updatedAt } : {}) },
         where: [searchChosenConnectedFolder.name, ...searchChosen.path.split("/").slice(0, -1)].join(" › "),
       } : null}
-      composer={connectedFolder ? ({ showSuggestions }) => <SuggestingComposer
+      composer={connectedFolder && !trashOpen ? ({ showSuggestions }) => <SuggestingComposer
         connectedFolderId={connectedFolder.id}
         path={location.path}
         writtenSuggestions={!fixtureMode && Boolean(agent?.configured)}
@@ -2071,7 +2747,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={modelConfigurationRevision * 2 + (agent?.configured ? 1 : 0)} onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, connectedFolder.id)} />}
         onRemoveChip={(path) => { setSelection((current) => current.filter((item) => item !== path)); setAttachedPaths((current) => current.filter((item) => item !== path)); }}
         dropActive={composerDrop}
-        onDragOverBox={(event) => { if (!connectedFolder || !event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setComposerDrop(true); }}
+        onDragOverBox={(event) => { if (!connectedFolder || !isItemDrag(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setComposerDrop(true); }}
         onDragLeaveBox={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposerDrop(false); }}
         onDropBox={(event) => void composerDropFiles(event)}
         onSend={(text) => startChat(text, references)}
@@ -2137,28 +2813,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     {quickMenu ? <>
       <div className="fm-menu-back" onClick={() => { quickMenu.run(null); setQuickMenu(null); }} onContextMenu={(event) => { event.preventDefault(); setQuickMenu(null); }} />
       <div className="fm-menu" role="menu" style={{ left: quickMenu.x, top: quickMenu.y }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setQuickMenu(null); } }}>
-        {quickMenu.items.map((item, index) => <button key={item.command} type="button" className="fm-menu-i" role="menuitem" autoFocus={index === 0} onClick={() => { const { run } = quickMenu; setQuickMenu(null); run(item.command); }}>{item.label}</button>)}
+        {quickMenu.items.map((item, index) => item.command === "-"
+          ? <div key={`-${index}`} className="fm-menu-sep" role="separator" />
+          : <button key={item.command} type="button" className="fm-menu-i" role="menuitem" autoFocus={index === 0} onClick={() => { const { run } = quickMenu; setQuickMenu(null); run(item.command); }}>{item.label}</button>)}
       </div>
     </> : null}
     {skillsFor ? <SkillsExtensionsModal connectedFolder={skillsFor} status={agent} initialView="installed" fixtureMode={fixtureMode} onError={onError} onClose={() => setSkillsFor(null)} /> : null}
-    {contextMenu ? <FileContextMenu
-      state={contextMenu}
-      onSelect={(path) => select([path])}
-      onOpenLocal={(path, action) => { const entry = byPath.get(path); if (action === "open" && entry) return openEntry(entry); return openLocal(path, action); }}
-      canOpenWith={!fixtureMode && Boolean(bridge?.openWith)}
-      onAddToChatContext={() => undefined}
-      onCopyPath={(path) => copyPaths([path])}
-      onCopyPaths={(paths) => copyPaths(paths)}
-      onShowVersionHistory={(path) => { const entry = byPath.get(path); if (entry && connectedFolder) setVersionHistory(entry); }}
-      onRename={(path) => requestRename(byPath.get(path))}
-      onNewFolder={(parent) => requestNewFolder(parent)}
-      onRefresh={() => void listing.refresh()}
-      onGiveWorker={fixtureMode ? undefined : (path) => void putToWork(path)}
-      onDelete={(path) => deletePaths([path])}
-      onDeleteSelection={(paths) => deletePaths(paths)}
-      canDelete={!contextMenu.entry.nestedFolder && Boolean(contextMenu.entry.path) && contextMenu.entry.path !== location.path}
-      onClose={() => setContextMenu(null)}
-    /> : null}
+    {conflictQuestion.element}
     {renaming ? <TextInputModal title="Rename" label="Name" initialValue={renaming.name} confirmLabel="Rename" onSubmit={(name) => renameEntry(renaming, name)} onClose={() => setRenaming(null)} /> : null}
     {newFolderTarget ? <NewFolderModal target={newFolderTarget} fixtureMode={fixtureMode} onCreated={(folder) => { setNewFolderTarget(null); void listing.refresh().then(() => select([folder.path])); }} onClose={() => setNewFolderTarget(null)} /> : null}
     {newStandardFolderParent !== null ? <TextInputModal title="New Folder" label="Name" initialValue="untitled folder" confirmLabel="Create" onSubmit={(name) => createStandardFolder(newStandardFolderParent, name)} onClose={() => setNewStandardFolderParent(null)} /> : null}
@@ -2227,7 +2888,8 @@ function RecentsGlyph() {
 }
 
 /** One file change ⌘Z can undo: running it undoes the change and returns the entry that redoes it. */
-interface FileUndo { label: string; run: () => Promise<FileUndo | null> }
+/** One ⌘Z step. `cannot` says plainly why Undo can't put a change back (an item a Replace sent to the Trash). */
+interface FileUndo { label: string; run: () => Promise<FileUndo | null>; cannot?: string }
 
 /** Titles a Chat carries before it has its own: the server's seed, the renderer's label, and an old default. */
 const placeholderChatTitles = new Set([untitledChatLabel, "New Chat", "amplefile chat"].map((title) => title.toLocaleLowerCase()));
@@ -2262,19 +2924,6 @@ function placeFileBridge(place: FileManagerPlace): PlaceFileBridge | null {
   return null;
 }
 
-function sizeText(entry: TreeEntry): string {
-  if (entry.kind === "folder") return "--";
-  return typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : "--";
-}
-
-type FolderLook = { color: string; symbol: ConnectedFolderIconOption["Icon"] | null };
-
-function EntryIcon({ entry, tint }: { entry: TreeEntry; tint?: FolderLook }) {
-  if (entry.kind === "folder" && tint) return <TintedFolder color={tint.color} symbol={tint.symbol} />;
-  const icon = fileManagerIcon(entry);
-  return <span className={icon.className} data-label={icon.label} aria-hidden="true" />;
-}
-
 /** The design's activity dot: pulsing while a Worker runs, green for a reply nobody has read. */
 function ActivityDot({ status }: { status?: "running" | "attention" }) {
   if (!status) return null;
@@ -2282,19 +2931,13 @@ function ActivityDot({ status }: { status?: "running" | "attention" }) {
 }
 
 
-/** Finder keeps both ends of a long name in icon view so the extension stays visible. */
-function middleTruncate(name: string, limit = 22): string {
-  if (name.length <= limit) return name;
-  const tail = Math.min(8, Math.floor(limit / 2) - 1);
-  return `${name.slice(0, limit - tail - 1)}…${name.slice(-tail)}`;
+/** A letter key by its physical key (⌥ changes the letter it types), or by the letter when no code is given. */
+function letterKey(event: KeyboardEvent<HTMLElement>, letter: string): boolean {
+  return event.code === `Key${letter.toUpperCase()}` || (!event.code && !event.altKey && event.key.toLowerCase() === letter);
 }
 
 function hiddenKey(place: FileManagerPlace, path: string): string {
   return `${placeKey(place)}\0${path}`;
-}
-
-function rowDomId(path: string): string {
-  return `fm-item-${encodeURIComponent(path).replace(/%/g, "_")}`;
 }
 
 /** A Recents or search row's id, for the list's aria-activedescendant. */
@@ -2334,76 +2977,3 @@ function SuggestingComposer({ connectedFolderId, path, writtenSuggestions, showS
     : fileManagerSuggestions({ selection: references, inSubfolder: Boolean(path), automationsOn });
   return <FileManagerComposer {...composer} suggestions={suggestions} />;
 }
-
-interface EntryHandlers {
-  click: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
-  open: (entry: TreeEntry) => void;
-  contextMenu: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
-  dragStart: (entry: TreeEntry, event: DragEvent<HTMLElement>) => void;
-}
-
-interface EntryViewProps {
-  entry: TreeEntry;
-  selected: boolean;
-  dropTarget: boolean;
-  /** Changed by the Worker's last reply. */
-  marked: boolean;
-  tintColor?: string;
-  tintSymbol?: FolderLook["symbol"];
-  handlers: EntryHandlers;
-}
-
-function entryTint(color: string | undefined, symbol: FolderLook["symbol"] | undefined): FolderLook | undefined {
-  return color === undefined ? undefined : { color, symbol: symbol ?? null };
-}
-
-const changedDot = <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" />;
-
-/** One list row; memoised, since a folder can show thousands. */
-const FileRow = memo(function FileRow({ entry, odd, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & {
-  odd: boolean;
-  kind: string;
-  /** Today's date; a new day redraws the row's relative date. */
-  day: string;
-}) {
-  return <div
-    id={rowDomId(entry.path)}
-    role="row"
-    aria-selected={selected}
-    data-fm-path={entry.path}
-    className={`fm-row${odd ? " is-odd" : ""}${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget ? " is-drop-target" : ""}`}
-    draggable={entry.kind === "file"}
-    onClick={(event) => handlers.click(entry, event)}
-    onDoubleClick={() => handlers.open(entry)}
-    onContextMenu={(event) => handlers.contextMenu(entry, event)}
-    onDragStart={(event) => handlers.dragStart(entry, event)}
-  >
-    <span role="gridcell" className="fm-cell fm-col-name">
-      <span className="fm-row-icon"><EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} /></span>
-      <span className="fm-row-name" title={entry.name}>{entry.name}</span>
-      {marked ? changedDot : null}
-    </span>
-    <span role="gridcell" className="fm-cell fm-col-modified">{formatFileManagerDate(entry.updatedAt)}</span>
-    <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry)}</span>
-    <span role="gridcell" className="fm-cell fm-col-kind" title={kind}>{kind}</span>
-  </div>;
-});
-
-/** One icon-view tile; memoised like FileRow. */
-const FileTile = memo(function FileTile({ entry, selected, dropTarget, marked, tintColor, tintSymbol, handlers }: EntryViewProps) {
-  return <div
-    id={rowDomId(entry.path)}
-    role="gridcell"
-    aria-selected={selected}
-    data-fm-path={entry.path}
-    className={`fm-tile${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget ? " is-drop-target" : ""}`}
-    draggable={entry.kind === "file"}
-    onClick={(event) => handlers.click(entry, event)}
-    onDoubleClick={() => handlers.open(entry)}
-    onContextMenu={(event) => handlers.contextMenu(entry, event)}
-    onDragStart={(event) => handlers.dragStart(entry, event)}
-  >
-    <span className="fm-tile-icon"><EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} /></span>
-    <span className="fm-tile-name" title={entry.name}>{marked ? changedDot : null}{middleTruncate(entry.name)}</span>
-  </div>;
-});

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, rename } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 
 import {
   getConnectedFolderEntryInfo,
@@ -17,6 +17,7 @@ import {
   type ConnectedFolderFilePreview,
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { isSystemHiddenEntry } from "./hidden-entries.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 import { linuxUserDirectories } from "./standard-folder-locations.js";
 
@@ -38,8 +39,14 @@ import { linuxUserDirectories } from "./standard-folder-locations.js";
  */
 export const builtInStandardFolderIds = ["desktop", "documents", "downloads", "pictures", "home", "icloud"] as const;
 export type BuiltInStandardFolderId = typeof builtInStandardFolderIds[number];
-/** A built-in place, or a folder the person added (`added-` and 16 hex digits). */
-export type StandardFolderId = BuiltInStandardFolderId | `added-${string}`;
+/**
+ * The place for every other folder on this computer: its top is the disk's
+ * root, so any folder is a path inside it. It has no sidebar row and follows
+ * the Standard Folder rules (docs/product-model.md, "Other folders").
+ */
+export const computerFolderId = "computer";
+/** A built-in place, the computer place, or a folder the person added (`added-` and 16 hex digits). */
+export type StandardFolderId = BuiltInStandardFolderId | typeof computerFolderId | `added-${string}`;
 
 const builtInFolders: Record<BuiltInStandardFolderId, { name: (home: string) => string; path: (home: string) => string }> = {
   desktop: { name: () => "Desktop", path: (home) => join(home, "Desktop") },
@@ -69,10 +76,11 @@ export function isBuiltInStandardFolderId(value: unknown): value is BuiltInStand
 }
 
 export function isStandardFolderId(value: unknown): value is StandardFolderId {
-  return isBuiltInStandardFolderId(value) || (typeof value === "string" && addedFolders().some((folder) => folder.id === value));
+  return isBuiltInStandardFolderId(value) || value === computerFolderId || (typeof value === "string" && addedFolders().some((folder) => folder.id === value));
 }
 
 export function standardFolderRoot(id: StandardFolderId, home = homedir()): string {
+  if (id === computerFolderId) return parse(resolve(home)).root;
   if (isBuiltInStandardFolderId(id)) {
     if (process.platform === "linux" && id !== "home" && id !== "icloud") {
       const configured = linuxUserDirectories(resolve(home))[id];
@@ -86,6 +94,8 @@ export function standardFolderRoot(id: StandardFolderId, home = homedir()): stri
 }
 
 export function standardFolderName(id: StandardFolderId, home = homedir()): string {
+  // The path bar's name for the disk (web-local file-manager-model.ts, nativePathParts).
+  if (id === computerFolderId) return process.platform === "linux" ? "File System" : "Macintosh HD";
   if (isBuiltInStandardFolderId(id)) {
     if (process.platform === "linux" && id !== "home" && id !== "icloud") {
       const configured = linuxUserDirectories(resolve(home))[id];
@@ -121,16 +131,43 @@ export async function listStandardFolders(
   return folders;
 }
 
-/** One level of a standard folder, without what Finder hides (dotfiles, and Library in the home folder). */
-export async function scanStandardFolder(id: StandardFolderId, relativePath: string, home = homedir(), platform: NodeJS.Platform = process.platform): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
+export interface StandardFolderScanOptions {
+  /** Keep what the system file manager hides, each entry marked `hidden: true`. */
+  includeHidden?: boolean;
+  /** List symbolic links as entries carrying `link` (never followed). */
+  includeLinks?: boolean;
+  /** A higher entry bound for this one-level listing, up to `maxOneLevelTreeEntries`. */
+  maxEntries?: number;
+}
+
+/**
+ * One level of a standard folder, without what Finder hides (dotfiles, and
+ * Library in the home folder) unless `includeHidden` asks for those, marked.
+ * `.amplefile/`, `.pi/`, and the other always-hidden entries never appear.
+ */
+export async function scanStandardFolder(
+  id: StandardFolderId,
+  relativePath: string,
+  home = homedir(),
+  platform: NodeJS.Platform = process.platform,
+  options: StandardFolderScanOptions = {},
+): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
   const root = standardFolderRoot(id, home);
   const atHomeRoot = samePath(root, resolve(home)) && !relativePath.split("/").some((part) => part && part !== ".");
   try {
-    const scan = await scanConnectedFolderTree(root, 0, relativePath, { includeIgnored: true, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root) });
+    const scan = await scanConnectedFolderTree(root, 0, relativePath, {
+      includeIgnored: true,
+      nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root),
+      ...(options.includeLinks ? { includeLinks: true } : {}),
+      ...(options.maxEntries !== undefined ? { maxEntries: options.maxEntries } : {}),
+    });
+    // Hidden means exactly what the default listing leaves out, so the
+    // window's Show Hidden Files only ever adds rows and removes them again.
+    const isHidden = (entry: TreeEntry) => !isShownStandardEntry(entry.name) || (platform === "darwin" && atHomeRoot && entry.name === "Library");
     return {
       tree: scan.entries
-        .filter((entry) => isShownStandardEntry(entry.name) && !(platform === "darwin" && atHomeRoot && entry.name === "Library"))
-        .map(({ children: _children, ...entry }) => entry),
+        .filter((entry) => options.includeHidden || !isHidden(entry))
+        .map(({ children: _children, ...entry }) => options.includeHidden && isHidden(entry) ? { ...entry, hidden: true as const } : entry),
       truncated: scan.truncated,
     };
   } catch (error) {
@@ -141,7 +178,10 @@ export async function scanStandardFolder(id: StandardFolderId, relativePath: str
 export async function standardFolderEntryInfo(id: StandardFolderId, relativePath: string, home = homedir()): Promise<ConnectedFolderEntryInfo> {
   // Downloads holds multi-gigabyte installers; the Info panel never waits on a hash.
   try {
-    return await getConnectedFolderEntryInfo(standardFolderRoot(id, home), relativePath, { hash: false });
+    const base = standardFolderPathBase(id, relativePath, home);
+    if (!base) throw badRequest("A path inside the folder is required.");
+    const info = await getConnectedFolderEntryInfo(base.root, base.path, { hash: false });
+    return base.prefix ? { ...info, path: [base.prefix, info.path].filter(Boolean).join("/") } : info;
   } catch (error) {
     throw accessError(error, id);
   }
@@ -150,15 +190,41 @@ export async function standardFolderEntryInfo(id: StandardFolderId, relativePath
 /** Space's Preview of a file in a standard folder: the same bounded read and kinds as a Connected Folder's file-preview. */
 export async function standardFolderFilePreview(id: StandardFolderId, relativePath: string, home = homedir()): Promise<ConnectedFolderFilePreview> {
   try {
-    return await getConnectedFolderFilePreview(standardFolderRoot(id, home), relativePath);
+    const base = standardFolderPathBase(id, relativePath, home);
+    if (!base) throw badRequest("A path inside the folder is required.");
+    return await getConnectedFolderFilePreview(base.root, base.path);
   } catch (error) {
     throw accessError(error, id);
   }
 }
 
 /** The file for a path inside a standard folder, under the same path policy as a Connected Folder's. */
-export function resolveStandardFolderPath(id: StandardFolderId, relativePath: string, home = homedir()): string {
-  return resolveConnectedFolderPath(standardFolderRoot(id, home), relativePath);
+export function resolveStandardFolderPath(id: StandardFolderId, relativePath: string, home = homedir(), options: { finalLink?: boolean } = {}): string {
+  const base = standardFolderPathBase(id, relativePath, home);
+  return base ? resolveConnectedFolderPath(base.root, base.path, options) : standardFolderRoot(id, home);
+}
+
+/**
+ * Where a place's path is resolved under the Connected Folder path policy: the
+ * place's own folder and the path inside it. That policy never takes the
+ * disk's root as a folder, so the computer place resolves a path from its
+ * first folder ("home/ana/Notes" is "ana/Notes" inside "/home", with "home"
+ * as the prefix that puts it back). Null for the computer place's top, the
+ * disk itself, which only its listing and the watcher read.
+ */
+export function standardFolderPathBase(id: StandardFolderId, relativePath: string, home = homedir()): { root: string; path: string; prefix: string } | null {
+  if (id !== computerFolderId) return { root: standardFolderRoot(id, home), path: relativePath, prefix: "" };
+  if (relativePath.includes("\0") || relativePath.startsWith("/") || relativePath.startsWith("\\")) throw badRequest("Path escapes the selected folder.");
+  const parts = relativePath.split("/").filter((part) => part && part !== ".");
+  if (parts.includes("..")) throw badRequest("Path escapes the selected folder.");
+  const first = parts[0];
+  if (!first) return null;
+  if (isAlwaysHiddenConnectedFolderEntry(first)) throw badRequest("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
+  const root = join(standardFolderRoot(id, home), first);
+  // The first folder is the policy's root, which it checks only for being a link; say so the way a deeper link is refused.
+  // A link at the disk's top itself (`/bin`) is only opened, revealed, or copied as a path.
+  if (lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink()) throw badRequest("Paths cannot traverse symbolic links or junctions.");
+  return { root, path: parts.slice(1).join("/"), prefix: first };
 }
 
 /**
@@ -173,9 +239,9 @@ export async function assertStandardFolderPathUnowned(
   id: StandardFolderId,
   relativePath: string,
   home = homedir(),
-  options: { allowContaining?: boolean } = {},
+  options: { allowContaining?: boolean; finalLink?: boolean } = {},
 ): Promise<string> {
-  const target = resolveStandardFolderPath(id, relativePath, home);
+  const target = resolveStandardFolderPath(id, relativePath, home, { finalLink: options.finalLink === true });
   for (const connectedFolder of await listConnectedFolders()) {
     if (pathContains(connectedFolder.connectedFolderRoot, target) || (!options.allowContaining && pathContains(target, connectedFolder.connectedFolderRoot))) {
       throw Object.assign(
@@ -189,11 +255,12 @@ export async function assertStandardFolderPathUnowned(
 
 export async function renameStandardFolderEntry(id: StandardFolderId, relativePath: string, newName: string, home = homedir()): Promise<{ path: string }> {
   if (!relativePath.trim()) throw badRequest(`${standardFolderName(id, home)} itself can’t be renamed.`);
-  const source = await assertStandardFolderPathUnowned(id, relativePath, home);
+  // A symbolic link is renamed as itself.
+  const source = await assertStandardFolderPathUnowned(id, relativePath, home, { finalLink: true });
   const name = validEntryName(newName);
   if (name === basename(source)) return { path: toRelative(id, source, home) };
   const destination = join(dirname(source), name);
-  await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true });
+  await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true, finalLink: true });
   const existing = await lstat(destination).catch(() => null);
   // A case-only rename on a case-insensitive disk finds the source itself.
   const sameItem = existing && name.toLocaleLowerCase() === basename(source).toLocaleLowerCase();
@@ -221,6 +288,14 @@ export async function createStandardFolderFolder(id: StandardFolderId, parentPat
 
 /** The folder "Connect This Folder" registers: the standard folder itself, or a folder inside it. */
 export async function standardFolderRegistrationTarget(id: StandardFolderId, relativePath: string, home = homedir()): Promise<string> {
+  if (id === computerFolderId) {
+    const base = standardFolderPathBase(id, relativePath, home);
+    if (!base) throw badRequest("The whole disk can’t be a Connected Folder. Choose a folder on it.");
+    if (base.path) return resolveNestableFolderPath(base.root, base.path);
+    const info = await lstat(base.root).catch(() => null);
+    if (!info?.isDirectory() || info.isSymbolicLink()) throw Object.assign(new Error("That folder isn’t on this computer anymore."), { status: 404, statusCode: 404 });
+    return base.root;
+  }
   const root = standardFolderRoot(id, home);
   if (relativePath.split("/").filter((part) => part && part !== ".").length) return resolveNestableFolderPath(root, relativePath);
   const info = await lstat(root).catch(() => null);
@@ -228,16 +303,22 @@ export async function standardFolderRegistrationTarget(id: StandardFolderId, rel
   return root;
 }
 
+/** Shown in a default Standard Folder listing: not hidden by the system file manager's rules (outside the home folder's Library), and never an always-hidden entry. */
 export function isShownStandardEntry(name: string): boolean {
-  return Boolean(name) && !name.startsWith(".") && name !== "Icon\r" && !isAlwaysHiddenConnectedFolderEntry(name);
+  return Boolean(name) && !isSystemHiddenEntry(name, { platform: process.platform, atHomeFolder: false }) && !isAlwaysHiddenConnectedFolderEntry(name);
 }
 
 /** macOS answers EPERM until the person allows AmpleFile into Desktop, Documents, Downloads, Pictures, or iCloud Drive. */
 export function accessError(error: unknown, id: StandardFolderId): unknown {
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "EPERM" || code === "EACCES") {
+    // In the computer place, name the folder refused (Node puts it on the error), not the disk.
+    const refused = id === computerFolderId ? (error as { path?: unknown }).path : null;
+    const name = typeof refused === "string" && refused ? `“${basename(refused) || refused}”` : standardFolderName(id);
     return Object.assign(
-      new Error(`AmpleFile isn’t allowed to open ${standardFolderName(id)}. Allow it in System Settings → Privacy & Security → Files and Folders.`),
+      new Error(id === computerFolderId && process.platform !== "darwin"
+        ? `You don’t have permission to use ${name}.`
+        : `AmpleFile isn’t allowed to open ${name}. Allow it in System Settings → Privacy & Security → Files and Folders.`),
       { status: 403, statusCode: 403 },
     );
   }

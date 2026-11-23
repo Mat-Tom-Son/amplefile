@@ -73,12 +73,16 @@ export function createLocalEventChannel(parent: LocalEventSink, subscriptionId: 
 
 export type LocalEventTarget =
   | { kind: "control" }
+  | { kind: "file-operations" }
+  | { kind: "volumes" }
   | { kind: "files"; connectedFolderId: string }
   | { kind: "chat"; connectedFolderId: string; conversationId: string }
   | { kind: "agent"; conversationId: string };
 
 export function localEventTarget(path: string): LocalEventTarget | null {
   if (path === "/api/amplefile-agent/control-events") return { kind: "control" };
+  if (path === "/api/file-transfer/events") return { kind: "file-operations" };
+  if (path === "/api/volumes/events") return { kind: "volumes" };
   const files = /^\/api\/connected-folders\/([A-Za-z0-9_-]+)\/file-events$/.exec(path);
   if (files) return { kind: "files", connectedFolderId: files[1]! };
   const chat = /^\/api\/connected-folders\/([A-Za-z0-9_-]+)\/conversations\/([A-Za-z0-9][A-Za-z0-9_.-]{0,127})\/events$/.exec(path);
