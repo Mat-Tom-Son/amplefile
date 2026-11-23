@@ -442,7 +442,7 @@ test("desktop main wires one receipts ledger and automation sleep/wake beside th
   assert.ok(cliProperty && ts.isShorthandPropertyAssignment(cliProperty), "the returned host carries the one CLI host");
 
   const apiStart = main.indexOf("function ensureInteractiveLocalApi");
-  const apiEnd = main.indexOf("\nasync function createMainWindow", apiStart);
+  const apiEnd = main.indexOf("\ninterface FileManagerWindowOptions", apiStart);
   assert.ok(apiStart !== -1 && apiEnd !== -1, "the interactive local API setup is found");
   const apiBody = main.slice(apiStart, apiEnd);
   assert.doesNotMatch(apiBody, /settleSignal/, "the local API takes no settle signal");

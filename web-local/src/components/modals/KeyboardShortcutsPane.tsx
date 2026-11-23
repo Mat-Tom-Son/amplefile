@@ -77,7 +77,8 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
     ...(desktop ? [{
       title: "AmpleFile",
       rows: [
-        { keys: [modifier, "N"], action: "Create a new Connected Folder." },
+        { keys: [modifier, "N"], action: "Open a new window at this folder." },
+        { keys: macOS ? ["Option", modifier, "N"] : [modifier, "Alt", "N"], action: "Create a new Connected Folder." },
         { keys: [modifier, "O"], action: "Use an existing folder." },
         { keys: [modifier, "R"], action: "Refresh the folder." },
         { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },

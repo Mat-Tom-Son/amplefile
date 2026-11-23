@@ -221,13 +221,13 @@ test("the real monitor wrapper stops gdbus when AmpleFile's end of its stdin clo
 
 test("Linux menus and window chrome: Close Tab, Close Window, Paste and Match Style, and no Electron overlay", async () => {
   const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
-  assert.match(main, /\{ id: "close-tab", label: "Close Tab", accelerator: "Control\+W", enabled: rendererMenuState\.connectedFolderOpen, click: \(\) => sendRendererMenuCommand\("close-tab"\) \}/);
+  assert.match(main, /\{ id: "close-tab", label: "Close Tab", accelerator: "Control\+W", enabled: state\.connectedFolderOpen, click: menuCommand\("close-tab"\) \}/);
   assert.match(main, /\{ role: "close", label: "Close Window", accelerator: "Shift\+Control\+W" \}/);
   assert.match(main, /process\.platform === "linux" \? \[\{ role: "pasteAndMatchStyle" as const, accelerator: "Shift\+Control\+V" \}\]/);
   // The Mac items stay exactly as they were.
-  assert.match(main, /\{ id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl\+W", enabled: rendererMenuState\.connectedFolderOpen, click: \(\) => sendRendererMenuCommand\("close-tab"\) \},\n\s*\{ role: "close", accelerator: "Shift\+CommandOrControl\+W" \},/);
+  assert.match(main, /\{ id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl\+W", enabled: state\.connectedFolderOpen, click: menuCommand\("close-tab"\) \},\n\s*\{ role: "close", accelerator: "Shift\+CommandOrControl\+W" \},/);
   // Only Windows asks Electron for the title-bar overlay.
-  const options = main.slice(main.indexOf("mainWindow = new BrowserWindow({"), main.indexOf("show: false,", main.indexOf("mainWindow = new BrowserWindow({")));
+  const options = main.slice(main.indexOf("const window = new BrowserWindow({"), main.indexOf("show: false,", main.indexOf("const window = new BrowserWindow({")));
   assert.equal(options.match(/titleBarOverlay:/g)?.length, 1);
   assert.match(options, /\.\.\.\(process\.platform === "win32" \? \{\n[^\n]*\n\s*titleBarStyle: "hidden",\n\s*titleBarOverlay: titleBarOverlayFor/);
 });

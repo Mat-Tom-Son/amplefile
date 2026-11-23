@@ -108,12 +108,35 @@ Event-stream reconnects use the server's turn-state snapshots and the saved
 transcript, so renderer sleep, window recreation, or wake does not lose the
 result.
 
+AmpleFile can show several file manager windows
+([Windows](product-model.md#windows)). Each loads the same renderer over the
+same local API and event streams, so a change made in one shows in the
+others. The desktop host keeps them in one registry
+(`desktop/src/file-manager-windows.ts`) that answers which window something
+goes to: a menu command to the window the menu was used in, else the front
+(most recently focused) window; a reply, dialog, or native menu to the window
+that asked; a folder handed to the app to the front window, and a request's
+further folders to new windows; a Worker's browser page to the window showing
+its Connected Folder (`desktop/src/browser-page-homes.ts`). Each window keeps
+its own menu state, its Connected Folder shown (its title and Open Recent read
+it; the kernel's CLI context and the AmpleFile Agent follow no window), and a
+slot number that names its saved place in `window-state.json`
+(`desktop/src/window-placements.ts`) and its per-window renderer storage
+(`web-local/src/lib/window-storage.ts`). Every file manager window's top
+frame is trusted the same way; the popover, browser pages, and pop-ups are
+never file manager windows. All of them share one Chromium session, whose
+limit of six connections to a host would let a few windows' event streams
+starve the next window's requests, so the desktop lifts that limit for the
+local API's loopback address alone, and each window carries its event
+streams over one multiplexed `/api/events` connection where the server offers
+it.
+
 The AmpleFile Agent popover is a small separate frameless window
 (`popover.html`, its own lean renderer entry) owned by the menu-bar
 integration. It loads through the same app protocol, session-authenticated
 local API, and navigation guards as the main renderer, but has its own narrow
 preload bridge rather than the main renderer's desktop powers. It keeps the
-AmpleFile Agent reachable when no main window exists. The same local API
+AmpleFile Agent reachable when no file manager window is open. The same local API
 serves the AmpleFile Agent's renderer-only needs-you routes (agent questions
 and due snoozes, which the CLI act facade does not expose) and the
 app-composed overview digest.
@@ -280,7 +303,7 @@ later.
 
 The packaged app contains the compiled Electron and local API runtime, the
 renderer, Pi production dependencies, icons, and the external CLI shims. The
-runtime, the dependencies, and the renderer for both the main window and the
+runtime, the dependencies, and the renderer for the file manager windows and the
 AmpleFile Agent popover are archived in `app.asar`; the main process serves
 the renderer from the archive (`dist/web-local`) through the internal
 `amplefile-desktop://app` scheme, so no window code ships as loose files. The

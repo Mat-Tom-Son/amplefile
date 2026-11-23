@@ -22,6 +22,7 @@ import { desktopPlatform, isMacOS, connectedFolderEntryNativePath, systemFileMan
 import { desktopShortcutModifierKey, desktopShortcutText } from "../../lib/keyboard";
 import { deleteLocalFileRequest, deleteLocalFilesRequest, type PendingDelete } from "../../lib/pending-deletes";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
+import { reportWindowLocation, windowStorageKey } from "../../lib/window-storage";
 import { combineActivityStatuses } from "../../lib/folder-nesting";
 import { settleIn, slideIn } from "../../lib/motion";
 import { useConnectedFolderCustomizations } from "../../hooks/useConnectedFolderCustomizations";
@@ -136,8 +137,8 @@ const internalDragType = "application/x-amplefile-items";
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
 /** The Browser pane's share of the main area when the folder and the browser are both shown. */
 const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
-/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. */
-const browserPaneStorageKey = "amplefile.file-manager.browser-pane.v1";
+/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. Each window keeps its own. */
+const browserPaneStorageKey = windowStorageKey("amplefile.file-manager.browser-pane.v1");
 function readStoredBrowserPane(parsed: unknown): { layout: BrowserPaneLayout; activePageId: string | null } | null {
   if (!parsed || typeof parsed !== "object") return null;
   const { layout, activePageId } = parsed as { layout?: unknown; activePageId?: unknown };
@@ -217,6 +218,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // With no Connected Folder the window is still a file manager: it opens at the home folder.
   const startLocation = (): FileManagerLocation => activeConnectedFolder ? { place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" } : { place: homePlace, path: "" };
   const [location, setLocation] = useState<FileManagerLocation>(startLocation);
+  // The desktop opens File → New Window at the folder this window shows.
+  useEffect(() => { if (!fixtureMode) reportWindowLocation(location); }, [fixtureMode, location.place.kind, location.place.id, location.path]); // eslint-disable-line react-hooks/exhaustive-deps
   const [back, setBack] = useState<FileManagerLocation[]>([]);
   const [forward, setForward] = useState<FileManagerLocation[]>([]);
   const place = location.place;

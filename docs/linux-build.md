@@ -205,8 +205,10 @@ on a display too small for it. Window managers that honor requested positions
 choose window positions themselves: niri opens the fixed-size popover as a
 floating window, not a tile, centered on the output, under xwayland-satellite
 and natively alike. A niri `window-rule` matching the title `AmpleFile Agent`
-with `default-floating-position` can move it. Closing the last Linux window keeps
-the host and accepted work alive; reopening AmpleFile brings back its window.
+with `default-floating-position` can move it. Closing one of several windows closes
+only it ([Windows](product-model.md#windows)); closing the last Linux window
+keeps the host and accepted work alive, and reopening AmpleFile brings back the
+window.
 Use **File → Quit** to end the app. The first time the last window closes, a
 desktop notification says AmpleFile is still running and how to reopen or
 quit it; it needs no tray icon and appears once per profile.
@@ -265,8 +267,10 @@ windowing starts, but this lane does not qualify browser input or capture there.
 
 Windows use the `amplefile-desktop` app ID (Wayland) and window class (X11),
 matching the desktop entry, so docks and task switchers show AmpleFile's icon.
-As on the Mac, the window's title is the name of the Connected Folder shown
-(AmpleFile when none is), which task switchers and `niri msg windows` list.
+As on the Mac, each window's title is the name of the Connected Folder it
+shows (AmpleFile when none is), which task switchers and `niri msg windows`
+list. **File → New Window** (Ctrl+N) opens another window at the folder the
+front one shows.
 
 **File → Open Recent** lists the Connected Folders shown most recently, as the
 Mac's Open Recent does, newest first, followed by **Clear Menu**. Choosing one
@@ -283,10 +287,13 @@ The application menu lists AmpleFile as a file manager, and file managers offer
 **Open With AmpleFile** for folders; the packages declare `inode/directory`
 but run no `xdg-mime` command and change no `mimeapps.list`. As with a folder
 opened from Finder on a Mac, a folder passed to AmpleFile (a launcher's
-argument, or a second launch's) opens in the window where it lives: in the
-deepest Connected Folder holding it, at that folder; else in the Standard
-Folder holding it; else as an other folder under the Standard Folder rules
-([Other folders](product-model.md#the-file-manager-window)). A file opens its
+argument, or a second launch's) opens in the most recently focused window, at
+the place that holds it: in the deepest Connected Folder holding it, at that
+folder; else in the Standard Folder holding it; else as an other folder under
+the Standard Folder rules
+([Other folders](product-model.md#the-file-manager-window)). When a launcher
+passes several folders, the first opens in that window and each further one
+in a new window. A file opens its
 folder with the file selected. Nothing is connected, because connecting a
 folder is its own explicit act; the panel offers **Connect This Folder**.
 This works on a fresh profile too: the folder is shown in the file manager,
@@ -313,7 +320,11 @@ Turning it on does two things:
   `ShowItems` and `ShowItemProperties` through the same path as a folder
   handed to the app: `ShowFolders` opens the folder; `ShowItems` and
   `ShowItemProperties` show the item selected in its folder, a folder too.
-  One window shows one folder, so the first usable item is shown. Every URI
+  One folder (or one folder's items) opens in the most recently focused
+  window, so an app that asks again and again never piles windows up; each
+  further folder a call names opens in a new window, as a system file manager
+  does, at most eight windows for one call. Items in one folder share its
+  window, with the first of them selected. Every URI
   is untrusted: only `file:` URIs with no host (or `localhost`), no query or
   fragment, strict percent-escapes that decode to UTF-8 without NUL, and an
   absolute path of at most 4,096 characters are used; the first 64 URIs of a

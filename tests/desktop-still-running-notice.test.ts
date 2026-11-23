@@ -26,8 +26,10 @@ test("closing the last Linux window tells the person once, never during Quit or 
 
 test("the host keeps Linux alive after the last window and reuses the one persisted notice flag", () => {
   assert.match(main, /app\.on\("window-all-closed", \(\) => \{\s*if \(quittingForUpdate\) return;\s*if \(process\.platform === "win32"\) app\.quit\(\);\s*\}\);/);
-  const closed = /mainWindow\.on\("closed", \(\) => \{([\s\S]*?)\n  \}\);/.exec(main)?.[1] ?? "";
-  assert.match(closed, /closedLastWindowNeedsNotice\(\{ platform: process\.platform, quitting: quitting \|\| quittingForUpdate, alreadyShown: desktopPreferences\.trayNoticeShown \}\)\) maybeShowStillRunningNotice\(\)/);
+  const closed = /window\.on\("closed", \(\) => \{([\s\S]*?)\n  \}\);/.exec(main)?.[1] ?? "";
+  // Only the last window closing says so; one of several closing says nothing.
+  assert.match(closed, /if \(othersOpen > 0\) return;[\s\S]*?closedLastWindowNeedsNotice\(\{ platform: process\.platform, quitting: endingApp, alreadyShown: desktopPreferences\.trayNoticeShown \}\)\) maybeShowStillRunningNotice\(\)/);
+  assert.match(closed, /const endingApp = quitting \|\| quittingForUpdate;/);
   assert.doesNotMatch(closed, /process\.platform === "linux"[^\n]*app\.quit/, "closing the window never quits Linux");
   const notice = /function maybeShowStillRunningNotice\(\): void \{([\s\S]*?)\n\}/.exec(main)?.[1] ?? "";
   assert.match(notice, /desktopPreferences\.trayNoticeShown\) return;\s*updateDesktopPreferences\(\{ trayNoticeShown: true \}\)/);
