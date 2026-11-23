@@ -3,11 +3,12 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import { readFileManagerWindowSource } from "./support/file-manager-source.js";
 
 const root = process.cwd();
 const [app, fileManager, chatPanel, messages, workTrail, activity, panes, settingsModal, styles, identity, modelDisplay, desktopMain, localServer, piClient, activityDot] = await Promise.all([
   read("web-local/src/App.tsx"),
-  read("web-local/src/components/file-manager/FileManagerView.tsx"),
+  readFileManagerWindowSource(),
   read("web-local/src/components/chat/ChatPanel.tsx"),
   read("web-local/src/components/chat/messages.tsx"),
   read("web-local/src/lib/chat-work-trail.ts"),
@@ -89,8 +90,10 @@ function readFileSyncLike(relativePath: string): Promise<string> {
 test("Files exposes folder creation and naming uses in-app UI", () => {
   // Connected Folder creation lives in the right-click menu; Files has no toolbar buttons.
   assert.doesNotMatch(app, /aria-label="New [Ff]older"/);
-  assert.match(fileManager, /onNewFolder=\{\(parent\) => requestNewFolder\(parent\)\}/);
-  assert.match(fileManager, /else if \(command === "new-folder"\) requestNewFolder\(/);
+  // One item menu for every desktop (src/shared/file-menu.ts) offers New Folder Here….
+  assert.match(fileManager, /fileMenuItems\(/);
+  assert.match(fileManager, /else if \(command === "new-folder"\) actions\.requestNewFolder\(/);
+  assert.match(fileManager, /requestNewFolder, refresh: listing\.refresh,/);
   assert.doesNotMatch(app, /aria-label="New file"|onNewFile=/i);
   assert.doesNotMatch(`${app}\n${panes}\n${fileManager}`, /window\.prompt\s*\(/);
   assert.match(fileManager, /<TextInputModal[^>]*title="Rename"/);
@@ -390,7 +393,7 @@ test("user actions retain semantic footer structure; the real cascade is exercis
 });
 
 test("audited desktop and pane controls have working destinations", () => {
-  assert.match(desktopMain, /About \$\{productName\}[\s\S]*?sendRendererMenuCommand\("open-about"\)/);
+  assert.match(desktopMain, /About \$\{productName\}[\s\S]*?menuCommand\("open-about"\)/);
   assert.doesNotMatch(desktopMain, /About \$\{productName\}[^\n]*enabled:\s*false/);
 });
 

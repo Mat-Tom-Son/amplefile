@@ -7,6 +7,7 @@ import { nextDialogTabIndex } from "../web-local/src/hooks/useModalDialog.js";
 import { resolveMessageImageSource } from "../web-local/src/lib/message-images.js";
 import { nextMenuItemIndex } from "../web-local/src/lib/menu-navigation.js";
 import { createConnectedFolderOperationGate } from "../web-local/src/lib/connected-folder-operation-gate.js";
+import { readFileManagerWindowSource } from "./support/file-manager-source.js";
 
 const root = process.cwd();
 const [capabilities, textInputModal, messages, connectedFolderChrome, indexHtml, app, _retiredNeedsYou, fileManager, ...desktopDialogs] = await Promise.all([
@@ -17,7 +18,7 @@ const [capabilities, textInputModal, messages, connectedFolderChrome, indexHtml,
   read("web-local/index.html"),
   read("web-local/src/App.tsx"),
   Promise.resolve(""),
-  read("web-local/src/components/file-manager/FileManagerView.tsx"),
+  readFileManagerWindowSource(),
   read("web-local/src/components/modals/DesktopSettingsModal.tsx"),
   read("web-local/src/components/modals/CreateConnectedFolderModal.tsx"),
   read("web-local/src/components/modals/FileVersionHistoryModal.tsx"),
@@ -106,8 +107,9 @@ test("the main window has no overview panel; the connected-folder-identity heade
   // add files are right-click actions, and a background refresh never dims
   // the tree.
   assert.doesNotMatch(app, /refreshFilesButton|aria-label="Refresh files"|aria-label="Add files"/);
-  assert.match(fileManager, /onRefresh=\{\(\) => void listing\.refresh\(\)\}/);
-  assert.match(fileManager, /else if \(command === "refresh"\) await listing\.refresh\(\);/);
+  assert.match(fileManager, /fileMenuItems\(/, "the window's own item menu comes from the shared list, which offers Refresh");
+  assert.match(fileManager, /else if \(command === "refresh"\) await actions\.refresh\(\);/);
+  assert.match(fileManager, /refresh: listing\.refresh,/);
   assert.doesNotMatch(app, /refreshing-files/);
   assert.doesNotMatch(app, /primaryItems[\s\S]{0,400}overview/i);
 });

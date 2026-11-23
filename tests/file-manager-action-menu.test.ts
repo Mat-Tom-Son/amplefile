@@ -69,7 +69,8 @@ test("the Action menu reads Customize, Organize, Skills & Extensions, then Disco
 test("a Connected Folder's right-click menu offers the same, names a managed one's deletion, and Organize goes to that Connected Folder first", async (t) => {
   const view = await mountWindow(t);
   await view.dom.act(() => { view.sidebarItem("Garden").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 200 })); });
-  assert.deepEqual(view.menuItems(), ["Customize Connected Folder", "Organize", "Skills & Extensions…", "—", "Delete Connected Folder…", "Settings…"]);
+  // From the sidebar it starts with Open in New Tab.
+  assert.deepEqual(view.menuItems(), ["Open in New Tab", "—", "Customize Connected Folder", "Organize", "Skills & Extensions…", "—", "Delete Connected Folder…", "Settings…"]);
   await view.dom.act(async () => { view.menuItem("Organize").click(); });
   assert.deepEqual(view.switched, ["garden"], "the Chat belongs to the Connected Folder the menu was opened for");
 });

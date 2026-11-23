@@ -98,6 +98,8 @@ test("first run offers Computer Control", async (t) => {
   stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
     { id: "computer", state: "unknown", detail: "", checkedAt: "" },
   ]);
+  // The Mac app: the welcome says "Mac" there and "computer" in a plain browser.
+  Object.defineProperty(window, "ampleFileDesktop", { value: { app: { platform: "darwin" }, api: {} }, configurable: true });
   await dom.render(createElement(FileManagerWelcome, { agentConfigured: true, fixtureMode: false, onAiConnected: () => {}, onPutToWork: async () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
   const heading = () => document.querySelector(".fm-welcome-step h2")?.textContent;

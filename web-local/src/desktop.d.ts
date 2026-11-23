@@ -48,17 +48,24 @@ type AmpleFileDesktopMenuCommand =
   | "open-keyboard-shortcuts"
   | "close-tab"
   | "toggle-sidebar"
-  | "toggle-agent-panel";
+  | "toggle-agent-panel"
+  | "toggle-hidden-files"
+  | "new-tab"
+  | "next-tab"
+  | "previous-tab"
+  | "toggle-tab-bar";
 
 type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
 type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
-type AmpleFileDesktopFileMenuCommand = "open" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
+/** Where a folder or file handed to AmpleFile opens: a place, the folder shown in it, and an item to select. */
+type AmpleFileDesktopOpenLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null };
+type AmpleFileDesktopFileMenuCommand = "open" | "open-in-new-tab" | "open-in-new-window" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
   | "copy" | "paste" | "duplicate" | "compress" | "new-folder-with-selection";
 
 type AmpleFileDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
 
 type AmpleFileDesktopHeaderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
+  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab" | "open-in-new-window";
 
 interface AmpleFileDesktopHeaderMenuRequest {
   /**
@@ -68,6 +75,9 @@ interface AmpleFileDesktopHeaderMenuRequest {
   actions: {
     newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
     putToWork?: boolean; removeFromSidebar?: boolean; createConnectedFolder?: boolean; useExistingFolder?: boolean; remove?: boolean; removeDeletes?: boolean;
+    /** The sidebar's folders: Open in New Tab and Open in New Window. */
+    openInNewTab?: boolean;
+    openInNewWindow?: boolean;
   };
   point: { x: number; y: number };
 }
@@ -96,6 +106,11 @@ interface AmpleFileDesktopFileMenuRequest {
     /** The file manager's Copy, Duplicate, Compress, and New Folder with Selection, and Paste on a folder. */
     organize?: boolean;
     paste?: boolean;
+    /** A symbolic link: only Open, Show in Finder, and Copy Path. */
+    link?: boolean;
+    /** A folder: Open in New Tab, and Open in New Window where the desktop has windows. */
+    newTab?: boolean;
+    newWindow?: boolean;
   };
   /** Several rows selected together: the menu offers only what applies to all of them. */
   selection?: { files: number; folders: number };
@@ -142,7 +157,8 @@ declare global {
         revealFolder: (connectedFolderId: string) => Promise<void>;
         openPath: (connectedFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
         openPathWith?: (connectedFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
-        startDrag: (connectedFolderId: string, path: string) => Promise<void>;
+        /** Drags these items (files and folders) out to other apps. */
+        startDrag: (connectedFolderId: string, paths: string[]) => Promise<boolean>;
         previewFile: (connectedFolderId: string, path: string) => Promise<boolean>;
         popupFileMenu?: (request: AmpleFileDesktopFileMenuRequest) => Promise<AmpleFileDesktopFileMenuCommand | null>;
         /** A Connected Folder tab's or a Chat's right-click menu (macOS). */
@@ -150,18 +166,23 @@ declare global {
         /** The Connected Folder header's right-click menu (macOS). */
         popupHeaderMenu?: (request: AmpleFileDesktopHeaderMenuRequest) => Promise<AmpleFileDesktopHeaderMenuCommand | null>;
         setActiveConnectedFolder: (connectedFolderId: string | null) => Promise<void>;
-        onOpenConnectedFolder: (listener: (connectedFolderId: string) => void) => () => void;
+        /** A folder or file the system asked AmpleFile to open, as the host resolved it. */
+        onOpenLocation: (listener: (location: AmpleFileDesktopOpenLocation) => void) => () => void;
         onOpenFolder: (listener: () => void) => () => void;
       };
       /** Standard Folders in the file manager (absent in older desktop builds). */
       standardFolder?: {
         openPath: (standardFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
         openPathWith: (standardFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
-        startDrag: (standardFolderId: string, path: string) => Promise<boolean>;
+        startDrag: (standardFolderId: string, paths: string[]) => Promise<boolean>;
         previewFile: (standardFolderId: string, path: string) => Promise<boolean>;
         trash: (standardFolderId: string, paths: string[]) => Promise<{ trashed: string[]; failed: { path: string; error: string } | null }>;
         /** Opens the folder picker and adds the chosen folder to Standard Folders (absent in older desktop builds). */
         add?: () => Promise<{ id: string; name: string } | null>;
+      };
+      /** A symbolic link a listing showed: opens what it points to (a file), or shows the link itself (absent in older desktop builds). */
+      placeLink?: {
+        open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => Promise<void>;
       };
       /**
        * Files on the system pasteboard, to and from Finder (absent in older
@@ -169,12 +190,17 @@ declare global {
        * in the desktop process, which answers with what landed.
        */
       fileClipboard?: {
-        write: (paths: string[]) => Promise<boolean>;
+        /** A Copy, or with "cut" a Cut, which Linux file managers paste as a move. */
+        write: (paths: string[], operation?: "copy" | "cut") => Promise<boolean>;
         paste: (request: {
           target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string };
           mode: "copy" | "move";
-          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
-        }) => Promise<{ mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }>; nothing?: boolean; fromHere?: boolean; count?: number }>;
+          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[]; cut?: boolean } | null;
+          operationId?: string;
+          conflicts?: { check: true } | import("./components/file-manager/file-operations-model").ConflictPolicy;
+        }) => Promise<import("./components/file-manager/file-operations-model").TransferAnswer>;
+        /** Whether the pasteboard still holds exactly these files (what this window cut). */
+        holds?: (nativePaths: string[]) => Promise<boolean>;
       };
       agent: {
         /** The local path of a file dropped on the AmpleFile Agent panel. */
@@ -247,6 +273,8 @@ declare global {
         };
         getAccentColor: () => Promise<string | null>;
         onAccentColorChanged: (listener: (accent: string | null) => void) => () => void;
+        /** Closes this window when its last folder tab closes; minimize and maximize are for a title bar the window draws itself. */
+        control?: (action: "minimize" | "toggle-maximize" | "close") => void;
         getCloseToTray: () => Promise<{ supported: boolean; enabled: boolean }>;
         setCloseToTray: (enabled: boolean) => Promise<{ supported: boolean; enabled: boolean }>;
       };
@@ -276,8 +304,21 @@ declare global {
         removeSkill: (target: "claude" | "codex") => Promise<AmpleFileCommandLineStatus>;
         skill: () => Promise<string>;
       };
+      /**
+       * File manager windows (absent in older desktop builds): which one this is (slot 1 is the first; `fresh` is a
+       * window just opened rather than one coming back), where it is, so File → New Window opens there, and new windows.
+       */
+      windows?: {
+        slot: number;
+        fresh: boolean;
+        newWindow: () => Promise<boolean>;
+        /** Open in New Window: another window at this place and folder, with `select` selected there. */
+        openInNewWindow: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null }) => Promise<boolean>;
+        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null) => void;
+      };
       menu: {
-        setState: (state: { connectedFolderOpen: boolean }) => void;
+        /** What the menu bar reflects; a key left out keeps its value. */
+        setState: (state: { connectedFolderOpen?: boolean; showHiddenFiles?: boolean; folderTabsOpen?: boolean; showTabBar?: boolean }) => void;
         popup: (menuId: AmpleFileDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;
         onCommand: (listener: (command: AmpleFileDesktopMenuCommand) => void) => () => void;
       };

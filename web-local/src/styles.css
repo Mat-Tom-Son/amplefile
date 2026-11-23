@@ -5614,6 +5614,14 @@ to {
   font-size: var(--amplefile-type-xs);
 }
 
+/* Settings → File Manager: its descriptions and states are sentences, so they wrap. */
+:root[data-theme] .app-shell .settings-window .settings-tab-panel .file-manager-pane.file-manager-pane .settings-list-row small,
+:root[data-theme] .app-shell .settings-window .settings-tab-panel .file-manager-pane.file-manager-pane .settings-list-row .settings-inline-error {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .recently-deleted-pane {
   display: grid;
   gap: 16px;

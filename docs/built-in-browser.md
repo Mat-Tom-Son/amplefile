@@ -13,11 +13,11 @@ file manager window's **Browser pane**: to watch what a Worker does in a page,
 to sign in to a site, and to answer a site's question. The desktop process
 owns the pages; the window only places them and shows their state.
 
-Pages show only in the file manager window, which needs a Connected Folder.
-On first run, or after the last Connected Folder is disconnected, there is no
-Browser pane: a page the AmpleFile Agent opens then runs unseen, and a
-question its site asks waits until the page leaves or a Connected Folder is
-connected and the pane shows it.
+Pages show only in the file manager window, which is there with or without a
+Connected Folder. Only while first run's welcome is up, on a fresh profile, is
+there no Browser pane: a page the AmpleFile Agent opens then runs unseen, and a
+question its site asks waits until the page leaves or the welcome is left and
+the pane shows it.
 
 ## The Browser pane
 
@@ -99,8 +99,10 @@ keeps the Connected Folder shown and its Chat.
   keyboard, and keep their own meaning elsewhere in the window: ⌘T opens a
   tab and ⇧⌘T reopens the one closed last, ⌘W closes the tab in front, ⌘L
   goes to the address field, ⌘F finds in the page, and ⌘1 to ⌘9 and
-  Control-Tab change tabs. ⌘W does nothing to the browser from a Chat's
-  message box, the folder's list, or while a dialog is open. A key pressed
+  Control-Tab change tabs. Elsewhere in the window ⌘T, ⌘W, and Control-Tab
+  are the folder tabs' keys ([the file manager window](product-model.md#the-file-manager-window)):
+  ⌘W from a Chat's message box or the folder's list closes the folder tab in
+  front, never a browser tab, and nothing closes while a dialog is open. A key pressed
   in a page that the window acts on brings the keyboard back to the window,
   so what is typed next goes to the address or find field and not to the
   page; a tab chosen from a page gives its page the keyboard. A page that
@@ -131,6 +133,30 @@ keeps the Connected Folder shown and its Chat.
 The browser preview (`/?fixture=connected-folder`) shows the pane over sample
 pages with no page drawn; two of its recent pages show a Worker's marker and a
 site's question.
+
+## Pages and windows
+
+AmpleFile can show several file manager windows
+([Windows](product-model.md#windows)). Each page is a desktop-hosted view
+placed in one of them, its window:
+
+- A tab the person opens belongs to the window it was opened in, and a tab or
+  pop-up a page opens belongs to that page's window. Only that window lists
+  the tab, lays the page out, and hears about it.
+- A page a Worker opens appears, as a background tab, in the window showing
+  that Worker's Connected Folder, else in the front window. A page the
+  AmpleFile Agent opens appears in the front window.
+- A site's question is shown and answered only in the window holding the
+  page.
+- When one of several windows closes, a page a Worker opened or is using
+  moves to another window as a background tab and keeps working; the
+  person's own pages close with their window, as a browser's tabs do.
+- When the last window closes, every page keeps running unseen, as before,
+  and the next window to open takes them as tabs. A page a Worker opens while
+  no window is open waits the same way.
+
+Workers see every window's tabs in one list, and are told the person can see
+a page while it is drawn in front in any window.
 
 ## Profile and sign-ins
 
@@ -266,7 +292,9 @@ has no browser and no browser tools.
   webview tags, so a page never reaches the app's desktop bridge. A page is
   never a trusted renderer.
 - Pages keep running in the background, including after the last window
-  closes, until AmpleFile quits.
+  closes, until AmpleFile quits. A page belongs to one window, and only the
+  person in that window answers its site's questions
+  ([Pages and windows](#pages-and-windows)).
 - Nothing from the browser enters a Connected Folder unless a Worker writes it
   there or the person moves a download in. What a Worker reads from a page
   reaches the model provider like any other tool result.

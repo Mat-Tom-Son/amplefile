@@ -32,7 +32,7 @@ organizing metaphor.
 | **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
 | **AmpleFile Agent** | The agent above all Connected Folders: one conversation scope, shown in the menu-bar popover. | It is not a Connected Folder or a second Worker ([what it is](amplefile-agent-and-cli.md#what-the-amplefile-agent-is)). |
 | **Automation** | A declared, inert-until-enabled set of deterministic steps that move work between Connected Folders on a reviewed trigger. | App code runs it, never a Worker conversation, and nothing Automation-shaped is written into any Connected Folder. |
-| **Recently Deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore (files, folders, a managed Connected Folder's folder, a deleted Chat, and a removed imported Skill), kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
+| **Recently Deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore (files, folders, a managed Connected Folder's folder, a deleted Chat, and a removed imported Skill), kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. It is not the computer's Trash either: what is moved to the Trash from a Standard Folder, an other folder, or any app is in the window's **Trash**, which the person can empty. |
 
 ## The file manager window
 
@@ -43,7 +43,8 @@ other surface.
 - **Window:** a sidebar, a toolbar (Back and Forward, the folder's name,
   Icons or List, Action, the **Browser** button, Search, and the panel
   button), the folder's contents, and Finder's path bar (the disk down to
-  the selected item) with an item count, then the Browser pane while a
+  the selected item) with an item count and the space available on the
+  folder's drive ("12 items, 40.2 GB available"), then the Browser pane while a
   browser tab is open, and the right panel. The panel button is the
   toolbar's last control, to the right of Search and nearest the panel: it
   hides the panel (**Hide Panel**) and shows it again (**Show Panel**). The
@@ -60,10 +61,11 @@ other surface.
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
   Downloads, newest first, with where each lives; Return opens one and ⌘↑
-  shows it in its folder. Then **Standard Folders** (Desktop, Documents,
+  shows it in its folder. **Trash** follows it (see **Trash**). Then
+  **Standard Folders** (Desktop, Documents,
   Downloads, Pictures, the home folder by the account's name, and iCloud
   Drive), then **Connected Folders**, each drawn as a folder in its own color
-  with its chosen icon. A Standard Folder that is a Connected Folder appears
+  with its chosen icon, then **Drives** (see **Drives**). A Standard Folder that is a Connected Folder appears
   only under Connected Folders. Each heading has a **+** at its far right:
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
@@ -118,52 +120,270 @@ other surface.
   inside, or a folder holding one) is changed only from that Connected
   Folder, so History keeps it. The panel's **Connect This Folder** registers
   the folder; nothing moves.
+- **Other folders:** any other folder on the computer opens in the window
+  too, as a plain folder under the Standard Folder rules: no Worker,
+  History, or `.amplefile/` record, deleting is **Move to Trash**, and
+  anything a Connected Folder owns is changed only from that Connected
+  Folder. It opens from Go to Folder, the path bar, Command-Up, or a folder
+  handed to AmpleFile (Finder's Open With, or a drop on the Dock icon); a file opens its folder with the file selected. The host resolves
+  every path to where it really is, then to the place that holds it: inside
+  a Connected Folder (the deepest one) it opens there at that folder, inside
+  a Standard Folder it opens in that Standard Folder, and anything else
+  opens by its path from the disk, which the path bar names first. Opening a
+  folder that is a Standard Folder shows that Standard Folder. An other folder
+  has no sidebar row, so no row is highlighted; Back and Forward, the path
+  bar, the toolbar's title, and the item count work as anywhere else.
+  Nothing is registered and nothing is kept about it: the panel offers
+  **Connect This Folder** for the folder shown (never for the
+  disk itself), at the panel's foot. The path policy is the same as everywhere: no path through
+  a symbolic link (a link can be the item an action acts on, never a folder
+  a path goes through), and `.amplefile/` and `.pi/` stay hidden. The
+  window never goes into `/System/Volumes/Data`, where macOS gives every
+  folder on the data volume a second name that is not a link (through it a
+  Connected Folder would open as a plain folder): Go to Folder, Finder, a
+  folder added to the sidebar, and a folder connected by that name all use
+  its usual one, and search and folder sizes never walk into it. The disk's top
+  lists its links (a Mac keeps `/etc`, `/tmp`, and `/var` as links into `/private`) as
+  **Symbolic links** describes. A folder the
+  account may not read says so (on a Mac, as for Desktop or Documents, with
+  where to allow it).
+- **Drives:** the sidebar's last section starts with the computer's own disk
+  (**Macintosh HD**), the top of the file
+  system, then every mounted drive the host lists, by name; hovering one
+  shows its free and total space. Each opens in the computer place at its
+  mount path, so it follows the other-folder rules. An ejectable drive has an
+  **Eject** button beside it; the host refuses while a file on it is in use
+  or a Connected Folder on it has unfinished work, and the window shows its
+  reason as it is. A drive coming or going updates the list on its own, and
+  ejecting the drive shown goes back to where the window opened. The host
+  reads `/Volumes` on this computer; nothing about a drive leaves it.
+- **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
+  area: what was moved to the Trash from any app, this window's Standard
+  Folders and other folders included, with Name, Original Location, Date
+  Deleted, and Size, newest first and sortable. A line above the list says
+  how it differs from AmpleFile's own Recently Deleted (in Settings), which
+  holds what AmpleFile removes from Connected Folders. **Put Back** returns
+  the selected items where they were (a taken name gets " copy"; nothing is
+  replaced) and its notice's **Show** opens the folder with the item
+  selected. **Delete Immediately** (or Delete, or ⌘⌫) and **Empty Trash**
+  delete for good: each first asks in a dialog that names what will be lost
+  (the item, or how many items and how much space, drives' Trash folders
+  included) and says it cannot be undone, and nothing is deleted without a
+  yes. While Empty Trash or Delete Immediately runs, the view says
+  **Emptying the Trash…** (or **Deleting…**), and one that takes a moment
+  shows its progress with **Stop** in the operations area, as a copy does;
+  after Stop the notice says how many items were deleted and how many are
+  still in the Trash. The list is read again each
+  time it is shown, when the window comes back, and when this window moves
+  something to the Trash. Search filters it by name. On a Mac the list needs
+  Full Disk Access and says so when it is missing; macOS keeps no record of
+  where an item came from that AmpleFile can read, so Put Back there points
+  to Finder and the rest works.
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
-  Quick Look, Command-Down to open, Command-Up for the enclosing folder,
-  Command-Delete, Return to rename, typing to jump to a name). Double-click
-  opens a folder here and a file in its default app. Files drag out to other
-  apps; files dragged in from Finder are added to the folder shown, or to the
-  folder row they are dropped on, and a file dragged onto a folder row in the
-  list moves there, each kept by History (a Standard Folder is changed in
-  Finder). Right-click uses the native menu.
+  Quick Look, Command-Down to open, Command-Up for the enclosing folder
+  (from the top of a place, the folder above it, down to the disk),
+  Command-Delete, Return to rename, typing to jump to a name, and the
+  Copy, Cut, Paste, and Duplicate keys under **Finder's file actions**).
+  Double-click opens a folder here and a file in its default app; an
+  archive opens in its default app too, and **Extract** is in its menu. Dragging from empty
+  space, or in the list from a row outside its icon and name, draws a
+  selection rectangle that selects what it touches; Shift or Command adds
+  to the selection, and the list scrolls while the pointer is near its top
+  or bottom edge. Right-click uses the native menu. Icons or List and the
+  sort are remembered for each folder on this computer: a Connected Folder's
+  folders by its portable id and the path inside it (so a moved Connected
+  Folder keeps its views), any other folder by its path on disk. A folder
+  never set shows the last choice made anywhere. The window keeps a few
+  hundred folders and forgets the least recently set first; nothing is
+  written into a folder. Show Hidden Files stays one choice for the window.
+- **Folder tabs:** the window holds folder tabs, as Finder
+  does. Each tab has its own folder, Back and Forward, selection, scroll
+  position, search, and whether it shows the Trash or Recents; going to
+  another folder in a tab starts that tab fresh there. **New Tab** (⌘T)
+  opens one right after the tab in front, at what it shows. **Open in
+  New Tab** (and **Open in New Window**) is in a folder's menu and in the sidebar's menus; ⌘-click
+  a sidebar place, or ⌘-double-click a folder, opens it in a new tab in front, and a middle click opens it in a
+  new tab behind. The next and previous tab are ⌃Tab and ⌃⇧Tab, or
+  ⇧⌘] and ⇧⌘[. **Close Tab** (⌘W) closes the tab in front (the browser tab in front while
+  the Browser pane has the keyboard) and closing the last one closes that
+  window alone, which leaves AmpleFile and its other windows running. The strip sits at the top of the
+  folder area and shows once there are two tabs, or always with **View → Show
+  Tab Bar**. A tab's title is its folder's name (the place's own name at its
+  top, **Trash**, or **Recents**); two tabs on different folders of the same
+  name each add as few of the folders above as tell them apart, as **Notes —
+  Lab** and **Notes — Work**, and the full path is its tooltip. Tabs reorder
+  by dragging; items dropped on a tab move or copy into its folder under the
+  same rules as dropping on the list, and items held over a tab bring it to
+  the front. The tabs, their folders, Back and Forward, and the one in front
+  come back when the window reopens, from this computer only, each window
+  with its own. The panel
+  follows the tab in front: its Info, History, and message box are for that
+  tab's folder, and each tab keeps its own open Chat. A Chat in a tab behind
+  stays open out of sight, so its reply goes on and shows where it was;
+  closing a tab closes its Chat without stopping a reply, which keeps running
+  and stays in the Connected Folder's History. Copies, moves, and the other
+  operations in progress belong to the window and keep running when the tab
+  that started them closes. The Browser pane and its web tabs stay one set
+  for the window.
+- **Thumbnails:** icon view shows a picture's or a PDF's first page in its
+  tile (PNG, JPEG, GIF, WebP, BMP, AVIF, and PDF; SVG, HEIC, TIFF, RAW, and
+  video keep their icons), drawn by the host from the file and cached by its
+  size and date, so a changed file gets a new one. Only the tiles near the
+  view ask, a few at a time with the ones in view first, and a tile scrolled
+  away withdraws its request; anything the host cannot draw keeps its icon.
+  The list keeps icons.
+- **Folder sizes:** Info measures the folder it describes (a selected folder,
+  or the folder shown) when it is shown, saying **Calculating…** meanwhile,
+  then its size and how many items it holds, with **Recalculate**. The host
+  stops after 10 seconds or a million items; then Info says "At least …" and
+  "More than … items" and why, and says so when some items could not be read
+  or a drive is mounted inside (not counted). Links are not followed, and
+  AmpleFile's and Pi's hidden folders are left out. A folder measured this
+  session shows its size in the list's Size column too; the list never
+  measures the folders it merely shows. The disk itself is never measured.
+- **Big folders:** a folder lists completely up to 200,000 items; one that
+  holds more shows 200,000 of them with a note that some items are not
+  shown. Only the
+  rows (or rows of tiles) in view are drawn, so a folder of 100,000 items
+  opens in about the time the host takes to list it and scrolls smoothly;
+  selection, the keys, the selection rectangle, and screen readers' row
+  counts cover every item, drawn or not.
+- **Dragging:** files and folders drag alike. Dragging a selected item
+  drags the whole selection, and an unselected item drags alone: out to
+  other apps, or onto a folder row or a sidebar place in the window, where
+  they move as a move by paste does (a move between places follows the
+  rules under **Finder's file actions**, with the same refusals and History
+  restore points). Items dragged in from Finder are copied into the folder
+  shown, or the folder row they are dropped on; in a Standard Folder or an
+  other folder that needs the desktop app, which knows where they are.
+  Nothing drops into itself or a folder inside itself, nothing drops into a
+  link, and a nested Connected Folder never drags. A link drags as the link
+  itself. A drop whose names are taken asks first, as a paste does.
+- **Show Hidden Files:** the View menu's **Show Hidden Files** (⇧⌘.)
+  shows what Finder hides (names starting with a period, Finder's
+  custom-icon file, the home folder's Library, and at the disk's top the
+  Mac's system folders such as `usr`, `private`, and `Volumes`), dimmed, in every Connected Folder, Standard Folder, and
+  other folder, the disk's top included; turning it off hides them again. It
+  is one setting for the window, kept on this computer like the view, and
+  the menu's check mark follows it. `.amplefile/` and `.pi/` never appear.
+- **Symbolic links:** a link is listed by its own name with a small arrow on
+  its icon, and its Kind says what it points to (**Link to Folder**, **Link
+  to PDF document**, or **Broken Link**); Info shows the item it points to as
+  **Original** (or **Missing**). Opening a link to a folder goes where that
+  folder really is, as if its path were typed in Go to Folder; opening a
+  link to a file opens that file in its default app; a broken link says so
+  and opens nothing. **Show Original** goes to the folder holding the item
+  it points to, with that item selected. Everything else acts on the link
+  itself, never on what it points to, a broken link included: Rename,
+  Delete (Move to Trash in a plain folder), Copy, Cut, Duplicate, Move, and
+  Compress, and dragging it. A copied or moved link is made again as a link
+  pointing where it did (a relative link is kept as written, so it can read
+  as broken in its new folder); Compress stores it as a link, and Extract
+  makes a link again when it points inside the new folder. History keeps no
+  copy of a link, so a link deleted in a Connected Folder waits in Recently
+  Deleted, and History's restore point undoes its rename or move. Nothing
+  is ever written through a link or into a linked folder: a link is never
+  a folder a path goes through, so New Folder, Paste, a drop, or adding
+  files into one is not offered, and the host refuses each. Attaching a
+  link to a Chat is not offered.
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
-  pasteboard so Finder can paste it; ⌘V pastes what was copied here or in
-  Finder (the desktop process reads the pasteboard and pastes; the window
-  never reads the clipboard); ⌥⌘V moves what was copied here; ⌘D duplicates;
-  the right-click menu adds Copy, Duplicate, Compress, New Folder with
-  Selection, and Paste Here. Nothing is replaced: a taken name gets " copy".
-  Files dropped on a sidebar place go to its top. Every change keeps a
-  History restore point in each Connected Folder it touches (a Standard
-  Folder has none), and ⌘Z and ⇧⌘Z undo and redo the last file change. A
-  move between Connected Folders copies the items, then deletes each from
-  its source with that delete's receipt, and keeps a restore point on both
-  sides. It refuses, before copying anything, while the source Connected
-  Folder has unfinished work (a running turn or a question waiting on an
-  answer), and for an item that is, holds, or sits inside a nested
-  Connected Folder. A copy leaves a folder's `.amplefile/` behind; a move
-  carries it, so a disconnected Connected Folder keeps its identity and
-  Chats. An item whose copy did not carry everything History could not
-  keep leaves its source through Recently Deleted rather than being erased,
-  and an item that cannot leave its source stays there and the move says
-  so; its copy then drops the `.amplefile/` the source still holds, and the
-  move names any it could not drop. Any other move across places copies and says the original stays.
-  Compress writes the archive beside the items under a hidden working name
-  and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
+  pasteboard so Finder can paste it; ⌘X cuts it:
+  the items stay where they are, drawn dimmed, until ⌘V moves them or the
+  clipboard holds something else. ⌘V pastes what was copied or cut here or
+  in Finder (the desktop process reads the pasteboard and pastes; the window
+  never reads the clipboard); ⌥⌘V moves what was copied; ⌘D duplicates. A
+  Mac's pasteboard has no Cut marker, so a Cut is this window's own. The Edit menu's
+  Cut, Copy, and Paste do the same while the folder list has the keyboard.
+  The right-click menu (the native menu on the Mac, the window's own with
+  the same items elsewhere) adds Copy, Cut, Duplicate, Compress, **Extract**
+  for an archive, New Folder with Selection, and Paste Here. Files dropped
+  on a sidebar place go to its top.
+  - **Progress and Stop:** a copy, move, paste, drop, Duplicate, Compress,
+    or Extract that takes more than a moment shows in an operations area at
+    the foot of the folder, above the path bar: what it is doing, its items
+    and bytes, the item in hand, and **Stop**. A quick one never shows. The
+    window stays usable meanwhile, and several run at once. Stop ends at the
+    next safe point and the notice says what was done and what was not: the
+    finished items stay (with their restore point), the item in hand is
+    taken back, and the rest are not done; a stopped move between Connected
+    Folders leaves everything where it was unless items had already left
+    their source. A stopped Compress or Extract makes nothing.
+  - **Taken names:** when a copy, move, paste, drop, or Extract would land
+    on names already taken, the window asks once, before anything is
+    written: one clash at a time, both items' kind, size, and date, and
+    **Keep Both** (the " copy" name), **Skip**, **Replace**, or for two
+    folders **Merge** (with what to do about same-named items inside), with
+    **Apply to All** while more wait, and **Stop**, which does nothing.
+    Apply to All never replaces a folder with a file or a file with a
+    folder; those are replaced only when chosen for that item. Duplicate
+    always keeps both with the " copy" name. An item that is, holds, or sits
+    in a nested Connected Folder is never replaced or merged into. After a
+    Replace the notice says where the old item went: History keeps it in a
+    Connected Folder (⌘Z brings it back), Recently Deleted holds what
+    History could not keep, the system Trash takes it in a plain folder, and
+    where no Trash can take it, it is gone and the notice says so.
+  - **History and Undo:** every change keeps a History restore point in
+    each Connected Folder it touches (a Standard Folder has none), and ⌘Z and
+    ⇧⌘Z undo and redo the last file change; a move inside or between plain
+    folders is undone by moving the items back. When a Replace sent
+    something to the Trash or it is gone, ⌘Z says plainly that it cannot
+    bring it back.
+  - **Moves:** a move inside one Connected Folder is History's move. A move
+    between plain folders (Standard Folders, folders added to the sidebar,
+    and any other folder) is a plain move, as Finder's. A move between
+    Connected Folders copies the items, then deletes each from its source
+    with that delete's receipt, and keeps a restore point on both sides. It
+    refuses, before copying anything, while the source Connected Folder has
+    unfinished work (a running turn or a question waiting on an answer), and
+    for an item that is, holds, or sits inside a nested Connected Folder. A
+    copy leaves a folder's `.amplefile/` behind; a move carries it, so a
+    disconnected Connected Folder keeps its identity and Chats. An item
+    whose copy did not carry everything History could not keep leaves its
+    source through Recently Deleted rather than being erased, and an item
+    that cannot leave its source stays there and the move says so; its copy
+    then drops the `.amplefile/` the source still holds, and the move names
+    any it could not drop. A move between a Connected Folder and a plain
+    folder copies and says the original stays.
+  - **Compress and Extract:** Compress writes the archive beside the items
+    under a hidden working name, at any size (with the 64-bit zip records a
+    large archive needs) and with each item's Unix mode, and stores a link
+    as a link; it refuses to start, and stops, when the disk would keep less
+    than 256 MB free. **Extract** turns a `.zip`, `.tar`, `.tar.gz`, or
+    `.tgz` into a new folder beside it named after it (an archive whose
+    whole content is one folder of that name gives that folder), at any
+    size, and selects it when done; it is the archive's menu item, and
+    double-clicking an archive still opens it in its default app. Nothing
+    extracted is runnable beyond the execute bits the archive records
+    (never setuid, setgid, or sticky); a link is made only when it points
+    inside the new folder; hard links, special files, and entries that would
+    land outside the folder are left out or refused; and the same 256 MB
+    disk guard applies. A damaged or password-protected archive says so.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
-  path; double-clicking a folder opens it; a long path keeps the disk and its
+  path; double-clicking a folder opens it, above the place's top too, where
+  it lives (see **Other folders**); a long path keeps the disk and its
   last four items whole with "…" between. The button at the bar's start, or
   ⇧⌘G, opens Go to Folder as Finder has it: a path field (a full path, "~/…",
   or a name inside the folder shown) over the names that complete it; Tab
   completes, the arrow keys choose, Return goes, and a file's path opens its
-  folder with the file selected. It opens any folder inside a Connected
-  Folder or a Standard Folder and says so plainly for anything else.
+  folder with the file selected. It opens any folder or file on the
+  computer, completes names in any folder, and says so plainly when nothing
+  is at the path or it is hidden AmpleFile or Pi data.
 - **Search** reads names and contents. A scope bar offers **All Connected
-  Folders** or the folder shown; results list name matches, then text matches
-  with the words around them, in Name, Match, and Connected Folder columns. A
-  Standard Folder searches its names only. Selection is accent-colored while
-  the contents have focus. The last row of results asks the Worker to find it
-  by what the person remembers; Return with nothing chosen does the same.
+  Folders** (while any exist) or the folder shown; results list name
+  matches, then text matches with the words around them, in Name, Match, and
+  Connected Folder columns. In a Standard Folder or any other folder the
+  host's folder search reads names and file text below the folder shown, in
+  the same list with a Where column; hidden items are searched only while
+  Show Hidden Files is on. It reads a bounded amount at a time: when it
+  stops early it says so ("Search stopped after a few seconds, having read
+  20,000 files.") with **Keep Searching**, and it says when some folders
+  could not be read. Connected Folders inside are left to their own search,
+  which applies their rules, and the results say so with **Search All
+  Connected Folders**. Selection is accent-colored while the contents have
+  focus. Where a Worker exists (in a Connected Folder, or searching all of
+  them), the last row of results asks the Worker to find it by what the
+  person remembers; Return with nothing chosen does the same.
 - **Browser pane:** the built-in browser's tabs, under the folder's contents
   ([Built-in browser](built-in-browser.md#the-browser-pane)). The toolbar's
   **Browser** button opens it with a new tab and shows or folds it afterward;
@@ -177,11 +397,12 @@ other surface.
   alone, with the running dot; the page shows a **Worker in …** marker that
   opens that Chat. A site's question shows in a bar above the page with
   **Block** and **Allow**, and only the person answers it; with the page out
-  of view, a notice offers **Show Page**. Pages show only here: with no
-  Connected Folder there is no file manager window to hold the pane, so a
-  page the AmpleFile Agent opens then runs unseen.
-- **Right panel:** **Info** shows the selection (a picture shows itself;
-  files show Where, Modified, and Size) or, at a Connected Folder's top
+  of view, a notice offers **Show Page**. Pages show only here, and the
+  window is there with or without a Connected Folder.
+- **Right panel:** **Info** shows the selection (a picture or PDF shows its
+  larger thumbnail, an SVG shows itself; files show Where, Modified, and
+  Size; folders add their measured size, see **Folder sizes**), the Trash
+  item chosen in the Trash, or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
   ready-made ones it has not turned on ([Automations](automations.md)).
   **History** lists the Connected Folder's changes, then its Chats, newest
@@ -202,7 +423,10 @@ other surface.
   **Set Up AI** when no AI is connected. It is AmpleFile's ordinary Chat, so
   Stop, questions, and the Worker's steps work the same way, and a Chat left
   running keeps going while Info is shown. There are no automatic AI file
-  summaries.
+  summaries. Outside a Connected Folder there is no Worker to message: the
+  panel's foot says so and offers **Connect This Folder** for the folder
+  shown (never the disk itself, or the Trash) and, with no AI connected,
+  **Set Up AI…**.
 - **Suggested messages:** push buttons above the message box, on Info only,
   that send at once: up to four, or two when the folder already has an
   Automation on. With AI connected, they are written by the Connected
@@ -227,7 +451,10 @@ other surface.
   sends.
 - **Notices:** one card for everything the window says, errors included: an
   icon for its kind, the words, one action, and Close, stacked over the
-  folder list. Errors stay longer and carry a red edge.
+  folder list. Errors stay longer and carry a red edge. A file operation
+  still running shows instead in the operations area above the path bar, a
+  row in the same card style with its progress and Stop (**Finder's file
+  actions**).
 - **Disconnecting a Connected Folder:** the Action menu or the sidebar's
   right-click menu offers Disconnect…; a linked folder and its files stay
   where they are, a managed one moves to Recently Deleted, and the host still
@@ -247,14 +474,74 @@ other surface.
   stamped on the Connected Folder's folder as macOS draws a symbol on a
   folder ([Connected Folder customization](connected-folder-customization.md)).
 
+### Windows
+
+AmpleFile can show several file manager windows at once. **File → New
+Window** (⌘N) opens another window at the folder the front
+window shows, or at the home folder, a step down and to the right of it, so
+two windows never sit exactly on top of each other. **Open in New Window**,
+beside **Open in New Tab** in a folder's menu and the sidebar's menus, opens
+that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
+
+- **Each window is its own:** its folder tabs (each with its folder,
+  selection, and Chat), panel, Browser pane tabs, and size and place on the
+  screen, and the Connected Folder it shows, which names the window in its
+  title. The window's title, Open Recent, and **New Window** follow the tab
+  in front. Every window sees the same Connected
+  Folders, Standard Folders, drives, Trash, running Chats, and running file
+  operations, so a change made in one (a rename, a new Connected Folder, a
+  finished copy) shows in the others.
+- **The front window:** the menus act on the window in front. A command goes
+  to it, and the View menu's check marks and the items that need a Connected
+  Folder follow it. A dialog, a native menu, or a site's question opens over
+  the window that asked.
+- **What windows share:** Icons or List and the sort remembered for each
+  folder are one set for every window, so a folder looks the same in all of
+  them. The last choice of view and sort (for folders never set), Show
+  Hidden Files, and the panel and sidebar widths are kept on this computer:
+  each window keeps its own while it is open, and a new window starts with
+  the last one changed. The Connected Folder a window shows, its folder tabs,
+  and how it left its Browser pane are kept for that window alone, so two
+  windows never restore or overwrite each other's tabs.
+- **Folders handed to AmpleFile** (Finder's Open With, or a drop on the Dock
+  icon) open in the front window, as they did with one window, so an app that asks
+  again and again to show a folder never piles windows up. When one request
+  names several folders (several opened from Finder at once), the first opens
+  in the front window and each further one in a new window, as Finder does,
+  up to eight; files in one folder share that folder's window.
+- **Browser pages** belong to the window that opened them; a page a Worker
+  opens appears in the window showing that Worker's Connected Folder, else the
+  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+- **Closing and quitting:** closing one of several windows closes only it.
+  Closing the last window keeps AmpleFile and every accepted Chat turn,
+  Automation, and file operation running; reopening AmpleFile (the Dock, the
+  menu bar, launching it again) brings the window back. Quit and Restart to
+  Update keep their rules and wording: they count the work of every window.
+- **Coming back:** the windows open when AmpleFile quit come back at the next
+  launch, each where it was. A window closed while others stayed open is
+  forgotten; the last window closed keeps its place for the next one.
+
 ### First run
 
-With no Connected Folder yet, the window opens on a short first run: a
+A fresh profile opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
 Use Your Mac** when the app includes Computer Control or the command line
 and something is not yet set up, and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
-click beside Connect Folder and New Connected Folder.
+click beside Connect Folder and New Connected Folder. Every step has
+**Browse Files**, which leaves the welcome for good and opens the file
+manager at the home folder with nothing connected. Connecting a folder ends
+it too. A folder handed to AmpleFile (from Finder or the Dock) is shown at once,
+first run or not.
+
+With no Connected Folder the window is still a whole file manager: the
+sidebar's Recents, Trash, Standard Folders, and Drives, every other folder,
+Search, Info, Thumbnails, and folder sizes work as anywhere else; the
+Connected Folders heading keeps its **+**, and the panel's foot offers
+**Connect This Folder** and **Set Up AI…** where the message box would be.
+Skills & Extensions, which belongs to a Connected Folder, says to connect
+one first. Disconnecting the last Connected Folder leaves the window open,
+at the home folder.
 
 Connect Your AI offers ChatGPT, Claude, and OpenRouter first, signing in
 where the app can run the provider's sign-in and taking a key otherwise,
@@ -482,7 +769,8 @@ not the same as direct Google Drive API integration.
 ## Settings
 
 Settings has **Appearance**, **AI Models**, **Automations**, **Command
-Line**, **Recently Deleted**, **Shortcut Keys**, and **About**. Automations
+Line**, **Recently Deleted**, **Shortcut
+Keys**, and **About**. Automations
 carries **Limits**, collapsed by default under a disclosure; **Closing the
 window** lives in Appearance → Interface; updates live in About. **Command
 Line** adds the `amplefile` command to Terminal and writes the Skill for
@@ -778,15 +1066,16 @@ on the CLI, with the same receipts and the same named limits.
 ## Desktop shell
 
 - macOS uses its native hidden-inset title bar and application, File, Edit,
-  View, Window, and Help menus. Window size, position, and theme are kept,
-  and the renderer recovers from a crash.
-- Closing the last window keeps AmpleFile running; the Dock icon brings the
-  window back. **Quit** exits cleanly. Closing the window never stops an
-  accepted turn.
+  View, Window, and Help menus. Each window's size and position, and the
+  theme, are kept, and each window's renderer recovers from a crash on its
+  own ([Windows](#windows)).
+- Closing one of several windows closes only it. Closing the last window
+  keeps AmpleFile running; the Dock icon brings the windows back. **Quit**
+  exits cleanly. Closing a window never stops an accepted turn.
 - The menu-bar item opens the AmpleFile Agent popover on click; a right
   click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
   for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
-  icon become reference chips. The popover works with the main window
+  icon become reference chips. The popover works with every window
   closed, holds drops without sending, and its Stop names the AmpleFile
   agent turn and every delegated Connected Folder turn it aborts.
 - Explicit Copy actions in the window and the popover write text (and
@@ -829,7 +1118,10 @@ properties:
    ([the act ledger](act-ledger.md#receipts-not-gates)).
 10. **Reversible destruction, setup-only secrets:** History covers ordinary
     deletion; what it cannot cover goes to Recently Deleted with a retention
-    window. Provider credentials are Settings acts with no agent or CLI verb,
+    window. Emptying the computer's Trash, or deleting from it, is the
+    person's own act in the window, after a dialog that says it is final;
+    so is a **Replace** in a plain folder, whose old item goes to that Trash
+    (or, when no Trash can take it, is removed and the window says so). Provider credentials are Settings acts with no agent or CLI verb,
     and no task waits on them. Per–Connected Folder model defaults and
     Worker instructions are configuration with narrow receipted verbs.
 11. **Agency on a cadence lives in Connected Folders:** above Connected
@@ -871,14 +1163,19 @@ not a complete or transactional backup.
 - Create a Connected Folder or connect an existing folder without
   conversion; rename one, disconnect a linked folder without deleting its
   files, or delete a managed Connected Folder into Recently Deleted.
-- Browse Connected Folder and Standard Folder files in a Finder-style file
-  manager, run Connected Folder Chats in the panel, and view History.
-- See and use the built-in browser's pages in the window's Browser pane,
-  once a folder is connected: watch a Worker's page, sign in to a site, and
-  answer a site's question.
+- Browse Connected Folder, Standard Folder, and any other folder's files in a
+  Finder-style file manager, with or without a Connected Folder, run
+  Connected Folder Chats in the panel, and view History.
+- Open drives from the sidebar and eject them; see free space; browse the
+  computer's Trash with Put Back, Delete Immediately, and Empty Trash.
+- See picture and PDF thumbnails in icon view and in Info, and measure a
+  folder's size in Info.
+- See and use the built-in browser's pages in the window's Browser pane:
+  watch a Worker's page, sign in to a site, and answer a site's question.
 - Search a Connected Folder by name and by content inside ordinary files and
   Chat transcripts, honouring ignore rules, skipping binary content, and
-  saying when a bound stopped the search.
+  saying when a bound stopped the search; search a Standard Folder or any
+  other folder by name and file text, page by page.
 - Restore content-addressed History checkpoints made around file changes and
   agent turns. A full checkpoint hashes real bytes and keeps that cost
   proportional to the person's own work: it skips version-control internals,

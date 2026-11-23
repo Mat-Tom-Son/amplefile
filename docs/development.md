@@ -163,7 +163,8 @@ argument; none imports from `server.ts`.
 | `reservations.ts` | Capability and Connected Folder mutation reservations, the settled-deletion check, and the History restore and safety wrappers |
 | `conversation-clients.ts`, `turn-acceptance.ts`, `turn-run.ts`, `chat-routes.ts` | A Chat's Pi client, turn acceptance with steering and the queued message, running a turn to its settled record, and a Connected Folder's Chat routes |
 | `request-routes.ts`, `request-records.ts`, `background-jobs.ts` | Request routes, the request-level stop, and settle evaluation; the collaboration verbs' ownership rules, views, and results; the host side of background jobs |
-| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Recents, and Go to Folder |
+| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Extract, their progress events and cancel, Recents, and Go to Folder (the file engine is `src/local/file-transfer.ts`, `file-conflicts.ts`, `archive-extract.ts`, `zip-writer.ts`, `disk-space.ts`, `move-to-system-trash.ts`, and `file-operations.ts`) |
+| `thumbnail-routes.ts` | Picture and PDF thumbnails and folder sizes in every kind of place (`src/local/thumbnails.ts` with its PDF worker, `image-header.ts`, and `folder-size.ts`) |
 | `history-routes.ts`, `recently-deleted-routes.ts` | History routes; Settings → Recently Deleted and its restores |
 | `connected-folder-routes.ts` | Health, the bootstrap read, and creating, connecting, renaming, removing, and customizing Connected Folders |
 | `ai-model-routes.ts`, `capability-routes.ts` | Settings → AI Models and Worker instructions; Skills & Extensions and the included tools |
@@ -194,7 +195,17 @@ extra repository instruction source.
   test files. Use the full suite before handing off behavior changes.
   The runner can divide the discovered test files into four disjoint shards;
   run one with `npm test -- --shard=1/4` (through `4/4`). Every file belongs to exactly
-  one shard; an unsharded `npm test` still runs everything.
+  one shard; an unsharded `npm test` still runs everything. Test files run in
+  parallel, one per core but one; the window suites hold about half a gigabyte
+  each, so on a machine with less memory than that calls for, set
+  `AMPLEFILE_TEST_CONCURRENCY` (for example `AMPLEFILE_TEST_CONCURRENCY=4 npm test`)
+  to run fewer at once.
+- A test that hangs or grows without end fails by name. Each test has three
+  minutes (`AMPLEFILE_TEST_TIMEOUT_MS`), and each test process has a 2 GB heap
+  ceiling (`AMPLEFILE_TEST_HEAP_MB`), past which it ends with Node's "heap out
+  of memory" and its file fails; `0` turns either limit off. In a window test,
+  compare plain values, not live elements: a failed `assert.equal` on an
+  element makes Node describe the whole mounted window.
 - Tests never use your real Pi folder. The runner points `PI_CODING_AGENT_DIR`
   at a temporary folder for every test process, so no test reads your
   provider credentials or writes sessions, settings, or locks into `~/.pi`, and

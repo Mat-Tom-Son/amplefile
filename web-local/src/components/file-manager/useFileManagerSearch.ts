@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from "react";
 
 import { api } from "../../lib/api";
 import type { TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { FileManagerPlace } from "./file-manager-places";
 
 export type FileManagerSearchScope = "here" | "all";
 
 /** One search result row: a name match first, then a line of text that matched. */
 export interface FileManagerSearchResult {
   key: string;
+  /** The Connected Folder it is in; empty for a result in a Standard Folder or the computer place, which names `place`. */
   connectedFolderId: string;
+  /** Set for a Standard Folder or computer place result. */
+  place?: FileManagerPlace;
   path: string;
   name: string;
   kind: "file" | "folder";

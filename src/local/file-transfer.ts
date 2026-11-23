@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { chmod, cp, link, lstat, readdir, readlink, rename, rm } from "node:fs/promises";
-import { basename, extname, join, relative, resolve, sep } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { constants as fsConstants, type Stats } from "node:fs";
+import { chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, utimes } from "node:fs/promises";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
-import JSZip from "jszip";
+import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
+import { untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
+import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
 
 /**
  * The file manager's copy, paste, duplicate, move, and compress
@@ -47,11 +47,58 @@ export async function freeDestination(folder: string, name: string, options: { d
  * only a move does: the original is about to go, so its identity and Chats
  * travel with it instead of being duplicated.
  */
-export async function copyInto(source: string, targetFolder: string, options: { duplicate?: boolean; withIdentity?: boolean } = {}): Promise<string> {
+export async function copyInto(
+  source: string,
+  targetFolder: string,
+  options: { duplicate?: boolean; withIdentity?: boolean; operation?: FileOperationControl } = {},
+): Promise<string> {
   if (isInside(source, targetFolder)) throw badRequest(`“${basename(source)}” can’t be copied into itself.`);
   const destination = await freeDestination(targetFolder, basename(source), options);
-  await copyTree(source, destination, options.withIdentity ? undefined : (path) => path === source || !identityFolders.has(basename(path)));
+  await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation);
   return destination;
+}
+
+/**
+ * Copies a file or folder to a destination that is free, as `copyInto` does
+ * once it has chosen the name: with modes, times, and links as written,
+ * leaving `.amplefile` behind unless `withIdentity` is set, and taking back
+ * what it wrote if it fails or is cancelled.
+ */
+export async function copyItemTo(
+  source: string,
+  destination: string,
+  options: { withIdentity?: boolean; operation?: FileOperationControl } = {},
+): Promise<void> {
+  await copyTree(source, destination, copyFilter(source, options), options.operation ?? untrackedFileOperation);
+}
+
+/** What a copy of `source` leaves behind: every `.amplefile` folder unless it carries the identity. */
+function copyFilter(source: string, options: { withIdentity?: boolean }): ((path: string) => boolean) | undefined {
+  return options.withIdentity ? undefined : (path) => path === source || !identityFolders.has(basename(path));
+}
+
+/**
+ * How much a copy of `source` writes: its files, folders, and links, and the
+ * bytes of its files, leaving out what the copy leaves behind. A tracked
+ * operation stops here at a cancel.
+ */
+export async function measureCopy(
+  source: string,
+  options: { withIdentity?: boolean; operation?: FileOperationControl } = {},
+): Promise<{ items: number; bytes: number }> {
+  const total = { items: 0, bytes: 0 };
+  await measureTree(source, copyFilter(source, options), options.operation ?? untrackedFileOperation, total);
+  return total;
+}
+
+async function measureTree(path: string, filter: ((path: string) => boolean) | undefined, operation: FileOperationControl, total: { items: number; bytes: number }): Promise<void> {
+  if (filter && !filter(path)) return;
+  const info = await lstat(path);
+  total.items += 1;
+  if (info.isFile()) total.bytes += info.size;
+  if (!info.isDirectory()) return;
+  await operation.boundary("item");
+  for (const entry of await readdir(path)) await measureTree(join(path, entry), filter, operation, total);
 }
 
 /**
@@ -160,152 +207,264 @@ async function treeHeld(from: string, into: string, options: { identity: boolean
 const sameTimeToleranceMs = 2_000;
 
 /** Moves a file or folder into a folder on the same computer (copying across disks), returning where it landed. */
-export async function moveInto(source: string, targetFolder: string): Promise<string> {
+export async function moveInto(source: string, targetFolder: string, operation: FileOperationControl = untrackedFileOperation): Promise<string> {
   if (isInside(source, targetFolder)) throw badRequest(`“${basename(source)}” can’t be moved into itself.`);
   const destination = await freeDestination(targetFolder, basename(source));
   try {
     await rename(source, destination);
   } catch (error) {
     if ((error as { code?: string }).code !== "EXDEV") throw error;
-    await copyTree(source, destination);
+    // Across disks the item is copied, then its source goes. A cancel stops
+    // only the copy, which takes back what it wrote; once the copy is whole
+    // the move finishes, so the item is never in neither place.
+    await copyTree(source, destination, undefined, withoutCounts(operation));
     await rm(source, { recursive: true, force: true });
   }
   return destination;
 }
 
+/** A move inside one place counts items, not what a copy across disks writes for one. */
+function withoutCounts(operation: FileOperationControl): FileOperationControl {
+  return {
+    get operationId() { return operation.operationId; },
+    get cancelRequested() { return operation.cancelRequested; },
+    stage: (stage, options) => operation.stage(stage, options),
+    addTotals: () => undefined,
+    setTotals: () => undefined,
+    current: (name) => operation.current(name),
+    itemsDone: () => undefined,
+    bytesDone: () => undefined,
+    boundary: (point) => operation.boundary(point),
+  };
+}
+
 /**
- * Copies to a destination that was free a moment ago. A copy that fails
- * partway takes back what it wrote, so a failed paste or move never leaves a
- * half-written item behind; a destination that turned out to be taken is
- * someone else's and stays.
+ * Copies to a destination that was free a moment ago, keeping modes,
+ * modification times, and links as written. A copy that fails or is
+ * cancelled partway takes back what it wrote, so a failed or stopped paste
+ * or move never leaves a half-written item behind; a destination that turned
+ * out to be taken is someone else's and stays.
  */
-async function copyTree(source: string, destination: string, filter?: (path: string) => boolean): Promise<void> {
+async function copyTree(source: string, destination: string, filter: ((path: string) => boolean) | undefined, operation: FileOperationControl): Promise<void> {
+  const written = { root: false };
   try {
-    // A link is copied as written: Node would otherwise point a relative
-    // link back into the source, where a move then leaves it dangling.
-    await cp(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true, ...(filter ? { filter } : {}) });
+    await copyEntry(source, destination, filter, operation, written);
   } catch (error) {
-    const code = (error as { code?: string }).code;
-    const taken = (code === "ERR_FS_CP_EEXIST" || code === "EEXIST") && resolve((error as { path?: string }).path ?? destination) === resolve(destination);
-    if (!taken) await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+    if (written.root) await removeOwnedItem(destination).catch(() => undefined);
     throw error;
   }
 }
 
 /**
- * The most Compress takes on: what it reads in all (before compressing) and
- * how many items. A zip without its 64-bit extension, which is what Compress
- * writes, holds under 4 GB and 65,535 items; larger work belongs to Finder.
+ * Files at least this large are copied a chunk at a time, so a cancel can
+ * stop inside one; smaller ones, and any the disk can clone, are copied by
+ * the system in one call, which keeps their extended attributes.
  */
-export const compressLimits = { maxBytes: 2 * 1024 ** 3, maxEntries: 60_000 } as const;
+const copyStrategy = { clone: true, streamAboveBytes: 8 * 1024 * 1024, chunkBytes: 1024 * 1024 };
+
+/** Tests only: whether copies may clone, and from what size a file is copied a chunk at a time. */
+export function setFileCopyStrategyForTests(strategy: Partial<typeof copyStrategy> | null): void {
+  Object.assign(copyStrategy, { clone: true, streamAboveBytes: 8 * 1024 * 1024, chunkBytes: 1024 * 1024 }, strategy ?? {});
+}
+
+async function copyEntry(
+  source: string,
+  destination: string,
+  filter: ((path: string) => boolean) | undefined,
+  operation: FileOperationControl,
+  written: { root: boolean },
+): Promise<void> {
+  await operation.boundary("item");
+  const info = await lstat(source);
+  operation.current(basename(source));
+  const claimed = () => { written.root = true; };
+  if (info.isSymbolicLink()) {
+    // A link is copied as written: pointing a relative link back into the
+    // source would leave it dangling once a move removes the source.
+    await symlink(await readlink(source), destination);
+    claimed();
+  } else if (info.isDirectory()) {
+    await mkdir(destination);
+    claimed();
+    for (const entry of await readdir(source)) {
+      const child = join(source, entry);
+      if (filter && !filter(child)) continue;
+      await copyEntry(child, join(destination, entry), filter, operation, written);
+    }
+    await chmod(destination, info.mode & 0o7777);
+  } else if (info.isFile()) {
+    await copyFileEntry(source, destination, info, operation, claimed);
+  } else {
+    throw Object.assign(new Error(`“${basename(source)}” is a special file that can’t be copied.`), { code: "ERR_FS_CP_UNKNOWN" });
+  }
+  operation.itemsDone();
+}
+
+async function copyFileEntry(source: string, destination: string, info: Stats, operation: FileOperationControl, claimed: () => void): Promise<void> {
+  // An untracked copy is today's plain copy; a tracked one first tries a clone, which is instant.
+  if (operation.operationId && copyStrategy.clone) {
+    try {
+      await copyFile(source, destination, fsConstants.COPYFILE_EXCL | fsConstants.COPYFILE_FICLONE_FORCE);
+      claimed();
+      await utimes(destination, info.atime, info.mtime);
+      operation.bytesDone(info.size);
+      return;
+    } catch (error) {
+      if ((error as { code?: string }).code === "EEXIST") throw error;
+      await rm(destination, { force: true }).catch(() => undefined);
+    }
+  }
+  if (!operation.operationId || info.size < copyStrategy.streamAboveBytes) {
+    await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
+    claimed();
+    await keepTimes(destination, info);
+    operation.bytesDone(info.size);
+    return;
+  }
+  const input = await open(source, "r");
+  try {
+    const output = await open(destination, "wx", 0o600);
+    claimed();
+    try {
+      const buffer = Buffer.allocUnsafe(copyStrategy.chunkBytes);
+      for (;;) {
+        const { bytesRead } = await input.read(buffer, 0, buffer.length, null);
+        if (!bytesRead) break;
+        for (let offset = 0; offset < bytesRead;) offset += (await output.write(buffer, offset, bytesRead - offset)).bytesWritten;
+        operation.bytesDone(bytesRead);
+        await operation.boundary("chunk");
+      }
+    } finally {
+      await output.close();
+    }
+  } finally {
+    await input.close();
+  }
+  await utimes(destination, info.atime, info.mtime);
+  await chmod(destination, info.mode & 0o7777);
+}
+
+/** A copied file keeps its source's times; a read-only one is opened for the change and given its mode back. */
+async function keepTimes(path: string, info: Stats): Promise<void> {
+  try {
+    await utimes(path, info.atime, info.mtime);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EPERM" && (error as { code?: string }).code !== "EACCES") throw error;
+    await chmod(path, (info.mode & 0o7777) | 0o200);
+    await utimes(path, info.atime, info.mtime);
+    await chmod(path, info.mode & 0o7777);
+  }
+}
+
+/** Removes an item this app wrote (a partial copy, or a copy it takes back), whatever modes it was copied with. */
+export async function removeOwnedItem(path: string): Promise<void> {
+  const info = await lstat(path).catch(() => null);
+  if (!info) return;
+  if (!info.isDirectory()) { await rm(path, { force: true }); return; }
+  await removeOwnedFolder(dirname(path), path);
+}
 
 /**
  * Compress, as Finder's: one item becomes "name.zip" beside it, several become
  * "Archive.zip", and a name already taken gets " copy" or a number. The
  * archive streams to a hidden file beside it, one file read at a time, and
- * takes its name only once complete, so a failed or refused Compress leaves
- * nothing behind.
+ * takes its name only once complete, so a failed, refused, or cancelled
+ * Compress leaves nothing behind. Any size compresses (the archive takes the
+ * 64-bit zip records it needs); the disk guard (src/local/disk-space.ts)
+ * refuses to start on a nearly full disk and stops before filling it.
  */
 export async function compressInto(
   sources: readonly string[],
   targetFolder: string,
-  limits: { maxBytes: number; maxEntries: number } = compressLimits,
+  operation: FileOperationControl = untrackedFileOperation,
 ): Promise<string> {
   if (!sources.length) throw badRequest("Choose items to compress.");
-  const entries: ArchiveEntry[] = [];
+  const entries: ZipWriterEntry[] = [];
   const total = { bytes: 0 };
-  for (const source of sources) await collectArchiveEntries(source, basename(source), entries, total, limits);
-  const zip = new JSZip();
-  for (const entry of entries) {
-    if (entry.kind === "folder") zip.folder(entry.name);
-    else zip.file(entry.name, openWhenRead(entry.path), { date: entry.date, binary: true });
-  }
+  for (const source of sources) await collectArchiveEntries(source, basename(source), entries, total, operation);
+  operation.setTotals(entries.length, total.bytes);
+  await assertDiskSpace(targetFolder, 0, "compress these items");
+  operation.stage("compressing");
   const name = sources.length === 1 ? `${basename(sources[0]!)}.zip` : "Archive.zip";
-  await removeAbandonedCompressFiles(targetFolder);
-  const partial = join(targetFolder, `${compressWorkingPrefix}${randomBytes(8).toString("hex")}${compressWorkingSuffix}`);
-  compressingNow.add(resolve(partial));
+  await removeAbandonedWorkingItems(targetFolder, compressWorkingPrefix);
+  const working = claimWorkingPath(targetFolder, compressWorkingPrefix);
   try {
-    await pipeline(
-      zip.generateNodeStream({ type: "nodebuffer", streamFiles: true, compression: "DEFLATE", compressionOptions: { level: 6 } }),
-      createWriteStream(partial, { flags: "wx" }),
-    );
-    return await placeWithoutReplacing(partial, targetFolder, name);
+    const output = await open(working.path, "wx", 0o644);
+    try {
+      await writeZip(entries, output, operation, watchDiskSpace(targetFolder, "finish compressing"));
+    } finally {
+      await output.close();
+    }
+    operation.stage("finishing");
+    return await placeWithoutReplacing(working.path, targetFolder, name);
   } finally {
-    compressingNow.delete(resolve(partial));
-    await rm(partial, { force: true }).catch(() => undefined);
+    working.release();
+    await rm(working.path, { force: true }).catch(() => undefined);
   }
 }
 
 const compressWorkingPrefix = ".AmpleFile-compress-";
-const compressWorkingSuffix = ".partial";
-/** Working files this process is writing right now. */
-const compressingNow = new Set<string>();
-/** A working file untouched this long belongs to a Compress that ended without finishing (the app quit or crashed). */
+/** The hidden working folder an Extract writes into before it takes its name. */
+export const extractWorkingPrefix = ".AmpleFile-extract-";
+const workingSuffix = ".partial";
+/** Working files and folders this process is writing right now. */
+const writingNow = new Set<string>();
+/** A working file untouched this long belongs to a Compress or Extract that ended without finishing (the app quit or crashed). */
 export const abandonedCompressAfterMs = 10 * 60 * 1_000;
 
-/**
- * Removes the hidden working files a Compress left in a folder when the app
- * quit or crashed partway. One being written now, here or by another running
- * copy of the app (its file keeps changing), is left alone.
- */
-async function removeAbandonedCompressFiles(folder: string): Promise<void> {
-  const names = await readdir(folder).catch(() => [] as string[]);
-  for (const name of names) {
-    if (!name.startsWith(compressWorkingPrefix) || !name.endsWith(compressWorkingSuffix)) continue;
-    const path = join(folder, name);
-    if (compressingNow.has(resolve(path))) continue;
-    const info = await lstat(path).catch(() => null);
-    if (!info?.isFile() || Date.now() - info.mtimeMs < abandonedCompressAfterMs) continue;
-    await rm(path, { force: true }).catch(() => undefined);
-  }
+/** A new hidden working name in `folder`, marked as being written by this process until `release` runs. */
+export function claimWorkingPath(folder: string, prefix: string): { path: string; release: () => void } {
+  const path = join(folder, `${prefix}${randomBytes(8).toString("hex")}${workingSuffix}`);
+  writingNow.add(resolve(path));
+  return { path, release: () => { writingNow.delete(resolve(path)); } };
 }
 
-type ArchiveEntry = { kind: "folder"; name: string } | { kind: "file"; name: string; path: string; date: Date };
+/**
+ * Removes the hidden working files and folders a Compress or Extract left in
+ * a folder when the app quit or crashed partway. One being written now, here
+ * or by another running copy of the app (it keeps changing), is left alone.
+ */
+export async function removeAbandonedWorkingItems(folder: string, prefix: string): Promise<void> {
+  const names = await readdir(folder).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith(workingSuffix)) continue;
+    const path = join(folder, name);
+    if (writingNow.has(resolve(path))) continue;
+    const info = await lstat(path).catch(() => null);
+    if (!info || (!info.isFile() && !info.isDirectory()) || Date.now() - info.mtimeMs < abandonedCompressAfterMs) continue;
+    await removeOwnedItem(path).catch(() => undefined);
+  }
+}
 
 async function collectArchiveEntries(
   path: string,
   name: string,
-  entries: ArchiveEntry[],
+  entries: ZipWriterEntry[],
   total: { bytes: number },
-  limits: { maxBytes: number; maxEntries: number },
+  operation: FileOperationControl,
 ): Promise<void> {
   const info = await lstat(path);
-  if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) return;
-  if (entries.length >= limits.maxEntries) throw tooLarge(`This is too many items to compress here (more than ${limits.maxEntries.toLocaleString("en-US")}). Compress it in Finder instead.`);
+  if (info.isSymbolicLink()) {
+    // Stored as the link it is, never what it points to.
+    entries.push({ kind: "link", name, target: await readlink(path), date: info.mtime });
+    return;
+  }
+  if (!info.isDirectory() && !info.isFile()) return;
   if (info.isDirectory()) {
-    entries.push({ kind: "folder", name });
+    entries.push({ kind: "folder", name, date: info.mtime, mode: info.mode & 0o7777 });
+    await operation.boundary("item");
     for (const entry of (await readdir(path)).sort()) {
       if (identityFolders.has(entry) || entry === ".DS_Store") continue;
-      await collectArchiveEntries(join(path, entry), `${name}/${entry}`, entries, total, limits);
+      await collectArchiveEntries(join(path, entry), `${name}/${entry}`, entries, total, operation);
     }
     return;
   }
   total.bytes += info.size;
-  if (total.bytes > limits.maxBytes) throw tooLarge(`This is too large to compress here (more than ${formatBytes(limits.maxBytes)}). Compress it in Finder instead.`);
-  entries.push({ kind: "file", name, path, date: info.mtime });
-}
-
-/** A file's bytes, opened only when the archive reaches it, so one file is open at a time. */
-function openWhenRead(path: string): Readable {
-  let source: ReturnType<typeof createReadStream> | null = null;
-  const stream: Readable = new Readable({
-    read() {
-      if (source) { source.resume(); return; }
-      source = createReadStream(path);
-      source.on("data", (chunk) => { if (!stream.push(chunk)) source!.pause(); });
-      source.once("end", () => stream.push(null));
-      source.once("error", (error) => stream.destroy(error));
-    },
-    destroy(error, callback) {
-      source?.destroy();
-      callback(error);
-    },
-  });
-  return stream;
+  entries.push({ kind: "file", name, path, date: info.mtime, mode: info.mode & 0o7777, size: info.size });
 }
 
 /** Gives a finished file its name, the first free one, never replacing an item that took it meanwhile. */
-async function placeWithoutReplacing(file: string, folder: string, name: string): Promise<string> {
+export async function placeWithoutReplacing(file: string, folder: string, name: string): Promise<string> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const destination = await freeDestination(folder, name);
     try {
@@ -323,7 +482,36 @@ async function placeWithoutReplacing(file: string, folder: string, name: string)
   throw Object.assign(new Error(`There are too many copies of “${name}” here already.`), { status: 409, statusCode: 409 });
 }
 
-function formatBytes(bytes: number): string {
+/**
+ * Gives a finished folder its name, the first free one, never replacing an
+ * item that took it meanwhile: the name is claimed with an empty folder
+ * first, which only this rename then replaces. A claim someone wrote into
+ * meanwhile is theirs; the next name is tried.
+ */
+export async function placeFolderWithoutReplacing(folderPath: string, parent: string, name: string): Promise<string> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = await freeDestination(parent, name);
+    try {
+      await mkdir(destination);
+    } catch (error) {
+      if ((error as { code?: string }).code === "EEXIST") continue;
+      throw error;
+    }
+    try {
+      await rename(folderPath, destination);
+      return destination;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "ENOTEMPTY" && code !== "EEXIST") {
+        await rmdir(destination).catch(() => undefined);
+        throw error;
+      }
+    }
+  }
+  throw Object.assign(new Error(`There are too many copies of “${name}” here already.`), { status: 409, statusCode: 409 });
+}
+
+export function formatBytes(bytes: number): string {
   return bytes >= 1024 ** 3 ? `${Math.round(bytes / 1024 ** 3)} GB` : bytes >= 1024 ** 2 ? `${Math.round(bytes / 1024 ** 2)} MB` : `${bytes} bytes`;
 }
 
@@ -340,9 +528,6 @@ function badRequest(message: string): Error {
   return Object.assign(new Error(message), { status: 400, statusCode: 400 });
 }
 
-function tooLarge(message: string): Error {
-  return Object.assign(new Error(message), { status: 413, statusCode: 413 });
-}
 
 /** macOS and Windows disks ignore case by default. */
 function comparison(value: string): string {

@@ -1,19 +1,20 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
-import { isShownStandardEntry, listStandardFolders } from "./standard-folders.js";
+import { isShownStandardEntry } from "./standard-folders.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { resolveFolderLocation, type FolderLocationPlace } from "./folder-locations.js";
 
 /**
  * Go to Folder (docs/product-model.md, "The file manager window"), as
- * Finder's ⇧⌘G: a typed path becomes a place the file manager opens, a
- * registered Connected Folder (the deepest one holding the path) or a Standard
- * Folder (the most specific one), and the folders and files whose names start
- * with what is being typed are offered as completions. Nothing outside those
- * places is listed or opened.
+ * Finder's ⇧⌘G: a typed path becomes the location the file manager opens
+ * (folder-locations.ts: the deepest registered Connected Folder holding it,
+ * else the most specific Standard Folder, else the computer place, which
+ * holds every other folder), and the folders and files whose names start with
+ * what is being typed are offered as completions.
  */
-export interface GoToFolderPlace { kind: "connected-folder" | "standard"; id: string }
+export type GoToFolderPlace = FolderLocationPlace;
 
 export interface GoToFolderResult {
   /** Where the typed path opens, when it names a folder or file that exists; a file opens its folder with the file selected. */
@@ -33,28 +34,20 @@ export async function goToFolder(
 ): Promise<GoToFolderResult> {
   const full = expandTypedPath(typed, home);
   if (!full) return { target: null, suggestions: [], message: null };
-  const places = await knownPlaces(connectedFolders, home);
   const endsWithSeparator = /[\\/]$/.test(typed.trim());
   // The folder whose names complete the typed path: the path itself after a "/", else its parent.
   const listedFolder = endsWithSeparator ? full : dirname(full);
   const partial = endsWithSeparator ? "" : basename(full);
-  const listedPlace = placeFor(listedFolder, places);
-  const suggestions = listedPlace ? await completions(listedFolder, partial) : [];
+  const suggestions = await completions(listedFolder, partial);
 
-  const targetPlace = placeFor(full, places);
-  if (!targetPlace) {
-    return {
-      target: null,
-      suggestions,
-      message: "AmpleFile opens folders in your home folder, iCloud Drive, a Connected Folder, or a folder in the sidebar.",
-    };
+  let target: GoToFolderResult["target"];
+  try {
+    target = await resolveFolderLocation(full, connectedFolders, home);
+  } catch (error) {
+    return { target: null, suggestions, message: error instanceof Error ? error.message : String(error) };
   }
-  const info = await stat(full).catch(() => null);
-  if (!info) return { target: null, suggestions, message: suggestions.length ? null : "There’s no folder or file at that path." };
-  const relativePath = toPlacePath(targetPlace.root, full);
-  if (info.isDirectory()) return { target: { place: targetPlace.place, path: relativePath, select: null }, suggestions, message: null };
-  const parentPath = relativePath.includes("/") ? relativePath.slice(0, relativePath.lastIndexOf("/")) : "";
-  return { target: { place: targetPlace.place, path: parentPath, select: relativePath }, suggestions, message: null };
+  if (!target) return { target: null, suggestions, message: suggestions.length ? null : "There’s no folder or file at that path." };
+  return { target, suggestions, message: null };
 }
 
 /** "~" is the home folder; anything else must be a full path (the renderer resolves names relative to the folder shown). */
@@ -67,28 +60,8 @@ export function expandTypedPath(typed: string, home = homedir()): string | null 
   return resolve(value);
 }
 
-interface KnownPlace { place: GoToFolderPlace; root: string }
-
-async function knownPlaces(connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>, home: string): Promise<KnownPlace[]> {
-  // The home folder holds the other Standard Folders; the deepest match wins, so it opens only what nothing else holds.
-  const standard = await listStandardFolders(connectedFolders, home);
-  return [
-    ...connectedFolders.map((connectedFolder) => ({ place: { kind: "connected-folder" as const, id: connectedFolder.id }, root: resolve(connectedFolder.connectedFolderRoot) })),
-    ...standard.filter((folder) => !folder.connectedFolderId).map((folder) => ({ place: { kind: "standard" as const, id: folder.id }, root: resolve(folder.root) })),
-  ];
-}
-
-/** The deepest known place holding a path; a Connected Folder wins over a Standard Folder at the same depth. */
-function placeFor(path: string, places: readonly KnownPlace[]): KnownPlace | null {
-  let best: KnownPlace | null = null;
-  for (const candidate of places) {
-    if (!contains(candidate.root, path)) continue;
-    if (!best || candidate.root.length > best.root.length || (candidate.root.length === best.root.length && candidate.place.kind === "connected-folder")) best = candidate;
-  }
-  return best;
-}
-
 async function completions(folder: string, partial: string): Promise<GoToFolderResult["suggestions"]> {
+  if (insideHiddenData(folder)) return [];
   const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
   const needle = partial.toLocaleLowerCase();
   return entries
@@ -99,18 +72,7 @@ async function completions(folder: string, partial: string): Promise<GoToFolderR
     .slice(0, maxSuggestions);
 }
 
-function contains(root: string, path: string): boolean {
-  const parent = comparison(root);
-  const child = comparison(path);
-  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
-}
-
-function toPlacePath(root: string, path: string): string {
-  return relative(root, path).split(sep).filter(Boolean).join("/");
-}
-
-/** macOS and Windows disks ignore case by default. */
-function comparison(value: string): string {
-  const resolved = resolve(value).replace(/[\\/]+$/, "") || sep;
-  return process.platform === "linux" ? resolved : resolved.toLocaleLowerCase();
+/** Hidden AmpleFile and Pi data is never listed, at any depth. */
+function insideHiddenData(folder: string): boolean {
+  return resolve(folder).split(sep).some((part) => isAlwaysHiddenConnectedFolderEntry(part));
 }
