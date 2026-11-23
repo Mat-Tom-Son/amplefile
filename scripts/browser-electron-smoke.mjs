@@ -181,7 +181,8 @@ async function run() {
     await host.click({ tab: interaction.tab, ref: modified, modifiers: ["Shift"] });
     assert.equal(await inspect("JSON.stringify(window.modified)"), "[true,true]");
     if (process.platform === "linux") {
-      const parents = BrowserWindow.getAllWindows();
+      // The file manager window is open; background pages share one native parent besides it.
+      const parents = BrowserWindow.getAllWindows().filter((item) => item !== window);
       assert.equal(parents.length, 1, "background pages share one native parent");
       assert.equal(parents[0].isVisible(), false, "background input never shows a window");
       assert.equal(parents[0].isFocused(), false, "background input never takes desktop focus");
@@ -296,7 +297,7 @@ async function run() {
     assert.ok(footerY > shot.height && footerY < full.height, "the footer lies below the viewport in the full-page image");
     assert.ok(pixel(full, 20, footerY).every((value, index) => Math.abs(value - [75, 30, 180][index]) < 5), "full-page capture includes the footer below the viewport without stretching");
     await until(async () => (await host.evaluate({ tab: tab.tab, script: "innerHeight" })).result === String(shot.height), "full-page capture restores the viewport");
-    if (process.platform === "linux") assert.equal(BrowserWindow.getAllWindows().some((item) => item.isVisible()), false, "captures never show the background native parent");
+    if (process.platform === "linux") assert.equal(BrowserWindow.getAllWindows().some((item) => item !== window && item.isVisible()), false, "captures never show the background native parent");
 
     const scrolled = await host.scroll({ tab: tab.tab, direction: "down", amount: 1 });
     assert.equal(scrolled.navigated, false);
@@ -434,25 +435,25 @@ async function run() {
 
     // Several windows (docs/built-in-browser.md, "Pages and windows"): each page belongs to one window, and only that
     // window lists it, hears about it, and lays it out.
-    const second = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1000, height: 700, focusable: false, skipTaskbar: true });
-    windowList = [second, window];
-    browser.navigate("persons1", `${base}/two`, second);
-    assert.ok(browser.states(second).some((state) => state.pageId === "persons1"), "a tab belongs to the window it was opened in");
+    const otherWindow = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1000, height: 700, focusable: false, skipTaskbar: true });
+    windowList = [otherWindow, window];
+    browser.navigate("persons1", `${base}/two`, otherWindow);
+    assert.ok(browser.states(otherWindow).some((state) => state.pageId === "persons1"), "a tab belongs to the window it was opened in");
     assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "another window does not list it");
     browser.layout({ pageId: "persons1", url: `${base}/two`, sequence: 1, bounds: { x: 10, y: 10, width: 400, height: 300 }, active: true, occluded: false }, window);
     assert.equal(window.contentView.children.length, 0, "another window cannot lay it out");
     // A Worker's page appears in the window showing that Worker's Connected Folder.
-    workerWindow = (owner) => owner?.startsWith("folder-b/") ? second : windows()[0] ?? null;
+    workerWindow = (owner) => owner?.startsWith("folder-b/") ? otherWindow : windows()[0] ?? null;
     const folderTab = await host.open({ url: `${base}/`, owner: "folder-b/chat-1" });
-    assert.equal(events.find((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab)?.window, second);
+    assert.equal(events.find((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab)?.window, otherWindow);
     // One of several windows closes: the Worker's page moves to another window as a background tab and keeps
     // working; the person's own tab closes with its window.
     windowList = [window];
-    browser.windowClosed(second);
-    second.destroy();
-    const moved = events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab).at(-1);
-    assert.equal(moved?.window, window, "the Worker's page moves to the window still open");
-    assert.equal(moved?.payload.show, false);
+    browser.windowClosed(otherWindow);
+    otherWindow.destroy();
+    const movedTab = events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab).at(-1);
+    assert.equal(movedTab?.window, window, "the Worker's page moves to the window still open");
+    assert.equal(movedTab?.payload.show, false);
     assert.ok(browser.states(window).some((state) => state.pageId === folderTab.tab));
     assert.equal((await host.read({ tab: folderTab.tab, mode: "text" })).tab.title, "Smoke", "the Worker's page still works");
     assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "the person's tab closed with its window");
