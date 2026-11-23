@@ -165,8 +165,18 @@ export function useFileChanges(context: FileChangesContext) {
     stack.current = stack.current.slice(0, -1);
     // A change History cannot put back (an item a Replace sent to the Trash) says so instead of half-undoing.
     if (entry.cannot) { showToast({ text: entry.cannot, tone: "info", durationMs: 9000 }); return; }
+    let reverse: FileUndo | null;
     try {
-      const reverse = await entry.run();
+      reverse = await entry.run();
+    } catch (caught) {
+      // A step that keeps its place stays where it was, to be run again once what refused it is over.
+      if (entry.resumes) stack.current = pushUndo(stack.current, entry);
+      onError(errorText(caught));
+      // What it did before it was refused shows.
+      await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);
+      return;
+    }
+    try {
       if (reverse) {
         if (redo) undoStackRef.current = pushUndo(undoStackRef.current, reverse);
         else redoStackRef.current = pushUndo(redoStackRef.current, reverse);
@@ -174,10 +184,7 @@ export function useFileChanges(context: FileChangesContext) {
       await Promise.all([listing.refresh(), standard.refresh()]);
       showToast({ text: `${redo ? "Redid" : "Undid"} ${entry.label}`, tone: "success" });
     } catch (caught) {
-      // A step that keeps its place stays where it was, to be run again once what refused it is over.
-      if (entry.resumes) stack.current = pushUndo(stack.current, entry);
       onError(errorText(caught));
-      await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);
     }
   }
 
