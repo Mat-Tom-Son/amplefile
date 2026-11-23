@@ -64,6 +64,9 @@ native app, tests, and what to do when the toolchain is wrong.
   with its own Worker and Chats. It is never moved or converted; it stays usable
   in Finder and your other tools. Connected Folders can nest, and `@` in a
   message box addresses a Worker.
+- **Any folder.** The window also opens your Desktop, Documents, Downloads,
+  and any other folder on your computer, from Go to Folder, the path bar, or
+  Finder, as plain folders with no Worker until you connect one.
 - **The AmpleFile Agent** lives in the menu bar, above all your Connected
   Folders. Ask it what needs attention, or have it hand work to a Worker; the
   Worker reports back, and asks rather than guesses when it needs something.

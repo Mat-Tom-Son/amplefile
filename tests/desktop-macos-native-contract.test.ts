@@ -42,14 +42,14 @@ test("the Darwin Connected Folder header menu requires the trusted main renderer
   assert.match(preload, /popupHeaderMenu: \(request[\s\S]*?ipcRenderer\.invoke\("amplefile:connected-folder:popup-header-menu", request\)/);
 });
 
-test("Finder and Open Recent recreate the Mac window before automation a queued Connected Folder", () => {
+test("Finder and Open Recent recreate the Mac window before showing a queued folder where it lives", () => {
   assert.match(
     main,
-    /drainPendingMacOpenPaths[\s\S]*?while \(pendingMacOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?registeredConnectedFolderIdForOpenPath\(path\)[\s\S]*?amplefile:connected-folder:open-connected-folder/,
+    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureMainWindow\(\)[\s\S]*?folderLocationForOpenPath\(path[,)][\s\S]*?amplefile:file-manager:open-location/,
   );
-  assert.match(main, /registeredConnectedFolderIdForOpenPath[\s\S]*?info\.isDirectory\(\)[\s\S]*?realpath\(connectedFolder\.connectedFolderRoot\)[\s\S]*?samePath\(openedRoot, registeredRoot\)/);
-  assert.match(main, /request = \{ token: randomUUID\(\), connectedFolderId \}[\s\S]*?amplefile:connected-folder:open-connected-folder/);
-  assert.match(preload, /deliveredTokens[\s\S]*?amplefile:connected-folder:take-open-connected-folder[\s\S]*?then\(deliver\)/);
+  assert.match(main, /folderLocationForOpenPath[\s\S]*?resolveFolderLocation\(path, await listConnectedFolders\(\), homedir\(\)[,)]/);
+  assert.match(main, /request = \{ token: randomUUID\(\), location \}[\s\S]*?amplefile:file-manager:open-location/);
+  assert.match(preload, /deliveredTokens[\s\S]*?amplefile:file-manager:take-open-location[\s\S]*?then\(deliver\)/);
 });
 
 test("the interactive local API is app-lifetime state rather than BrowserWindow state", () => {

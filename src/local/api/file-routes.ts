@@ -5,6 +5,7 @@
  */
 
 import { createLocalEventSink } from "../local-event-stream.js";
+import { treeListingQuery } from "./tree-listing-query.js";
 import type { ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -14,6 +15,8 @@ import { listConversations } from "../agent/chat-store.js";
 import { isGeneratedImageId } from "../agent/generated-image-store.js";
 import { createConnectedFolderMutationCheckpoint } from "../history.js";
 import { searchConnectedFolder } from "../search.js";
+import { searchStandardFolder } from "../folder-search.js";
+import { isStandardFolderId } from "../standard-folders.js";
 import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "../connected-folder-ignore.js";
 import {
   createConnectedFolderFolder,
@@ -83,7 +86,45 @@ export async function handleSearchRoutes({ req, res, url, method }: LocalApiRequ
     }
     return true;
   }
+  // Search in a Standard Folder or a folder in the computer place: names and
+  // text, in the folder shown and beneath it, a bounded page at a time.
+  const standardSearchMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/search$/);
+  if (method === "GET" && standardSearchMatch) {
+    const standardFolderId = standardSearchMatch[1];
+    if (!isStandardFolderId(standardFolderId)) throw notFound("That standard folder isn’t on this computer.");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once("aborted", abort);
+    res.once("close", abort);
+    try {
+      const result = await searchStandardFolder(standardFolderId, url.searchParams.get("q") ?? "", {
+        path: url.searchParams.get("path") ?? undefined,
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        includeHidden: url.searchParams.get("includeHidden") === "1",
+        maxMatches: searchBudget(url.searchParams, "limit"),
+        maxScannedFiles: searchBudget(url.searchParams, "maxFiles"),
+        maxScannedBytes: searchBudget(url.searchParams, "maxBytes"),
+        maxEntries: searchBudget(url.searchParams, "maxEntries"),
+        maxMilliseconds: searchBudget(url.searchParams, "maxMilliseconds"),
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted && !res.destroyed) sendJson(res, result);
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      req.off("aborted", abort);
+      res.off("close", abort);
+    }
+    return true;
+  }
   return false;
+}
+
+function searchBudget(params: URLSearchParams, name: string): number | undefined {
+  const value = params.get(name);
+  if (value === null || value === "") return undefined;
+  if (!/^[1-9]\d{0,9}$/.test(value)) throw badRequest(`${name} must be a whole number.`);
+  return Number(value);
 }
 
 /** One Connected Folder's files: suggestions, the tree, reading and saving, generated pictures, moves, renames, new folders, added files, deletes, ignore rules, file events, and uploads. */
@@ -114,11 +155,18 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(treeMatch[1]);
     const maxDepthValue = Number(url.searchParams.get("maxDepth") ?? 20);
     const maxDepth = Number.isFinite(maxDepthValue) ? Math.min(Math.max(Math.floor(maxDepthValue), 0), 50) : 20;
+    const listing = treeListingQuery(url.searchParams, maxDepth === 0);
     const scan = await scanConnectedFolderTree(
       connectedFolder.connectedFolderRoot,
       maxDepth,
       url.searchParams.get("path") ?? "",
-      { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
+      {
+        includeIgnored: url.searchParams.get("includeIgnored") !== "0",
+        nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot),
+        ...(listing.includeLinks ? { includeLinks: true } : {}),
+        ...(listing.includeHidden ? { markHidden: true } : {}),
+        ...(listing.maxEntries !== undefined ? { maxEntries: listing.maxEntries } : {}),
+      },
     );
     sendJson(res, { tree: scan.entries, truncated: scan.truncated });
     return true;

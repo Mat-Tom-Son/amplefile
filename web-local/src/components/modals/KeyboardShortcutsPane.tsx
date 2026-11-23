@@ -1,5 +1,5 @@
 import { desktopShortcutKeyLabel, desktopShortcutKeySpokenName, desktopShortcutModifierKey } from "../../lib/keyboard";
-import { isMacOS } from "../../lib/platform";
+import { desktopPlatform, isMacOS, systemFileManagerName, type DesktopPlatform } from "../../lib/platform";
 import type { ShortcutGroup } from "../../types";
 
 /**
@@ -7,8 +7,16 @@ import type { ShortcutGroup } from "../../types";
  * manager window): Finder's keys for the list and search, and the menu bar's
  * AmpleFile commands, and the Browser pane's keys in the desktop app. It has
  * no command palette or agent panel, so their keys are not listed.
+ * Space previews with Quick Look on the Mac (the plain browser points to the
+ * Mac app for it); on another desktop it opens the window's own Preview, which
+ * Space or Esc closes.
  */
-export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desktop: boolean): ShortcutGroup[] {
+export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: boolean): ShortcutGroup[] {
+  const macOS = isMacOS(platform);
+  const modifier = desktopShortcutModifierKey(platform);
+  const fileManager = systemFileManagerName(platform);
+  const quickLook = macOS || !platform;
+  const space = quickLook ? "Quick Look the selected item." : "Preview the selected item. Space or Esc closes it.";
   return [
     {
       title: "Files",
@@ -17,21 +25,23 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
         { keys: ["Arrow down"], action: "Select the item below." },
         { keys: ["Shift", "Arrow down"], action: "Add the next item to the selection." },
         { keys: [modifier, "A"], action: "Select every item." },
-        { keys: ["Space"], action: "Quick Look the selected item." },
+        { keys: ["Space"], action: space },
         { keys: [modifier, "Arrow down"], action: "Open the selected item." },
         { keys: [modifier, "Arrow up"], action: "Go to the enclosing folder." },
         { keys: [modifier, "["], action: "Go back." },
         { keys: [modifier, "]"], action: "Go forward." },
         { keys: [modifier, "Shift", "G"], action: "Go to a folder by its path." },
-        { keys: [modifier, "C"], action: "Copy the selected items (Finder can paste them too)." },
-        { keys: [modifier, "V"], action: "Paste items copied here or in Finder." },
-        { keys: [macOS ? "Option" : "Alt", modifier, "V"], action: "Move the items copied here into this folder." },
+        { keys: [modifier, "C"], action: `Copy the selected items (${fileManager} can paste them too).` },
+        { keys: [modifier, "X"], action: macOS ? "Cut the selected items; Paste moves them." : `Cut the selected items; Paste moves them, here or in ${fileManager}.` },
+        { keys: [modifier, "V"], action: `Paste items copied or cut here or in ${fileManager}.` },
+        { keys: [macOS ? "Option" : "Alt", modifier, "V"], action: "Move the items copied into this folder." },
         { keys: [modifier, "D"], action: "Duplicate the selected items." },
         { keys: [modifier, "Z"], action: "Undo the last file change." },
         { keys: [modifier, "Shift", "Z"], action: "Redo it." },
         { keys: ["Enter"], action: "Rename the selected item." },
-        { keys: [modifier, "Backspace"], action: macOS ? "Delete. Undo it from History, or from the Trash in a Standard Folder." : "Delete. Undo it from History." },
+        { keys: [modifier, "Backspace"], action: macOS || platform === "linux" ? "Delete. Undo it from History, or from the Trash in a Standard Folder." : "Delete. Undo it from History." },
         { keys: ["Esc"], action: "Clear the selection." },
+        { keys: macOS ? ["Shift", modifier, "."] : [modifier, "H"], action: "Show or hide hidden files." },
       ],
     },
     {
@@ -79,7 +89,7 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
 }
 
 export function KeyboardShortcutsPane() {
-  return <ShortcutGroups groups={fileManagerShortcutGroups(desktopShortcutModifierKey(), isMacOS(), Boolean(window.ampleFileDesktop))} />;
+  return <ShortcutGroups groups={fileManagerShortcutGroups(desktopPlatform(), Boolean(window.ampleFileDesktop))} />;
 }
 
 function ShortcutGroups({ groups: shortcutGroups }: { groups: ShortcutGroup[] }) {

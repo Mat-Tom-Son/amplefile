@@ -1,10 +1,11 @@
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
+import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import {
   app,
   BrowserWindow,
@@ -39,7 +40,10 @@ import {
 } from "../../src/local/agent/registered-connected-folder-runtime.js";
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
+import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
+import { parseFileClipboardPasteRequest, pasteboardHolds, planFileClipboardPaste, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
+import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
 import type { AmpleFileActFacade } from "../../src/local/cli/act-facade.js";
 import {
@@ -47,7 +51,7 @@ import {
   writeAmpleFileCliActTokenFile,
 } from "../../src/local/cli/act-token.js";
 import { configureAmpleFileStateRoot, managedConnectedFolderRoot, ampleFileAgentRoot } from "../../src/local/state-paths.js";
-import { getConnectedFolder, listConnectedFolders } from "../../src/local/connected-folder.js";
+import { getConnectedFolder, listConnectedFolders, resolveConnectedFolderPath } from "../../src/local/connected-folder.js";
 import { AmpleFileCliKernelAdapter } from "../../src/local/amplefile-cli-adapter.js";
 import { AmpleFileKernel } from "../../src/local/amplefile-kernel.js";
 import {
@@ -213,7 +217,7 @@ let rendererRecoveryInFlight = false;
 let rendererRecoveryAttempts = 0;
 let rendererRecoveryFailurePromptShown = false;
 let createWindowPromise: Promise<void> | null = null;
-let rendererMenuState: RendererMenuState = { connectedFolderOpen: false };
+let rendererMenuState: RendererMenuState = { connectedFolderOpen: false, showHiddenFiles: false };
 let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
@@ -221,9 +225,10 @@ let interactiveRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
-let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string } | null = null;
-const pendingMacOpenPaths: string[] = [];
-let macOpenPathDrainPromise: Promise<void> | null = null;
+let pendingOpenLocationRequest: { token: string; location: FolderLocation } | null = null;
+// Strings open as given; a { reveal } entry shows a folder selected in its parent.
+const pendingOpenPaths: Array<string | { path: string; reveal: boolean }> = [];
+let openPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
   prepare: prepareForApplicationQuit,
   quit: () => app.quit(),
@@ -287,11 +292,11 @@ if (ownsInstance && process.platform === "darwin") {
   // app host is available. Unknown folders are never registered implicitly.
   app.on("open-file", (event, path) => {
     event.preventDefault();
-    pendingMacOpenPaths.push(path);
+    pendingOpenPaths.push(path);
     interactiveRequested = true;
     if (app.isReady()) {
       void startInteractiveApp()
-        .then(drainPendingMacOpenPaths)
+        .then(drainPendingOpenPaths)
         .catch(reportStartupError);
     }
   });
@@ -485,7 +490,7 @@ async function startInteractiveApp(): Promise<void> {
         else showWindow();
       });
     }
-    await drainPendingMacOpenPaths();
+    await drainPendingOpenPaths();
   })();
   return interactiveStartupPromise;
 }
@@ -539,6 +544,8 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     const userData = app.getPath("userData");
     const host = await ensureDesktopHost();
     apiSessionToken = randomUUID();
+    // An item a Replace takes out of a plain folder goes to the operating system's own Trash.
+    setSystemTrashHandler((path) => shell.trashItem(path));
     const api = await startLocalApi({
       appMode: "desktop",
       port: 0,
@@ -883,16 +890,16 @@ function registerIpc(): void {
       launch: launchOpenWith,
     });
   });
+  // Dragging out of the window: every item dragged, files and folders, to any app that takes them.
   ipcMain.handle("amplefile:connected-folder:start-drag", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    const request = connectedFolderPathRequest(value, false);
-    const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
-    const info = await stat(filePath);
-    if (!info.isFile()) throw new Error("Only files can be dragged out of a Connected Folder.");
-    const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
-    if (icon.isEmpty()) return false;
-    event.sender.startDrag({ file: filePath, icon });
-    return true;
+    const request = placeDragRequest(value, "connectedFolderId");
+    const connectedFolder = await getConnectedFolder(request.id);
+    const items: string[] = [];
+    for (const path of request.paths) {
+      items.push(await draggableItem(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path, { finalLink: true }), () => resolveConnectedFolderItem(request.id, path)));
+    }
+    return startItemDrag(event.sender, items);
   });
   ipcMain.handle("amplefile:connected-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -940,13 +947,31 @@ function registerIpc(): void {
   });
   ipcMain.handle("amplefile:standard-folder:start-drag", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    const request = standardFolderPathRequest(value);
-    const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
-    if (!(await stat(filePath)).isFile()) throw new Error("Only files can be dragged out.");
-    const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
-    if (icon.isEmpty()) return false;
-    event.sender.startDrag({ file: filePath, icon });
-    return true;
+    const request = placeDragRequest(value, "standardFolderId");
+    if (!isStandardFolderId(request.id)) throw new Error("That standard folder isn’t on this computer.");
+    const items: string[] = [];
+    for (const path of request.paths) {
+      items.push(await draggableItem(resolveStandardFolderPath(request.id, path, homedir(), { finalLink: true }), () => resolveStandardFolderItem(request.id, path)));
+    }
+    return startItemDrag(event.sender, items);
+  });
+  // A symbolic link a listing showed: open what it points to, or show the link itself in the system file manager.
+  // A linked folder is never opened here; the window goes to where it really is instead.
+  ipcMain.handle("amplefile:place:open-link", async (event, value: unknown) => {
+    assertTrustedMainRenderer(event);
+    if (!isRecord(value) || !isRecord(value.place) || typeof value.path !== "string" || !value.path || value.path.includes("\0") || isAbsolute(value.path)) throw new Error("Choose a link inside the folder.");
+    const kind = value.place.kind;
+    const id = value.place.id;
+    if ((kind !== "connected-folder" && kind !== "standard") || typeof id !== "string" || !id) throw new Error("Choose where the link is.");
+    const action = value.action === "reveal" ? "reveal" : "open";
+    const link = await resolvePlaceSymbolicLink({ kind, id }, value.path);
+    if (action === "reveal") {
+      shell.showItemInFolder(link.linkPath);
+      return;
+    }
+    if (link.target !== "file") throw new Error("This link points to a folder. Open it in the window.");
+    const result = await shell.openPath(link.targetPath);
+    if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:standard-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -959,35 +984,49 @@ function registerIpc(): void {
     window.previewFile(filePath, basename(filePath));
     return true;
   });
-  // Copy and paste with Finder: files copied in Finder paste into the file manager, and
-  // files copied here paste into Finder, through the system's file pasteboard.
-  // Paste reads the pasteboard here, never in the window (the window can't read the clipboard): what was
-  // copied in this window pastes by place (so ⌥⌘V can move it); anything else Finder copied is copied in.
+  // Copy, Cut, and paste with Finder: files copied there paste into the file
+  // manager, and files copied or cut here paste there, through the system's file pasteboard. Paste reads the
+  // pasteboard here, never in the window (the window can't read the clipboard): what was copied or cut in this
+  // window pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
+  // that app cut them or the person chose ⌥⌘V. The window's `operationId` shows the paste's progress, and
+  // `conflicts` asks about taken names first, then carries the person's choices.
   ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (!isRecord(value) || !isRecord(value.target)) throw new Error("Choose where to paste.");
-    const mode = value.mode === "move" ? "move" : "copy";
-    const internal = isRecord(value.internal) && Array.isArray(value.internal.paths) && Array.isArray(value.internal.nativePaths) ? value.internal : null;
-    const pasteboard = readPasteboardFilePaths();
-    const internalNative = internal ? (internal.nativePaths as unknown[]).filter((item): item is string => typeof item === "string") : [];
-    const fromHere = Boolean(internal) && (!pasteboard.length || (pasteboard.length === internalNative.length && pasteboard.every((path) => internalNative.includes(path))));
-    const sources = fromHere
-      ? (internal!.paths as unknown[]).map((path) => ({ place: internal!.place, path }))
-      : pasteboard.map((nativePath) => ({ nativePath }));
-    if (!sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
-    const result = await transferFileEntries({ mode: fromHere ? mode : "copy", sources, target: value.target });
-    return { ...result, fromHere, count: sources.length };
+    const request = parseFileClipboardPasteRequest(value);
+    const pasteboard = await readPasteboardFiles();
+    const plan = planFileClipboardPaste(request, pasteboard, await listConnectedFolders());
+    if (!plan.sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
+    const result = await transferFileEntries({
+      mode: plan.mode,
+      sources: plan.sources,
+      target: request.target,
+      ...(request.operationId ? { operationId: request.operationId } : {}),
+      ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
+    });
+    const answer = { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut };
+    // A finished paste of a Cut empties the pasteboard, as the system file managers do, so it is not moved twice.
+    if (plan.cut && !("conflicts" in result) && !("cancelled" in result && result.cancelled)) await clearPasteboardFiles(pasteboard.paths);
+    return answer;
   });
-  ipcMain.handle("amplefile:file-clipboard:write", (event, value: unknown): boolean => {
+  ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
-    if (!Array.isArray(value) || !value.length || value.length > 5_000) throw new Error("Choose items to copy.");
-    const paths = value.map((item) => {
+    // A list of paths is a Copy; { paths, operation: "cut" } is a Cut.
+    const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.paths) ? value.paths : null;
+    const operation = isRecord(value) && !Array.isArray(value) && value.operation === "cut" ? "cut" : "copy";
+    if (!list || !list.length || list.length > 5_000) throw new Error("Choose items to copy.");
+    const paths = list.map((item) => {
       if (typeof item !== "string" || !isAbsolute(item) || item.includes("\0")) throw new Error("Choose items to copy.");
       return item;
-    }).filter((path) => existsSync(path));
+    }).filter((path) => Boolean(lstatSync(path, { throwIfNoEntry: false })));
     if (!paths.length) return false;
-    writePasteboardFilePaths(paths);
+    await writePasteboardFilePaths(paths, operation);
     return true;
+  });
+  // Whether the pasteboard still holds what this window cut, so those items stay drawn as cut.
+  ipcMain.handle("amplefile:file-clipboard:holds", async (event, value: unknown): Promise<boolean> => {
+    assertTrustedMainRenderer(event);
+    if (!Array.isArray(value) || !value.length || value.length > 5_000 || value.some((item) => typeof item !== "string")) return false;
+    return pasteboardHolds(await readPasteboardFiles(), value as string[]);
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
   ipcMain.handle("amplefile:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
@@ -1009,8 +1048,11 @@ function registerIpc(): void {
       try {
         const request = standardFolderPathRequest({ standardFolderId, path });
         // Anything a Connected Folder owns is changed through that Connected Folder, where History keeps it.
-        await assertStandardFolderPathUnowned(standardFolderId, request.path);
-        await shell.trashItem(await resolveStandardFolderItem(standardFolderId, request.path));
+        await assertStandardFolderPathUnowned(standardFolderId, request.path, homedir(), { finalLink: true });
+        // A symbolic link goes to the Trash as itself; what it points to stays.
+        const linkPath = resolveStandardFolderPath(standardFolderId, request.path, homedir(), { finalLink: true });
+        const isLink = Boolean((await lstat(linkPath).catch(() => null))?.isSymbolicLink());
+        await shell.trashItem(isLink ? linkPath : await resolveStandardFolderItem(standardFolderId, request.path));
         trashed.push(request.path);
       } catch (error) {
         return { trashed, failed: { path: typeof path === "string" ? path : "", error: error instanceof Error ? error.message : String(error) } };
@@ -1043,15 +1085,15 @@ function registerIpc(): void {
     }
     await setActiveNativeConnectedFolder(value === null ? null : value.trim());
   });
-  ipcMain.handle("amplefile:connected-folder:take-open-connected-folder", (event) => {
+  ipcMain.handle("amplefile:file-manager:take-open-location", (event) => {
     assertTrustedMainRenderer(event);
-    const request = pendingOpenConnectedFolderRequest;
-    pendingOpenConnectedFolderRequest = null;
+    const request = pendingOpenLocationRequest;
+    pendingOpenLocationRequest = null;
     return request;
   });
-  ipcMain.on("amplefile:connected-folder:ack-open-connected-folder", (event, value: unknown) => {
+  ipcMain.on("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value === "string" && pendingOpenConnectedFolderRequest?.token === value) pendingOpenConnectedFolderRequest = null;
+    if (typeof value === "string" && pendingOpenLocationRequest?.token === value) pendingOpenLocationRequest = null;
   });
   ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1273,12 +1315,15 @@ type RendererMenuCommand =
   | "open-command-palette"
   | "open-keyboard-shortcuts"
   | "toggle-sidebar"
-  | "toggle-agent-panel";
+  | "toggle-agent-panel"
+  | "toggle-hidden-files";
 
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 interface RendererMenuState {
   connectedFolderOpen: boolean;
+  /** The file manager window's Show Hidden Files, which the View menu checks. */
+  showHiddenFiles: boolean;
 }
 
 function configureMenu(): void {
@@ -1360,6 +1405,18 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
     return [
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
       { type: "separator" },
+      // The window owns the key (Shift-Command-Period, Ctrl+H) so it works while the folder list has the keyboard
+      // and in the browser preview; the menu shows the key and the check without registering it twice.
+      {
+        id: "show-hidden-files",
+        label: "Show Hidden Files",
+        type: "checkbox",
+        checked: rendererMenuState.showHiddenFiles,
+        accelerator: process.platform === "darwin" ? "Shift+Command+." : "Control+H",
+        registerAccelerator: false,
+        enabled: rendererMenuState.connectedFolderOpen,
+        click: () => sendRendererMenuCommand("toggle-hidden-files"),
+      },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
       { type: "separator" },
@@ -1477,13 +1534,17 @@ function sendRendererMenuCommand(command: RendererMenuCommand): void {
   window.webContents.send("amplefile:menu-command", command);
 }
 
+/** The renderer sends only what changed; a key it leaves out keeps its value. */
 function updateApplicationMenuState(value: unknown): void {
+  const record = isRecord(value) ? value : {};
   rendererMenuState = {
-    connectedFolderOpen: isRecord(value)
-      ? value.connectedFolderOpen === true
-      : rendererMenuState.connectedFolderOpen,
+    connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : rendererMenuState.connectedFolderOpen,
+    showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : rendererMenuState.showHiddenFiles,
   };
   const menu = Menu.getApplicationMenu();
+  const showHidden = menu?.getMenuItemById("show-hidden-files");
+  if (showHidden) showHidden.checked = rendererMenuState.showHiddenFiles;
+  setMenuItemEnabled(menu, "show-hidden-files", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
@@ -1696,7 +1757,8 @@ async function resolveStandardFolderItem(standardFolderId: string, itemPath: str
   const root = await realpath(standardFolderRoot(standardFolderId));
   const candidate = itemPath ? resolveStandardFolderPath(standardFolderId, itemPath) : standardFolderRoot(standardFolderId);
   const resolvedCandidate = await realpath(candidate);
-  assertPathInsideRoot(root, resolvedCandidate);
+  // The folder itself (Show in Finder with nothing selected) is its own root.
+  if (resolvedCandidate !== root) assertPathInsideRoot(root, resolvedCandidate);
   return resolvedCandidate;
 }
 
@@ -1720,6 +1782,41 @@ async function resolveConnectedFolderItem(connectedFolderId: string, itemPath: s
   return resolvedCandidate;
 }
 
+/** The items one drag carries, by place: at least one, at most as many as a paste takes. */
+function placeDragRequest(value: unknown, idKey: "connectedFolderId" | "standardFolderId"): { id: string; paths: string[] } {
+  if (!isRecord(value)) throw new Error("Choose items to drag.");
+  const id = typeof value[idKey] === "string" ? value[idKey] as string : "";
+  const paths = Array.isArray(value.paths) ? value.paths : typeof value.path === "string" ? [value.path] : [];
+  if (!id || !paths.length || paths.length > 5_000) throw new Error("Choose items to drag.");
+  return {
+    id,
+    paths: paths.map((path) => {
+      if (typeof path !== "string" || !path || path.includes("\0") || isAbsolute(path)) throw new Error("A relative path inside the folder is required.");
+      return path;
+    }),
+  };
+}
+
+/**
+ * One dragged item: a file, folder, or symbolic link, held to the place's
+ * path policy (no symbolic link in the folders above it), then resolved where
+ * it really is. A link drags as the link itself, never what it points to.
+ */
+async function draggableItem(policyPath: string, resolveItem: () => Promise<string>): Promise<string> {
+  const info = await lstat(policyPath).catch(() => null);
+  if (!info) throw new Error(`“${basename(policyPath)}” isn’t there anymore.`);
+  if (info.isSymbolicLink()) return policyPath;
+  if (!info.isFile() && !info.isDirectory()) throw new Error("Only files and folders can be dragged out.");
+  return resolveItem();
+}
+
+function startItemDrag(sender: Electron.WebContents, items: string[]): boolean {
+  const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
+  if (icon.isEmpty() || !items.length) return false;
+  sender.startDrag({ file: items[0]!, files: items, icon });
+  return true;
+}
+
 async function setActiveNativeConnectedFolder(connectedFolderId: string | null): Promise<void> {
   const generation = ++activeNativeConnectedFolderGeneration;
   if (connectedFolderId === null) {
@@ -1739,6 +1836,14 @@ async function setActiveNativeConnectedFolder(connectedFolderId: string | null):
 
 async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Promise<void> {
   let info;
+  if (request.capabilities.link) {
+    // A link row is checked as the link itself (a broken one included), never through it.
+    const linkPath = request.standardFolderId
+      ? isStandardFolderId(request.standardFolderId) ? resolveStandardFolderPath(request.standardFolderId, request.path, homedir(), { finalLink: true }) : ""
+      : resolveConnectedFolderPath((await getConnectedFolder(request.connectedFolderId)).connectedFolderRoot, request.path, { finalLink: true });
+    if (!linkPath || !(await lstat(linkPath).catch(() => null))?.isSymbolicLink()) throw new Error("The native file menu entry no longer matches this folder.");
+    return;
+  }
   if (request.standardFolderId) {
     info = await stat(await resolveStandardFolderItem(request.standardFolderId, request.path));
   } else if (request.path) {
@@ -1765,21 +1870,33 @@ type NativeCommandMenuItem<Command extends string> =
   | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false; icon?: "amplefile" }
   | { type: "submenu"; label: string; items: NativeCommandMenuItem<Command>[] };
 
-/** The files on the system pasteboard (Finder's Copy), newest format first; empty when it holds no files. */
-function readPasteboardFilePaths(): string[] {
-  if (process.platform !== "darwin") return [];
+/**
+ * The files on the system pasteboard (Finder's Copy), newest format first,
+ * with no Cut marker (a Mac's pasteboard has none); empty when it holds no files.
+ */
+async function readPasteboardFiles(): Promise<PasteboardFiles> {
+  if (process.platform !== "darwin") return { paths: [], operation: null };
   const plist = clipboard.read("NSFilenamesPboardType");
   const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
-  if (listed.length) return listed;
+  if (listed.length) return { paths: listed, operation: null };
   const url = clipboard.read("public.file-url").trim();
   if (url.startsWith("file://")) {
-    try { return [fileURLToPath(url)]; } catch { return []; }
+    try { return { paths: [fileURLToPath(url)], operation: null }; } catch { return { paths: [], operation: null }; }
   }
-  return [];
+  return { paths: [], operation: null };
 }
 
-/** Puts files on the system pasteboard the way Finder's Copy does, so Finder (and Mail, and Messages) can paste them. */
-function writePasteboardFilePaths(paths: readonly string[]): void {
+/** After a Cut is pasted: the pasteboard is emptied if it still holds those files. */
+async function clearPasteboardFiles(paths: readonly string[]): Promise<void> {
+  if (!pasteboardHolds(await readPasteboardFiles(), paths)) return;
+  clipboard.clear();
+}
+
+/**
+ * Puts files on the system pasteboard the way Finder's Copy does, so Finder (and Mail, and Messages) can
+ * paste them. A Mac's pasteboard has no Cut marker: a Cut is remembered in the window.
+ */
+async function writePasteboardFilePaths(paths: readonly string[], operation: "copy" | "cut" = "copy"): Promise<void> {
   if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
   const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${paths.map((path) => `<string>${encodeXmlText(path)}</string>`).join("")}</array></plist>`;
   clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
@@ -1847,59 +1964,57 @@ function applyNativeActiveConnectedFolderToWindow(window: BrowserWindow | null):
   window.setTitle(activeNativeConnectedFolder?.name ?? productName);
 }
 
-async function drainPendingMacOpenPaths(): Promise<void> {
+// Folders the system asked AmpleFile to open: Finder's open-file, a second
+// launch's arguments. Each
+// opens in the window at the place that holds it (folder-locations.ts): a
+// registered Connected Folder, deepest first, at the right folder; else a
+// Standard Folder; else the computer place, under the Standard Folder rules.
+// A file opens its folder with the file selected. Nothing is registered:
+// connecting a folder stays an explicit act.
+async function drainPendingOpenPaths(): Promise<void> {
   if (process.platform !== "darwin") return;
-  if (macOpenPathDrainPromise) {
-    await macOpenPathDrainPromise;
-    if (pendingMacOpenPaths.length) await drainPendingMacOpenPaths();
+  if (openPathDrainPromise) {
+    await openPathDrainPromise;
+    if (pendingOpenPaths.length) await drainPendingOpenPaths();
     return;
   }
 
-  macOpenPathDrainPromise = (async () => {
-    while (pendingMacOpenPaths.length) {
-      const path = pendingMacOpenPaths.shift();
+  openPathDrainPromise = (async () => {
+    while (pendingOpenPaths.length) {
+      const entry = pendingOpenPaths.shift();
+      const path = typeof entry === "string" ? entry : entry?.path;
       if (!path) continue;
       await ensureMainWindow();
       showWindow();
-      const connectedFolderId = await registeredConnectedFolderIdForOpenPath(path);
-      if (!connectedFolderId) {
-        console.warn(`${productName} ignored an unregistered Finder folder: ${path}`);
+      const location = await folderLocationForOpenPath(path, typeof entry === "object" && entry.reveal);
+      if (!location) {
+        console.warn(`${productName} could not open a folder that is not on this computer: ${path}`);
         continue;
       }
-      await setActiveNativeConnectedFolder(connectedFolderId);
-      const request = { token: randomUUID(), connectedFolderId };
-      pendingOpenConnectedFolderRequest = request;
+      if (location.place.kind === "connected-folder") await setActiveNativeConnectedFolder(location.place.id);
+      const request = { token: randomUUID(), location };
+      pendingOpenLocationRequest = request;
       const window = mainWindow;
       if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("amplefile:connected-folder:open-connected-folder", request);
+        window.webContents.send("amplefile:file-manager:open-location", request);
       }
     }
   })().finally(() => {
-    macOpenPathDrainPromise = null;
+    openPathDrainPromise = null;
   });
 
-  await macOpenPathDrainPromise;
-  if (pendingMacOpenPaths.length) await drainPendingMacOpenPaths();
+  await openPathDrainPromise;
+  if (pendingOpenPaths.length) await drainPendingOpenPaths();
 }
 
-async function registeredConnectedFolderIdForOpenPath(path: string): Promise<string | null> {
+/** Where a path the system handed over opens, or null when nothing is there (Finder may pass a path that moved before AmpleFile was ready). */
+async function folderLocationForOpenPath(path: string, reveal = false): Promise<FolderLocation | null> {
   try {
-    const info = await stat(path);
-    if (!info.isDirectory()) return null;
-    const openedRoot = await realpath(path);
-    for (const connectedFolder of await listConnectedFolders()) {
-      try {
-        const registeredRoot = await realpath(connectedFolder.connectedFolderRoot);
-        if (samePath(openedRoot, registeredRoot)) return connectedFolder.id;
-      } catch {
-        // Missing registered folders are already excluded from normal bootstrap;
-        // one stale registration must not block another exact match.
-      }
-    }
-  } catch {
-    // Finder may pass a path that moved before AmpleFile was ready.
+    return await resolveFolderLocation(path, await listConnectedFolders(), homedir(), { reveal });
+  } catch (error) {
+    console.warn(`${productName} could not open ${path}: ${errorMessage(error)}`);
+    return null;
   }
-  return null;
 }
 
 function assertPathInsideRoot(connectedFolderRoot: string, candidate: string): void {

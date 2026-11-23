@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, lstatSync } from "node:fs";
 import { copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -277,11 +277,13 @@ async function createConnectedFolderMutationCheckpointUnlocked(
   },
 ): Promise<ConnectedFolderCheckpoint> {
   const root = ensureHistoryRoot(connectedFolderRoot);
-  const captureRoots = collapsePaths((options.paths ?? []).map((path) => canonicalPath(root, path, true).path));
-  const deleteOnRestore = collapsePaths((options.deleteOnRestore ?? []).map((path) => canonicalPath(root, path, true).path));
+  // A capture root, a path to delete, or a move may name a symbolic link as the item itself (renaming,
+  // moving, or deleting a link); capture records it as skipped, and a restore moves or removes the link.
+  const captureRoots = collapsePaths((options.paths ?? []).map((path) => canonicalPath(root, path, true, true).path));
+  const deleteOnRestore = collapsePaths((options.deleteOnRestore ?? []).map((path) => canonicalPath(root, path, true, true).path));
   const movesOnRestore = (options.movesOnRestore ?? []).map((move) => ({
-    fromPath: canonicalPath(root, move.fromPath, true).path,
-    toPath: canonicalPath(root, move.toPath, true).path,
+    fromPath: canonicalPath(root, move.fromPath, true, true).path,
+    toPath: canonicalPath(root, move.toPath, true, true).path,
   }));
   const captured = await capturePaths(root, captureRoots, createTargetedHistoryCapturePolicy());
   return persistCheckpoint(root, {
@@ -357,8 +359,8 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
 
     const movedEntries: CheckpointMove[] = [];
     for (const move of checkpoint.movesOnRestore) {
-      const from = canonicalPath(root, move.fromPath, false).absolutePath;
-      const to = canonicalPath(root, move.toPath, true).absolutePath;
+      const from = canonicalPath(root, move.fromPath, false, true).absolutePath;
+      const to = canonicalPath(root, move.toPath, true, true).absolutePath;
       await mkdir(dirname(to), { recursive: true });
       await rename(from, to);
       movedEntries.push(move);
@@ -366,8 +368,8 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
 
     const deletedFiles: string[] = [];
     for (const path of collapsePaths(checkpoint.deleteOnRestore)) {
-      const target = canonicalPath(root, path, true).absolutePath;
-      if (!existsSync(target)) continue;
+      const target = canonicalPath(root, path, true, true).absolutePath;
+      if (!entryExists(target)) continue;
       await rm(target, { recursive: true, force: true });
       deletedFiles.push(path);
     }
@@ -531,7 +533,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
   };
 
   if (requestedPaths.includes("")) await visit(root);
-  else for (const path of collapsePaths(requestedPaths)) await visit(canonicalPath(root, path, true).absolutePath);
+  else for (const path of collapsePaths(requestedPaths)) await visit(canonicalPath(root, path, true, true).absolutePath);
 
   // History is a recovery boundary, so metadata is never treated as proof of
   // content identity. External tools can preserve both size and mtime while
@@ -650,7 +652,7 @@ async function createTargetedRestoreSafety(root: string, checkpoint: ConnectedFo
   const existing: string[] = [];
   const deleteOnRestore: string[] = [];
   for (const path of affectedRoots) {
-    if (existsSync(canonicalPath(root, path, true).absolutePath)) existing.push(path);
+    if (entryExists(canonicalPath(root, path, true, true).absolutePath)) existing.push(path);
     else deleteOnRestore.push(path);
   }
   return createConnectedFolderMutationCheckpoint(root, {
@@ -664,10 +666,10 @@ async function createTargetedRestoreSafety(root: string, checkpoint: ConnectedFo
 
 async function preflightRestore(root: string, checkpoint: ConnectedFolderCheckpoint): Promise<void> {
   for (const move of checkpoint.movesOnRestore) {
-    const from = canonicalPath(root, move.fromPath, false).absolutePath;
-    const to = canonicalPath(root, move.toPath, true).absolutePath;
-    if (!existsSync(from)) throw new Error(`Cannot undo move because ${move.fromPath} no longer exists.`);
-    if (existsSync(to)) throw new Error(`Cannot undo move because ${move.toPath} already exists.`);
+    const from = canonicalPath(root, move.fromPath, false, true).absolutePath;
+    const to = canonicalPath(root, move.toPath, true, true).absolutePath;
+    if (!entryExists(from)) throw new Error(`Cannot undo move because ${move.fromPath} no longer exists.`);
+    if (entryExists(to)) throw new Error(`Cannot undo move because ${move.toPath} already exists.`);
   }
   const deletedRoots = collapsePaths(checkpoint.deleteOnRestore);
   for (const file of checkpoint.files) {
@@ -681,11 +683,11 @@ async function preflightRestore(root: string, checkpoint: ConnectedFolderCheckpo
 function validateCheckpointPaths(root: string, checkpoint: ConnectedFolderCheckpoint): void {
   for (const directory of checkpoint.directories) canonicalPath(root, directory, true);
   for (const file of checkpoint.files) canonicalPath(root, file.path, true);
-  for (const path of checkpoint.captureRoots) canonicalPath(root, path, true);
-  for (const path of checkpoint.deleteOnRestore) canonicalPath(root, path, true);
+  for (const path of checkpoint.captureRoots) canonicalPath(root, path, true, true);
+  for (const path of checkpoint.deleteOnRestore) canonicalPath(root, path, true, true);
   for (const move of checkpoint.movesOnRestore) {
-    canonicalPath(root, move.fromPath, true);
-    canonicalPath(root, move.toPath, true);
+    canonicalPath(root, move.fromPath, true, true);
+    canonicalPath(root, move.toPath, true, true);
   }
 }
 
@@ -886,12 +888,22 @@ async function hasConnectedFolderBlob(root: string, hashSha256: string): Promise
   }
 }
 
-function canonicalPath(root: string, value: string, allowMissing: boolean): { path: string; absolutePath: string } {
-  const absolutePath = resolveConnectedFolderPath(root, toPosix(value).replace(/^\/+/, "") || ".");
+/**
+ * A History path inside the Connected Folder. `finalLink` lets the item itself
+ * be a symbolic link (a capture root, a path removed or moved on restore), never
+ * a folder a link leads into; recorded files and folders stay real items.
+ */
+function canonicalPath(root: string, value: string, allowMissing: boolean, finalLink = false): { path: string; absolutePath: string } {
+  const absolutePath = resolveConnectedFolderPath(root, toPosix(value).replace(/^\/+/, "") || ".", { finalLink });
   const path = toPosix(relative(root, absolutePath));
   if (!path || path === ".") throw new Error("The Connected Folder root cannot be used as a history item.");
-  if (!allowMissing && !existsSync(absolutePath)) throw notFound(`Connected Folder item not found: ${path}`);
+  if (!allowMissing && !entryExists(absolutePath)) throw notFound(`Connected Folder item not found: ${path}`);
   return { path, absolutePath };
+}
+
+/** Whether anything is at a path, a broken symbolic link included (`existsSync` follows the link). */
+function entryExists(path: string): boolean {
+  return Boolean(lstatSync(path, { throwIfNoEntry: false }));
 }
 
 function collapsePaths(paths: string[]): string[] {
@@ -1016,7 +1028,7 @@ export async function previewConnectedFolderCheckpointRestore(connectedFolderRoo
     return {
       checkpointId, scope: checkpoint.scope,
       restoreFiles: checkpoint.files.filter((file) => currentHashes.get(file.path) !== file.hashSha256).map((file) => file.path),
-      removePaths: [...new Set([...checkpoint.deleteOnRestore.filter((path) => existsSync(resolveConnectedFolderPath(root, path))),
+      removePaths: [...new Set([...checkpoint.deleteOnRestore.filter((path) => entryExists(resolveConnectedFolderPath(root, path, { finalLink: true }))),
         ...(checkpoint.scope === "full" ? current.files.filter((file) => !selected.has(file.path) && !excluded.some((path) => file.path === path || file.path.startsWith(`${path}/`))).map((file) => file.path) : [])])],
       moves: checkpoint.movesOnRestore,
       excludedPaths: excluded,

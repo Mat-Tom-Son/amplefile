@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +10,7 @@ import { promisify } from "node:util";
 
 import JSZip from "jszip";
 
+import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
 import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, finderCopyName, moveInto, removeIdentityFoldersKeptAt } from "../src/local/file-transfer.js";
 
 const exec = promisify(execFile);
@@ -172,7 +174,7 @@ test("Compress makes name.zip for one item and Archive.zip for several", async (
   assert.equal(await compressInto([join(root, "b.txt")], root), join(root, "b.txt.zip"));
 });
 
-test("Compress streams to its name only when complete, and refuses work too large for it", async (t) => {
+test("Compress streams to its name only when complete, and refuses only a disk too full for it", async (t) => {
   const root = await folder(t);
   await mkdir(join(root, "Album", "Inner"), { recursive: true });
   const photo = Buffer.alloc(256 * 1024, 7);
@@ -185,11 +187,19 @@ test("Compress streams to its name only when complete, and refuses work too larg
   assert.deepEqual(await zip.file("Album/Inner/two.jpg")!.async("nodebuffer"), photo);
   assert.deepEqual((await readdir(root)).sort(), ["Album", "Album.zip"], "no working file is left beside it");
 
-  await assert.rejects(compressInto([join(root, "Album")], root, { maxBytes: 300 * 1024, maxEntries: 100 }),
-    (error: Error & { statusCode?: number }) => error.statusCode === 413 && /too large to compress here/.test(error.message));
-  await assert.rejects(compressInto([join(root, "Album")], root, { maxBytes: 10 * 1024 ** 2, maxEntries: 3 }),
-    (error: Error & { statusCode?: number }) => error.statusCode === 413 && /too many items to compress here/.test(error.message));
+  // No size or item bound: only a disk without room for its reserve refuses it, before it writes.
+  setDiskSpaceProbeForTests(async () => 1024, 1024 * 1024);
+  t.after(() => setDiskSpaceProbeForTests(null));
+  await assert.rejects(compressInto([join(root, "Album")], root),
+    (error: Error & { statusCode?: number }) => error.statusCode === 507 && /isn’t enough space on the disk/.test(error.message));
   assert.deepEqual((await readdir(root)).sort(), ["Album", "Album.zip"], "a refused Compress writes nothing");
+  // A disk that fills while it writes stops it, and the working file goes.
+  let free = 10 * 1024 ** 3;
+  setDiskSpaceProbeForTests(async () => (free -= 4 * 1024 ** 3), 1024 ** 3, 64 * 1024);
+  const big = randomBytes(1024 * 1024);
+  await writeFile(join(root, "Album", "big.bin"), big);
+  await assert.rejects(compressInto([join(root, "Album", "big.bin")], root), /disk is almost full/);
+  assert.deepEqual((await readdir(root)).sort(), ["Album", "Album.zip"]);
 });
 
 test("a Compress that fails partway leaves nothing behind", { skip: process.getuid?.() === 0 ? "root reads unreadable files" : false }, async (t) => {

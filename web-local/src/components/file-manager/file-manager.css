@@ -567,6 +567,19 @@
   padding: 4px 8px 24px;
 }
 
+/* A folder's rows are placed by index (FileEntries), so a large folder draws only the rows in view. */
+.fm-rows.is-placed {
+  position: relative;
+  box-sizing: content-box;
+}
+
+.fm-rows.is-placed > .fm-row {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  left: 8px;
+}
+
 .fm-row {
   display: grid;
   grid-template-columns: var(--fm-columns);
@@ -592,6 +605,63 @@
 .fm-row.is-ignored,
 .fm-tile.is-ignored {
   opacity: 0.6;
+}
+
+/* Hidden items, shown while Show Hidden Files is on, are dimmed as the system file manager dims them. */
+.fm-row.is-hidden .fm-row-icon,
+.fm-row.is-hidden .fm-cell,
+.fm-tile.is-hidden .fm-tile-icon,
+.fm-tile.is-hidden .fm-tile-name {
+  opacity: 0.55;
+}
+
+/* The selection rectangle, drawn in the scrolled contents' coordinates. */
+.fm-band {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  display: none;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--fm-accent) 70%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fm-accent) 16%, transparent);
+  pointer-events: none;
+}
+
+/* A symbolic link: its icon with the system's small arrow at the corner. */
+.fm-link-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+.fm-link-badge {
+  position: absolute;
+  bottom: -2px;
+  left: -3px;
+  width: 11px;
+  height: 11px;
+  fill: var(--fm-window);
+  stroke: var(--fm-text);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fm-link-badge rect {
+  stroke-width: 0.8;
+}
+
+.fm-tile-icon .fm-link-badge {
+  bottom: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+}
+
+.fm-link-icon.is-broken > :first-child {
+  opacity: 0.5;
 }
 
 .fm-cell {
@@ -639,13 +709,21 @@
   text-overflow: ellipsis;
 }
 
+/* Icon view: rows of tiles placed by index, as many tiles to a row as 110px columns fit (FileEntries counts them). */
 .fm-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  align-content: start;
-  gap: 12px 6px;
+  position: relative;
+  box-sizing: content-box;
   padding: 16px 16px 28px;
   border-top: 1px solid var(--fm-line);
+}
+
+.fm-grid-row {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  left: 16px;
+  display: grid;
+  column-gap: 6px;
 }
 
 .fm-tile {

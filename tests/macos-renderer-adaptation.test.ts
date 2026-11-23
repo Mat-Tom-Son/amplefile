@@ -84,7 +84,7 @@ test("macOS vibrancy is confined to navigation with an opaque work surface and s
 
 test("desktop Connected Folder state and Finder-open automation are wired in the renderer", () => {
   assert.match(app, /connectedFolder\.setActiveConnectedFolder\?\.\(activeConnectedFolder\?\.id \?\? null\)/);
-  assert.match(app, /desktopConnectedFolder\.onOpenConnectedFolder\(\(connectedFolderId\) =>/);
+  assert.match(app, /desktopConnectedFolder\.onOpenLocation\(\(\{ place, path, select \}\) =>/);
   assert.match(app, /function refreshOnReturn\(\)[\s\S]*?void refreshBootstrap\(\)/);
   assert.match(app, /window\.addEventListener\("focus", refreshOnReturn\)/);
   assert.match(app, /document\.addEventListener\("visibilitychange", refreshOnReturn\)/);
@@ -92,17 +92,19 @@ test("desktop Connected Folder state and Finder-open automation are wired in the
   assert.match(app, /document\.removeEventListener\("visibilitychange", refreshOnReturn\)/);
 });
 
-test("Darwin file context menus use native command IDs while Windows keeps the React menu", () => {
+test("Darwin file context menus use native command IDs while other desktops draw the same items in the window", () => {
   assert.match(fileManager, /if \(mac && popupFileMenu\)/);
   assert.match(fileManager, /const owner = place\.kind === "standard" \? \{ connectedFolderId: "", standardFolderId: place\.id \} : \{ connectedFolderId: place\.id \};/);
-  assert.match(fileManager, /popupFileMenu\(\{\n\s*\.\.\.owner,\n\s*path: target\.path,\n\s*kind: target\.kind,\n\s*capabilities: \{/);
   assert.match(fileManager, /open: target\.kind === "folder" \|\| canOpenDirectly\(target\.path\)/);
-  for (const command of ["open", "reveal", "copy-path", "version-history", "new-folder", "rename", "delete"]) {
+  for (const command of ["open", "reveal", "show-original", "copy-path", "version-history", "new-folder", "rename", "delete", "cut", "extract"]) {
     assert.match(fileManager, new RegExp(`command === "${command}"`));
   }
-  assert.match(fileManager, /setContextMenu\(\{ entry: target,[\s\S]*?returnFocusTarget: contentRef\.current \}\)/, "non-Mac and bridge-less sessions retain the React menu");
+  // Elsewhere the window draws the shared list (src/shared/file-menu.ts) itself.
+  assert.match(fileManager, /const items = fileMenuItems\(\{/, "non-Mac and bridge-less sessions draw the same items in the window");
   const nativeRequests = [...fileManager.matchAll(/const command = await popupFileMenu\(\{([\s\S]*?)\bpoint,?\s*\}\);/g)].map((match) => match[1]!);
-  assert.equal(nativeRequests.length, 2, "native popup requests must be present");
+  // One request for an item, several selected together, or a link: the capabilities say which.
+  assert.equal(nativeRequests.length, 1, "one native popup request");
+  assert.match(fileManager, /link: true/, "a link row asks for the link menu");
   for (const request of nativeRequests) {
     assert.doesNotMatch(request, /(?:label|callback|onSelect):/, "native popup requests must contain data and capabilities only");
   }

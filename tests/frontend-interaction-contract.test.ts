@@ -106,7 +106,7 @@ test("the main window has no overview panel; the connected-folder-identity heade
   // add files are right-click actions, and a background refresh never dims
   // the tree.
   assert.doesNotMatch(app, /refreshFilesButton|aria-label="Refresh files"|aria-label="Add files"/);
-  assert.match(fileManager, /onRefresh=\{\(\) => void listing\.refresh\(\)\}/);
+  assert.match(fileManager, /fileMenuItems\(/, "the window's own item menu comes from the shared list, which offers Refresh");
   assert.match(fileManager, /else if \(command === "refresh"\) await listing\.refresh\(\);/);
   assert.doesNotMatch(app, /refreshing-files/);
   assert.doesNotMatch(app, /primaryItems[\s\S]{0,400}overview/i);
