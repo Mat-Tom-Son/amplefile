@@ -17,6 +17,11 @@ const productName = argumentValue("product-name");
 const internalProtocol = argumentValue("internal-protocol");
 const rawWindowMaterial = argumentValue("window-material");
 const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vibrancy" ? rawWindowMaterial : "none";
+// Which file manager window this is (desktop/src/file-manager-windows.ts): 1 for the first, and whether it is a new one.
+const rawWindowSlot = Number(argumentValue("window-slot"));
+const windowSlot = Number.isInteger(rawWindowSlot) && rawWindowSlot >= 1 && rawWindowSlot <= 64 ? rawWindowSlot : 1;
+const windowFresh = argumentValue("window-fresh") === "1";
+type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null };
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
@@ -222,6 +227,8 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.on("amplefile:window:accent-color-changed", listener);
       return () => ipcRenderer.removeListener("amplefile:window:accent-color-changed", listener);
     },
+    // Closing the last folder tab closes this window (the host handles "close" alone on a Mac).
+    control: (action: "minimize" | "toggle-maximize" | "close") => ipcRenderer.send("amplefile:window:control", action),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("amplefile:shell:open-external", url),
@@ -247,6 +254,15 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     installSkill: (target: "claude" | "codex") => ipcRenderer.invoke("amplefile:command-line:install-skill", target),
     removeSkill: (target: "claude" | "codex") => ipcRenderer.invoke("amplefile:command-line:remove-skill", target),
     skill: () => ipcRenderer.invoke("amplefile:command-line:skill"),
+  },
+  // Windows: which one this is, where it is (so File → New Window opens there), and new ones.
+  windows: {
+    slot: windowSlot,
+    fresh: windowFresh,
+    newWindow: () => ipcRenderer.invoke("amplefile:window:new-window"),
+    /** Opens another window at a place and folder (and an item selected there): Open in New Window. */
+    openInNewWindow: (location: WindowLocation) => ipcRenderer.invoke("amplefile:window:open-in-new-window", location),
+    setLocation: (location: WindowLocation | null) => ipcRenderer.send("amplefile:window:set-location", location),
   },
   menu: {
     setState: (state: unknown) => ipcRenderer.send("amplefile:menu:set-state", state),

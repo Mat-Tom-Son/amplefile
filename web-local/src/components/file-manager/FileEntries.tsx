@@ -24,7 +24,8 @@ export type FolderLook = { color: string; symbol: ConnectedFolderIconOption["Ico
 
 export interface EntryHandlers {
   click: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
-  open: (entry: TreeEntry) => void;
+  /** A double-click; the event says whether ⌘ (Ctrl elsewhere) asked for a new tab. */
+  open: (entry: TreeEntry, event?: MouseEvent<HTMLElement>) => void;
   contextMenu: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
   dragStart: (entry: TreeEntry, event: DragEvent<HTMLElement>) => void;
 }
@@ -257,7 +258,7 @@ const FileRow = memo(function FileRow({ entry, index, top, selected, dropTarget,
     style={{ transform: `translateY(${top}px)` }}
     draggable={isDraggableEntry(entry)}
     onClick={(event) => handlers.click(entry, event)}
-    onDoubleClick={() => handlers.open(entry)}
+    onDoubleClick={(event) => handlers.open(entry, event)}
     onContextMenu={(event) => handlers.contextMenu(entry, event)}
     onDragStart={(event) => handlers.dragStart(entry, event)}
   >
@@ -285,7 +286,7 @@ const FileTile = memo(function FileTile({ entry, column, selected, dropTarget, m
     className={`fm-tile${entryClasses(entry, selected, dropTarget, cut)}`}
     draggable={isDraggableEntry(entry)}
     onClick={(event) => handlers.click(entry, event)}
-    onDoubleClick={() => handlers.open(entry)}
+    onDoubleClick={(event) => handlers.open(entry, event)}
     onContextMenu={(event) => handlers.contextMenu(entry, event)}
     onDragStart={(event) => handlers.dragStart(entry, event)}
   >

@@ -129,6 +129,9 @@ test("a folder in the computer place lists one level, as a Standard Folder does"
   ]);
   assert.equal(listing.tree[0]?.children, undefined, "one level only");
   await assert.rejects(scanComputerFolder(`${onDisk(projects)}/../..`), /escapes/);
+  // A folder a saved tab still names, deleted since, is said to be gone in plain words.
+  await assert.rejects(scanComputerFolder(`${onDisk(projects)}/Gone`), (error: Error & { statusCode?: number }) => error.message === "This folder is no longer here." && error.statusCode === 404);
+  await assert.rejects(scanComputerFolder(`${onDisk(projects)}/notes.md`), /not a folder/);
   // The disk's own top is listed too, without dotfiles or links.
   const top = await scanComputerFolder("");
   assert.ok(top.tree.length > 0);
