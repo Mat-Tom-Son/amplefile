@@ -571,7 +571,9 @@ export async function scanConnectedFolderTree(
   }
   const scanRoot = resolveConnectedFolderPath(safeRoot, relativePath || ".");
   const info = await stat(scanRoot).catch(() => null);
-  if (!info?.isDirectory()) throw new Error("Requested Connected Folder tree path is not a folder.");
+  // A folder that was deleted, or sits on a drive that is gone, is still named by a saved tab or a Back step.
+  if (!info) throw notFound("This folder is no longer here.");
+  if (!info.isDirectory()) throw Object.assign(new Error("That item is not a folder."), { status: 400, statusCode: 400 });
   const ignoreState = await readConnectedFolderIgnoreState(safeRoot);
   const boundaries = new Set(options.nestedFolderPaths ?? []);
   // Compare the resolved location, as the file system sees it, so

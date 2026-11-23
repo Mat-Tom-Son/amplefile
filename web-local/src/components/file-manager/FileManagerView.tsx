@@ -1718,6 +1718,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         {status === "error" ? <div className="fm-empty">
           <span className="fm-empty-text">{listing.error ?? "Couldn’t load this folder."}</span>
           <button type="button" className="fm-text-button" onClick={() => void listing.refresh()}>Try Again</button>
+          {location.path ? <button type="button" className="fm-text-button" onClick={() => goToEnclosingFolder()}>Go to Enclosing Folder</button> : null}
         </div> : null}
         {status === "ready" && !visible.length ? <p className="fm-empty">{query.trim() ? `No items match “${query.trim()}”` : "This folder is empty."}</p> : null}
 
