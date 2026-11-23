@@ -1483,8 +1483,9 @@ async function acquireHistoryClaim(claim: HistoryGateClaim): Promise<void> {
   });
 }
 
+/** Refused because another operation is in hand: the same request can succeed later, which the code `busy` tells a caller (src/local/api/http.ts, `busyRefusal`). */
 function historyBusyError(message: string): Error {
-  return Object.assign(new Error(message), { status: 409, statusCode: 409 });
+  return Object.assign(new Error(message), { status: 409, statusCode: 409, apiCode: "busy" });
 }
 
 /**

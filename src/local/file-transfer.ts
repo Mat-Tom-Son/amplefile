@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { constants as fsConstants, type Stats } from "node:fs";
-import { access, chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, utimes } from "node:fs/promises";
+import { access, chmod, copyFile, link, lstat, mkdir, open, readdir, readlink, rename, rm, rmdir, symlink, unlink, utimes } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
 import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
@@ -14,6 +14,16 @@ import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
  * them: nothing is ever replaced (a name already taken gets " copy", then
  * " copy 2"), a folder is never copied or moved into itself, and a copy never
  * carries a Connected Folder's identity (`.amplefile/`) with it.
+ *
+ * What a copy made here carries: each file's bytes, mode, and modification
+ * time; each folder's mode and modification time; each link as written. It
+ * does not carry extended attributes (a resource fork, Finder tags and
+ * comments, a download's quarantine mark), access control lists, file flags
+ * (hidden, locked), or creation dates: the runtime's file copy keeps none of
+ * them, on any disk. So a move on one disk never copies: it renames
+ * (`renameInto`), and the item goes with everything it has. A move across
+ * disks copies, and its original is kept when it has something the copy
+ * does not (src/local/extended-attributes.ts).
  */
 
 /** Folders a copy or archive leaves behind: a Connected Folder's identity and History stay with the Connected Folder. */
@@ -83,11 +93,12 @@ export async function copyItemTo(
 
 /**
  * One entry of a source as a copy read it: what it was, which file it was
- * (its inode), and for a file its size and modification time, exactly as the
- * disk gave them before its bytes were read. A folder keeps how many entries
- * it had; a link, where it pointed.
+ * (its inode), and for a file its size, modification time, and change time,
+ * exactly as the disk gave them before its bytes were read, and when that
+ * was (`readAt`). A folder keeps how many entries it had; a link, where it
+ * pointed.
  */
-export interface CopiedEntry { kind: "file" | "folder" | "link"; ino: number; size: number; mtimeMs: number; link?: string; entries?: number }
+export interface CopiedEntry { kind: "file" | "folder" | "link"; ino: number; size: number; mtimeMs: number; ctimeMs: number; readAt: number; link?: string; entries?: number }
 
 /** What a copy read of its source, entry by entry, by path. */
 export type CopiedSource = Map<string, CopiedEntry>;
@@ -95,29 +106,137 @@ export type CopiedSource = Map<string, CopiedEntry>;
 /**
  * Whether a source is still the item a copy read (`read`, filled by
  * `copyItemTo`): every entry there now is one the copy read, the same file
- * (inode) at the same size and the same modification time, to the disk's own
- * precision; every link points where it did; and no folder gained or lost an
- * entry. Nothing is allowed for a coarse clock here, unlike `copyHoldsAll`:
+ * (inode) at the same size, the same modification time, and the same change
+ * time (which a write, a rename, or a change of mode or attributes moves
+ * even when the modification time is put back), to the disk's own precision;
+ * every link points where it did; and no folder gained or lost an entry. Nothing is allowed for a coarse clock here, unlike `copyHoldsAll`:
  * both readings are of the same file on the same disk. This is what a move
  * asks before an original goes, so a file written, added, or swapped while
  * the copy was made keeps the original where it is. Finder's `.DS_Store`
  * inside a folder is not asked about.
  *
- * A rewrite that keeps the size and puts the modification time back to the
- * very same instant, in place, is not seen. A copy that left something behind
- * (an `.amplefile` folder without `withIdentity`) never passes.
+ * A disk with a coarse clock (FAT keeps two seconds) cannot show a rewrite
+ * at the same size within one tick of its clock: `filesTooFreshToTell` names
+ * the files that were read that soon after they were written, for the
+ * caller to compare byte for byte (`sameBytes`). A copy that left something
+ * behind (an `.amplefile` folder without `withIdentity`) never passes.
  */
 export async function sourceUnchanged(source: string, read: CopiedSource): Promise<boolean> {
   const was = read.get(source);
   const info = await lstat(source).catch(() => null);
   if (!was || !info || info.ino !== was.ino) return false;
   if (info.isSymbolicLink()) return was.kind === "link" && await readlink(source).catch(() => null) === was.link;
-  if (info.isFile()) return was.kind === "file" && info.size === was.size && info.mtimeMs === was.mtimeMs;
+  if (info.isFile()) return was.kind === "file" && info.size === was.size && info.mtimeMs === was.mtimeMs && info.ctimeMs === was.ctimeMs;
   if (!info.isDirectory() || was.kind !== "folder") return false;
   const names = (await readdir(source).catch(() => null))?.filter((name) => name !== finderNote);
   if (!names || names.length !== was.entries) return false;
   for (const name of names) if (!await sourceUnchanged(join(source, name), read)) return false;
   return true;
+}
+
+/**
+ * How coarse the clock that wrote a modification time looks, in
+ * milliseconds: FAT keeps two seconds, HFS+ one, exFAT ten milliseconds,
+ * and a disk that keeps nanoseconds almost never lands on a whole one.
+ * Zero when the time is finer than a millisecond.
+ */
+function clockTick(mtimeMs: number): number {
+  if (mtimeMs % 1 !== 0) return 0;
+  return mtimeMs % 2000 === 0 ? 2000 : mtimeMs % 1000 === 0 ? 1000 : mtimeMs % 10 === 0 ? 10 : 1;
+}
+
+/**
+ * The files at and under `source` that a copy read within one tick of the
+ * clock that wrote their modification time. A rewrite at the same size in
+ * that tick leaves the time as it was, so `sourceUnchanged` cannot tell;
+ * each is to be compared with its copy byte for byte before the original
+ * goes. On a disk that keeps fine times this is empty.
+ */
+export function filesTooFreshToTell(source: string, read: CopiedSource): string[] {
+  const inside = source.endsWith(sep) ? source : `${source}${sep}`;
+  const fresh: string[] = [];
+  for (const [path, was] of read) {
+    if (was.kind !== "file" || (path !== source && !path.startsWith(inside))) continue;
+    const tick = clockTick(was.mtimeMs);
+    if (tick && was.readAt - was.mtimeMs < tick) fresh.push(path);
+  }
+  return fresh;
+}
+
+/** Whether two files hold the same bytes. */
+export async function sameBytes(left: string, right: string): Promise<boolean> {
+  const [a, b] = await Promise.all([open(left, "r").catch(() => null), open(right, "r").catch(() => null)]);
+  try {
+    if (!a || !b) return false;
+    const one = Buffer.allocUnsafe(256 * 1024);
+    const other = Buffer.allocUnsafe(256 * 1024);
+    for (;;) {
+      const [x, y] = await Promise.all([readFully(a, one), readFully(b, other)]);
+      if (x !== y || one.compare(other, 0, y, 0, x) !== 0) return false;
+      if (!x) return true;
+    }
+  } finally {
+    await a?.close().catch(() => undefined);
+    await b?.close().catch(() => undefined);
+  }
+}
+
+/** Fills `buffer` from a file, as far as the file goes; returns how much. */
+async function readFully(file: Awaited<ReturnType<typeof open>>, buffer: Buffer): Promise<number> {
+  let filled = 0;
+  while (filled < buffer.length) {
+    const { bytesRead } = await file.read(buffer, filled, buffer.length - filled, null);
+    if (!bytesRead) break;
+    filled += bytesRead;
+  }
+  return filled;
+}
+
+/**
+ * Moves an item into a folder on the same disk by renaming it: all at once,
+ * with everything it has (its extended attributes, access control list,
+ * flags, and dates are the item's own and go with it), and never onto an
+ * item that took the name meanwhile, which gets the " copy" naming instead.
+ * Returns where it landed. On another disk it fails with `EXDEV` and nothing
+ * has changed.
+ */
+export async function renameInto(source: string, folder: string, name: string): Promise<string> {
+  const info = await lstat(source);
+  if (info.isDirectory()) return placeFolderWithoutReplacing(source, folder, name);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = await freeDestination(folder, name);
+    if (!info.isFile()) {
+      // A link is renamed as the link it is; the name was free a moment ago.
+      await rename(source, destination);
+      return destination;
+    }
+    try {
+      // A second name for the file claims the destination without replacing anything; then the old name goes.
+      await link(source, destination);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "EEXIST") continue;
+      if (code === "EXDEV") throw error;
+      // A disk without hard links, or a file that cannot have another: the name was free a moment ago.
+      await rename(source, destination);
+      return destination;
+    }
+    try {
+      await unlink(source);
+    } catch (error) {
+      // The item could not leave its folder, so it does not stay in the other one too.
+      await unlink(destination).catch(() => undefined);
+      throw error;
+    }
+    return destination;
+  }
+  throw Object.assign(new Error(`There are too many copies of “${name}” here already.`), { status: 409, statusCode: 409 });
+}
+
+/** Whether an item and a folder are on one disk, so the item can be renamed into the folder. */
+export async function onOneDisk(item: string, folder: string): Promise<boolean> {
+  const [one, other] = await Promise.all([lstat(item).catch(() => null), lstat(folder).catch(() => null)]);
+  return Boolean(one && other && one.dev === other.dev);
 }
 
 /**
@@ -213,6 +332,20 @@ export async function copyHoldsAll(source: string, copy: string, options: { with
 }
 
 /**
+ * Whether an original and the copy a move left beside it still hold the
+ * same things: every folder, file (size and time), and link of each is in
+ * the other. `.amplefile` folders are not asked about, since the copy of an
+ * item that stayed in its source drops them. Asked before Undo takes such a
+ * copy away: when either changed since the move, the copy may be the only
+ * place something is, so it stays.
+ */
+export async function treesMatch(original: string, copy: string): Promise<boolean> {
+  const [one, other] = await Promise.all([lstat(original).catch(() => null), lstat(copy).catch(() => null)]);
+  if (!one || !other) return false;
+  return await treeHeld(original, copy, { identity: "ignore" }) && await treeHeld(copy, original, { identity: "ignore" });
+}
+
+/**
  * After a move could not take an item out of its source: removes each
  * `.amplefile` folder from the item's copy whose counterpart in the source is
  * still there with the same files, so no identity exists twice. One whose
@@ -281,8 +414,8 @@ async function makeFoldersWritable(path: string, widened: Array<{ path: string; 
   for (const entry of await readdir(path)) await makeFoldersWritable(join(path, entry), widened);
 }
 
-/** Whether everything at `from` is also at `into`, the same. */
-async function treeHeld(from: string, into: string, options: { identity: boolean }): Promise<boolean> {
+/** Whether everything at `from` is also at `into`, the same. An `.amplefile` folder counts as held when carried whole (`identity`), never (`false`), or is not asked about (`"ignore"`). */
+async function treeHeld(from: string, into: string, options: { identity: boolean | "ignore" }): Promise<boolean> {
   const [original, other] = await Promise.all([lstat(from).catch(() => null), lstat(into).catch(() => null)]);
   if (!original) return true;
   if (!other) return false;
@@ -297,6 +430,7 @@ async function treeHeld(from: string, into: string, options: { identity: boolean
   if (!original.isDirectory() || !other.isDirectory()) return false;
   for (const entry of await readdir(from)) {
     if (entry === finderNote) continue;
+    if (identityFolders.has(entry) && options.identity === "ignore") continue;
     if (!options.identity && identityFolders.has(entry)) return false;
     if (!await treeHeld(join(from, entry), join(into, entry), options)) return false;
   }
@@ -362,8 +496,11 @@ async function copyTree(source: string, destination: string, filter: ((path: str
 
 /**
  * Files at least this large are copied a chunk at a time, so a cancel can
- * stop inside one; smaller ones, and any the disk can clone, are copied by
- * the system in one call, which keeps their extended attributes.
+ * stop inside one; smaller ones are copied by the runtime in one call. A
+ * tracked copy first asks for a clone, which is instant where the runtime
+ * can make one; on the Mac it cannot (the request answers `ENOSYS`), so
+ * every copy there writes the file's bytes. No copy made here keeps
+ * extended attributes, by any of these ways.
  */
 const copyStrategy = { clone: true, streamAboveBytes: 8 * 1024 * 1024, chunkBytes: 1024 * 1024 };
 
@@ -383,7 +520,7 @@ async function copyEntry(
   await operation.boundary("item");
   // What the disk says of the entry before any of it is read: `read` keeps it (`sourceUnchanged`).
   const info = await lstat(source);
-  const seen = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs };
+  const seen = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, readAt: Date.now() };
   operation.current(basename(source));
   const claimed = () => { written.root = true; };
   if (info.isSymbolicLink()) {
@@ -403,6 +540,8 @@ async function copyEntry(
       if (filter && !filter(child)) continue;
       await copyEntry(child, join(destination, entry), filter, operation, written, read);
     }
+    // A copied folder keeps its date, as a copied file does; then its mode, which may be read-only.
+    await utimes(destination, info.atime, info.mtime).catch(() => undefined);
     await chmod(destination, info.mode & 0o7777);
   } else if (info.isFile()) {
     read?.set(source, { kind: "file", ...seen });
@@ -414,7 +553,7 @@ async function copyEntry(
 }
 
 async function copyFileEntry(source: string, destination: string, info: Stats, operation: FileOperationControl, claimed: () => void): Promise<void> {
-  // An untracked copy is today's plain copy; a tracked one first tries a clone, which is instant.
+  // An untracked copy is a plain copy; a tracked one first asks for a clone, where the runtime can make one.
   if (operation.operationId && copyStrategy.clone) {
     try {
       await copyFile(source, destination, fsConstants.COPYFILE_EXCL | fsConstants.COPYFILE_FICLONE_FORCE);

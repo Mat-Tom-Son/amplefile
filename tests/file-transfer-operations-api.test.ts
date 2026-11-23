@@ -10,6 +10,7 @@ import JSZip from "jszip";
 import { setFileOperationBoundaryHookForTests, type FileOperationBoundary, type FileOperationProgress } from "../src/local/file-operations.js";
 import { setFileCopyStrategyForTests } from "../src/local/file-transfer.js";
 import { startLocalApi } from "../src/local/server.js";
+import { setCrossPlaceMoveRenameForTests } from "../src/local/api/place-routes.js";
 
 /**
  * Progress, cancel, and Extract over the local API's file-transfer routes
@@ -91,6 +92,13 @@ async function readEvents(api: Api, until: (events: any[]) => boolean, start: ()
     controller.abort();
   }
   return events;
+}
+
+
+/** The folders of a test are on one disk, where a move renames; this asks for the copy a move across disks makes, for one test. */
+function acrossDisks(t: test.TestContext): void {
+  setCrossPlaceMoveRenameForTests(false);
+  t.after(() => setCrossPlaceMoveRenameForTests(null));
 }
 
 test("a named copy streams its progress and answers as an unnamed one does", async (t) => {
@@ -208,6 +216,7 @@ test("a copy cancelled inside a file leaves no partial item and no restore point
 });
 
 test("a move between Connected Folders cancelled while copying moves nothing and releases the source", async (t) => {
+  acrossDisks(t);
   const { call } = await sandboxApi(t);
   const source = await connectedFolder(call, "Source");
   const target = await connectedFolder(call, "Target");
@@ -222,7 +231,7 @@ test("a move between Connected Folders cancelled while copying moves nothing and
   });
   const moved = await call("/api/file-transfer", { method: "POST", body: body("move-copying") });
   assert.equal(moved.status, 200, JSON.stringify(moved.body));
-  assert.deepEqual(moved.body, { mode: "move", written: [], restorePoints: [], cancelled: true, notDone: ["a.txt", "b.txt"] });
+  assert.deepEqual(moved.body, { mode: "move", written: [], moves: [], restorePoints: [], cancelled: true, notDone: ["a.txt", "b.txt"] });
   for (const name of ["a.txt", "b.txt"]) {
     assert.equal(await readFile(join(source.connectedFolderRoot, name), "utf8"), name, "the source survives");
     assert.ok(!existsSync(join(target.connectedFolderRoot, name)), "no copy is left");

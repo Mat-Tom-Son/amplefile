@@ -12,7 +12,7 @@ import { parentPath } from "./file-manager-model";
 import { samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 import { trashChangedEvent } from "./file-manager-trash";
 import { copiesLeftMessage, operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
-import { historyTurn, isPartialUndo, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type PartialUndo, type TransferBody } from "./file-manager-undo";
+import { historyTurn, isBusyRefusal, isPartialUndo, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type PartialUndo, type TransferBody } from "./file-manager-undo";
 import { desktopErrorText, hiddenKey } from "./file-manager-view-helpers";
 import { OperationStoppedBeforeStart, type OperationHandle, type useFileOperations } from "./useFileOperations";
 import type { useConflictQuestion } from "./ConflictDialog";
@@ -110,9 +110,10 @@ export function useFileChanges(context: FileChangesContext) {
   /**
    * After any transfer: its undo, a fresh listing, and the new items selected
    * when they are in the folder shown. When a Replace sent something to the
-   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back. A move a
-   * plain folder took part in is undone by moving the items back, since
-   * History has only a Connected Folder's side of it.
+   * Trash, or it is gone, ⌘Z says plainly what it cannot bring back. A move
+   * between places, or between plain folders, is undone by moving the items
+   * back (file-manager-undo.ts, `moveBackPlan`); everything else through
+   * History's restore points.
    */
   async function afterTransfer(result: TransferResult, target: { place: FileManagerPlace; path: string }, label: string, selectWritten: boolean) {
     const covers = undoCovers(result);
@@ -155,6 +156,7 @@ export function useFileChanges(context: FileChangesContext) {
   /** What undoing a move by moving its items back asks of this window (file-manager-undo.ts, `movesUndo`). */
   const moveBackHost: MoveBackHost = {
     nameOf: folderLabel,
+    copiesChanged: async (copies) => (await api<{ changed: number[] }>("/api/file-transfer/copies-changed", { method: "POST", body: { copies } })).changed,
     transfer: (body) => transfer(body),
     restore: (point) => historyTurn([point.connectedFolderId], () => api(`/api/connected-folders/${encodeURIComponent(point.connectedFolderId)}/history/checkpoints/${encodeURIComponent(point.checkpointId)}/restore`, { method: "POST", body: {} })),
   };
@@ -170,8 +172,9 @@ export function useFileChanges(context: FileChangesContext) {
     try {
       outcome = await entry.run();
     } catch (caught) {
-      // A step that keeps its place stays where it was, to be run again once what refused it is over.
-      if (entry.resumes) stack.current = pushUndo(stack.current, entry);
+      // A step that keeps its place stays where it was only when it was refused because work is still
+      // going on: it is run again once that is over. Any other failure ends it, so it never blocks the stack.
+      if (entry.resumes && isBusyRefusal(caught)) stack.current = pushUndo(stack.current, entry);
       onError(errorText(caught));
       // What it did before it was refused shows.
       await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);

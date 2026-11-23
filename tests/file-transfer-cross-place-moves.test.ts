@@ -9,7 +9,14 @@ import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
 import { setFileOperationBoundaryHookForTests, type FileOperationBoundary, type FileOperationProgress } from "../src/local/file-operations.js";
 import { setSystemTrashHandler } from "../src/local/move-to-system-trash.js";
 import { startLocalApi } from "../src/local/server.js";
+import { setCrossPlaceMoveRenameForTests } from "../src/local/api/place-routes.js";
 import { isPartialUndo, moveBackPlan, movesUndo, type MoveAnswer, type MoveBackHost } from "../web-local/src/components/file-manager/file-manager-undo.js";
+
+// A test's folders are all on one disk, where a move between places renames
+// (tests/file-transfer-rename-moves.test.ts). These tests are about a move
+// across disks, which copies and then takes the original away, so they ask
+// for that.
+setCrossPlaceMoveRenameForTests(false);
 
 /**
  * A move between a Connected Folder and a plain folder is a move
@@ -225,6 +232,7 @@ export default function (pi) {
   const busy = await transfer(call, body);
   assert.equal(busy.status, 409, JSON.stringify(busy.body));
   assert.match(busy.body!.error, /outstanding work/);
+  assert.equal(busy.body!.code, "busy", "the one refusal that says the same request can succeed later");
   assert.deepEqual(await readdir(plain), [], "nothing was copied");
   assert.ok(existsSync(join(source.connectedFolderRoot, "notes.md")));
 
@@ -549,9 +557,10 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
   const host: MoveBackHost = {
     transfer: async (body) => {
       const answer = await transfer(call, body);
-      if (answer.status !== 200) throw new Error(answer.body?.error ?? `status ${answer.status}`);
+      if (answer.status !== 200) throw Object.assign(new Error(answer.body?.error ?? `status ${answer.status}`), { status: answer.status, code: answer.body?.code });
       return answer.body as Awaited<ReturnType<MoveBackHost["transfer"]>>;
     },
+    copiesChanged: async (copies) => (await call("/api/file-transfer/copies-changed", { method: "POST", body: { copies } })).body!.changed,
     nameOf: (folder) => folder.path || folder.place.id,
     restore: async (point) => {
       const restored = await call(`/api/connected-folders/${point.connectedFolderId}/history/checkpoints/${point.checkpointId}/restore`, { method: "POST", body: {} });
@@ -616,12 +625,15 @@ test("⌘Z, as the window runs it, undoes a move either way and ⇧⌘Z does it 
   assert.equal(await undoFor("Move notes.md", replacing.body!, workPlace).run(), null, "not redone");
   assert.deepEqual(await snapshot(), before, "the replaced item is back, and the moved one is where it came from");
 
-  // A move between two Connected Folders is History's to undo, as before.
+  // A move between two Connected Folders keeps a restore point on each side, and ⌘Z moves the item back too.
   const other = await connectedFolder(call, "Other");
   const between = await transfer(call, { mode: "move", sources: [inFolder(work, "notes.md")], target: inFolder(other, "") });
   assert.equal(between.status, 200, JSON.stringify(between.body));
-  assert.equal(moveBackPlan(between.body as MoveAnswer, { place: { kind: "connected-folder", id: other.id }, path: "" }), null);
   assert.equal(between.body!.restorePoints.length, 2);
+  assert.ok(!existsSync(join(work.connectedFolderRoot, "notes.md")));
+  assert.ok(await undoFor("Move notes.md", between.body!, { kind: "connected-folder", id: other.id }).run());
+  assert.deepEqual(await snapshot(), before);
+  assert.deepEqual(await tree(other.connectedFolderRoot), []);
 });
 
 test("items taken from a Connected Folder and a plain folder at once are copied, and the answer says so", async (t) => {

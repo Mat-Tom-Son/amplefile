@@ -67,8 +67,12 @@ export interface TransferAnswer {
   written: string[];
   restorePoints: TransferRestorePoint[];
   copiedInstead?: boolean;
-  /** Each item a move took out of its folder, when Undo is to move it back (a plain folder on either side). */
+  /** Each item a move took out of its folder, for Undo to move back: every move between places, and between plain folders. */
   moves?: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>;
+  /** Each item in both places (`notRemoved`), with where its copy is. */
+  copies?: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>;
+  /** Sources that were no longer there, when the request asked to go on without them. */
+  missing?: Array<{ place: FileManagerPlace; path: string }>;
   cancelled?: boolean;
   notDone?: string[];
   leftInTarget?: string[];

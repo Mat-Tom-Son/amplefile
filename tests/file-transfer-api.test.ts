@@ -8,6 +8,7 @@ import test from "node:test";
 import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
 import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
 import { startLocalApi } from "../src/local/server.js";
+import { setCrossPlaceMoveRenameForTests } from "../src/local/api/place-routes.js";
 
 /**
  * The file manager's transfer and compress routes over the local API
@@ -32,6 +33,13 @@ function caller(api: Api) {
     });
     return { status: response.status, body: await response.json().catch(() => null) as Record<string, any> | null };
   };
+}
+
+
+/** The folders of a test are on one disk, where a move renames; this asks for the copy a move across disks makes, for one test. */
+function acrossDisks(t: test.TestContext): void {
+  setCrossPlaceMoveRenameForTests(false);
+  t.after(() => setCrossPlaceMoveRenameForTests(null));
 }
 
 test("a move between Connected Folders never erases a nested Connected Folder and parks nothing the copy carried", async (t) => {
@@ -159,6 +167,7 @@ test("a disconnected Connected Folder keeps its identity and Chats when moved, a
 });
 
 test("a moved item that cannot leave its Connected Folder stays there, and its copy carries no identity", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  acrossDisks(t);
   const { api } = await sandboxApi(t);
   const call = caller(api);
   const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
@@ -188,6 +197,7 @@ test("a moved item that cannot leave its Connected Folder stays there, and its c
 });
 
 test("a read-only item that cannot leave its Connected Folder leaves no second identity in its copy", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  acrossDisks(t);
   const { api, sandbox } = await sandboxApi(t);
   const call = caller(api);
   const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
@@ -222,6 +232,7 @@ test("a read-only item that cannot leave its Connected Folder leaves no second i
 });
 
 test("a disconnected Connected Folder's Chats survive a move whose source cannot be removed in one go", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  acrossDisks(t);
   const { api, sandbox } = await sandboxApi(t);
   const call = caller(api);
   const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
@@ -261,6 +272,7 @@ test("a disconnected Connected Folder's Chats survive a move whose source cannot
 });
 
 test("a move whose release across volumes fails partway says so and lists the copy kept in Recently Deleted", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  acrossDisks(t);
   const root = await mkdtemp(join(tmpdir(), "amplefile-cross-volume-move-"));
   const recentlyDeletedRoot = join(root, "recently-deleted");
   // Recently Deleted on another volume: a rename from outside it fails with

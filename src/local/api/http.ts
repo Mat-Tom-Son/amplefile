@@ -166,9 +166,11 @@ export function sendError(res: ServerResponse, error: unknown): void {
     ?? ampleFileCliErrorStatus(error)
     ?? automationErrorStatus(error)
     ?? 500;
+  const apiCode = (error as { apiCode?: unknown })?.apiCode;
   sendJson(res, {
     error: errorMessage(error),
     ...((error instanceof AmpleFileAutomationServiceError || error instanceof AmpleFileAutomationStoreError) ? { code: error.code } : {}),
+    ...(typeof apiCode === "string" ? { code: apiCode } : {}),
   }, status);
 }
 
@@ -212,6 +214,15 @@ export function automationErrorStatus(error: unknown): number | null {
 
 export function httpError(statusCode: number, message: string): Error {
   return Object.assign(new Error(message), { statusCode });
+}
+
+/**
+ * A refusal because work is still going on (a turn running, a question
+ * waiting, another change in hand): 409 with the code `busy`, which tells a
+ * caller the same request can succeed later, unlike any other refusal.
+ */
+export function busyRefusal(message: string): Error {
+  return Object.assign(httpError(409, message), { apiCode: "busy" });
 }
 export function boundedOptionalId(value: unknown, name: string): string | undefined {
   if (value === undefined) return undefined;

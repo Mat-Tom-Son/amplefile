@@ -8,10 +8,18 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
+import { setAttributeCheckForTests } from "../src/local/extended-attributes.js";
 import { setFileOperationBoundaryHookForTests, type FileOperationBoundary } from "../src/local/file-operations.js";
 import { setSystemTrashHandler } from "../src/local/move-to-system-trash.js";
 import { startLocalApi } from "../src/local/server.js";
+import { setCrossPlaceMoveRenameForTests } from "../src/local/api/place-routes.js";
 import { moveBackPlan, movesUndo, type FileUndo, type MoveAnswer, type MoveBackHost, type PartialUndo } from "../web-local/src/components/file-manager/file-manager-undo.js";
+
+// A test's folders are all on one disk, where a move between places renames
+// (tests/file-transfer-rename-moves.test.ts). These tests are about a move
+// across disks, which copies and then takes the original away, so they ask
+// for that.
+setCrossPlaceMoveRenameForTests(false);
 
 /**
  * What a move between a Connected Folder and a plain folder must never do
@@ -86,12 +94,17 @@ function windowHost(call: Call, names: Record<string, string> = {}): MoveBackHos
   return {
     transfer: async (body) => {
       const answer = await transfer(call, body);
-      if (answer.status !== 200) throw new Error(answer.body?.error ?? `status ${answer.status}`);
+      if (answer.status !== 200) throw Object.assign(new Error(answer.body?.error ?? `status ${answer.status}`), { status: answer.status, code: answer.body?.code });
       return answer.body as Awaited<ReturnType<MoveBackHost["transfer"]>>;
     },
     restore: async (point) => {
       const restored = await call(`/api/connected-folders/${point.connectedFolderId}/history/checkpoints/${point.checkpointId}/restore`, { method: "POST", body: {} });
-      if (restored.status !== 200) throw new Error(restored.body?.error ?? `status ${restored.status}`);
+      if (restored.status !== 200) throw Object.assign(new Error(restored.body?.error ?? `status ${restored.status}`), { status: restored.status, code: restored.body?.code });
+    },
+    copiesChanged: async (copies) => {
+      const answer = await call("/api/file-transfer/copies-changed", { method: "POST", body: { copies } });
+      if (answer.status !== 200) throw new Error(answer.body?.error ?? `status ${answer.status}`);
+      return answer.body!.changed;
     },
     nameOf: (folder) => folder.path ? folder.path.slice(folder.path.lastIndexOf("/") + 1) : names[folder.place.id] ?? folder.place.id,
   };
@@ -129,15 +142,21 @@ test("a plain original with a folder that cannot be changed stays whole, is said
     assert.deepEqual(await tree(join(work.connectedFolderRoot, "proj")), before, "the copy is whole");
     assert.deepEqual((await receipts(sandbox)).filter((receipt) => receipt.command === "files.move"), [], "no removal was journaled, because none was tried");
 
-    // Nothing moved, so ⌘Z is History's: it takes the copy away, and the original is whole.
-    assert.equal(moveBackPlan(moved.body as MoveAnswer, { place: { kind: "connected-folder", id: work.id }, path: "" }), null);
-    const restore = () => call(`/api/connected-folders/${work.id}/history/checkpoints/${moved.body!.restorePoints[0].checkpointId}/restore`, { method: "POST", body: {} });
+    // Nothing moved, so ⌘Z has no item to move back: it looks at the copy, then has History take it away.
+    const workPlace: Place = { kind: "connected-folder", id: work.id };
+    const plan = moveBackPlan(moved.body as MoveAnswer, { place: workPlace, path: "" });
+    assert.ok(plan);
+    assert.deepEqual([plan.items, plan.copies.length], [[], 1]);
     assert.deepEqual(moved.body!.restorePoints.map((point: any) => point.connectedFolderId), [work.id]);
-    // The copy kept its folder's read-only mode, so History cannot take it away until that folder can be changed.
-    assert.notEqual((await restore()).status, 200);
-    assert.deepEqual(await tree(join(plain, "proj")), before, "⌘Z refused: every file is still in the folder it came from");
+    // The copy kept its folder's read-only mode, so History cannot take it away until that folder can be changed. ⌘Z says so in plain words, and the step ends.
+    const refused = partial(await movesUndo("Move proj", plan, windowHost(call, { [work.id]: "Work" })).run());
+    assert.ok(refused);
+    assert.match(refused.said, /^Undid Move proj\. Work could not be put back as it was before the move\./);
+    assert.doesNotMatch(refused.said, /EACCES|EPERM|\/private\//);
+    assert.deepEqual(await tree(join(plain, "proj")), before, "every file is still in the folder it came from");
+    // Once it can be changed, the restore point takes the copy away, and the original is whole.
     await chmod(join(work.connectedFolderRoot, "proj", "locked"), 0o755);
-    const restored = await restore();
+    const restored = await call(`/api/connected-folders/${work.id}/history/checkpoints/${moved.body!.restorePoints[0].checkpointId}/restore`, { method: "POST", body: {} });
     assert.equal(restored.status, 200, JSON.stringify(restored.body));
     assert.ok(!existsSync(join(work.connectedFolderRoot, "proj")), "the copy is gone");
     assert.deepEqual(await tree(join(plain, "proj")), before, "after ⌘Z every file is still in the folder it came from");
@@ -147,7 +166,7 @@ test("a plain original with a folder that cannot be changed stays whole, is said
   }
 });
 
-test("a plain original that only partly goes counts as moved, is said to be partly removed, and ⌘Z never takes away the whole copy", { skip: process.platform !== "darwin" && "needs the Mac's locked flag" }, async (t) => {
+test("a plain original that only partly goes counts as moved, is said to be partly removed, and ⌘Z never takes away the whole copy", { skip: process.platform !== "darwin" && "needs the Mac's access rules" }, async (t) => {
   const { call, sandbox } = await sandboxApi(t);
   const work = await connectedFolder(call, "Work");
   const workPlace: Place = { kind: "connected-folder", id: work.id };
@@ -156,11 +175,11 @@ test("a plain original that only partly goes counts as moved, is said to be part
   for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) await writeFile(join(plain, "proj", name), name);
   await writeFile(join(plain, "proj", "sub", "locked.txt"), "locked");
   const before = await tree(join(plain, "proj"));
-  const unlock = () => run("chflags", ["-R", "nouchg", plain]).catch(() => undefined);
+  const unlock = () => run("/bin/chmod", ["-R", "-N", plain]).catch(() => undefined);
   t.after(unlock);
   try {
-    // Locked once it is copied, as a file in use can become: it cannot be removed, and nothing says so until the removal meets it.
-    atBoundary(t, "remove", () => run("chflags", ["uchg", join(plain, "proj", "sub", "locked.txt")]));
+    // A rule against deleting from one folder, set once the copy is made: nothing the checks read says so, and the removal stops when it meets it.
+    atBoundary(t, "remove", () => run("/bin/chmod", ["+a", "everyone deny delete_child", join(plain, "proj", "sub")]));
     const moved = await transfer(call, { mode: "move", operationId: "partly", sources: [onDisk(join(plain, "proj"))], target: inFolder(work, "") });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
     assert.deepEqual(await tree(join(work.connectedFolderRoot, "proj")), before, "the copy is whole");
@@ -172,6 +191,7 @@ test("a plain original that only partly goes counts as moved, is said to be part
     assert.equal(moved.body!.notRemoved, undefined, "it is not said to be still where it was");
     assert.deepEqual(moved.body!.partlyRemoved.map((item: any) => item.path), [path]);
     assert.match(moved.body!.partlyRemoved[0].error, /Part of “proj” could not be removed: “locked.txt” is locked or can’t be changed/);
+    assert.doesNotMatch(moved.body!.partlyRemoved[0].error, /EACCES|EPERM|\/private\//);
     assert.deepEqual((await receipts(sandbox)).filter((receipt) => receipt.command === "files.move").map((receipt) => receipt.outcome), ["accepted", "error"], "the removal was journaled first, and is recorded as not completed");
 
     // ⌘Z moves it back; the name is taken by what is left, so it says so and the whole copy stays where it is.
@@ -186,6 +206,135 @@ test("a plain original that only partly goes counts as moved, is said to be part
   } finally {
     await unlock();
   }
+});
+
+test("across disks, an original with something its copy does not carry stays where it was, and the answer says what", { skip: process.platform !== "darwin" && "extended attributes and flags are read the Mac's way" }, async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const work = await connectedFolder(call, "Work");
+  const other = await connectedFolder(call, "Other");
+  const plain = join(sandbox, "Plain");
+  await mkdir(join(plain, "Trip"), { recursive: true });
+  // A text clipping keeps its text in its resource fork; a copy made here would be empty.
+  await writeFile(join(plain, "note.textClipping"), "");
+  await writeFile(join(plain, "note.textClipping", "..namedfork", "rsrc"), "the clipping's text");
+  await writeFile(join(plain, "Trip", "tagged.txt"), "tagged");
+  await run("/usr/bin/xattr", ["-w", "com.apple.metadata:_kMDItemUserTags", "Red", join(plain, "Trip", "tagged.txt")]);
+  await mkdir(join(plain, "Hidden"));
+  await run("/usr/bin/chflags", ["hidden", join(plain, "Hidden")]);
+  await writeFile(join(plain, "plain.txt"), "nothing but its contents");
+  const path = (name: string) => onDisk(join(plain, name)).path;
+
+  const moved = await transfer(call, { mode: "move", sources: ["note.textClipping", "Trip", "Hidden", "plain.txt"].map((name) => onDisk(join(plain, name))), target: inFolder(work, "") });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  // Only the item with nothing but its contents left.
+  assert.deepEqual(moved.body!.moves.map((move: any) => move.to), ["plain.txt"]);
+  assert.deepEqual(moved.body!.notRemoved, ["note.textClipping", "Trip", "Hidden"].map(path));
+  assert.deepEqual(moved.body!.failures.map((failure: any) => failure.error), [
+    "“note.textClipping” has a resource fork, which a copy onto another disk does not carry, so it stays where it was.",
+    "“tagged.txt” in “Trip” has Finder tags, which a copy onto another disk does not carry, so “Trip” stays where it was.",
+    "“Hidden” has a flag that hides or locks it, which a copy onto another disk does not carry, so it stays where it was.",
+  ]);
+  assert.equal(await readFile(join(plain, "note.textClipping", "..namedfork", "rsrc"), "utf8"), "the clipping's text", "the clipping is whole where it was");
+  assert.deepEqual(await tree(plain), ["Hidden/", "Trip/", "Trip/tagged.txt=tagged", "note.textClipping="]);
+  assert.deepEqual((await receipts(sandbox)).filter((receipt) => receipt.command === "files.move").map((receipt) => receipt.outcome), ["accepted", "ok"], "only the one removal was tried");
+
+  // Out of a Connected Folder, and between two, the same.
+  await writeFile(join(work.connectedFolderRoot, "report.txt"), "report");
+  await run("/usr/bin/xattr", ["-w", "com.apple.metadata:kMDItemFinderComment", "final", join(work.connectedFolderRoot, "report.txt")]);
+  for (const target of [onDisk(join(plain, "Trip")), inFolder(other, "")]) {
+    const out = await transfer(call, { mode: "move", sources: [inFolder(work, "report.txt")], target });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.match(out.body!.failed.error, /“report.txt” has a Finder comment, which a copy onto another disk does not carry/);
+    assert.deepEqual(out.body!.notRemoved, ["report.txt"]);
+    assert.deepEqual(out.body!.moves, []);
+    assert.equal(await readFile(join(work.connectedFolderRoot, "report.txt"), "utf8"), "report");
+  }
+  assert.equal((await receipts(sandbox)).filter((receipt) => receipt.command === "files.delete").length, 0, "no delete was tried");
+
+  // What cannot be read is not taken as nothing: past the bound, the original stays.
+  setAttributeCheckForTests({ maxEntries: 1 });
+  t.after(() => setAttributeCheckForTests(null));
+  await mkdir(join(plain, "Many"));
+  await writeFile(join(plain, "Many", "one.txt"), "one");
+  const unread = await transfer(call, { mode: "move", sources: [onDisk(join(plain, "Many"))], target: inFolder(work, "") });
+  assert.equal(unread.status, 200, JSON.stringify(unread.body));
+  assert.match(unread.body!.failed.error, /AmpleFile could not check what “Many” has besides its contents \(it holds more than 1 items\), so it stays where it was\./);
+  assert.deepEqual(await tree(join(plain, "Many")), ["one.txt=one"]);
+});
+
+test("⌘Z takes away a copy that stayed in both places only while it still matches its original", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const work = await connectedFolder(call, "Work");
+  const workPlace: Place = { kind: "connected-folder", id: work.id };
+  const plain = join(sandbox, "Plain");
+  const host = windowHost(call, { [work.id]: "Work" });
+  /** A folder that cannot leave the plain folder (one of its folders is read-only), so its copy stays in the Connected Folder too. */
+  const kept = async (name: string) => {
+    await mkdir(join(plain, name, "locked"), { recursive: true });
+    await writeFile(join(plain, name, "a.txt"), "a");
+    await writeFile(join(plain, name, "locked", "c.txt"), "c");
+    await chmod(join(plain, name, "locked"), 0o555);
+    const moved = await transfer(call, { mode: "move", sources: [onDisk(join(plain, name))], target: inFolder(work, "") });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    assert.deepEqual(moved.body!.copies, [{ from: onDisk(join(plain, name)).path, fromPlace: computer, to: name }]);
+    // The copy's own read-only folder would stop History from taking it away; that is another test's subject.
+    await chmod(join(work.connectedFolderRoot, name, "locked"), 0o755);
+    const plan = moveBackPlan(moved.body as MoveAnswer, { place: workPlace, path: "" });
+    assert.ok(plan);
+    return { plan, pair: [{ original: onDisk(join(plain, name)), copy: { place: workPlace, path: name } }] };
+  };
+  const changed = async (pairs: unknown) => (await call("/api/file-transfer/copies-changed", { method: "POST", body: { copies: pairs } })).body!.changed;
+  try {
+    // The original was edited after the move: the copy may be the only place the old words are.
+    const edited = await kept("Edited");
+    assert.deepEqual(await changed(edited.pair), []);
+    await writeFile(join(plain, "Edited", "a.txt"), "a, rewritten since");
+    assert.deepEqual(await changed(edited.pair), [0]);
+    const first = partial(await movesUndo("Move Edited", edited.plan, host).run());
+    assert.ok(first);
+    assert.equal(first.said, "Undid Move Edited. “Edited” in Work, or the original it was copied from, changed since the move, so nothing in Work was taken away; its History has the restore point from before the move.");
+    assert.deepEqual(await tree(join(work.connectedFolderRoot, "Edited")), ["a.txt=a", "locked/", "locked/c.txt=c"], "the copy is still there");
+
+    // The original was thrown away after the move: the copy is all there is.
+    const gone = await kept("Gone");
+    await chmod(join(plain, "Gone", "locked"), 0o755);
+    await rm(join(plain, "Gone"), { recursive: true });
+    assert.deepEqual(await changed(gone.pair), [0]);
+    assert.ok(partial(await movesUndo("Move Gone", gone.plan, host).run()));
+    assert.deepEqual(await tree(join(work.connectedFolderRoot, "Gone")), ["a.txt=a", "locked/", "locked/c.txt=c"]);
+
+    // Something was added to the copy: it is no longer only a copy.
+    const grown = await kept("Grown");
+    await writeFile(join(work.connectedFolderRoot, "Grown", "new.txt"), "written in the Connected Folder");
+    assert.deepEqual(await changed(grown.pair), [0]);
+    assert.ok(partial(await movesUndo("Move Grown", grown.plan, host).run()));
+    assert.equal(await readFile(join(work.connectedFolderRoot, "Grown", "new.txt"), "utf8"), "written in the Connected Folder");
+
+    // Neither changed: the restore point takes the copy away, and the original is whole.
+    const same = await kept("Same");
+    const outcome = await movesUndo("Move Same", same.plan, host).run();
+    assert.equal(outcome, null, JSON.stringify(outcome));
+    assert.ok(!existsSync(join(work.connectedFolderRoot, "Same")), "the copy is gone");
+    assert.deepEqual(await tree(join(plain, "Same")), ["a.txt=a", "locked/", "locked/c.txt=c"]);
+  } finally {
+    for (const name of ["Edited", "Gone", "Grown", "Same"]) await chmod(join(plain, name, "locked"), 0o755).catch(() => undefined);
+  }
+});
+
+test("a path the place does not allow is the request's mistake, never an unexplained failure", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const work = await connectedFolder(call, "Work");
+  const real = join(sandbox, "Real");
+  await mkdir(real);
+  await writeFile(join(real, "doc.txt"), "doc");
+  await symlink(real, join(sandbox, "Linked"));
+  // An item named through a link, as a source and as a target.
+  const through = await transfer(call, { mode: "move", sources: [onDisk(join(sandbox, "Linked", "doc.txt"))], target: inFolder(work, "") });
+  assert.equal(through.status, 400, JSON.stringify(through.body));
+  assert.match(through.body!.error, /symbolic links/);
+  const into = await transfer(call, { mode: "copy", sources: [onDisk(join(real, "doc.txt"))], target: onDisk(join(sandbox, "Linked")) });
+  assert.ok(into.status === 400 || into.status === 200, JSON.stringify(into.body));
+  assert.equal(await readFile(join(real, "doc.txt"), "utf8"), "doc");
 });
 
 test("a Connected Folder item that changed while it was being copied stays where it was, into a plain folder or another Connected Folder", async (t) => {

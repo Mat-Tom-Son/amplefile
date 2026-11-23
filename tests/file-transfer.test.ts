@@ -11,7 +11,8 @@ import { promisify } from "node:util";
 import JSZip from "jszip";
 
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
-import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, finderCopyName, folderBlockingRemoval, isInside, moveInto, removeIdentityFoldersKeptAt, sourceLostPart, sourceUnchanged, type CopiedSource } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, filesTooFreshToTell, finderCopyName, folderBlockingRemoval, isInside, moveInto, onOneDisk, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, type CopiedEntry, type CopiedSource } from "../src/local/file-transfer.js";
+import { attributeNames, extraInWords, extrasCopyLacks, fileFlags, setAttributeCheckForTests } from "../src/local/extended-attributes.js";
 
 const exec = promisify(execFile);
 
@@ -258,11 +259,20 @@ test("a source is still the item a copy read only while nothing in it was writte
   const untouched = await copied();
   assert.equal(await sourceUnchanged(untouched.source, untouched.read), true);
   assert.equal(await sourceLostPart(untouched.source, untouched.read), false);
-  // Reading it, or changing its mode, is not a change to what it holds.
+  // Reading it is not a change.
   await readFile(join(untouched.source, "a.txt"));
-  await chmod(join(untouched.source, "a.txt"), 0o600);
   assert.equal(await sourceUnchanged(untouched.source, untouched.read), true);
   assert.equal(await sourceUnchanged(untouched.source, new Map()), false, "a source no copy read is not known to be unchanged");
+  // A change of mode, or of anything else about the file, is one: the disk notes when (its change time), whatever the modification time says.
+  await chmod(join(untouched.source, "a.txt"), 0o600);
+  assert.equal(await sourceUnchanged(untouched.source, untouched.read), false);
+
+  // A rewrite at the same size with the modification time put back as it was.
+  const restoredTime = await copied();
+  const then = await lstat(join(restoredTime.source, "a.txt"));
+  await writeFile(join(restoredTime.source, "a.txt"), "AAAA");
+  await utimes(join(restoredTime.source, "a.txt"), then.atime, then.mtime);
+  assert.equal(await sourceUnchanged(restoredTime.source, restoredTime.read), false, "the change time still moved");
 
   // The same size a moment later: a copy's time may be two seconds off, a source's own may not be off at all.
   const rewritten = await copied();
@@ -357,4 +367,154 @@ test("a folder is inside itself however its name is written, where the disk take
   assert.equal(isInside("/Volumes/Work/Caf\u00e9", "/volumes/work/Cafe\u0301/Menus"), true);
   assert.equal(isInside("/Volumes/Work/Cafe\u0301", "/Volumes/Work/Caf\u00e9"), true);
   assert.equal(isInside("/Volumes/Work/Caf\u00e9", "/Volumes/Work/Caf\u00e9s"), false);
+});
+
+test("a file read within one tick of a coarse clock is named, to be compared byte for byte", async (t) => {
+  const file = (mtimeMs: number, readAfterMs: number): CopiedEntry => ({ kind: "file", ino: 1, size: 4, mtimeMs, ctimeMs: mtimeMs, readAt: mtimeMs + readAfterMs });
+  const read: CopiedSource = new Map<string, CopiedEntry>([
+    ["/x/item", { kind: "folder", ino: 2, size: 0, mtimeMs: 1_700_000_000_000, ctimeMs: 1_700_000_000_000, readAt: 1_700_000_000_100, entries: 6 }],
+    // FAT keeps two seconds: read a second and a half after it was written, a rewrite in that tick would not show.
+    ["/x/item/fat-fresh.txt", file(1_700_000_000_000, 1_500)],
+    ["/x/item/fat-settled.txt", file(1_700_000_000_000, 2_000)],
+    // HFS+ keeps one second; exFAT ten milliseconds.
+    ["/x/item/hfs-fresh.txt", file(1_700_000_001_000, 400)],
+    ["/x/item/exfat-fresh.txt", file(1_700_000_000_010, 5)],
+    ["/x/item/exfat-settled.txt", file(1_700_000_000_010, 10)],
+    // A disk that keeps finer times than a millisecond always shows a rewrite.
+    ["/x/item/apfs.txt", file(1_700_000_000_123.4568, 0)],
+    ["/x/item-beside/fat-fresh.txt", file(1_700_000_000_000, 100)],
+  ]);
+  assert.deepEqual(filesTooFreshToTell("/x/item", read), ["/x/item/fat-fresh.txt", "/x/item/hfs-fresh.txt", "/x/item/exfat-fresh.txt"]);
+  assert.deepEqual(filesTooFreshToTell("/x/item/apfs.txt", read), []);
+
+  const root = await folder(t);
+  const big = Buffer.alloc(300 * 1024, 7);
+  await writeFile(join(root, "a"), big);
+  await writeFile(join(root, "same"), big);
+  await writeFile(join(root, "last-byte"), Buffer.concat([big.subarray(0, big.length - 1), Buffer.from([8])]));
+  await writeFile(join(root, "shorter"), big.subarray(0, big.length - 1));
+  await writeFile(join(root, "empty"), "");
+  await writeFile(join(root, "empty-too"), "");
+  assert.equal(await sameBytes(join(root, "a"), join(root, "same")), true);
+  assert.equal(await sameBytes(join(root, "a"), join(root, "last-byte")), false, "the same size, another byte");
+  assert.equal(await sameBytes(join(root, "a"), join(root, "shorter")), false);
+  assert.equal(await sameBytes(join(root, "empty"), join(root, "empty-too")), true);
+  assert.equal(await sameBytes(join(root, "a"), join(root, "not-there")), false);
+});
+
+test("an item renamed into a folder is the item itself, and never takes the place of one already there", async (t) => {
+  const root = await realpath(await folder(t));
+  const here = join(root, "Here");
+  const there = join(root, "There");
+  await mkdir(join(here, "Folder", "inner"), { recursive: true });
+  await mkdir(there);
+  await writeFile(join(here, "a.txt"), "a");
+  await writeFile(join(here, "Folder", "inner", "b.txt"), "b");
+  await symlink("a.txt", join(here, "link"));
+  await writeFile(join(there, "a.txt"), "already there");
+  await mkdir(join(there, "Folder"));
+  assert.equal(await onOneDisk(join(here, "a.txt"), there), true);
+  assert.equal(await onOneDisk(join(here, "not-there"), there), false);
+
+  const file = await lstat(join(here, "a.txt"));
+  assert.equal(await renameInto(join(here, "a.txt"), there, "a.txt"), join(there, "a copy.txt"), "the name is taken, so it gets the copy naming");
+  assert.equal((await lstat(join(there, "a copy.txt"))).ino, file.ino, "the same file");
+  assert.equal(await readFile(join(there, "a.txt"), "utf8"), "already there");
+  assert.equal(existsSync(join(here, "a.txt")), false);
+  assert.equal((await lstat(join(there, "a copy.txt"))).nlink, 1, "under one name only");
+
+  const inner = await lstat(join(here, "Folder", "inner", "b.txt"));
+  assert.equal(await renameInto(join(here, "Folder"), there, "Folder"), join(there, "Folder copy"));
+  assert.equal((await lstat(join(there, "Folder copy", "inner", "b.txt"))).ino, inner.ino);
+  assert.deepEqual(await readdir(join(there, "Folder")), [], "the folder already there is as it was");
+
+  assert.equal(await renameInto(join(here, "link"), there, "renamed link"), join(there, "renamed link"));
+  assert.equal(await readlink(join(there, "renamed link")), "a.txt", "a link goes as the link it is");
+  assert.deepEqual(await readdir(here), []);
+  await assert.rejects(renameInto(join(here, "gone"), there, "gone"), { code: "ENOENT" });
+});
+
+test("an original and its copy match only while each still holds what the other does", async (t) => {
+  const root = await folder(t);
+  const original = join(root, "Original");
+  await mkdir(join(original, "sub", ".amplefile"), { recursive: true });
+  await writeFile(join(original, "a.txt"), "aaaa");
+  await writeFile(join(original, "sub", "b.txt"), "bbbb");
+  await writeFile(join(original, "sub", ".amplefile", "connected-folder.json"), "{}");
+  const copy = join(root, "Copy");
+  await copyItemTo(original, copy);
+  assert.equal(await treesMatch(original, copy), true, "the copy left the identity behind, which is not asked about");
+  await writeFile(join(copy, "sub", "new.txt"), "new");
+  assert.equal(await treesMatch(original, copy), false, "the copy gained something");
+  await rm(join(copy, "sub", "new.txt"));
+  assert.equal(await treesMatch(original, copy), true);
+  await writeFile(join(original, "a.txt"), "aaaa, and more");
+  assert.equal(await treesMatch(original, copy), false, "the original changed");
+  assert.equal(await treesMatch(join(root, "not-there"), copy), false);
+  assert.equal(await treesMatch(original, join(root, "not-there")), false);
+});
+
+test("what an item has besides its contents is read from the system, and what cannot be read is not taken as nothing", { skip: process.platform !== "darwin" && "extended attributes and flags are read the Mac's way" }, async (t) => {
+  const root = await realpath(await folder(t));
+  t.after(() => setAttributeCheckForTests(null));
+  const source = join(root, "Source");
+  await mkdir(join(source, "sub"), { recursive: true });
+  await writeFile(join(source, "plain.txt"), "plain");
+  await writeFile(join(source, "sub", "tagged.txt"), "tagged");
+  await exec("/usr/bin/xattr", ["-w", "com.apple.metadata:_kMDItemUserTags", "Red", join(source, "sub", "tagged.txt")]);
+  await exec("/usr/bin/xattr", ["-w", "com.example.note", "x", join(source, "sub", "tagged.txt")]);
+  const own = (names: string[][] | null) => names?.map((list) => list.filter((name) => name !== "com.apple.provenance").sort());
+  assert.deepEqual(own(await attributeNames([join(source, "sub", "tagged.txt")])), [["com.apple.metadata:_kMDItemUserTags", "com.example.note"]], "one path");
+  assert.deepEqual(own(await attributeNames([join(source, "plain.txt"), join(source, "sub", "tagged.txt"), join(source, "sub")])), [[], ["com.apple.metadata:_kMDItemUserTags", "com.example.note"], []], "several, in the order asked");
+  assert.deepEqual(await attributeNames([]), []);
+  assert.equal(await attributeNames([join(source, "plain.txt"), join(source, "not-there")]), null, "a path that cannot be read makes the answer not known");
+  // Two names where one line could belong to either are not told apart.
+  await writeFile(join(source, "a"), "a");
+  await writeFile(join(source, "a: com.example.note"), "b");
+  await exec("/usr/bin/xattr", ["-w", "com.example.note: x", "1", join(source, "a")]).catch(() => undefined);
+  await exec("/usr/bin/xattr", ["-w", "x", "1", join(source, "a: com.example.note")]);
+  const both = await attributeNames([join(source, "a"), join(source, "a: com.example.note")]);
+  assert.ok(both === null || both[1]!.includes("x"), "either not known, or right");
+
+  assert.deepEqual(await fileFlags([join(source, "plain.txt"), join(source, "sub")]), [0, 0]);
+  await exec("/usr/bin/chflags", ["hidden", join(source, "sub")]);
+  assert.deepEqual(await fileFlags([join(source, "plain.txt"), join(source, "sub")]), [0, 0x8000]);
+  assert.equal(await fileFlags([join(source, "not-there")]), null);
+
+  // A copy made here carries none of it.
+  const copy = join(root, "Copy");
+  await copyItemTo(source, copy, { withIdentity: true });
+  assert.equal(await extrasCopyLacks(join(source, "plain.txt"), join(copy, "plain.txt"), [join(source, "plain.txt")]), null, "the system's own mark on a file is not something a copy lacks");
+  assert.deepEqual(await extrasCopyLacks(source, copy, [source, join(source, "plain.txt"), join(source, "sub", "tagged.txt")]), { path: join(source, "sub", "tagged.txt"), name: "com.apple.metadata:_kMDItemUserTags" });
+  assert.deepEqual(await extrasCopyLacks(source, copy, [join(source, "sub")]), { path: join(source, "sub"), name: "flags" });
+  // Carried by hand, the copy lacks nothing.
+  await exec("/usr/bin/xattr", ["-w", "com.apple.metadata:_kMDItemUserTags", "Red", join(copy, "sub", "tagged.txt")]);
+  await exec("/usr/bin/xattr", ["-w", "com.example.note", "x", join(copy, "sub", "tagged.txt")]);
+  await exec("/usr/bin/chflags", ["hidden", join(copy, "sub")]);
+  assert.equal(await extrasCopyLacks(source, copy, [source, join(source, "plain.txt"), join(source, "sub"), join(source, "sub", "tagged.txt")]), null);
+
+  assert.deepEqual(await extrasCopyLacks(source, copy, [join(source, "line\nbreak")]), { unknown: "one of its names has a line break in it" });
+  assert.deepEqual(await extrasCopyLacks(source, copy, [join(source, "not-there")]), { unknown: "the system did not answer" });
+  setAttributeCheckForTests({ maxEntries: 2 });
+  assert.deepEqual(await extrasCopyLacks(source, copy, [source, join(source, "plain.txt"), join(source, "sub")]), { unknown: "it holds more than 2 items" });
+  // Elsewhere than on the Mac nothing is asked.
+  setAttributeCheckForTests({ platform: "linux" });
+  assert.equal(await extrasCopyLacks(source, join(root, "nowhere"), [join(source, "sub", "tagged.txt")]), null);
+
+  assert.equal(extraInWords("com.apple.ResourceFork"), "a resource fork");
+  assert.equal(extraInWords("flags"), "a flag that hides or locks it");
+  assert.equal(extraInWords("com.example.note"), "extra information (“com.example.note”)");
+});
+
+test("a copied folder keeps its date, as a copied file does", async (t) => {
+  const root = await folder(t);
+  const source = join(root, "Source");
+  await mkdir(join(source, "inner"), { recursive: true });
+  await writeFile(join(source, "inner", "a.txt"), "a");
+  const was = new Date("2024-03-12T14:02:00Z");
+  await utimes(join(source, "inner"), was, was);
+  await utimes(source, was, was);
+  const landed = await copyInto(source, join(root));
+  assert.equal((await lstat(landed)).mtimeMs, was.getTime());
+  assert.equal((await lstat(join(landed, "inner"))).mtimeMs, was.getTime());
 });
