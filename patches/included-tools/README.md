@@ -178,6 +178,11 @@ the partial-JXL zero-size loop. Unsupported zero/extended-size boxes reject
 rather than claiming a parsed size. Bounded ICNS header-only file probing is
 preserved; this remains dimension detection, not full image validation.
 
+Upstream image-size 2.0.3 and later fix both advisories, but PptxGenJS 4.0.1
+still requires `^1.2.1`, so the reviewed patch stays. `npm audit` matches by
+version and still lists image-size and pptxgenjs as high; the installed parsers
+are the patched ones above.
+
 The source patch replaces the former worker-only format disabling, so ordinary
 imports of the bundled dependency receive the fix as well. The normal install
 lane verifies patch, upstream version and before/after file hashes; packaged
