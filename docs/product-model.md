@@ -186,7 +186,8 @@ other surface.
   Command-Delete, Return to rename, typing to jump to a name, and the
   Copy, Cut, Paste, and Duplicate keys under **Finder's file actions**).
   Double-click opens a folder here and a file in its default app; an
-  archive opens in its default app too, and **Extract** is in its menu. Dragging from empty
+  archive opens in its default app too, and **Extract** is in its menu; a
+  Mac package (see **Packages**) opens in its app. Dragging from empty
   space, or in the list from a row outside its icon and name, draws a
   selection rectangle that selects what it touches; Shift or Command adds
   to the selection, and the list scrolls while the pointer is near its top
@@ -287,6 +288,21 @@ other surface.
   a folder a path goes through, so New Folder, Paste, a drop, or adding
   files into one is not offered, and the host refuses each. Attaching a
   link to a Chat is not offered.
+- **Packages:** on a Mac, a folder Finder shows as one item is one item
+  here too: an app (`.app`), a bundle or plug-in, an installer package
+  stored as a folder, a Photos, Music, or TV library, an iMovie, Final Cut
+  Pro, Logic Pro, or GarageBand project, a Keynote, Pages, or Numbers
+  document, an `.rtfd`, an Xcode project, workspace, or playground, a sparse
+  bundle, and the like (`src/shared/mac-packages.ts`; a `.framework` is a
+  plain folder, as in Finder). The host marks them, and links to them, in
+  every listing on macOS only. Double-click, ⌘↓, and Open open one in its
+  default app through the same path a file takes, so an app launches; a
+  link to one, as `/Applications/Safari.app` is, opens the app it points
+  to. Its menu offers **Show Package Contents**, which goes inside, and no
+  New Folder, Paste, Open in New Tab, or Connect This Folder; a drop on it
+  lands in the folder shown. Its Kind says what it is (**Application**,
+  **Pages document**, **Photos library**). Copy, move, Compress, drag,
+  search, and Info's size treat it as the folder it is.
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
   pasteboard so Finder can paste it; ⌘X cuts it:
   the items stay where they are, drawn dimmed, until ⌘V moves them or the

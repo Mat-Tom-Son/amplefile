@@ -59,7 +59,7 @@ type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
 type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
 /** Where a folder or file handed to AmpleFile opens: a place, the folder shown in it, and an item to select. */
 type AmpleFileDesktopOpenLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null };
-type AmpleFileDesktopFileMenuCommand = "open" | "open-in-new-tab" | "open-in-new-window" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
+type AmpleFileDesktopFileMenuCommand = "open" | "open-in-new-tab" | "open-in-new-window" | "open-with" | "show-package-contents" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
   | "copy" | "paste" | "duplicate" | "compress" | "new-folder-with-selection";
 
 type AmpleFileDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
@@ -108,6 +108,8 @@ interface AmpleFileDesktopFileMenuRequest {
     paste?: boolean;
     /** A symbolic link: only Open, Show in Finder, and Copy Path. */
     link?: boolean;
+    /** A Mac package (an app, a Pages document): Open opens it in its app, and Show Package Contents goes inside. */
+    package?: boolean;
     /** A folder: Open in New Tab, and Open in New Window where the desktop has windows. */
     newTab?: boolean;
     newWindow?: boolean;

@@ -117,6 +117,7 @@ import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
 import { isBrowserPageId } from "../../src/shared/browser.js";
 import { productIdentity } from "../../src/shared/product-identity.js";
+import { isMacPackageName } from "../../src/shared/mac-packages.js";
 import {
   commandLineStatus,
   defaultCommandLineEnvironment,
@@ -1042,7 +1043,8 @@ function registerIpc(): void {
     return startItemDrag(event.sender, items);
   });
   // A symbolic link a listing showed: open what it points to, or show the link itself in the system file manager.
-  // A linked folder is never opened here; the window goes to where it really is instead.
+  // A linked folder is never opened here; the window goes to where it really is instead. A linked Mac package
+  // (/Applications/Safari.app is one) is one item, as in Finder: it opens in its app like a file.
   ipcMain.handle("amplefile:place:open-link", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isRecord(value) || !isRecord(value.place) || typeof value.path !== "string" || !value.path || value.path.includes("\0") || isAbsolute(value.path)) throw new Error("Choose a link inside the folder.");
@@ -1055,7 +1057,8 @@ function registerIpc(): void {
       shell.showItemInFolder(link.linkPath);
       return;
     }
-    if (link.target !== "file") throw new Error("This link points to a folder. Open it in the window.");
+    const linkedPackage = process.platform === "darwin" && link.target === "folder" && isMacPackageName(basename(link.targetPath));
+    if (link.target !== "file" && !linkedPackage) throw new Error("This link points to a folder. Open it in the window.");
     const result = await shell.openPath(link.targetPath);
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });

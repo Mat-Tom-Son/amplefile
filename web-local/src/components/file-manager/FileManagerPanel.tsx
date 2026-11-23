@@ -276,7 +276,7 @@ function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount 
   const shownImage = thumbnail ?? imageUrl;
   const measured = folderSize.state.status === "done" ? folderSizeText(folderSize.state.size) : null;
   const folderCount = itemCount ?? count;
-  const meta = link ? linkKindLabel(link) : entry.kind === "folder"
+  const meta = link ? linkKindLabel(link, entry.package) : entry.package ? fileKindLabel(entry) : entry.kind === "folder"
     ? folderCount === null ? "Folder" : folderCount === 1 ? "1 item" : `${folderCount} items`
     : `${fileKindLabel(entry)}${typeof entry.sizeBytes === "number" ? ` · ${formatBytes(entry.sizeBytes)}` : ""}`;
   return <>
