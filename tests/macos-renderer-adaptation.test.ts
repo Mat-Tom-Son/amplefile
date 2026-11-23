@@ -7,11 +7,12 @@ import { typographyFontOptionsForPlatform } from "../web-local/src/constants.js"
 import { nativeOpenLabel, revealInFileManagerLabel } from "../web-local/src/lib/file-actions.js";
 import { desktopShortcutKeyLabel, desktopShortcutKeySpokenName, desktopShortcutModifierKey } from "../web-local/src/lib/keyboard.js";
 import { typographyFontForPlatform, connectedFolderEntryNativePath } from "../web-local/src/lib/platform.js";
+import { readFileManagerWindowSource } from "./support/file-manager-source.js";
 
 const root = process.cwd();
 const [app, fileManager, fileManagerCss, rendererMain, styles, customization, settings] = await Promise.all([
   read("web-local/src/App.tsx"),
-  read("web-local/src/components/file-manager/FileManagerView.tsx"),
+  readFileManagerWindowSource(),
   read("web-local/src/components/file-manager/file-manager.css"),
   read("web-local/src/main.tsx"),
   read("web-local/src/styles.css"),

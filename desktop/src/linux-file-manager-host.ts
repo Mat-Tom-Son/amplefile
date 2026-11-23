@@ -1,24 +1,49 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import { productIdentity } from "../../src/shared/product-identity.js";
 import { LinuxFileManagerIntegration, linuxFileManagerLaunchCommand } from "./linux-file-manager-integration.js";
 import type { FileManagerRequest } from "./linux-file-manager-service.js";
 
-/** A path the system asked AmpleFile to show; `reveal` shows a folder selected in its parent rather than opened. */
+/**
+ * A path the system asked AmpleFile to show; `reveal` shows a folder selected in its parent rather than opened,
+ * and `newWindow` opens it in a window of its own instead of the most recently focused one.
+ */
 export interface FileManagerOpenPath {
   path: string;
   reveal: boolean;
+  newWindow: boolean;
 }
 
+/** At most this many windows open for one request. */
+export const maximumWindowsPerRequest = 8;
+
 /**
- * What a FileManager1 call opens. One window shows one folder, so the first
- * usable item is shown: ShowFolders opens it; ShowItems and
- * ShowItemProperties show it selected in its folder (a folder too).
+ * What a FileManager1 call opens, as a system file manager does: one folder
+ * or one folder's items in the most recently focused window, and each further
+ * folder in a window of its own. ShowFolders opens each folder; ShowItems and
+ * ShowItemProperties show each item selected in its folder (a folder too),
+ * one window per folder, with the first item there selected.
  */
-export function fileManagerOpenPath(request: FileManagerRequest): FileManagerOpenPath {
-  return { path: request.paths[0]!, reveal: request.method !== "ShowFolders" };
+export function fileManagerOpenPaths(request: FileManagerRequest): FileManagerOpenPath[] {
+  const reveal = request.method !== "ShowFolders";
+  const chosen: string[] = [];
+  const folders = new Set<string>();
+  for (const path of request.paths) {
+    // Items in one folder share its window; the first of them is the one selected.
+    const key = reveal ? dirname(path) : path;
+    if (folders.has(key)) continue;
+    folders.add(key);
+    chosen.push(path);
+    if (chosen.length >= maximumWindowsPerRequest) break;
+  }
+  return chosen.map((path, index) => ({ path, reveal, newWindow: index > 0 }));
+}
+
+/** A launcher's or a second launch's folders: the first in the most recently focused window, each further one in a new window. */
+export function launcherOpenPaths(paths: readonly string[]): FileManagerOpenPath[] {
+  return paths.slice(0, maximumWindowsPerRequest).map((path, index) => ({ path, reveal: false, newWindow: index > 0 }));
 }
 
 export interface LinuxFileManagerHostOptions {
@@ -29,7 +54,7 @@ export interface LinuxFileManagerHostOptions {
   execPath: string;
   appPath: string;
   appImage?: string;
-  /** Hands a path to the window's open-location path and brings the window forward. */
+  /** Hands a path to the open-location path (the most recent window or a new one) and brings that window forward. */
   open: (target: FileManagerOpenPath) => void;
   log: (message: string) => void;
 }
@@ -48,7 +73,7 @@ export function startLinuxFileManager(options: LinuxFileManagerHostOptions): Lin
       desktopId: `${productIdentity.packageName}.desktop`,
       statePath: join(options.userDataPath, "file-manager-integration.json"),
     },
-    onRequest: (request) => options.open(fileManagerOpenPath(request)),
+    onRequest: (request) => { for (const target of fileManagerOpenPaths(request)) options.open(target); },
     log: options.log,
   });
   const { ipcMain, assertTrusted } = options;

@@ -109,7 +109,10 @@ export interface DesktopUpdateInstallFailure {
 }
 
 export interface DesktopUpdaterOptions {
+  /** The window the updater's questions appear over: the front one. */
   getWindow?: () => BrowserWindow | null;
+  /** Every file manager window: each shows the update's status and progress. Defaults to the front one alone. */
+  getWindows?: () => BrowserWindow[];
   prepareToInstall: () => Promise<void>;
   /**
    * Called when an install fails after `prepareToInstall` has shut the
@@ -186,7 +189,8 @@ export class DesktopUpdater {
 
   constructor(options: DesktopUpdaterOptions) {
     this.updater = options.updater ?? defaultUpdaterAdapter();
-    this.host = options.host ?? defaultElectronHost(options.getWindow ?? (() => null));
+    const getWindow = options.getWindow ?? (() => null);
+    this.host = options.host ?? defaultElectronHost(getWindow, options.getWindows ?? (() => { const window = getWindow(); return window ? [window] : []; }));
     this.prepareToInstall = options.prepareToInstall;
     this.onInstallFailedAfterShutdown = options.onInstallFailedAfterShutdown ?? (() => undefined);
     this.automaticChecks = options.automaticChecks !== false;
@@ -694,7 +698,7 @@ export function stageSquirrelMacUpdate(native: NativeSquirrelUpdaterLike, timeou
   });
 }
 
-function defaultElectronHost(getWindow: () => BrowserWindow | null): DesktopUpdaterHost {
+function defaultElectronHost(getWindow: () => BrowserWindow | null, getWindows: () => BrowserWindow[]): DesktopUpdaterHost {
   const electron = require("electron") as typeof import("electron");
   return {
     stageDownloadedUpdate: (timeoutMs) => process.platform === "darwin"
@@ -717,13 +721,11 @@ function defaultElectronHost(getWindow: () => BrowserWindow | null): DesktopUpda
       return { response: result.response };
     },
     setProgress: (value) => {
-      const window = getWindow();
-      if (window && !window.isDestroyed()) window.setProgressBar(value);
+      for (const window of getWindows()) if (!window.isDestroyed()) window.setProgressBar(value);
     },
     emitStatus: (status) => {
-      const window = getWindow();
-      if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("amplefile:updates:status-changed", status);
+      for (const window of getWindows()) {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("amplefile:updates:status-changed", status);
       }
     },
   };

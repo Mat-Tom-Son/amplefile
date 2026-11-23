@@ -1,0 +1,165 @@
+/*
+ * Folder tabs (docs/product-model.md, "Folder tabs"): a strip at the top of
+ * the folder area, as Finder's and GNOME Files' are. Tabs share its width
+ * and stay flat until hovered; the tab in front wears the window's surface
+ * and the button shape. It wears the file manager's tokens
+ * (file-manager-tokens.css).
+ */
+
+.fm-folder-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: calc(34px * var(--fm-scale));
+  padding: 0 8px 0 12px;
+  border-top: 1px solid var(--fm-line);
+  border-bottom: 1px solid var(--fm-line);
+  background: var(--fm-stripe);
+}
+
+.fm-folder-tabs-list {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+}
+
+.fm-folder-tab {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  min-width: 0;
+  max-width: 320px;
+  height: calc(26px * var(--fm-scale));
+  border-radius: 6px;
+  color: var(--fm-text2);
+  transition: background-color 110ms ease-out, color 110ms ease-out, box-shadow 110ms ease-out;
+  animation: fm-folder-tab-in 180ms var(--amplefile-ease-smooth);
+}
+
+@keyframes fm-folder-tab-in {
+  from { opacity: 0; transform: scaleX(0.6); }
+}
+
+.fm-folder-tab:hover:not(.is-on) {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
+.fm-folder-tab.is-on {
+  background: var(--fm-btn);
+  box-shadow: var(--fm-btn-shadow);
+  color: var(--fm-text);
+}
+
+/* A drag of items over a tab whose folder takes them. */
+.fm-folder-tab.is-drop-target {
+  background: var(--fm-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--fm-accent);
+}
+
+/* Where a tab dragged in the strip will land. */
+.fm-folder-tab.is-drop-before::before,
+.fm-folder-tab.is-drop-after::after {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fm-accent);
+  content: "";
+}
+
+.fm-folder-tab.is-drop-before::before {
+  left: -2px;
+}
+
+.fm-folder-tab.is-drop-after::after {
+  right: -2px;
+}
+
+.fm-folder-tab-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 24px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-folder-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ×, at the tab's leading edge as in Finder, shows on hover and on the tab in front. */
+.fm-folder-tab-close {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 5px;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fm-text2);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.fm-folder-tab:hover .fm-folder-tab-close,
+.fm-folder-tab.is-on .fm-folder-tab-close,
+.fm-folder-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.fm-folder-tab-close:hover {
+  background: var(--fm-cap2);
+  color: var(--fm-text);
+}
+
+.fm-folder-tabs-new {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: calc(26px * var(--fm-scale));
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fm-text2);
+}
+
+.fm-folder-tabs-new:hover {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
+/* A tab's Chat, kept while another tab is in front so a reply in it keeps showing where it was. */
+.fm-tab-chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fm-tab-chat[hidden] {
+  display: none;
+}

@@ -1,4 +1,15 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
+import { FileManagerWindows, parseWindowLocation, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
+import {
+  cascadeBounds,
+  parseWindowPlacements,
+  placementsAfterClose,
+  savePlacement,
+  separateRestoredPlacements,
+  serializeWindowPlacements,
+  type WindowBounds,
+  type WindowPlacement,
+} from "./window-placements.js";
 import { configureLinuxPasswordStore } from "./linux-password-store.js";
 import { linuxX11RelaunchArguments, openPathArguments } from "./linux-launch.js";
 import { ComputerSessionService } from "../../src/local/agent/computer-session.js";
@@ -120,7 +131,7 @@ import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } fro
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
 import { LinuxDesktopSettings } from "./linux-desktop-settings.js";
-import { startLinuxFileManager } from "./linux-file-manager-host.js";
+import { launcherOpenPaths, startLinuxFileManager, type FileManagerOpenPath } from "./linux-file-manager-host.js";
 import { fallbackWindowButtonLayout, linuxNativeThemeSource, type LinuxDesktopAppearance, type LinuxWindowChromeState } from "../../src/shared/linux-desktop-appearance.js";
 import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
@@ -139,6 +150,9 @@ import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
 import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
 
+/** The local API's address; it listens on loopback only. */
+const localApiHost = "127.0.0.1";
+
 // AppImage launchers can fall back to --no-sandbox when namespaces are blocked.
 // Refuse before initializing user state rather than weaken renderer isolation.
 const refusedUnsandboxedLaunch = process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox");
@@ -148,6 +162,11 @@ if (refusedUnsandboxedLaunch) {
 }
 
 configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
+// Every file manager window, the AmpleFile Agent popover, and the inspector share one Chromium session, which
+// allows six connections to a host at a time. Each window keeps an event stream open to the loopback local API,
+// so a third window's first request would wait forever behind two windows' streams. The limit is lifted for the
+// local API's loopback address alone (it never listens elsewhere; src/local/server.ts).
+app.commandLine.appendSwitch("ignore-connections-limit", localApiHost);
 // Hidden browser views need X11's native parent for trusted input and capture.
 // Desktop sharing still uses the Wayland portal in a Wayland login session.
 // Chromium has already chosen its platform here, so the instance that owns the
@@ -223,8 +242,16 @@ const defaultWindowState = { width: 1440, height: 960 };
 const minimumWindowState = { width: 1100, height: 760 };
 const folderGrants = new Map<string, { connectedFolderRoot: string; expiresAt: number }>();
 
-let mainWindow: BrowserWindow | null = null;
-let railTooltipOverlay: RailTooltipOverlay | null = null;
+/**
+ * The file manager windows (desktop/src/file-manager-windows.ts): which one a
+ * menu command, a reply, a folder handed to the app, or a Worker's browser
+ * page goes to. Every window shares the one local API and its event streams.
+ */
+const fileManagerWindows = new FileManagerWindows<BrowserWindow, FolderLocation>();
+/** Each window's rail tooltip overlay, by window id. */
+const railTooltipOverlays = new Map<number, RailTooltipOverlay>();
+/** Where the windows were on the screen (window-state.json), loaded when the first window opens. */
+let windowPlacements: WindowPlacement[] | null = null;
 let builtInBrowser: BuiltInBrowser | null = null;
 let tray: Tray | null = null;
 let ampleFileAgentPopover: AmpleFileAgentPopover | null = null;
@@ -260,25 +287,20 @@ let linuxDesktopSettings: LinuxDesktopSettings | null = null;
 let linuxDesktopSettingsReady: Promise<void> | null = null;
 // The renderer's last Appearance mode, so a portal change can re-resolve "system".
 let rendererThemeSource: "light" | "dark" | "system" = "system";
-let rendererRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
-let rendererRecoveryInFlight = false;
-let rendererRecoveryAttempts = 0;
-let rendererRecoveryFailurePromptShown = false;
-let createWindowPromise: Promise<void> | null = null;
-let rendererMenuState: RendererMenuState = { connectedFolderOpen: false, showHiddenFiles: false };
+/** Each window's renderer recovery (a reload after its renderer failed), by window id. */
+const rendererRecoveries = new Map<number, RendererRecovery>();
+let restoreWindowsPromise: Promise<BrowserWindow> | null = null;
 let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
 let cliRequestGeneration = 0;
-let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 // Linux Open Recent: Connected Folder ids shown most recently, and their menu entries.
 let recentConnectedFolderEntries: RecentConnectedFolderEntry[] = [];
 let recentConnectedFoldersUpdate: Promise<void> = Promise.resolve();
-let activeNativeConnectedFolderGeneration = 0;
-let pendingOpenLocationRequest: { token: string; location: FolderLocation } | null = null;
-// Strings open as given; a { reveal } entry (Settings → File Manager's ShowItems) shows a folder selected in its parent.
-const pendingOpenPaths: Array<string | { path: string; reveal: boolean }> = [];
+// Strings open as given in the most recent window; an entry can show a folder selected in its parent (`reveal`,
+// Settings → File Manager's ShowItems) or open in a window of its own (`newWindow`, a launcher's further folders).
+const pendingOpenPaths: Array<string | FileManagerOpenPath> = [];
 let linuxFileManager: ReturnType<typeof startLinuxFileManager> | null = null;
 let openPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
@@ -359,8 +381,8 @@ function relaunchedUnderX11(): boolean {
 }
 
 if (ownsInstance && process.platform === "linux" && interactiveRequested) {
-  // A desktop launcher's %U: folders open like a Finder open-file below.
-  pendingOpenPaths.push(...openPathArguments(process.argv, { defaultApp: process.defaultApp === true, workingDirectory: process.cwd() }));
+  // A desktop launcher's %U: folders open like a Finder open-file below; a second folder and more each open a window.
+  pendingOpenPaths.push(...launcherOpenPaths(openPathArguments(process.argv, { defaultApp: process.defaultApp === true, workingDirectory: process.cwd() })));
 }
 
 if (ownsInstance && process.platform === "darwin") {
@@ -402,9 +424,9 @@ if (ownsInstance) {
     }
     interactiveRequested = true;
     if (process.platform === "linux") {
-      pendingOpenPaths.push(...openPathArguments(argv, { defaultApp: process.defaultApp === true, workingDirectory }));
+      pendingOpenPaths.push(...launcherOpenPaths(openPathArguments(argv, { defaultApp: process.defaultApp === true, workingDirectory })));
     }
-    void startInteractiveApp().then(showWindow).then(drainPendingOpenPaths).catch(reportStartupError);
+    void startInteractiveApp().then(showFrontWindow).then(drainPendingOpenPaths).catch(reportStartupError);
   });
   app.whenReady().then(async () => {
     configureStableUserDataPath();
@@ -497,7 +519,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "copyText") clipboard.writeText(event.text);
-    else if (event.method === "openSettings") mainWindow?.webContents.send("amplefile:agent:open-settings");
+    else if (event.method === "openSettings") frontWindow()?.webContents.send("amplefile:agent:open-settings");
     else if (event.method === "quit") app.quit();
     });
     const bundledComputerHelper = process.platform === "linux"
@@ -563,7 +585,7 @@ async function startInteractiveApp(): Promise<void> {
       ipcMain, assertTrusted: assertTrustedMainRenderer, userDataPath: app.getPath("userData"),
       isPackaged: app.isPackaged, execPath: process.execPath, appPath: app.getAppPath(), appImage: process.env.APPIMAGE,
       log: (message) => console.warn(`${productName} file manager: ${message}`),
-      open: (target) => { pendingOpenPaths.push(target); void startInteractiveApp().then(showWindow).then(drainPendingOpenPaths).catch(reportStartupError); },
+      open: (target) => { pendingOpenPaths.push(target); void startInteractiveApp().then(showFrontWindow).then(drainPendingOpenPaths).catch(reportStartupError); },
     });
     // A headless CLI host may be tearing down; it re-checks for this launch
     // afterwards and stays up, but the new act token must not race it.
@@ -575,15 +597,13 @@ async function startInteractiveApp(): Promise<void> {
     if (process.platform === "linux") void updateRecentConnectedFolders((ids) => ids);
     registerRendererProtocol();
     registerIpc();
-    await ensureMainWindow();
+    await ensureWindow();
     configureUpdater();
     createTrayIfSupported();
     if (!activateRegistered) {
       activateRegistered = true;
-      app.on("activate", () => {
-        if (!mainWindow || mainWindow.isDestroyed()) void ensureMainWindow();
-        else showWindow();
-      });
+      // The Dock icon: the windows that were open come back when none is, else the front one comes forward.
+      app.on("activate", () => { showFrontWindow(); });
     }
     await drainPendingOpenPaths();
   })();
@@ -643,6 +663,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     setSystemTrashHandler((path) => shell.trashItem(path));
     const api = await startLocalApi({
       appMode: "desktop",
+      host: localApiHost,
       port: 0,
       connectedFolderBase: managedConnectedFolderRoot(),
       stateBase: userData,
@@ -654,7 +675,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
         readClipboard: () => clipboard.readText(),
         writeClipboard: (value) => clipboard.writeText(value),
         showMessageBox: (options) => {
-          const parent = BrowserWindow.getFocusedWindow() ?? mainWindow;
+          const parent = BrowserWindow.getFocusedWindow() ?? frontWindow();
           return parent && !parent.isDestroyed() ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
         },
         onError: (error) => console.warn(`${productName} provider sign-in UI failed: ${errorMessage(error)}`),
@@ -688,21 +709,36 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
   });
 }
 
-async function createMainWindow(): Promise<void> {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    showWindow();
-    return;
-  }
+interface FileManagerWindowOptions {
+  /** A saved window coming back: its slot and place on the screen. */
+  placement?: WindowPlacement;
+  /** A new window: placed a step from this one (or the front window). */
+  cascadeFrom?: BrowserWindow | null;
+  /** A new window, not one coming back: its renderer forgets what an earlier window in its slot left. */
+  fresh?: boolean;
+}
 
+/**
+ * Opens one file manager window. Every window loads the same renderer over
+ * the same local API; what makes it this window is its slot (its saved place
+ * and its per-window renderer storage) and the registry entry that routes its
+ * menus, replies, and handed-over folders.
+ */
+async function createFileManagerWindow(options: FileManagerWindowOptions = {}): Promise<BrowserWindow> {
   const api = await ensureInteractiveLocalApi();
   if (process.platform === "linux") await waitForLinuxDesktopSettings();
 
-  const state = visibleWindowState(readWindowState());
-  const primaryWorkArea = screen.getPrimaryDisplay().workArea;
-  const initialState = state ?? fitWindowToWorkArea({ ...defaultWindowState, x: primaryWorkArea.x, y: primaryWorkArea.y, isMaximized: false }, primaryWorkArea, minimumWindowState);
+  // No await from here until the window is registered, so two windows opened at once never share a slot or a place.
+  const requestedSlot = options.placement?.slot;
+  const slot = requestedSlot && !fileManagerWindows.live().some((entry) => entry.slot === requestedSlot) ? requestedSlot : fileManagerWindows.nextSlot();
+  const state = options.placement ? visibleWindowState(options.placement) : null;
+  const initialState = state ?? (options.placement || !options.cascadeFrom && !fileManagerWindows.size ? defaultWindowPlacement(slot) : cascadedWindowPlacement(slot, options.cascadeFrom ?? frontWindow()));
   const workArea = screen.getDisplayMatching(initialState).workArea;
-  mainWindow = new BrowserWindow({
-    ...initialState,
+  const window = new BrowserWindow({
+    x: initialState.x,
+    y: initialState.y,
+    width: initialState.width,
+    height: initialState.height,
     minWidth: Math.min(minimumWindowState.width, workArea.width),
     minHeight: Math.min(minimumWindowState.height, workArea.height),
     title: productName,
@@ -749,30 +785,34 @@ async function createMainWindow(): Promise<void> {
         rendererArgument("api-base-url", api.origin),
         rendererArgument("app-version", applicationVersion),
         rendererArgument("window-material", nativeWindowMaterial),
+        // Which window this is, for the renderer's per-window storage (web-local/src/lib/window-storage.ts).
+        rendererArgument("window-slot", String(slot)),
+        ...(options.fresh ? [rendererArgument("window-fresh", "1")] : []),
       ],
     },
   });
-  if (process.platform === "linux") mainWindow.setMenuBarVisibility(false);
-  railTooltipOverlay = new RailTooltipOverlay(mainWindow);
+  const entry = fileManagerWindows.add(window, slot);
+  if (process.platform === "linux") window.setMenuBarVisibility(false);
+  const railTooltipOverlay = new RailTooltipOverlay(window);
+  railTooltipOverlays.set(window.id, railTooltipOverlay);
 
-  applyNativeActiveConnectedFolderToWindow(mainWindow);
+  applyNativeActiveConnectedFolderToWindow(entry);
 
   if (process.platform === "win32") {
     try {
-      mainWindow.webContents.session.setSpellCheckerLanguages(["en-US"]);
+      window.webContents.session.setSpellCheckerLanguages(["en-US"]);
     } catch (error) {
       console.warn(`${productName} could not configure spellchecker languages: ${errorMessage(error)}`);
     }
   }
-  mainWindow.webContents.on("did-start-navigation", () => railTooltipOverlay?.hide());
-  mainWindow.webContents.on("render-process-gone", () => railTooltipOverlay?.hide());
-  mainWindow.webContents.on("page-title-updated", (event) => {
-    if ((process.platform !== "darwin" && process.platform !== "linux") || !activeNativeConnectedFolder) return;
+  window.webContents.on("did-start-navigation", () => railTooltipOverlay.hide());
+  window.webContents.on("render-process-gone", () => railTooltipOverlay.hide());
+  window.webContents.on("page-title-updated", (event) => {
+    if ((process.platform !== "darwin" && process.platform !== "linux") || !fileManagerWindows.entry(window)?.connectedFolder) return;
     event.preventDefault();
-    applyNativeActiveConnectedFolderToWindow(mainWindow);
+    applyNativeActiveConnectedFolderToWindow(fileManagerWindows.entry(window));
   });
-  configureWindowStatePersistence(mainWindow);
-  const window = mainWindow;
+  configureWindowStatePersistence(window, slot);
   const refreshDisplayBounds = () => {
     if (window.isDestroyed()) return;
     const bounds = window.getBounds();
@@ -789,11 +829,11 @@ async function createMainWindow(): Promise<void> {
     screen.removeListener("display-metrics-changed", refreshDisplayBounds);
     screen.removeListener("display-removed", refreshDisplayBounds);
   });
-  if (state?.isMaximized) mainWindow.maximize();
+  if (state?.isMaximized) window.maximize();
   // First reveal only: renderer recoveries can re-emit ready-to-show, and a
   // window the person hid (Windows close-to-tray, minimize) must not
   // resurface because an autonomous reload finished painting.
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  window.once("ready-to-show", () => { if (!window.isDestroyed()) window.show(); });
   if (process.platform === "linux") {
     const sendChromeState = () => sendLinuxWindowChromeState(window);
     window.on("maximize", sendChromeState);
@@ -803,47 +843,77 @@ async function createMainWindow(): Promise<void> {
     window.on("focus", sendChromeState);
     window.on("blur", sendChromeState);
   }
-  mainWindow.on("blur", () => railTooltipOverlay?.hide());
-  mainWindow.on("hide", () => railTooltipOverlay?.hide());
-  mainWindow.on("minimize", () => railTooltipOverlay?.hide());
-  mainWindow.on("close", (event) => {
+  // The front window's menus: its check marks and enabled items, its folder in New Window.
+  window.on("focus", () => {
+    fileManagerWindows.focus(window);
+    refreshApplicationMenuState();
+  });
+  window.on("blur", () => railTooltipOverlay.hide());
+  window.on("hide", () => railTooltipOverlay.hide());
+  window.on("minimize", () => railTooltipOverlay.hide());
+  window.on("close", (event) => {
     if (quitting || quittingForUpdate || !quitCoordinator.shouldPreventNativeQuit()) return;
-    // Close-to-tray is Windows behavior; the macOS menu-bar item must not
-    // change what closing the last macOS window means (Dock keeps the host).
-    if (process.platform !== "win32" || !tray || !desktopPreferences.closeToTray) return;
+    // Close-to-tray is Windows behavior, for the last window; the macOS
+    // menu-bar item must not change what closing the last macOS window means
+    // (Dock keeps the host).
+    if (process.platform !== "win32" || !tray || !desktopPreferences.closeToTray || fileManagerWindows.size > 1) return;
     event.preventDefault();
-    mainWindow?.hide();
+    window.hide();
     maybeShowStillRunningNotice();
   });
-  // A closing window gives its browser pages back; they show again in the next window.
-  const browserWindow = mainWindow;
-  mainWindow.on("close", (event) => { if (!event.defaultPrevented) builtInBrowser?.detachWindow(browserWindow); });
-  mainWindow.on("query-session-end", () => { void shutdown(); });
-  mainWindow.on("session-end", () => {
+  // A closing window takes its browser pages off the screen; windowClosed below decides where each one goes.
+  window.on("close", (event) => { if (!event.defaultPrevented) builtInBrowser?.detachWindow(window); });
+  window.on("query-session-end", () => { void shutdown(); });
+  window.on("session-end", () => {
     quitting = true;
     void shutdown();
   });
-  mainWindow.on("closed", () => {
-    railTooltipOverlay?.close();
-    railTooltipOverlay = null;
-    mainWindow = null;
-    if (process.platform === "win32" && !quitting && !quittingForUpdate) app.quit();
+  const windowId = window.id;
+  window.on("closed", () => {
+    railTooltipOverlay.close();
+    railTooltipOverlays.delete(windowId);
+    clearRendererRecovery(windowId);
+    fileManagerWindows.remove(windowId);
+    const othersOpen = fileManagerWindows.size;
+    const endingApp = quitting || quittingForUpdate;
+    // One of several windows closed: it is forgotten. The last one keeps its place, and Quit keeps them all.
+    storeWindowPlacements(placementsAfterClose(currentWindowPlacements(), slot, { quitting: endingApp, othersOpen }));
+    if (!endingApp) builtInBrowser?.windowClosed(window);
+    refreshApplicationMenuState();
+    if (othersOpen > 0) return;
+    if (process.platform === "win32" && !endingApp) app.quit();
     // Linux keeps the host and accepted work after the last window; say so once, tray or not.
-    if (closedLastWindowNeedsNotice({ platform: process.platform, quitting: quitting || quittingForUpdate, alreadyShown: desktopPreferences.trayNoticeShown })) maybeShowStillRunningNotice();
+    if (closedLastWindowNeedsNotice({ platform: process.platform, quitting: endingApp, alreadyShown: desktopPreferences.trayNoticeShown })) maybeShowStillRunningNotice();
   });
-  configureWindowNavigation(mainWindow);
-  configureContextMenu(mainWindow);
-  configureWindowResilience(mainWindow);
+  configureWindowNavigation(window);
+  configureContextMenu(window);
+  configureWindowResilience(window);
   configurePowerMonitor();
   configureAccentColorMonitor();
-  configureMenu();
+  configureMenu(window);
 
   try {
-    await loadMainRenderer(mainWindow);
+    await loadMainRenderer(window);
   } catch (error) {
     console.warn(`${productName} renderer load failed: ${errorMessage(error)}`);
-    scheduleRendererRecovery(`initial renderer load failed: ${errorMessage(error)}`);
+    scheduleRendererRecovery(window, `initial renderer load failed: ${errorMessage(error)}`);
   }
+  return window;
+}
+
+/** Window 1's place the first time AmpleFile opens: the default size at the primary display's top left. */
+function defaultWindowPlacement(slot: number): WindowPlacement {
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+  return { slot, ...fitWindowToWorkArea({ ...defaultWindowState, x: primaryWorkArea.x, y: primaryWorkArea.y }, primaryWorkArea, minimumWindowState), isMaximized: false };
+}
+
+/** A new window's place: a step down and right of the window it came from, clear of every open window. */
+function cascadedWindowPlacement(slot: number, from: BrowserWindow | null): WindowPlacement {
+  const source = from && !from.isDestroyed() ? (from.isMaximized() || from.isFullScreen() ? from.getNormalBounds() : from.getBounds()) : null;
+  if (!source) return defaultWindowPlacement(slot);
+  const taken = fileManagerWindows.windows().map((window) => window.getBounds());
+  const bounds = cascadeBounds(source, taken, screen.getDisplayMatching(source).workArea, minimumWindowState);
+  return { slot, ...bounds, isMaximized: false };
 }
 
 function registerRendererProtocol(): void {
@@ -924,8 +994,9 @@ function registerIpc(): void {
   });
   ipcMain.handle("amplefile:connected-folder:choose-folder", async (event) => {
     assertTrustedMainRenderer(event);
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, { title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] })
+    const window = senderWindow(event);
+    const result = window
+      ? await dialog.showOpenDialog(window, { title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] });
     const connectedFolderRoot = result.filePaths[0];
     if (result.canceled || !connectedFolderRoot) return null;
@@ -1014,7 +1085,7 @@ function registerIpc(): void {
         return filePath;
       },
       pickApp: async (filePath) => {
-        const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+        const window = senderWindow(event);
         if (process.platform === "linux") return pickLinuxOpenWithApp(window, filePath);
         const options = openWithDialogOptions(process.platform);
         const choice = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
@@ -1042,8 +1113,8 @@ function registerIpc(): void {
     const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error("Only files can be previewed with Quick Look.");
-    const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
+    const window = senderWindow(event);
+    if (!window) throw new Error("The AmpleFile window is not available.");
     window.previewFile(filePath, basename(filePath));
     return true;
   });
@@ -1071,7 +1142,7 @@ function registerIpc(): void {
         return filePath;
       },
       pickApp: async (filePath) => {
-        const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+        const window = senderWindow(event);
         if (process.platform === "linux") return pickLinuxOpenWithApp(window, filePath);
         const options = openWithDialogOptions(process.platform);
         const choice = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
@@ -1114,8 +1185,8 @@ function registerIpc(): void {
     const request = standardFolderPathRequest(value);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (!(await stat(filePath)).isFile()) throw new Error("Only files can be previewed with Quick Look.");
-    const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
+    const window = senderWindow(event);
+    if (!window) throw new Error("The AmpleFile window is not available.");
     window.previewFile(filePath, basename(filePath));
     return true;
   });
@@ -1200,35 +1271,56 @@ function registerIpc(): void {
     if (process.platform !== "darwin") return null;
     const request = parseNativeFileMenuRequest(value);
     await validateNativeFileMenuEntry(request);
-    return popupNativeFileMenu(request);
+    return popupNativeFileMenu(request, senderWindow(event));
   });
   ipcMain.handle("amplefile:connected-folder:popup-tab-menu", (event, value: unknown): Promise<NativeTabMenuCommand | null> => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return Promise.resolve(null);
-    return popupNativeTabMenu(parseNativeTabMenuRequest(value));
+    return popupNativeTabMenu(parseNativeTabMenuRequest(value), senderWindow(event));
   });
   ipcMain.handle("amplefile:connected-folder:popup-header-menu", (event, value: unknown): Promise<NativeConnectedFolderMenuCommand | null> => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return Promise.resolve(null);
     const request = parseNativeConnectedFolderMenuRequest(value);
-    return popupNativeCommandMenu(nativeConnectedFolderMenuItems(request), request.point);
+    return popupNativeCommandMenu(nativeConnectedFolderMenuItems(request), request.point, senderWindow(event));
   });
   ipcMain.handle("amplefile:connected-folder:set-active-connected-folder", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (value !== null && (typeof value !== "string" || !value.trim() || value.length > 512)) {
       throw new Error("A valid Connected Folder id is required.");
     }
-    await setActiveNativeConnectedFolder(value === null ? null : value.trim());
+    // Each window names the Connected Folder it shows; its title and Open Recent follow.
+    await setWindowConnectedFolder(senderWindow(event), value === null ? null : value.trim());
   });
+  // A location handed to this window (a folder given to the app, New Window, Open in New Window) waits until its renderer takes it.
   ipcMain.handle("amplefile:file-manager:take-open-location", (event) => {
     assertTrustedMainRenderer(event);
-    const request = pendingOpenLocationRequest;
-    pendingOpenLocationRequest = null;
-    return request;
+    return fileManagerWindows.takeOpenLocation(senderWindow(event));
   });
   ipcMain.on("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value === "string" && pendingOpenLocationRequest?.token === value) pendingOpenLocationRequest = null;
+    fileManagerWindows.acknowledgeOpenLocation(senderWindow(event), value);
+  });
+  // Windows (docs/product-model.md, "Windows"): where this window is, so New Window opens there; and a new window, at a
+  // folder the renderer names (Open in New Window in its menus) or where this one is.
+  ipcMain.on("amplefile:window:set-location", (event, value: unknown) => {
+    assertTrustedMainRenderer(event);
+    const entry = fileManagerWindows.entry(senderWindow(event));
+    if (entry) entry.location = parseWindowLocation(value);
+  });
+  ipcMain.handle("amplefile:window:new-window", async (event) => {
+    assertTrustedMainRenderer(event);
+    await openNewWindow({ from: senderWindow(event) });
+    return true;
+  });
+  ipcMain.handle("amplefile:window:open-in-new-window", async (event, value: unknown) => {
+    assertTrustedMainRenderer(event);
+    const location = parseWindowLocation(value);
+    if (!location) throw new Error("Choose a folder to open in a new window.");
+    if (location.place.kind === "connected-folder") await getConnectedFolder(location.place.id);
+    else if (!isStandardFolderId(location.place.id)) throw new Error("That folder isn’t on this computer.");
+    await openNewWindow({ from: senderWindow(event), location: { place: location.place, path: location.path, select: location.select ?? null } });
+    return true;
   });
   ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1252,15 +1344,18 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:agent:open-main", (event) => {
     assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
-    showWindow();
+    // The popover asks for the front window; a file manager window asking means itself.
+    const asking = senderWindow(event);
+    if (asking) showFileManagerWindow(asking);
+    else showFrontWindow();
     return true;
   });
   ipcMain.handle("amplefile:agent:open-ai-models-settings", async (event) => {
     assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
-    await ensureMainWindow();
-    showWindow();
-    mainWindow?.webContents.send("amplefile:agent:open-settings", "agent");
+    const window = senderWindow(event) ?? await ensureWindow();
+    showFileManagerWindow(window);
+    window.webContents.send("amplefile:agent:open-settings", "agent");
     return true;
   });
   ipcMain.handle("amplefile:window:get-close-to-tray", (event) => {
@@ -1284,39 +1379,47 @@ function registerIpc(): void {
     nativeTheme.themeSource = process.platform === "linux"
       ? linuxNativeThemeSource(requested, linuxDesktopSettings?.current().colorScheme ?? null)
       : requested;
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (process.platform === "win32") {
-      mainWindow.setTitleBarOverlay(titleBarOverlayFor(value));
-      if (!micaSupported) mainWindow.setBackgroundColor(windowBackgroundColors[value]);
-    } else if (process.platform === "linux") {
-      // The renderer draws the whole Linux title bar, buttons included.
-      mainWindow.setBackgroundColor(windowBackgroundColors[value]);
-    } else if (process.platform === "darwin" && nativeWindowMaterial === "none") {
-      mainWindow.setBackgroundColor(windowBackgroundColors[value]);
+    // Appearance is one setting for the app, so every window takes it.
+    for (const window of fileManagerWindows.windows()) {
+      if (process.platform === "win32") {
+        window.setTitleBarOverlay(titleBarOverlayFor(value));
+        if (!micaSupported) window.setBackgroundColor(windowBackgroundColors[value]);
+      } else if (process.platform === "linux") {
+        // The renderer draws the whole Linux title bar, buttons included.
+        window.setBackgroundColor(windowBackgroundColors[value]);
+      } else if (process.platform === "darwin" && nativeWindowMaterial === "none") {
+        window.setBackgroundColor(windowBackgroundColors[value]);
+      }
     }
   });
   ipcMain.handle("amplefile:window:chrome-state", (event) => {
     assertTrustedMainRenderer(event);
-    return linuxWindowChromeState(mainWindow);
+    return linuxWindowChromeState(senderWindow(event));
   });
   ipcMain.on("amplefile:window:control", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    const window = mainWindow;
-    if (process.platform !== "linux" || !window || window.isDestroyed()) return;
+    const window = senderWindow(event);
+    if (!window || window.isDestroyed()) return;
+    // Closing the last folder tab closes that window on every platform, through the window's own close rules.
+    if (value === "close") { window.close(); return; }
+    if (process.platform !== "linux") return;
     if (value === "minimize") window.minimize();
     else if (value === "toggle-maximize") {
       if (window.isFullScreen()) window.setFullScreen(false);
       else if (window.isMaximized()) window.unmaximize();
       else window.maximize();
-    } else if (value === "close") window.close();
+    }
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    updateApplicationMenuState(value);
+    // Each window keeps its own; the application menu shows the front window's.
+    const updated = senderWindow(event);
+    if (updated) fileManagerWindows.updateMenuState(updated, value);
+    refreshApplicationMenuState();
   });
   ipcMain.handle("amplefile:menu:popup", (event, menuId: unknown, bounds: unknown) => {
     assertTrustedMainRenderer(event);
-    popupApplicationSubmenu(menuId, bounds);
+    popupApplicationSubmenu(menuId, bounds, senderWindow(event));
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
   // and the skill in Claude Code's and Codex's skills folders, each on a click.
@@ -1354,23 +1457,23 @@ function registerIpc(): void {
   ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
-      railTooltipOverlay?.show(value);
+      railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.show(value);
     } catch (error) {
       console.warn(`${productName} could not show a rail tooltip: ${errorMessage(error)}`);
     }
   });
   ipcMain.on("amplefile:window:rail-tooltip-hide", (event) => {
     assertTrustedMainRenderer(event);
-    railTooltipOverlay?.hide();
+    railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.hide();
   });
   ipcMain.handle("amplefile:browser:mount", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    return ensureBuiltInBrowser().mount(parseBrowserViewRequest(value));
+    return ensureBuiltInBrowser().mount(parseBrowserViewRequest(value), requireSenderWindow(event));
   });
   ipcMain.on("amplefile:browser:layout", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
-      ensureBuiltInBrowser().layout(parseBrowserViewRequest(value));
+      ensureBuiltInBrowser().layout(parseBrowserViewRequest(value), requireSenderWindow(event));
     } catch (error) {
       console.warn(`${productName} could not lay out a browser tab: ${errorMessage(error)}`);
     }
@@ -1384,7 +1487,7 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     if (typeof address !== "string" || address.length > 32_768) throw new Error("The browser address is invalid.");
-    return ensureBuiltInBrowser().navigate(pageId, address);
+    return ensureBuiltInBrowser().navigate(pageId, address, requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:command", (event, pageId: unknown, command: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1395,7 +1498,8 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId) || typeof requestId !== "string" || !/^[a-f0-9]{16}$/.test(requestId)) throw new Error("The site's request is invalid.");
     if (decision !== "allow" && decision !== "block") throw new Error("Choose Allow or Block.");
-    ensureBuiltInBrowser().respondPermission(pageId, requestId, decision);
+    // Only the window holding the page can answer its site's question.
+    ensureBuiltInBrowser().respondPermission(pageId, requestId, decision, requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:close", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1405,14 +1509,14 @@ function registerIpc(): void {
   ipcMain.on("amplefile:browser:sync", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
-      ensureBuiltInBrowser().sync(parseBrowserTabsSync(value));
+      ensureBuiltInBrowser().sync(parseBrowserTabsSync(value), requireSenderWindow(event));
     } catch (error) {
       console.warn(`${productName} could not read the browser tab list: ${errorMessage(error)}`);
     }
   });
   ipcMain.handle("amplefile:browser:states", (event) => {
     assertTrustedMainRenderer(event);
-    return ensureBuiltInBrowser().states();
+    return ensureBuiltInBrowser().states(requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:popup-tab-menu", (event, pageId: unknown, url: unknown, point: unknown, options: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1420,7 +1524,7 @@ function registerIpc(): void {
     const at = point as { x?: unknown; y?: unknown } | null;
     const flags = options as { canReopen?: unknown; hasOthers?: unknown } | null;
     if (!at || typeof at.x !== "number" || typeof at.y !== "number" || !Number.isFinite(at.x) || !Number.isFinite(at.y)) throw new Error("The menu position is invalid.");
-    return ensureBuiltInBrowser().popupTabMenu(pageId, url, { x: at.x, y: at.y }, { canReopen: flags?.canReopen === true, hasOthers: flags?.hasOthers === true });
+    return ensureBuiltInBrowser().popupTabMenu(pageId, url, { x: at.x, y: at.y }, { canReopen: flags?.canReopen === true, hasOthers: flags?.hasOthers === true }, requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:suggest", (event, text: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1474,17 +1578,20 @@ type RendererMenuCommand =
   | "open-keyboard-shortcuts"
   | "toggle-sidebar"
   | "toggle-agent-panel"
-  | "toggle-hidden-files";
+  | "toggle-hidden-files"
+  | "new-tab"
+  | "next-tab"
+  | "previous-tab"
+  | "toggle-tab-bar";
 
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
-interface RendererMenuState {
-  connectedFolderOpen: boolean;
-  /** The file manager window's Show Hidden Files, which the View menu checks. */
-  showHiddenFiles: boolean;
+/** A menu item's click: the command goes to the window the menu was used in, else the front window. */
+function menuCommand(command: RendererMenuCommand): (item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => void {
+  return (_item, window) => sendRendererMenuCommand(command, window);
 }
 
-function configureMenu(): void {
+function configureMenu(window: BrowserWindow): void {
   if (process.platform === "darwin") {
     app.setAboutPanelOptions({
       applicationName: productName,
@@ -1493,29 +1600,34 @@ function configureMenu(): void {
     });
   }
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
-  if (process.platform === "win32" && mainWindow) {
-    mainWindow.setAutoHideMenuBar(false);
-    mainWindow.setMenuBarVisibility(false);
+  if (process.platform === "win32") {
+    window.setAutoHideMenuBar(false);
+    window.setMenuBarVisibility(false);
   }
-  updateApplicationMenuState(rendererMenuState);
+  refreshApplicationMenuState();
 }
 
-function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
+function buildApplicationMenuTemplate(state: WindowMenuState = fileManagerWindows.menuState()): MenuItemConstructorOptions[] {
   return [
     ...macApplicationMenu(),
-    { id: "file", label: "File", submenu: buildApplicationSubmenuTemplate("file") },
-    { id: "edit", label: "Edit", submenu: buildApplicationSubmenuTemplate("edit") },
-    { id: "view", label: "View", submenu: buildApplicationSubmenuTemplate("view") },
+    { id: "file", label: "File", submenu: buildApplicationSubmenuTemplate("file", state) },
+    { id: "edit", label: "Edit", submenu: buildApplicationSubmenuTemplate("edit", state) },
+    { id: "view", label: "View", submenu: buildApplicationSubmenuTemplate("view", state) },
     ...macWindowMenu(),
-    { id: "help", label: "Help", submenu: buildApplicationSubmenuTemplate("help") },
+    { id: "help", label: "Help", submenu: buildApplicationSubmenuTemplate("help", state) },
   ];
 }
 
-function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemConstructorOptions[] {
+function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: WindowMenuState): MenuItemConstructorOptions[] {
   if (menuId === "file") {
     const items: MenuItemConstructorOptions[] = [
-      { label: "New Connected Folder", accelerator: "CommandOrControl+N", click: () => sendRendererMenuCommand("new-connected-folder") },
-      { label: "Connect Folder...", accelerator: "CommandOrControl+O", click: () => sendRendererMenuCommand("open-local-folder") },
+      // Another window at the folder the front one shows (docs/product-model.md, "Windows").
+      { id: "new-window", label: "New Window", accelerator: "CommandOrControl+N", click: (_item, window) => { void openNewWindow({ from: window }).catch(reportWindowError); } },
+      // A folder tab at the folder shown. The window owns the key, so it works wherever the keyboard is and the
+      // Browser pane keeps its own ⌘T while it has the keyboard; the menu shows the key without registering it.
+      { id: "new-tab", label: "New Tab", accelerator: "CommandOrControl+T", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("new-tab") },
+      { label: "New Connected Folder", accelerator: "Alt+CommandOrControl+N", click: menuCommand("new-connected-folder") },
+      { label: "Connect Folder...", accelerator: "CommandOrControl+O", click: menuCommand("open-local-folder") },
       ...(process.platform === "darwin" ? [{
         label: "Open Recent",
         role: "recentDocuments" as const,
@@ -1523,13 +1635,13 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       }] : []),
       ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
       { type: "separator" },
-      { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("new-chat") },
-      { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("reload-connected-folder-state") },
+      { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
+      { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: state.connectedFolderOpen, click: menuCommand("reload-connected-folder-state") },
     ];
     if (process.platform !== "darwin") {
       items.push(
         { type: "separator" },
-        { label: "Settings...", accelerator: "CommandOrControl+,", click: () => sendRendererMenuCommand("open-settings") },
+        { label: "Settings...", accelerator: "CommandOrControl+,", click: menuCommand("open-settings") },
       );
     }
     if (process.platform === "darwin") {
@@ -1537,15 +1649,17 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       // tab; the window keeps the conventional Shift+Cmd+W.
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: state.folderTabsOpen, click: menuCommand("close-tab") },
         { role: "close", accelerator: "Shift+CommandOrControl+W" },
       );
     } else if (process.platform === "linux") {
-      // As on the Mac, Ctrl+W closes the browser tab in front, and Shift+Ctrl+W
-      // closes the window (the host and accepted work keep running).
+      // As on the Mac, Ctrl+W closes the folder tab in front (the browser tab in
+      // front while the Browser pane has the keyboard; the last folder tab closes
+      // the window), and Shift+Ctrl+W closes the window (the host and accepted
+      // work keep running).
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "Control+W", enabled: state.folderTabsOpen, click: menuCommand("close-tab") },
         { role: "close", label: "Close Window", accelerator: "Shift+Control+W" },
         { role: "quit", accelerator: "Control+Q" },
       );
@@ -1573,7 +1687,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
   }
   if (menuId === "view") {
     return [
-      { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
+      { label: "Command Palette...", accelerator: "CommandOrControl+K", click: menuCommand("open-command-palette") },
       ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: (_item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => { void toggleAmpleFileAgentPopover(windowPopoverAnchor(window)); } }] : []),
       { type: "separator" },
       // The window owns the key (Shift-Command-Period, Ctrl+H) so it works while the folder list has the keyboard
@@ -1582,14 +1696,27 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
         id: "show-hidden-files",
         label: "Show Hidden Files",
         type: "checkbox",
-        checked: rendererMenuState.showHiddenFiles,
+        checked: state.showHiddenFiles,
         accelerator: process.platform === "darwin" ? "Shift+Command+." : "Control+H",
         registerAccelerator: false,
-        enabled: rendererMenuState.connectedFolderOpen,
-        click: () => sendRendererMenuCommand("toggle-hidden-files"),
+        enabled: state.connectedFolderOpen,
+        click: menuCommand("toggle-hidden-files"),
       },
-      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
-      { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
+      // Folder tabs: the strip shows with more than one tab, or always with Show Tab Bar on. The window owns the next and
+      // previous tab keys (Ctrl+Tab and Ctrl+Shift+Tab everywhere, as listed here per platform).
+      {
+        id: "show-tab-bar",
+        label: "Show Tab Bar",
+        type: "checkbox",
+        checked: state.showTabBar,
+        enabled: state.folderTabsOpen,
+        click: menuCommand("toggle-tab-bar"),
+      },
+      { id: "previous-tab", label: "Show Previous Tab", accelerator: process.platform === "darwin" ? "Shift+Command+[" : "Control+PageUp", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("previous-tab") },
+      { id: "next-tab", label: "Show Next Tab", accelerator: process.platform === "darwin" ? "Shift+Command+]" : "Control+PageDown", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("next-tab") },
+      { type: "separator" },
+      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: state.connectedFolderOpen, click: menuCommand("toggle-sidebar") },
+      { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: state.connectedFolderOpen, click: menuCommand("toggle-agent-panel") },
       { type: "separator" },
       { role: "resetZoom" },
       { role: "zoomIn" },
@@ -1600,14 +1727,14 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
     ];
   }
   const items: MenuItemConstructorOptions[] = [
-    { id: "open-capabilities", label: "Skills && Extensions", accelerator: "CommandOrControl+Shift+S", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("open-capabilities") },
-    { label: "Shortcut Keys", accelerator: "CommandOrControl+/", click: () => sendRendererMenuCommand("open-keyboard-shortcuts") },
+    { id: "open-capabilities", label: "Skills && Extensions", accelerator: "CommandOrControl+Shift+S", enabled: state.connectedFolderOpen, click: menuCommand("open-capabilities") },
+    { label: "Shortcut Keys", accelerator: "CommandOrControl+/", click: menuCommand("open-keyboard-shortcuts") },
   ];
   if (process.platform !== "darwin") {
     items.push(
       ...checkForUpdatesMenuItems(() => sendRendererMenuCommand("check-for-updates")),
       { type: "separator" },
-      { label: `About ${productName} ${applicationVersion}`, click: () => sendRendererMenuCommand("open-about") },
+      { label: `About ${productName} ${applicationVersion}`, click: menuCommand("open-about") },
     );
   }
   return items;
@@ -1625,7 +1752,7 @@ function macApplicationMenu(): MenuItemConstructorOptions[] {
         });
       }, { separator: false }),
       { type: "separator" },
-      { label: "Settings...", accelerator: "Command+,", click: () => sendRendererMenuCommand("open-settings") },
+      { label: "Settings...", accelerator: "Command+,", click: menuCommand("open-settings") },
       { type: "separator" },
       { role: "services" },
       { type: "separator" },
@@ -1669,10 +1796,12 @@ function macEditMenuAdditions(): MenuItemConstructorOptions[] {
   ];
 }
 
-function popupApplicationSubmenu(menuId: unknown, bounds: unknown): void {
-  if (!mainWindow || mainWindow.isDestroyed() || !isApplicationMenuId(menuId)) return;
+/** The Linux and Windows title bar's menus: in the window that asked, with that window's check marks. */
+function popupApplicationSubmenu(menuId: unknown, bounds: unknown, window: BrowserWindow | null): void {
+  const entry = fileManagerWindows.entry(window);
+  if (!entry || !isApplicationMenuId(menuId)) return;
   const point = menuPopupPoint(bounds);
-  Menu.buildFromTemplate(buildApplicationSubmenuTemplate(menuId)).popup({ window: mainWindow, x: point.x, y: point.y });
+  Menu.buildFromTemplate(buildApplicationSubmenuTemplate(menuId, entry.menuState)).popup({ window: entry.window, x: point.x, y: point.y });
 }
 
 function isApplicationMenuId(value: unknown): value is ApplicationMenuId {
@@ -1688,36 +1817,40 @@ function menuPopupPoint(value: unknown): { x: number; y: number } {
   };
 }
 
-function sendRendererMenuCommand(command: RendererMenuCommand): void {
+/**
+ * A menu command goes to the window the menu was used in when that is a file
+ * manager window, else the front one; with no window open, the windows come
+ * back first and the front one takes it.
+ */
+function sendRendererMenuCommand(command: RendererMenuCommand, menuWindow?: Electron.BaseWindow | null): void {
   if (modelContextWindow?.handleMenuCommand(command)) return;
-  const window = mainWindow;
+  const window = fileManagerWindows.target(menuWindow)?.window;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
     if (app.isReady() && !quitting && !quittingForUpdate) {
-      void ensureMainWindow().then(() => sendRendererMenuCommand(command)).catch(reportStartupError);
+      void ensureWindow().then(() => sendRendererMenuCommand(command)).catch(reportStartupError);
     }
     return;
   }
-  showWindow();
+  showFileManagerWindow(window);
   window.webContents.send("amplefile:menu-command", command);
 }
 
-/** The renderer sends only what changed; a key it leaves out keeps its value. */
-function updateApplicationMenuState(value: unknown): void {
-  const record = isRecord(value) ? value : {};
-  rendererMenuState = {
-    connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : rendererMenuState.connectedFolderOpen,
-    showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : rendererMenuState.showHiddenFiles,
-  };
+/** The application menu's check marks and enabled items follow the front window. */
+function refreshApplicationMenuState(): void {
+  const state = fileManagerWindows.menuState();
   const menu = Menu.getApplicationMenu();
   const showHidden = menu?.getMenuItemById("show-hidden-files");
-  if (showHidden) showHidden.checked = rendererMenuState.showHiddenFiles;
-  setMenuItemEnabled(menu, "show-hidden-files", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.connectedFolderOpen);
+  if (showHidden) showHidden.checked = state.showHiddenFiles;
+  setMenuItemEnabled(menu, "show-hidden-files", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "refresh-connected-folder", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
+  const showTabBar = menu?.getMenuItemById("show-tab-bar");
+  if (showTabBar) showTabBar.checked = state.showTabBar;
+  for (const id of ["new-tab", "show-tab-bar", "previous-tab", "next-tab"]) setMenuItemEnabled(menu, id, state.folderTabsOpen);
+  setMenuItemEnabled(menu, "open-capabilities", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "toggle-sidebar", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "toggle-agent-panel", state.connectedFolderOpen);
 }
 
 function setMenuItemEnabled(menu: Menu | null, id: string, enabled: boolean): void {
@@ -1730,7 +1863,9 @@ function configureUpdater(): void {
   // the production update feed or production AmpleFile Safe Storage key.
   if (desktopUpdater || localMacSmokeBuild) return;
   desktopUpdater = new DesktopUpdater({
-    getWindow: () => mainWindow,
+    // Its questions go over the front window; its status and progress reach every window.
+    getWindow: frontWindow,
+    getWindows: () => fileManagerWindows.windows(),
     prepareToInstall: shutdownForUpdateInstall,
     // The local API, Pi runtime, and act token are already gone, so the
     // window cannot work again: never offer the update as ready here.
@@ -1778,7 +1913,7 @@ function checkForUpdates(interactive = true): Promise<DesktopUpdateStatus> {
 
 async function checkForUpdatesFromMenu(): Promise<void> {
   const status = await checkForUpdates(true);
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const window = frontWindow() ?? undefined;
   if (status.phase === "available") {
     const result = window
       ? await dialog.showMessageBox(window, {
@@ -2006,20 +2141,30 @@ function startItemDrag(sender: Electron.WebContents, items: string[]): boolean {
   return true;
 }
 
-async function setActiveNativeConnectedFolder(connectedFolderId: string | null): Promise<void> {
-  const generation = ++activeNativeConnectedFolderGeneration;
+/**
+ * The Connected Folder a window shows. Each window has its own, and it is
+ * used for that window's title (and its represented folder on a Mac) and for
+ * the Open Recent list, which records Connected Folders in the order any
+ * window showed them. Nothing else reads it: the kernel resolves the CLI's
+ * context from the caller's directory, and the AmpleFile Agent works above
+ * every Connected Folder, so neither follows a window.
+ */
+async function setWindowConnectedFolder(window: BrowserWindow | null, connectedFolderId: string | null): Promise<void> {
+  const entry = fileManagerWindows.entry(window);
+  if (!entry) return;
+  const generation = ++entry.connectedFolderGeneration;
   if (connectedFolderId === null) {
-    activeNativeConnectedFolder = null;
-    applyNativeActiveConnectedFolderToWindow(mainWindow);
+    entry.connectedFolder = null;
+    applyNativeActiveConnectedFolderToWindow(entry);
     return;
   }
 
   // The renderer supplies identity only. Name and root are always loaded from
   // the host-owned registry before they reach native window or OS APIs.
   const connectedFolder = await getConnectedFolder(connectedFolderId);
-  if (generation !== activeNativeConnectedFolderGeneration) return;
-  activeNativeConnectedFolder = { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
-  applyNativeActiveConnectedFolderToWindow(mainWindow);
+  if (generation !== entry.connectedFolderGeneration || fileManagerWindows.entry(entry.window) !== entry) return;
+  entry.connectedFolder = { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
+  applyNativeActiveConnectedFolderToWindow(entry);
   if (process.platform === "darwin") app.addRecentDocument(connectedFolder.connectedFolderRoot);
   if (process.platform === "linux") void updateRecentConnectedFolders((ids) => recordRecentConnectedFolder(ids, connectedFolder.id));
 }
@@ -2047,12 +2192,12 @@ async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Prom
   }
 }
 
-function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFileMenuCommand | null> {
-  return popupNativeCommandMenu(nativeFileMenuItems(request, process.platform), request.point);
+function popupNativeFileMenu(request: NativeFileMenuRequest, window: BrowserWindow | null): Promise<NativeFileMenuCommand | null> {
+  return popupNativeCommandMenu(nativeFileMenuItems(request, process.platform), request.point, window);
 }
 
-function popupNativeTabMenu(request: NativeTabMenuRequest): Promise<NativeTabMenuCommand | null> {
-  return popupNativeCommandMenu(nativeTabMenuItems(request), request.point);
+function popupNativeTabMenu(request: NativeTabMenuRequest, window: BrowserWindow | null): Promise<NativeTabMenuCommand | null> {
+  return popupNativeCommandMenu(nativeTabMenuItems(request), request.point, window);
 }
 
 type NativeCommandMenuItem<Command extends string> =
@@ -2139,11 +2284,11 @@ function nativeMenuLabel(label: string): string {
 }
 
 /**
- * Shows a native menu at a point in the app's CSS pixels; resolves with the
- * chosen command, or null. Every native context menu goes through here.
+ * Shows a native menu at a point in the app's CSS pixels, in the window that
+ * asked; resolves with the chosen command, or null. Every native context menu
+ * goes through here.
  */
-function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenuItem<Command>[], point: { x: number; y: number }): Promise<Command | null> {
-  const window = mainWindow;
+function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenuItem<Command>[], point: { x: number; y: number }, window: BrowserWindow | null): Promise<Command | null> {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
     return Promise.reject(new Error("The AmpleFile window is not available."));
   }
@@ -2177,12 +2322,13 @@ function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenu
   });
 }
 
-function applyNativeActiveConnectedFolderToWindow(window: BrowserWindow | null): void {
-  if ((process.platform !== "darwin" && process.platform !== "linux") || !window || window.isDestroyed()) return;
+function applyNativeActiveConnectedFolderToWindow(entry: FileManagerWindowEntry<BrowserWindow, FolderLocation> | null): void {
+  const window = entry?.window;
+  if ((process.platform !== "darwin" && process.platform !== "linux") || !entry || !window || window.isDestroyed()) return;
   // The window title names the Connected Folder shown, as on the Mac, so task
   // switchers and window lists (niri's included) tell windows apart.
-  if (process.platform === "darwin") window.setRepresentedFilename(activeNativeConnectedFolder?.connectedFolderRoot ?? "");
-  window.setTitle(activeNativeConnectedFolder?.name ?? productName);
+  if (process.platform === "darwin") window.setRepresentedFilename(entry.connectedFolder?.connectedFolderRoot ?? "");
+  window.setTitle(entry.connectedFolder?.name ?? productName);
 }
 
 /**
@@ -2233,12 +2379,18 @@ async function openRecentConnectedFolder(connectedFolderId: string): Promise<voi
 }
 
 // Folders the system asked AmpleFile to open: Finder's open-file on macOS, a
-// desktop launcher's arguments on Linux, a second launch's arguments. Each
-// opens in the window at the place that holds it (folder-locations.ts): a
-// registered Connected Folder, deepest first, at the right folder; else a
-// Standard Folder; else the computer place, under the Standard Folder rules.
-// A file opens its folder with the file selected. Nothing is registered:
-// connecting a folder stays an explicit act.
+// desktop launcher's arguments on Linux, a second launch's arguments, and
+// FileManager1 calls. Each opens at the place that holds it
+// (folder-locations.ts): a registered Connected Folder, deepest first, at the
+// right folder; else a Standard Folder; else the computer place, under the
+// Standard Folder rules. A file opens its folder with the file selected.
+// Nothing is registered: connecting a folder stays an explicit act.
+//
+// A folder opens in the most recently focused window, as it did when there was
+// one window, so an app that asks again and again to show a folder never piles
+// windows up. The further folders of one request (a launcher given several, a
+// FileManager1 call naming several folders) each open in a new window, as a
+// system file manager does (linux-file-manager-host.ts).
 async function drainPendingOpenPaths(): Promise<void> {
   if (process.platform !== "darwin" && process.platform !== "linux") return;
   if (openPathDrainPromise) {
@@ -2250,22 +2402,18 @@ async function drainPendingOpenPaths(): Promise<void> {
   openPathDrainPromise = (async () => {
     while (pendingOpenPaths.length) {
       const entry = pendingOpenPaths.shift();
-      const path = typeof entry === "string" ? entry : entry?.path;
-      if (!path) continue;
-      await ensureMainWindow();
-      showWindow();
-      const location = await folderLocationForOpenPath(path, typeof entry === "object" && entry.reveal);
+      const target = typeof entry === "string" ? { path: entry, reveal: false, newWindow: false } : entry;
+      if (!target?.path) continue;
+      const opensNewWindow = target.newWindow && fileManagerWindows.size > 0;
+      if (!opensNewWindow) showFileManagerWindow(await ensureWindow());
+      const location = await folderLocationForOpenPath(target.path, target.reveal);
       if (!location) {
-        console.warn(`${productName} could not open a folder that is not on this computer: ${path}`);
+        console.warn(`${productName} could not open a folder that is not on this computer: ${target.path}`);
         continue;
       }
-      if (location.place.kind === "connected-folder") await setActiveNativeConnectedFolder(location.place.id);
-      const request = { token: randomUUID(), location };
-      pendingOpenLocationRequest = request;
-      const window = mainWindow;
-      if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("amplefile:file-manager:open-location", request);
-      }
+      const window = opensNewWindow ? await createFileManagerWindow({ cascadeFrom: frontWindow(), fresh: true }) : await ensureWindow();
+      showFileManagerWindow(window);
+      handOpenLocation(window, location);
     }
   })().finally(() => {
     openPathDrainPromise = null;
@@ -2273,6 +2421,35 @@ async function drainPendingOpenPaths(): Promise<void> {
 
   await openPathDrainPromise;
   if (pendingOpenPaths.length) await drainPendingOpenPaths();
+}
+
+/** Hands a window a place to show; its renderer takes it now, or once it has loaded. */
+function handOpenLocation(window: BrowserWindow, location: FolderLocation): void {
+  if (location.place.kind === "connected-folder") void setWindowConnectedFolder(window, location.place.id).catch(() => undefined);
+  const request = { token: randomUUID(), location };
+  if (!fileManagerWindows.handOpenLocation(window, request)) return;
+  if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("amplefile:file-manager:open-location", request);
+}
+
+/**
+ * File → New Window and Open in New Window: another window, a step from the
+ * one it came from, at the given folder, else at the folder the window it
+ * came from shows, else at the home folder.
+ */
+async function openNewWindow(options: { from?: Electron.BaseWindow | null; location?: FolderLocation | null } = {}): Promise<BrowserWindow> {
+  const source = fileManagerWindows.target(options.from);
+  const shown = source?.location;
+  const location = options.location
+    ?? (shown ? { place: shown.place, path: shown.path, select: null } : null)
+    ?? await folderLocationForOpenPath(homedir());
+  const window = await createFileManagerWindow({ cascadeFrom: source?.window ?? null, fresh: true });
+  showFileManagerWindow(window);
+  if (location) handOpenLocation(window, location);
+  return window;
+}
+
+function reportWindowError(error: unknown): void {
+  console.warn(`${productName} could not open a window: ${errorMessage(error)}`);
 }
 
 /** Where a path the system handed over opens, or null when nothing is there (Finder may pass a path that moved before AmpleFile was ready). */
@@ -2302,12 +2479,18 @@ function updateAgentPowerState(activeTurns: number): void {
   }
 }
 
-/** The built-in browser (docs/built-in-browser.md); created once the app is ready, before any window. */
+/**
+ * The built-in browser (docs/built-in-browser.md); created once the app is
+ * ready, before any window. Each page belongs to one window
+ * (browser-page-homes.ts); a Worker's page goes to the window showing that
+ * Worker's Connected Folder, else the front window.
+ */
 function ensureBuiltInBrowser(): BuiltInBrowser {
   builtInBrowser ??= new BuiltInBrowser({
-    window: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
-    send: (channel, payload) => {
-      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send(channel, payload);
+    windows: () => fileManagerWindows.windows(),
+    workerWindow: (owner) => fileManagerWindows.workerWindow(owner)?.window ?? null,
+    send: (window, channel, payload) => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
     },
     openExternal,
     downloadsPath: () => app.getPath("downloads"),
@@ -2315,7 +2498,7 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     historyPath: join(app.getPath("userData"), "browser-history.json"),
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
-    onViewAttached: () => railTooltipOverlay?.raise(),
+    onViewAttached: (window) => railTooltipOverlays.get(window.id)?.raise(),
     declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
@@ -2334,8 +2517,7 @@ async function shutdown(): Promise<void> {
   modelContextWindow?.dispose();
   // Quitting closes every page. Tabs are not kept: sign-ins and history are what the next launch has.
   builtInBrowser?.dispose();
-  if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
-  rendererRecoveryTimer = null;
+  for (const id of [...rendererRecoveries.keys()]) clearRendererRecovery(id);
   // Queued act requests must answer unavailable instead of racing a closing
   // Pi runtime, so the act authority is revoked before anything else stops.
   actFacade = null;
@@ -2384,21 +2566,57 @@ async function withShutdownTimeout<T>(promise: Promise<T>, label: string): Promi
   }
 }
 
-function showWindow(): void {
-  const window = mainWindow;
-  if (!window || window.isDestroyed()) {
-    if (app.isReady()) void ensureMainWindow();
-    return;
-  }
+/** The front file manager window (focused, or focused most recently), or null when none is open. */
+function frontWindow(): BrowserWindow | null {
+  return fileManagerWindows.mostRecent()?.window ?? null;
+}
+
+/** The file manager window an IPC request came from, or null for any other sender. */
+function senderWindow(event: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow | null {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const entry = fileManagerWindows.entry(window);
+  return entry && entry.window.webContents === event.sender ? entry.window : null;
+}
+
+function requireSenderWindow(event: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow {
+  const window = senderWindow(event);
+  if (!window) throw new Error("This request requires an AmpleFile window.");
+  return window;
+}
+
+function showFileManagerWindow(window: BrowserWindow): void {
+  if (window.isDestroyed()) return;
   if (window.isMinimized()) window.restore();
   if (!window.isVisible()) window.show();
   window.focus();
+  fileManagerWindows.focus(window);
 }
 
-function ensureMainWindow(): Promise<void> {
-  if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve();
-  createWindowPromise ??= createMainWindow().finally(() => { createWindowPromise = null; });
-  return createWindowPromise;
+/** Brings the front window forward; with none open, the windows that were open come back. */
+function showFrontWindow(): void {
+  const window = frontWindow();
+  if (!window) {
+    if (app.isReady()) void ensureWindow().catch(reportStartupError);
+    return;
+  }
+  showFileManagerWindow(window);
+}
+
+/**
+ * The front window, after bringing back the windows that were open when none
+ * is: every window saved in window-state.json (all of them after a quit, the
+ * last one after the last window closed), else window 1 at its default place.
+ */
+function ensureWindow(): Promise<BrowserWindow> {
+  const front = frontWindow();
+  if (front) return Promise.resolve(front);
+  restoreWindowsPromise ??= (async () => {
+    const saved = separateRestoredPlacements(currentWindowPlacements(), (bounds) => screen.getDisplayMatching(bounds).workArea, minimumWindowState);
+    // Opened together, in slot order; each loads its renderer on its own.
+    const opened = await Promise.all((saved.length ? saved : [undefined]).map((placement) => createFileManagerWindow(placement ? { placement } : {})));
+    return frontWindow() ?? opened[opened.length - 1]!;
+  })().finally(() => { restoreWindowsPromise = null; });
+  return restoreWindowsPromise;
 }
 
 interface DesktopPreferences {
@@ -2445,7 +2663,7 @@ function createTrayIfSupported(): void {
   tray = new Tray(icon);
   const menu = Menu.buildFromTemplate([
     { label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(trayPopoverAnchor()); } },
-    { label: `Open ${productName}`, click: showWindow },
+    { label: `Open ${productName}`, click: () => showFrontWindow() },
     ...checkForUpdatesMenuItems(() => sendRendererMenuCommand("check-for-updates")),
     { type: "separator" },
     { label: `Quit ${productName}`, click: () => app.quit() },
@@ -2464,8 +2682,8 @@ function createTrayIfSupported(): void {
     });
   } else {
     tray.setContextMenu(menu);
-    tray.on("click", showWindow);
-    tray.on("double-click", showWindow);
+    tray.on("click", () => showFrontWindow());
+    tray.on("double-click", () => showFrontWindow());
   }
   updateTrayTooltip();
   updateTrayPulse();
@@ -2580,7 +2798,10 @@ async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
     devTools: !app.isPackaged,
     configureNavigation: configureWindowNavigation,
     onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
-    appWindowBounds: () => mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized() ? mainWindow.getBounds() : null,
+    appWindowBounds: () => {
+      const window = fileManagerWindows.windows().find((candidate) => candidate.isVisible() && !candidate.isMinimized());
+      return window ? window.getBounds() : null;
+    },
   });
   return ampleFileAgentPopover;
 }
@@ -2593,7 +2814,7 @@ function trayPopoverAnchor(): PopoverAnchor {
 /** An AmpleFile window asked (Linux places the popover in it; other platforms use the tray). */
 function windowPopoverAnchor(window: Electron.BaseWindow | null | undefined): PopoverAnchor {
   if (process.platform !== "linux") return trayPopoverAnchor();
-  const asking = window && !window.isDestroyed() ? window : mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const asking = window && !window.isDestroyed() ? window : frontWindow();
   const usable = asking && asking.isVisible() && !asking.isMinimized();
   return { kind: "window", windowBounds: usable ? asking.getBounds() : null };
 }
@@ -2663,9 +2884,8 @@ function configurePowerMonitor(): void {
 
 function sendAccentColorToRenderers(): void {
   const accent = getSystemAccentColor();
-  const window = mainWindow;
-  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-    window.webContents.send("amplefile:window:accent-color-changed", accent);
+  for (const window of fileManagerWindows.windows()) {
+    if (!window.webContents.isDestroyed()) window.webContents.send("amplefile:window:accent-color-changed", accent);
   }
   // The menu-bar popover subscribes too, and may be open with no main window.
   ampleFileAgentPopover?.send("amplefile:window:accent-color-changed", accent);
@@ -2714,7 +2934,7 @@ function applyLinuxDesktopAppearance(next: LinuxDesktopAppearance, previous: Lin
     nativeTheme.themeSource = linuxNativeThemeSource(rendererThemeSource, next.colorScheme);
   }
   if (next.accentColor !== previous.accentColor) sendAccentColorToRenderers();
-  sendLinuxWindowChromeState(mainWindow);
+  for (const window of fileManagerWindows.windows()) sendLinuxWindowChromeState(window);
 }
 
 function configureAccentColorMonitor(): void {
@@ -2739,6 +2959,29 @@ function getSystemAccentColor(): string | null {
   }
 }
 
+interface RendererRecovery {
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: boolean;
+  attempts: number;
+  failurePromptShown: boolean;
+}
+
+/** One window's renderer recovery; each window reloads on its own. */
+function rendererRecovery(window: BrowserWindow): RendererRecovery {
+  let recovery = rendererRecoveries.get(window.id);
+  if (!recovery) {
+    recovery = { timer: null, inFlight: false, attempts: 0, failurePromptShown: false };
+    rendererRecoveries.set(window.id, recovery);
+  }
+  return recovery;
+}
+
+function clearRendererRecovery(windowId: number): void {
+  const recovery = rendererRecoveries.get(windowId);
+  if (recovery?.timer) clearTimeout(recovery.timer);
+  rendererRecoveries.delete(windowId);
+}
+
 function configureWindowResilience(window: BrowserWindow): void {
   const detachBrowserViews = () => {
     // Browser pages keep running; they show again when the renderer lays their tabs out.
@@ -2749,79 +2992,83 @@ function configureWindowResilience(window: BrowserWindow): void {
   });
   window.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
     if (!isMainFrame || !isTrustedRendererUrl(url)) return;
-    scheduleRendererRecovery(description || `load failed with error ${code}`);
+    scheduleRendererRecovery(window, description || `load failed with error ${code}`);
   });
   window.webContents.on("did-finish-load", () => {
-    rendererRecoveryAttempts = 0;
+    if (!window.isDestroyed()) rendererRecovery(window).attempts = 0;
   });
   window.webContents.on("render-process-gone", (_event, details) => {
     detachBrowserViews();
-    if (!window.isDestroyed()) scheduleRendererRecovery(`renderer process ended: ${details.reason}`);
+    if (!window.isDestroyed()) scheduleRendererRecovery(window, `renderer process ended: ${details.reason}`);
   });
 }
 
 function ensureRendererAfterResume(): void {
-  const window = mainWindow;
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed() || window.webContents.isLoadingMainFrame()) return;
-  const currentUrl = window.webContents.getURL();
-  if (!isTrustedRendererUrl(currentUrl)) scheduleRendererRecovery(`renderer was not on the app URL after resume: ${currentUrl || "blank"}`, 0);
+  for (const window of fileManagerWindows.windows()) {
+    if (window.webContents.isDestroyed() || window.webContents.isLoadingMainFrame()) continue;
+    const currentUrl = window.webContents.getURL();
+    if (!isTrustedRendererUrl(currentUrl)) scheduleRendererRecovery(window, `renderer was not on the app URL after resume: ${currentUrl || "blank"}`, 0);
+  }
 }
 
 function loadMainRenderer(window: BrowserWindow): Promise<void> {
   return window.loadURL(`${appProtocol}://app/index.html`);
 }
 
-function scheduleRendererRecovery(reason: string, delayMs?: number): void {
+function scheduleRendererRecovery(window: BrowserWindow, reason: string, delayMs?: number): void {
   if (quitting || quittingForUpdate || !quitCoordinator.shouldPreventNativeQuit()) return;
-  const window = mainWindow;
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed() || rendererRecoveryTimer || rendererRecoveryInFlight) return;
-  if (rendererRecoveryAttempts >= rendererRecoveryMaxAttempts) {
-    void showRendererRecoveryFailedDialog(reason);
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  const recovery = rendererRecovery(window);
+  if (recovery.timer || recovery.inFlight) return;
+  if (recovery.attempts >= rendererRecoveryMaxAttempts) {
+    void showRendererRecoveryFailedDialog(window, reason);
     return;
   }
-  const delay = delayMs ?? Math.min(rendererRecoveryMaxDelayMs, rendererRecoveryBaseDelayMs * (2 ** rendererRecoveryAttempts));
-  rendererRecoveryTimer = setTimeout(() => {
-    rendererRecoveryTimer = null;
-    void recoverRenderer(reason);
+  const delay = delayMs ?? Math.min(rendererRecoveryMaxDelayMs, rendererRecoveryBaseDelayMs * (2 ** recovery.attempts));
+  recovery.timer = setTimeout(() => {
+    recovery.timer = null;
+    void recoverRenderer(window, reason);
   }, delay);
 }
 
-async function recoverRenderer(reason: string): Promise<void> {
-  const window = mainWindow;
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
-  rendererRecoveryInFlight = true;
-  rendererRecoveryAttempts += 1;
+async function recoverRenderer(window: BrowserWindow, reason: string): Promise<void> {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  const recovery = rendererRecovery(window);
+  recovery.inFlight = true;
+  recovery.attempts += 1;
   let retryReason: string | null = null;
   try {
-    console.warn(`${productName} reloading its window after a recoverable issue: ${reason}`);
+    console.warn(`${productName} reloading a window after a recoverable issue: ${reason}`);
     await loadMainRenderer(window);
   } catch (error) {
     retryReason = errorMessage(error);
   } finally {
-    rendererRecoveryInFlight = false;
+    recovery.inFlight = false;
   }
-  if (retryReason) scheduleRendererRecovery(retryReason);
+  if (window.isDestroyed()) return;
+  if (retryReason) scheduleRendererRecovery(window, retryReason);
   else {
-    rendererRecoveryAttempts = 0;
-    rendererRecoveryFailurePromptShown = false;
+    recovery.attempts = 0;
+    recovery.failurePromptShown = false;
     window.webContents.send("amplefile:runtime:renderer-recovered");
   }
 }
 
-async function showRendererRecoveryFailedDialog(reason: string): Promise<void> {
-  if (rendererRecoveryFailurePromptShown) return;
-  rendererRecoveryFailurePromptShown = true;
+async function showRendererRecoveryFailedDialog(window: BrowserWindow, reason: string): Promise<void> {
+  const recovery = rendererRecovery(window);
+  if (recovery.failurePromptShown) return;
+  recovery.failurePromptShown = true;
   const options = {
     type: "error" as const,
     message: `${productName} could not recover this window.`,
-    detail: `The window failed to reload after ${rendererRecoveryAttempts} attempts. Restart to try again. (${reason})`,
+    detail: `The window failed to reload after ${recovery.attempts} attempts. Restart to try again. (${reason})`,
     buttons: [`Restart ${productName}`, "Close"],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
   };
-  const result = mainWindow && !mainWindow.isDestroyed()
-    ? await dialog.showMessageBox(mainWindow, options)
+  const result = !window.isDestroyed()
+    ? await dialog.showMessageBox(window, options)
     : await dialog.showMessageBox(options);
   // Restart goes through the ordinary graceful quit, so turns and History
   // flush and the CLI act token is revoked before the new instance starts.
@@ -2920,7 +3167,8 @@ function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): vo
   const frame = event.senderFrame;
   const mainFrame = event.sender.mainFrame;
   const mainFrameMatches = Boolean(frame && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
-  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !mainFrameMatches) {
+  // Any file manager window's own renderer, in its top frame; never the popover, a browser page, or a pop-up.
+  if (!senderWindow(event) || !mainFrameMatches) {
     throw new Error("This request requires the main AmpleFile renderer.");
   }
 }
@@ -2994,60 +3242,59 @@ function dirnameFromFile(value: string): string {
   return resolve(value, "..");
 }
 
-interface WindowState { x: number; y: number; width: number; height: number; isMaximized: boolean }
+function windowStatePath(): string {
+  return join(app.getPath("userData"), "window-state.json");
+}
 
-function configureWindowStatePersistence(window: BrowserWindow): void {
+/** Every window's saved place (window-placements.ts), read once. */
+function currentWindowPlacements(): WindowPlacement[] {
+  if (windowPlacements) return windowPlacements;
+  try {
+    windowPlacements = existsSync(windowStatePath()) ? parseWindowPlacements(JSON.parse(readFileSync(windowStatePath(), "utf8"))) : [];
+  } catch {
+    windowPlacements = [];
+  }
+  return windowPlacements;
+}
+
+function storeWindowPlacements(next: WindowPlacement[]): void {
+  windowPlacements = next;
+  try {
+    writeFileSync(windowStatePath(), serializeWindowPlacements(next), "utf8");
+  } catch {
+    // Window placement is a convenience; startup should not fail if it cannot be saved.
+  }
+}
+
+function configureWindowStatePersistence(window: BrowserWindow, slot: number): void {
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   const scheduleSave = () => {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      saveWindowState(window);
+      saveWindowState(window, slot);
     }, windowStateSaveDelayMs);
   };
   window.on("resize", scheduleSave);
   window.on("move", scheduleSave);
   window.on("close", () => {
     if (saveTimer) clearTimeout(saveTimer);
-    saveWindowState(window);
+    saveWindowState(window, slot);
   });
 }
 
-function readWindowState(): WindowState | null {
-  const path = join(app.getPath("userData"), "window-state.json");
-  if (!existsSync(path)) return null;
-  try {
-    const value = JSON.parse(readFileSync(path, "utf8")) as Partial<WindowState>;
-    if (![value.x, value.y, value.width, value.height].every((part) => typeof part === "number" && Number.isFinite(part))) return null;
-    return {
-      x: Math.round(value.x as number),
-      y: Math.round(value.y as number),
-      width: Math.max(1, Math.round(value.width as number)),
-      height: Math.max(1, Math.round(value.height as number)),
-      isMaximized: value.isMaximized === true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function visibleWindowState(state: WindowState | null): WindowState | null {
+function visibleWindowState(state: WindowPlacement | null): WindowPlacement | null {
   if (!state || !screen.getAllDisplays().some((display) => intersects(state, display.bounds))) return null;
   return fitWindowToWorkArea(state, screen.getDisplayMatching(state).workArea, minimumWindowState);
 }
 
-function saveWindowState(window: BrowserWindow): void {
+function saveWindowState(window: BrowserWindow, slot: number): void {
   if (window.isDestroyed()) return;
-  try {
-    const bounds = window.isMaximized() ? window.getNormalBounds() : window.getBounds();
-    const state: WindowState = { ...bounds, isMaximized: window.isMaximized() };
-    writeFileSync(join(app.getPath("userData"), "window-state.json"), `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  } catch {
-    // Window placement is a convenience; startup should not fail if it cannot be saved.
-  }
+  const bounds = window.isMaximized() ? window.getNormalBounds() : window.getBounds();
+  storeWindowPlacements(savePlacement(currentWindowPlacements(), { slot, ...bounds, isMaximized: window.isMaximized() }));
 }
 
-function intersects(a: WindowState, b: Rectangle): boolean {
+function intersects(a: WindowBounds, b: Rectangle): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 

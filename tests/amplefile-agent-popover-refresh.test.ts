@@ -186,7 +186,7 @@ test("the fold composer names its model and exposes real text-only reasoning con
   assert.match(popover, /setAmpleFileAgentComposer\(result\.composer\)/);
   assert.match(popover, /bridge\?\.ampleFileAgent\?\.openAiModelsSettings\(\)/);
   assert.match(preload, /openAiModelsSettings: \(\) => ipcRenderer\.invoke\("amplefile:agent:open-ai-models-settings"\)/);
-  assert.match(main, /mainWindow\?\.webContents\.send\("amplefile:agent:open-settings", "agent"\)/);
+  assert.match(main, /const window = senderWindow\(event\) \?\? await ensureWindow\(\);[\s\S]*?window\.webContents\.send\("amplefile:agent:open-settings", "agent"\)/);
 
   assert.doesNotMatch(popover, /Brain(?:Circuit)?\d+(?:Filled|Regular)/);
   assert.match(popover, /thinkingLevels\.length >= 2 && composerThinking/);
