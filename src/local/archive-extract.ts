@@ -130,17 +130,18 @@ export async function extractArchive(archive: string, operation: FileOperationCo
  * item, then on to a second item or the end only when that item's name or
  * the archive's is taken and they could differ.
  */
-export async function extractClash(archive: string): Promise<ExtractTarget | null> {
+export async function extractClash(archive: string): Promise<Pick<ExtractTarget, "name" | "kind"> | null> {
   await assertExtractable(archive);
   const parent = dirname(archive);
-  const several: ExtractTarget = { name: extractFolderName(basename(archive)), kind: "folder", single: false };
+  const several = { name: extractFolderName(basename(archive)), kind: "folder" as const };
   const taken = async (name: string) => Boolean(await lstat(join(parent, name)).catch(() => null));
   const first = (await surveyArchive(archive, 1)).first();
-  let target = several;
+  let target: Pick<ExtractTarget, "name" | "kind"> = several;
   // A folder of the archive's own name is that name whatever else the archive holds.
   if (first && !(first.name === several.name && first.kind === "folder")) {
     if (!await taken(first.name) && !await taken(several.name)) return null;
-    target = (await surveyArchive(archive, 2)).target(basename(archive));
+    const { name, kind } = (await surveyArchive(archive, 2)).target(basename(archive));
+    target = { name, kind };
   }
   return await taken(target.name) ? target : null;
 }

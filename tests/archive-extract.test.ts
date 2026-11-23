@@ -190,26 +190,26 @@ test("the name-clash check names what Extract will make, reading no more of the 
   await writeFile(join(root, "report.txt.zip"), await zipWith({ "report.txt": { content: "r" } }));
   assert.equal(await extractClash(join(root, "report.txt.zip")), null, "a free name is no clash");
   await writeFile(join(root, "report.txt"), "old");
-  assert.deepEqual(await extractClash(join(root, "report.txt.zip")), { name: "report.txt", kind: "file", single: true });
+  assert.deepEqual(await extractClash(join(root, "report.txt.zip")), { name: "report.txt", kind: "file" });
 
   await writeFile(join(root, "Photos.zip"), await zipWith({ "Holiday/a.jpg": { content: "a" } }));
   assert.equal(await extractClash(join(root, "Photos.zip")), null);
   await mkdir(join(root, "Photos"));
   assert.equal(await extractClash(join(root, "Photos.zip")), null, "a taken archive name does not matter when the one folder's is free");
   await mkdir(join(root, "Holiday"));
-  assert.deepEqual(await extractClash(join(root, "Photos.zip")), { name: "Holiday", kind: "folder", single: true });
+  assert.deepEqual(await extractClash(join(root, "Photos.zip")), { name: "Holiday", kind: "folder" });
 
   // The first item's name is taken, but a second item makes it a folder of the archive's name, which is free.
   await writeFile(join(root, "mixed.tgz"), gzipSync(tar(tarEntry("Holiday/a.jpg", { content: "a" }), tarEntry("b.jpg", { content: "b" }))));
   assert.equal(await extractClash(join(root, "mixed.tgz")), null);
   await mkdir(join(root, "mixed"));
-  assert.deepEqual(await extractClash(join(root, "mixed.tgz")), { name: "mixed", kind: "folder", single: false });
+  assert.deepEqual(await extractClash(join(root, "mixed.tgz")), { name: "mixed", kind: "folder" });
 
   // A folder of the archive's own name is its name either way: the rest, here damaged, is never read.
   const whole = gzipSync(tar(tarEntry("bundle/", { type: "5" }), tarEntry("bundle/big.bin", { content: randomBytes(400_000) })));
   await writeFile(join(root, "bundle.tgz"), whole.subarray(0, whole.length - 200_000));
   await mkdir(join(root, "bundle"));
-  assert.deepEqual(await extractClash(join(root, "bundle.tgz")), { name: "bundle", kind: "folder", single: false });
+  assert.deepEqual(await extractClash(join(root, "bundle.tgz")), { name: "bundle", kind: "folder" });
   await rm(join(root, "bundle"), { recursive: true });
   assert.equal(await extractClash(join(root, "bundle.tgz")), null, "nor when neither name is taken");
   await assert.rejects(extractArchive(join(root, "bundle.tgz")), "extracting still reads all of it");
