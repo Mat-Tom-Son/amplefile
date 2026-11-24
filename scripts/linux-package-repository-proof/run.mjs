@@ -43,7 +43,7 @@ if (!existsSync(join(unpacked, "resources/app.asar"))) throw new Error(`${unpack
   await archive.read(json, 0, json.length, 16);
   await archive.close();
   const header = JSON.parse(json.toString("utf8"));
-  if (!header.files?.dist?.files?.desktop?.files?.["system-package-updates.js"]) {
+  if (!header.files?.dist?.files?.desktop?.files?.desktop?.files?.src?.files?.["system-package-updates.js"]) {
     throw new Error(`${unpacked} was built from source without the Linux package updates; build this checkout with npm run desktop:make:linux -- --dir, or pass --unpacked.`);
   }
 }
