@@ -10,6 +10,9 @@
 const [port, action, timeoutSeconds = "60"] = process.argv.slice(2);
 const deadline = Date.now() + Number(timeoutSeconds) * 1000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A hard stop past the deadline: a DevTools connection made while the window
+// is still loading has been seen to hang beyond the per-step bounds.
+setTimeout(() => { console.error(`No answer within ${timeoutSeconds} seconds.`); process.exit(1); }, Number(timeoutSeconds) * 1000 + 10_000).unref();
 
 /** One DevTools session: sends Runtime.evaluate and returns the value. */
 async function evaluate(webSocketDebuggerUrl, expression, awaitPromise) {
@@ -76,3 +79,4 @@ if (action === "status" || action === "check") {
 } else {
   throw new Error("Usage: node app-driver.mjs PORT status|check|install [TIMEOUT_SECONDS]");
 }
+process.exit(0);

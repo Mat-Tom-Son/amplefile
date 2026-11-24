@@ -167,13 +167,15 @@ APP_ENV=(HOME=/home/proof PATH=/usr/bin:/bin DISPLAY=:77 "DBUS_SESSION_BUS_ADDRE
   "AMPLEFILE_STATE_DIR=$APP/state" "AMPLEFILE_DESKTOP_STATE_DIR=$APP/state" "AMPLEFILE_CLI_STATE_DIR=$APP/state"
   "AMPLEFILE_AGENT_DIR=$APP/agent" "PI_CODING_AGENT_DIR=$APP/agent" AMPLEFILE_DISABLE_LOGIN_SHELL_ENV=1)
 TOKEN=$APP/state/cli/act-token.json
-drive() { node "$S/scripts/linux-package-repository-proof/app-driver.mjs" 9222 "$@"; }
+drive() { timeout -k 5 200 node "$S/scripts/linux-package-repository-proof/app-driver.mjs" 9222 "$@"; }
+# The first answer from a window that is still loading: each try is a fresh driver.
+first_status() { local tries; for tries in 1 2 3 4 5 6; do drive status 30 && return 0; sleep 2; done; return 1; }
 # The main AmpleFile processes: the executable without Chromium's --type=.
 main_pids() { ps -u proof -o pid=,args= | awk '$2 == "/opt/AmpleFile/amplefile-desktop" && $0 !~ /--type=/ { print $1 }'; }
 field() { node -e 'const s = JSON.parse(process.argv[1]); console.log(String(s[process.argv[2]]))' "$1" "$2"; }
 for _ in $(seq 30); do [ -e /tmp/.X11-unix/X77 ] && break; sleep 0.2; done
 runuser -u proof -- env -i "${APP_ENV[@]}" setsid /opt/AmpleFile/amplefile-desktop --remote-debugging-port=9222 >> "$P/app.log" 2>&1 < /dev/null &
-BEFORE=$(drive status 120) || { tail -40 "$P/app.log"; fail "the installed app did not open a window"; }
+BEFORE=$(first_status) || { tail -40 "$P/app.log"; fail "the installed app did not open a window"; }
 echo "    before: $BEFORE" | tee -a "$P/results.txt"
 OLD_PID=$(main_pids)
 [ "$(echo "$OLD_PID" | wc -w)" = 1 ] || fail "expected one AmpleFile main process, found: $OLD_PID"
@@ -206,7 +208,7 @@ pass "the old AmpleFile process ($OLD_PID) exited"
 NEW_PID=
 for _ in $(seq 120); do NEW_PID=$(main_pids); [ -n "$NEW_PID" ] && break; sleep 0.5; done
 [ "$(echo "$NEW_PID" | wc -w)" = 1 ] || { tail -40 "$P/app.log"; fail "expected one relaunched AmpleFile process, found: '$NEW_PID'"; }
-AFTER=$(drive status 120) || { tail -40 "$P/app.log"; fail "the relaunched app did not open a window"; }
+AFTER=$(first_status) || { tail -40 "$P/app.log"; fail "the relaunched app did not open a window"; }
 EXE=$(readlink "/proc/$NEW_PID/exe" || true)
 ARCHIVE=$(ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1 || true)
 echo "    relaunched pid $NEW_PID: exe $EXE, archive $ARCHIVE" | tee -a "$P/results.txt"
