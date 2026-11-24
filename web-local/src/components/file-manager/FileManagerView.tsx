@@ -108,7 +108,6 @@ import { useFolderTabs, type PanelChat } from "./useFolderTabs";
 import { FolderTabStrip, type FolderTabItem } from "./FolderTabStrip";
 import { useFileManagerNavigation } from "./useFileManagerNavigation";
 import { useFileSelection } from "./useFileSelection";
-import { isPartialUndo } from "./file-manager-undo";
 import { useFileChanges } from "./useFileChanges";
 import { useFileClipboard } from "./useFileClipboard";
 import { useFileDrops } from "./useFileDrops";
@@ -211,7 +210,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const location = history.location;
   const setLocation = (next: FileManagerLocation) => setHistory((current) => ({ ...current, location: next }));
   // The desktop follows the tab in front: File → New Window opens at its folder, and the window's title and Open Recent name it.
-  useEffect(() => { if (!fixtureMode) reportWindowLocation(location); }, [fixtureMode, location.place.kind, location.place.id, location.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!fixtureMode) reportWindowLocation(location, activeTab.view); }, [fixtureMode, location.place.kind, location.place.id, location.path, activeTab.view]); // eslint-disable-line react-hooks/exhaustive-deps
   const place = location.place;
   const connectedFolder = place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === place.id) ?? null : null;
   const standardFolder = place.kind === "standard" ? standard.folders.find((item) => item.id === place.id) ?? null : null;
@@ -1303,17 +1302,18 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (chosen && command && event.key === "ArrowUp") { event.preventDefault(); showRecentInFolder(chosen); return; }
   }
 
-  /** The receipt's Undo: History puts back what the Worker's reply changed; ⇧⌘Z redoes it. */
+  /** The receipt's Undo: History puts back only what the Worker's reply changed, keeping what changed again since; ⇧⌘Z redoes it. */
   async function undoWorkerChanges() {
     if (!connectedFolder || !workerChanges) return;
     if (fixtureMode) { showToast({ text: "Restoring is disabled in the preview", tone: "info" }); return; }
-    const entry = changes.restorePointsUndo("the Worker’s changes", [{ connectedFolderId: connectedFolder.id, checkpointId: workerChanges.checkpointId }]);
     try {
-      const redo = await entry.run();
-      if (redo && !isPartialUndo(redo)) changes.recordRedo(redo);
+      const undone = await worker.undo();
+      changes.recordRedo(changes.restorePointsUndo("the Worker’s changes", [{ connectedFolderId: connectedFolder.id, checkpointId: undone.safetyCheckpointId }]));
       worker.done();
       await listing.refresh();
-      showToast({ text: "Undid the Worker’s changes", tone: "success" });
+      showToast(undone.kept.length
+        ? { text: `Undid the Worker’s changes. ${undone.kept.length === 1 ? "1 item that changed since was" : `${undone.kept.length} items that changed since were`} left as ${undone.kept.length === 1 ? "it is" : "they are"}.`, tone: "info", durationMs: 9000 }
+        : { text: "Undid the Worker’s changes", tone: "success" });
     } catch (caught) {
       onError(errorText(caught));
     }

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync, lstatSync } from "node:fs";
-import { copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -995,6 +995,138 @@ export async function restoreConnectedFolderCheckpoint(...args: Parameters<typeo
 
 export async function restoreFileVersion(...args: Parameters<typeof restoreFileVersionUnlocked>): Promise<Awaited<ReturnType<typeof restoreFileVersionUnlocked>>> {
   return withConnectedFolderHistoryOperation(args[0], () => restoreFileVersionUnlocked(...args));
+}
+
+/**
+ * What one Worker turn changed: its "Before turn" restore point compared
+ * with its "After turn" one, never with the folder now, so what anyone did
+ * after the turn is not counted. A file is moved when its contents left one
+ * path and arrived at exactly one other; paths either point skipped (too
+ * large, a link, unreadable) are left out, since neither point holds them.
+ */
+export interface ConnectedFolderTurnChanges {
+  added: string[];
+  changed: string[];
+  removed: string[];
+  moved: CheckpointMove[];
+}
+
+export async function compareConnectedFolderTurnCheckpoints(connectedFolderRoot: string, beforeCheckpointId: string, afterCheckpointId: string): Promise<ConnectedFolderTurnChanges> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
+  const { before, after } = await turnCheckpointPair(root, beforeCheckpointId, afterCheckpointId);
+  return diffTurnCheckpoints(before, after);
+}
+
+async function turnCheckpointPair(root: string, beforeCheckpointId: string, afterCheckpointId: string): Promise<{ before: ConnectedFolderCheckpoint; after: ConnectedFolderCheckpoint }> {
+  const [before, after] = await Promise.all([getConnectedFolderCheckpoint(root, beforeCheckpointId), getConnectedFolderCheckpoint(root, afterCheckpointId)]);
+  if (!before || !after) throw notFound("Restore point not found.");
+  if (before.scope !== "full" || after.scope !== "full") throw new Error("A turn's changes compare two full restore points.");
+  validateCheckpointPaths(root, before);
+  validateCheckpointPaths(root, after);
+  return { before, after };
+}
+
+function diffTurnCheckpoints(before: ConnectedFolderCheckpoint, after: ConnectedFolderCheckpoint): ConnectedFolderTurnChanges {
+  const skipped = [...before.skippedFiles, ...after.skippedFiles].map((file) => file.path);
+  const counted = (path: string) => !skipped.some((item) => path === item || path.startsWith(`${item}/`));
+  const prior = new Map(before.files.filter((file) => counted(file.path)).map((file) => [file.path, file.hashSha256]));
+  const later = new Map(after.files.filter((file) => counted(file.path)).map((file) => [file.path, file.hashSha256]));
+  let added = [...later.keys()].filter((path) => !prior.has(path));
+  let removed = [...prior.keys()].filter((path) => !later.has(path));
+  const changed = [...later.keys()].filter((path) => prior.has(path) && prior.get(path) !== later.get(path));
+  const byHash = (paths: string[], hashes: Map<string, string>) => {
+    const found = new Map<string, string[]>();
+    for (const path of paths) found.set(hashes.get(path)!, [...(found.get(hashes.get(path)!) ?? []), path]);
+    return found;
+  };
+  const left = byHash(removed, prior);
+  const arrived = byHash(added, later);
+  const moved: CheckpointMove[] = [];
+  for (const [hash, from] of left) {
+    const to = arrived.get(hash);
+    if (from.length === 1 && to?.length === 1) moved.push({ fromPath: from[0]!, toPath: to[0]! });
+  }
+  added = added.filter((path) => !moved.some((move) => move.toPath === path));
+  removed = removed.filter((path) => !moved.some((move) => move.fromPath === path));
+  const sorted = (paths: string[]) => paths.sort((a, b) => a.localeCompare(b));
+  return { added: sorted(added), changed: sorted(changed), removed: sorted(removed), moved: moved.sort((a, b) => a.toPath.localeCompare(b.toPath)) };
+}
+
+export interface ConnectedFolderTurnUndoResult {
+  /** The restore point taken first; restoring it puts the turn's changes back (redo). */
+  safetyCheckpointId: string;
+  /** Paths put back as they were before the turn. */
+  undone: string[];
+  /** Paths left as they are because they changed again after the turn. */
+  kept: string[];
+}
+
+/**
+ * Undoes one Worker turn and nothing else: each path the turn changed goes
+ * back to what its "Before turn" point holds, but only while it is still
+ * what the turn left (a file the person edited, moved, or made again since
+ * is kept and named). Folders the turn made are removed when empty. A
+ * targeted restore point is taken first, so the undo can itself be undone.
+ */
+export async function undoConnectedFolderTurnChanges(connectedFolderRoot: string, beforeCheckpointId: string, afterCheckpointId: string): Promise<ConnectedFolderTurnUndoResult> {
+  return withConnectedFolderHistoryOperation(connectedFolderRoot, async () => {
+    const root = ensureHistoryRoot(connectedFolderRoot);
+    const { before, after } = await turnCheckpointPair(root, beforeCheckpointId, afterCheckpointId);
+    const changes = diffTurnCheckpoints(before, after);
+    const leftByTurn = new Map(after.files.map((file) => [file.path, file.hashSha256]));
+    const heldBefore = new Map(before.files.map((file) => [file.path, file]));
+    // What the turn left at a path (null: it left nothing there), and what to put back (null: nothing).
+    const steps = [
+      ...changes.added.map((path) => ({ path, left: leftByTurn.get(path)!, back: null })),
+      ...changes.changed.map((path) => ({ path, left: leftByTurn.get(path)!, back: heldBefore.get(path)! })),
+      ...changes.removed.map((path) => ({ path, left: null, back: heldBefore.get(path)! })),
+      ...changes.moved.flatMap((move) => [
+        { path: move.toPath, left: leftByTurn.get(move.toPath)!, back: null },
+        { path: move.fromPath, left: null, back: heldBefore.get(move.fromPath)! },
+      ]),
+    ];
+    if (!steps.length) throw new Error("The Worker's turn changed nothing to undo.");
+    const present = await capturePaths(root, collapsePaths(steps.map((step) => step.path)), createTargetedHistoryCapturePolicy(), false);
+    const now = new Map(present.files.map((file) => [file.path, file.hashSha256]));
+    const unreadable = new Set(present.skippedFiles.map((file) => file.path));
+    const stillAsLeft = (step: (typeof steps)[number]) => !unreadable.has(step.path)
+      && (step.left === null ? !entryExists(canonicalPath(root, step.path, true).absolutePath) : now.get(step.path) === step.left);
+    // A move goes back only when both of its ends are still as the turn left them.
+    const movedEnds = new Map(changes.moved.flatMap((move) => [[move.toPath, move.fromPath], [move.fromPath, move.toPath]] as const));
+    const go = steps.filter((step) => stillAsLeft(step) && (!movedEnds.has(step.path) || stillAsLeft(steps.find((other) => other.path === movedEnds.get(step.path))!)));
+    const kept = steps.filter((step) => !go.includes(step)).map((step) => step.path).sort((a, b) => a.localeCompare(b));
+    if (!go.length) throw new Error(`Everything the Worker changed has changed again since, so nothing was undone: ${kept.join(", ")}.`);
+
+    const staged = await stageCheckpointContent(root, { ...before, files: go.flatMap((step) => step.back ? [step.back] : []) });
+    try {
+      const existing = go.filter((step) => step.left !== null).map((step) => step.path);
+      const absent = go.filter((step) => step.left === null).map((step) => step.path);
+      const safety = await createConnectedFolderMutationCheckpointUnlocked(root, {
+        paths: existing,
+        deleteOnRestore: absent,
+        reason: "pre_restore",
+        label: "Before undoing the Worker’s changes",
+      });
+      const flushBudget = newFlushBudget();
+      for (const step of go) {
+        const target = canonicalPath(root, step.path, true).absolutePath;
+        if (!step.back) {
+          await rm(target, { force: true });
+          continue;
+        }
+        await mkdir(dirname(target), { recursive: true });
+        await atomicRestoreFile(root, step.path, await readFile(staged.pathsByHash.get(step.back.hashSha256)!), flushBudget);
+      }
+      // Folders the turn made, deepest first, while nothing is left in them.
+      const hadBefore = new Set(before.directories);
+      for (const directory of after.directories.filter((item) => !hadBefore.has(item)).sort((a, b) => b.split("/").length - a.split("/").length)) {
+        await rmdir(canonicalPath(root, directory, true).absolutePath).catch(() => undefined);
+      }
+      return { safetyCheckpointId: safety.checkpointId, undone: go.map((step) => step.path).sort((a, b) => a.localeCompare(b)), kept };
+    } finally {
+      await rm(staged.root, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
 }
 
 export interface ConnectedFolderRestorePreview {

@@ -84,7 +84,9 @@ export interface AmpleFileCliConnectedFolderSummary {
 export interface AmpleFileCliContextSnapshot {
   cwd: string;
   connectedFolder: AmpleFileCliConnectedFolderSummary | null;
+  /** Always null: kept in the v1 `--json` shape. The kernel knows nothing of windows, tabs, or selection. */
   selectedPath?: string | null;
+  /** Always null, as `selectedPath` is. */
   activeSurface?: string | null;
 }
 
