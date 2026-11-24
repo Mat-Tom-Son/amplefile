@@ -62,7 +62,10 @@ for (const release of ["1", "2"]) {
   run("cp", ["-a", "--reflink=auto", unpacked, copy]);
   const output = join(work, `build-${release}`);
   run(process.execPath, [join(source, "node_modules/electron-builder/cli.js"), "--projectDir", source, "--config", "electron-builder.desktop.cjs",
-    "--linux", "rpm", "--x64", "--publish", "never", "--prepackaged", copy], {
+    // gzip rather than the release's multithreaded xz payload: the same
+    // package otherwise, within a modest memory cap. Payload compression
+    // does not touch the signature, the metadata, or the enrolment.
+    "--linux", "rpm", "--x64", "--publish", "never", "--prepackaged", copy, "-c.rpm.compression=gzip"], {
     cwd: source,
     env: { ...process.env, AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "linux", AMPLEFILE_DESKTOP_OUTPUT_DIR: output, AMPLEFILE_LINUX_RPM_RELEASE: release },
   });
