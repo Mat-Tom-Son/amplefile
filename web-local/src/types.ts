@@ -50,6 +50,12 @@ export interface TreeEntry {
   };
   /** Only in a listing asked for with `includeHidden=1`: the system file manager hides this entry by default. */
   hidden?: true;
+  /**
+   * On a Mac: this folder, or the folder this link points to, is a package
+   * Finder shows as one item, an app or a document (src/shared/mac-packages.ts).
+   * Opening it opens it in its app; Show Package Contents goes inside.
+   */
+  package?: true;
 }
 
 export interface FileContextMenuState {

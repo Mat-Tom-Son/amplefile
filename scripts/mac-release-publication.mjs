@@ -461,6 +461,17 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
     `Signed with Apple Team ID ${teamId}, notarized by Apple, and published for ${arch}.`,
     "Use the DMG for a first install. Existing updater-capable Mac installs consume the ZIP and latest-mac.yml assets.",
   ];
+  if (version === "0.2.0") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Cut across windows.** Cut files in one AmpleFile window and paste them as a move in another. Refresh and the AmpleFile Agent shortcut work without a Connected Folder.",
+      "- **Moves and Merge.** Moves between Connected Folders and plain folders preserve the item on the same disk. Across disks, AmpleFile keeps the original when the copy would lose access rules or other checked metadata. Each merged folder follows its own conflict choice, and Undo checks retained copies before removing them.",
+      "- **Extract and Mac packages.** Extract places an archive’s single visible item beside the archive. Mac packages open as one item and keep their contents together. Extract carries a downloaded archive’s quarantine mark to its contents.",
+      "- **Drives and Trash.** Eject checks unfinished work on all volumes that leave with the disk. Drives that stop answering stay listed without a space estimate, and Trash identifies drives it couldn’t check.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",

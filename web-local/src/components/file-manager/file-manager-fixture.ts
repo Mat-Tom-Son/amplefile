@@ -27,11 +27,14 @@ export function buildFixtureStandardFolders(): { folders: StandardFolderSummary[
       documents: [
         folder("Home projects", 2, { nestedFolder: true }),
         folder("Letters", 400),
+        // A Mac package: one item that opens in its app (src/shared/mac-packages.ts).
+        folder("Pitch.key", 26, { package: true }),
         file("Resume 2026.docx", 52_000, 900),
         file("budget.xlsx", 31_000, 70),
       ],
       pictures: [
         folder("Garden 2026", 30),
+        folder("Photos Library.photoslibrary", 4, { package: true }),
         file("beach-sunset.heic", 2_900_000, 200),
         file("kitchen-before.jpg", 3_100_000, 90),
       ],

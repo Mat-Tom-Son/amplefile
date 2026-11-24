@@ -14,6 +14,7 @@ import {
   defaultTrashSort,
   deleteImmediatelyConfirm,
   emptyTrashConfirm,
+  unavailableTrashNotice,
   filterTrashItems,
   nextTrashSort,
   permanentResultMessage,
@@ -228,6 +229,7 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
   ];
   const blocker = putBackBlocker(listing, chosen);
   const empty = Boolean(listing && !listing.items.length);
+  const unavailable = unavailableTrashNotice(listing?.unavailableVolumes);
 
   return <div className="fm-trash">
     <div className="fm-trash-bar">
@@ -262,7 +264,7 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
         <span className="fm-empty-text">{loadError}</span>
         <button type="button" className="fm-text-button" onClick={() => void load()}>Try Again</button>
       </div> : !listing ? <p className="fm-empty">Loading…</p>
-        : empty ? <p className="fm-empty">The Trash is empty.</p>
+        : empty ? <p className="fm-empty">{unavailable ? "No items found on the drives AmpleFile checked." : "The Trash is empty."}</p>
         : !shown.length ? <p className="fm-empty">No items in the Trash match “{query.trim()}”</p> : null}
       <div className="fm-rows" role="rowgroup">
         {shown.map((item, index) => {
@@ -288,7 +290,8 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
           </div>;
         })}
       </div>
-      {listing?.truncated ? <p className="fm-note">The Trash holds more items than AmpleFile lists at once. Empty Trash removes all of them.</p> : null}
+      {unavailable ? <p className="fm-note" role="status">{unavailable} <button type="button" className="fm-text-button" onClick={() => void load()}>Try Again</button></p> : null}
+      {listing?.truncated ? <p className="fm-note">The Trash holds more items than AmpleFile lists at once. Empty Trash also removes unlisted items on drives AmpleFile can check.</p> : null}
     </div>
   </div>;
 }

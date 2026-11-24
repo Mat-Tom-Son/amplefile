@@ -41,6 +41,7 @@ import { containsReservedConnectedFolderPathSegment } from "./connected-folder-p
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
 import { usualMacPath, withoutMacDataVolumeName } from "./mac-data-volume.js";
 import { productIdentity } from "../shared/product-identity.js";
+import { isMacPackageName } from "../shared/mac-packages.js";
 
 import type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
 export type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
@@ -70,6 +71,15 @@ export interface TreeEntry {
    * the system file manager hides this entry by default (hidden-entries.ts).
    */
   hidden?: true;
+  /**
+   * On macOS only: this folder, or the folder this link points to, is a
+   * package Finder shows as one item, an app or a document such as a
+   * Keynote presentation (src/shared/mac-packages.ts). The window opens it
+   * in its default app and goes inside only by Show Package Contents; every
+   * listing, copy, move, Compress, search, and size still treats it as the
+   * folder it is.
+   */
+  package?: true;
 }
 
 export interface TreeEntryLink {
@@ -131,6 +141,8 @@ export interface ConnectedFolderTreeOptions {
    * Search already honor; a lazy read below one returns nothing.
    */
   nestedFolderPaths?: readonly string[];
+  /** Whose packages are marked (`package`): this computer's by default, and only a Mac has any. */
+  packagePlatform?: NodeJS.Platform;
 }
 
 export interface ConnectedFolderRemovalIntent {
@@ -552,6 +564,8 @@ export const maxOneLevelTreeEntries = 200_000;
 interface TreeScanListing {
   includeLinks: boolean;
   hidden: { platform: NodeJS.Platform; home: string } | null;
+  /** Mark Mac packages: true on macOS. */
+  packages?: boolean;
 }
 
 interface TreeScanBudget {
@@ -593,6 +607,7 @@ export async function scanConnectedFolderTree(
   const markHidden = options.markHidden;
   const listing: TreeScanListing = {
     includeLinks: options.includeLinks === true,
+    packages: (options.packagePlatform ?? process.platform) === "darwin",
     hidden: markHidden
       ? {
         platform: (typeof markHidden === "object" ? markHidden.platform : undefined) ?? process.platform,
@@ -1483,8 +1498,9 @@ async function acquireHistoryClaim(claim: HistoryGateClaim): Promise<void> {
   });
 }
 
+/** Refused because another operation is in hand: the same request can succeed later, which the code `busy` tells a caller (src/local/api/http.ts, `busyRefusal`). */
 function historyBusyError(message: string): Error {
-  return Object.assign(new Error(message), { status: 409, statusCode: 409 });
+  return Object.assign(new Error(message), { status: 409, statusCode: 409, apiCode: "busy" });
 }
 
 /**
@@ -1899,6 +1915,8 @@ async function scanDirectory(
         ...(target === "folder" ? { hasChildren: false, children: [] } : {}),
         link: { target, targetPath },
         ...hiddenMark,
+        // Finder shows a link to an app as the app: /Applications/Safari.app is one.
+        ...(listing.packages && target === "folder" && isMacPackageName(basename(targetPath)) ? { package: true as const } : {}),
       });
       continue;
     }
@@ -1938,6 +1956,7 @@ async function scanDirectory(
           : children.length > 0 || await directoryHasVisibleEntries(root, item.path, ignorePatterns, includeIgnored, limit, listing.includeLinks),
         children,
         ...hiddenMark,
+        ...(listing.packages && isMacPackageName(item.entry.name) ? { package: true as const } : {}),
       });
     } else {
       result.push({

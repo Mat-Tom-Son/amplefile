@@ -22,7 +22,12 @@ export interface TrashItem {
   putBackNote?: string;
 }
 
-export interface TrashListing { items: TrashItem[]; truncated: boolean; putBackAvailable: boolean }
+export interface TrashListing {
+  items: TrashItem[];
+  truncated: boolean;
+  putBackAvailable: boolean;
+  unavailableVolumes?: string[];
+}
 
 export interface PutBackResult {
   path: string;
@@ -38,6 +43,7 @@ export interface PermanentDeletionResult {
   failed: Array<{ id: string; name: string; error: string }>;
   notFound: string[];
   strayRecordsRemoved?: number;
+  unavailableVolumes?: string[];
   /** Stop came first: `notDone` lists the ids still in the Trash. */
   cancelled?: true;
   notDone?: string[];
@@ -110,14 +116,25 @@ export function deleteImmediatelyConfirm(items: readonly TrashItem[]): Permanent
   };
 }
 
-/** Empty Trash's question: says how much is lost, everything in the Trash, and that it cannot be undone. */
-export function emptyTrashConfirm(listing: Pick<TrashListing, "items" | "truncated">): PermanentConfirm {
+/** What the Trash could not check. */
+export function unavailableTrashNotice(volumes: readonly string[] = []): string {
+  if (!volumes.length) return "";
+  const names = volumes.slice(0, 3).map((name) => `“${name}”`).join(", ");
+  const more = volumes.length > 3 ? ` and ${volumes.length - 3} more` : "";
+  return `AmpleFile couldn’t check the Trash on ${names}${more}.`;
+}
+
+/** Empty Trash's question names its scope and says deletion cannot be undone. */
+export function emptyTrashConfirm(listing: Pick<TrashListing, "items" | "truncated" | "unavailableVolumes">): PermanentConfirm {
   const count = listing.items.length;
   const total = listing.items.reduce((sum, item) => sum + (item.sizeBytes ?? 0), 0);
   const counted = listing.truncated ? `more than ${count.toLocaleString()} items` : count === 1 ? "1 item" : `${count.toLocaleString()} items`;
+  const measured = `${counted}${total ? `, ${formatCapacity(total)}` : ""}`;
   return {
     title: "Empty the Trash?",
-    body: `Everything in the Trash (${counted}${total ? `, ${formatCapacity(total)}` : ""}) will be deleted for good, including items on connected drives. You can’t undo this.`,
+    body: listing.unavailableVolumes?.length
+      ? `AmpleFile found ${measured}. Empty Trash deletes items for good from every drive AmpleFile can check. ${unavailableTrashNotice(listing.unavailableVolumes)} You can’t undo this.`
+      : `Everything in the Trash (${measured}) will be deleted for good, including items on connected drives. You can’t undo this.`,
     confirmLabel: "Empty Trash",
     tone: "danger",
   };
@@ -135,12 +152,14 @@ export async function confirmPermanent<T>(question: PermanentConfirm, ask: (ques
 /** What the window says after Delete Immediately or Empty Trash: what went, and plainly what didn't. */
 export function permanentResultMessage(result: PermanentDeletionResult, emptied: boolean): { text: string; tone: "success" | "error" } {
   const removed = result.removed.length;
+  const unavailable = unavailableTrashNotice(result.unavailableVolumes);
+  const note = unavailable ? ` ${unavailable}` : "";
   if (result.cancelled) {
     const left = result.notDone?.length ?? 0;
     return {
       text: removed
-        ? `Stopped. ${removed === 1 ? `“${result.removed[0]!.name}” was` : `${removed.toLocaleString()} items were`} deleted for good; ${left ? `${left === 1 ? "1 item is" : `${left.toLocaleString()} items are`} still in the Trash` : "nothing else was"}.`
-        : "Stopped. Nothing was deleted; everything is still in the Trash.",
+        ? `Stopped. ${removed === 1 ? `“${result.removed[0]!.name}” was` : `${removed.toLocaleString()} items were`} deleted for good; ${left ? `${left === 1 ? "1 item is" : `${left.toLocaleString()} items are`} still in the Trash` : "nothing else was"}.${note}`
+        : `Stopped. Nothing was deleted; everything is still in the Trash.${note}`,
       tone: "success",
     };
   }
@@ -148,9 +167,13 @@ export function permanentResultMessage(result: PermanentDeletionResult, emptied:
     const first = result.failed[0]!;
     const others = result.failed.length - 1;
     return {
-      text: `“${first.name}” couldn’t be deleted: ${first.error}${others ? ` ${others === 1 ? "1 other item" : `${others} other items`} couldn’t be deleted either.` : ""}`,
+      text: `“${first.name}” couldn’t be deleted: ${first.error}${others ? ` ${others === 1 ? "1 other item" : `${others} other items`} couldn’t be deleted either.` : ""}${note}`,
       tone: "error",
     };
+  }
+  if (emptied && unavailable) {
+    const removedText = removed === 1 ? "Deleted 1 item for good." : `Deleted ${removed.toLocaleString()} items for good.`;
+    return { text: `${removed ? `${removedText} ` : ""}${unavailable}`, tone: "error" };
   }
   if (emptied) return { text: "The Trash is empty.", tone: "success" };
   return { text: removed === 1 ? `Deleted “${result.removed[0]!.name}”` : `Deleted ${removed.toLocaleString()} items`, tone: "success" };

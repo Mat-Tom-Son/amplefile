@@ -113,6 +113,10 @@ export interface BuiltInBrowserOptions {
   userAgentProduct: string;
   /** Runs after a page joins a window, so that window's host overlays stay above it. */
   onViewAttached?: (window: BrowserWindow) => void;
+  /** Runs after the person copies an address from a menu here: the clipboard holds it now. */
+  onCopied?: () => void;
+  /** Runs after the person asks a page to copy a picture, which the page puts on the clipboard in its own time, or fails to. */
+  onCopyingImage?: () => void;
   /** How long a Worker's script waits on a site's unanswered question before it is told the person has to answer. */
   questionWaitMs?: number;
   /** Whether this build declares to macOS why it uses location; the packaged app does, an unpackaged run does not. */
@@ -344,7 +348,7 @@ export class BuiltInBrowser {
         { label: "Reload", enabled: Boolean(page), click: () => this.command(pageId, { type: "reload" }) },
         { label: "Duplicate", enabled: Boolean(address), click: () => finish("duplicate") },
         { type: "separator" },
-        { label: "Copy Address", enabled: Boolean(address), click: () => clipboard.writeText(address) },
+        { label: "Copy Address", enabled: Boolean(address), click: () => this.#copyText(address) },
         { label: "Open in Your Web Browser", enabled: web, click: () => { void this.#options.openExternal(address).catch(() => undefined); } },
         { type: "separator" },
         contents?.isAudioMuted()
@@ -1290,6 +1294,11 @@ export class BuiltInBrowser {
 
   // ── Context menu and keys ─────────────────────────────────────────────────
 
+  #copyText(text: string): void {
+    clipboard.writeText(text);
+    this.#options.onCopied?.();
+  }
+
   async #contextMenu(page: BrowserPage, params: ContextMenuParams): Promise<void> {
     const contents = page.view.webContents;
     // macOS often leaves Electron's suggestions empty; ask the system spell checker, as Chrome's menu does.
@@ -1305,15 +1314,15 @@ export class BuiltInBrowser {
       template.push(
         { label: "Open Link in New Tab", click: () => { this.#openTab(params.linkURL, false, "person", null, this.#home(page)); } },
         { label: "Open Link in Your Web Browser", click: () => { void this.#options.openExternal(params.linkURL).catch(() => undefined); } },
-        { label: "Copy Link Address", click: () => clipboard.writeText(params.linkURL) },
+        { label: "Copy Link Address", click: () => this.#copyText(params.linkURL) },
         { type: "separator" },
       );
     }
     if (params.mediaType === "image" && params.srcURL) {
       template.push(
         ...(isPageReachableUrl(menuFrameAddress, params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person", null, this.#home(page)); } }] : []),
-        { label: "Copy Image", click: () => contents.copyImageAt(params.x, params.y) },
-        { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
+        { label: "Copy Image", click: () => { contents.copyImageAt(params.x, params.y); this.#options.onCopyingImage?.(); } },
+        { label: "Copy Image Address", click: () => this.#copyText(params.srcURL) },
         { type: "separator" },
       );
     }

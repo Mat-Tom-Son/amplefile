@@ -54,7 +54,8 @@ import {
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
-import { parseFileClipboardPasteRequest, pasteboardHolds, planFileClipboardPaste, type PasteboardFiles } from "./file-clipboard-paste.js";
+import { existsOnDisk, FileClipboard, parseCutItems } from "./file-clipboard.js";
+import { parseFileClipboardPasteRequest, pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
@@ -117,6 +118,7 @@ import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
 import { isBrowserPageId } from "../../src/shared/browser.js";
 import { productIdentity } from "../../src/shared/product-identity.js";
+import { isMacPackageName } from "../../src/shared/mac-packages.js";
 import {
   commandLineStatus,
   defaultCommandLineEnvironment,
@@ -449,7 +451,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     extensionUi.on("event", (event: PiExtensionUiEvent) => {
     if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
-    else if (event.method === "copyText") clipboard.writeText(event.text);
+    else if (event.method === "copyText") copyTextToClipboard(event.text);
     else if (event.method === "openSettings") frontWindow()?.webContents.send("amplefile:agent:open-settings");
     else if (event.method === "quit") app.quit();
     });
@@ -590,7 +592,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       piOAuthHooks: createDesktopPiOAuthHooks({
         openExternal,
         readClipboard: () => clipboard.readText(),
-        writeClipboard: (value) => clipboard.writeText(value),
+        writeClipboard: (value) => copyTextToClipboard(value),
         showMessageBox: (options) => {
           const parent = BrowserWindow.getFocusedWindow() ?? frontWindow();
           return parent && !parent.isDestroyed() ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
@@ -854,6 +856,8 @@ function registerIpc(): void {
     writeDesktopClipboard(value, (content) => clipboard.write(content.image !== undefined
       ? { image: nativeImage.createFromDataURL(content.image) }
       : { text: content.text, ...(content.html !== undefined ? { html: content.html } : {}) }));
+    // The pasteboard holds something else now, so nothing is cut.
+    fileClipboard.replaced();
   });
   ipcMain.handle("amplefile:diagnostics:request", (event, input: unknown) => {
     if (!modelContextWindow) throw new Error("The developer inspector is not open.");
@@ -1042,7 +1046,8 @@ function registerIpc(): void {
     return startItemDrag(event.sender, items);
   });
   // A symbolic link a listing showed: open what it points to, or show the link itself in the system file manager.
-  // A linked folder is never opened here; the window goes to where it really is instead.
+  // A linked folder is never opened here; the window goes to where it really is instead. A linked Mac package
+  // (/Applications/Safari.app is one) is one item, as in Finder: it opens in its app like a file.
   ipcMain.handle("amplefile:place:open-link", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isRecord(value) || !isRecord(value.place) || typeof value.path !== "string" || !value.path || value.path.includes("\0") || isAbsolute(value.path)) throw new Error("Choose a link inside the folder.");
@@ -1055,7 +1060,8 @@ function registerIpc(): void {
       shell.showItemInFolder(link.linkPath);
       return;
     }
-    if (link.target !== "file") throw new Error("This link points to a folder. Open it in the window.");
+    const linkedPackage = process.platform === "darwin" && link.target === "folder" && isMacPackageName(basename(link.targetPath));
+    if (link.target !== "file" && !linkedPackage) throw new Error("This link points to a folder. Open it in the window.");
     const result = await shell.openPath(link.targetPath);
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
@@ -1072,47 +1078,50 @@ function registerIpc(): void {
   });
   // Copy, Cut, and paste with Finder: files copied there paste into the file
   // manager, and files copied or cut here paste there, through the system's file pasteboard. Paste reads the
-  // pasteboard here, never in the window (the window can't read the clipboard): what was copied or cut in this
-  // window pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
+  // pasteboard here, never in the window (the window can't read the clipboard). A Cut made in any window is the
+  // host's (desktop/src/file-clipboard.ts) and pastes by its place as a move in every window; what this window
+  // copied pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
   // that app cut them or the person chose ⌥⌘V. The window's `operationId` shows the paste's progress, and
   // `conflicts` asks about taken names first, then carries the person's choices.
   ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const request = parseFileClipboardPasteRequest(value);
-    const pasteboard = await readPasteboardFiles();
-    const plan = planFileClipboardPaste(request, pasteboard, await listConnectedFolders());
-    if (!plan.sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
-    const result = await transferFileEntries({
-      mode: plan.mode,
-      sources: plan.sources,
-      target: request.target,
-      ...(request.operationId ? { operationId: request.operationId } : {}),
-      ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
-    });
-    const answer = { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut };
-    // A finished paste of a Cut empties the pasteboard, as the system file managers do, so it is not moved twice.
-    if (plan.cut && !("conflicts" in result) && !("cancelled" in result && result.cancelled)) await clearPasteboardFiles(pasteboard.paths);
-    return answer;
+    return fileClipboard.paste(request, await listConnectedFolders(), (body) => transferFileEntries(body));
   });
   ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
-    // A list of paths is a Copy; { paths, operation: "cut" } is a Cut.
+    // A list of paths is a Copy; { paths, operation: "cut", from: { place, paths } } is a Cut, which the host
+    // remembers for every window: the items by place, and the files it put on the pasteboard.
+    if (isRecord(value) && !Array.isArray(value) && value.operation === "cut") {
+      const items = parseCutItems(value);
+      const kept = items.nativePaths.flatMap((path, index) => lstatSync(path, { throwIfNoEntry: false }) ? [index] : []);
+      if (!kept.length) return false;
+      await fileClipboard.cut({ place: items.place, paths: kept.map((index) => items.paths[index]!), nativePaths: kept.map((index) => items.nativePaths[index]!) });
+      return true;
+    }
     const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.paths) ? value.paths : null;
-    const operation = isRecord(value) && !Array.isArray(value) && value.operation === "cut" ? "cut" : "copy";
     if (!list || !list.length || list.length > 5_000) throw new Error("Choose items to copy.");
     const paths = list.map((item) => {
       if (typeof item !== "string" || !isAbsolute(item) || item.includes("\0")) throw new Error("Choose items to copy.");
       return item;
     }).filter((path) => Boolean(lstatSync(path, { throwIfNoEntry: false })));
     if (!paths.length) return false;
-    await writePasteboardFilePaths(paths, operation);
+    await writePasteboardFilePaths(paths);
+    // A Copy replaces whatever was cut.
+    fileClipboard.replaced();
     return true;
   });
-  // Whether the pasteboard still holds what this window cut, so those items stay drawn as cut.
-  ipcMain.handle("amplefile:file-clipboard:holds", async (event, value: unknown): Promise<boolean> => {
+  // What is cut now, in any window, while the pasteboard still holds it; a window asks when it opens and when it
+  // comes to the front (another app may have copied meanwhile), and hears every change.
+  ipcMain.handle("amplefile:file-clipboard:cut", async (event): Promise<{ nativePaths: string[] } | null> => {
     assertTrustedMainRenderer(event);
-    if (!Array.isArray(value) || !value.length || value.length > 5_000 || value.some((item) => typeof item !== "string")) return false;
-    return pasteboardHolds(await readPasteboardFiles(), value as string[]);
+    const cut = await fileClipboard.current();
+    return cut ? { nativePaths: [...cut.nativePaths] } : null;
+  });
+  // Esc in the folder list: the Cut is cancelled in every window, and its files leave the pasteboard.
+  ipcMain.handle("amplefile:file-clipboard:cancel-cut", async (event): Promise<void> => {
+    assertTrustedMainRenderer(event);
+    await fileClipboard.cancel();
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
   ipcMain.handle("amplefile:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
@@ -1428,7 +1437,7 @@ type RendererMenuCommand =
   | "open-local-folder"
   | "new-chat"
   | "close-tab"
-  | "reload-connected-folder-state"
+  | "refresh"
   | "check-for-updates"
   | "open-settings"
   | "open-about"
@@ -1437,8 +1446,6 @@ type RendererMenuCommand =
   | "open-extensions"
   | "open-command-palette"
   | "open-keyboard-shortcuts"
-  | "toggle-sidebar"
-  | "toggle-agent-panel"
   | "toggle-hidden-files"
   | "new-tab"
   | "next-tab"
@@ -1496,7 +1503,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       }] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
-      { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: state.connectedFolderOpen, click: menuCommand("reload-connected-folder-state") },
+      // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.
+      { id: "refresh", label: "Refresh", accelerator: "CommandOrControl+R", enabled: state.folderTabsOpen, click: menuCommand("refresh") },
     ];
     if (process.platform !== "darwin") {
       items.push(
@@ -1562,9 +1570,12 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       { id: "previous-tab", label: "Show Previous Tab", accelerator: process.platform === "darwin" ? "Shift+Command+[" : "Control+PageUp", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("previous-tab") },
       { id: "next-tab", label: "Show Next Tab", accelerator: process.platform === "darwin" ? "Shift+Command+]" : "Control+PageDown", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("next-tab") },
       { type: "separator" },
-      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: state.connectedFolderOpen, click: menuCommand("toggle-sidebar") },
-      { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: state.connectedFolderOpen, click: menuCommand("toggle-agent-panel") },
-      { type: "separator" },
+      // The AmpleFile Agent is above every Connected Folder and lives in the menu-bar popover, so this shows or hides
+      // the popover from any window, with or without a Connected Folder. It goes to the host, not to a window.
+      ...(ampleFileAgentPopoverHosted() ? [
+        { id: "toggle-amplefile-agent", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", click: () => { void toggleAmpleFileAgentPopover(); } },
+        { type: "separator" },
+      ] as MenuItemConstructorOptions[] : []),
       { role: "resetZoom" },
       { role: "zoomIn" },
       { role: "zoomOut" },
@@ -1586,6 +1597,11 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
     );
   }
   return items;
+}
+
+/** The AmpleFile Agent popover hangs from the menu-bar (or tray) icon, which only the Mac and Windows have. */
+function ampleFileAgentPopoverHosted(): boolean {
+  return process.platform === "darwin" || process.platform === "win32";
 }
 
 function macApplicationMenu(): MenuItemConstructorOptions[] {
@@ -1694,14 +1710,12 @@ function refreshApplicationMenuState(): void {
   if (showHidden) showHidden.checked = state.showHiddenFiles;
   setMenuItemEnabled(menu, "show-hidden-files", state.folderTabsOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "refresh-connected-folder", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "refresh", state.folderTabsOpen);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
   const showTabBar = menu?.getMenuItemById("show-tab-bar");
   if (showTabBar) showTabBar.checked = state.showTabBar;
   for (const id of ["new-tab", "show-tab-bar", "previous-tab", "next-tab"]) setMenuItemEnabled(menu, id, state.folderTabsOpen);
   setMenuItemEnabled(menu, "open-capabilities", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-sidebar", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-agent-panel", state.connectedFolderOpen);
 }
 
 function setMenuItemEnabled(menu: Menu | null, id: string, enabled: boolean): void {
@@ -2035,13 +2049,15 @@ type NativeCommandMenuItem<Command extends string> =
 
 /**
  * The files on the system pasteboard (Finder's Copy), newest format first,
- * with no Cut marker (a Mac's pasteboard has none); empty when it holds no files.
+ * with no Cut marker (a Mac's pasteboard has none) but the token an AmpleFile
+ * Cut wrote beside them; empty when it holds no files. Elsewhere the desktop
+ * reads no files from it, only its text, where AmpleFile writes files as
+ * their paths.
  */
 async function readPasteboardFiles(): Promise<PasteboardFiles> {
-  if (process.platform !== "darwin") return { paths: [], operation: null };
-  const plist = clipboard.read("NSFilenamesPboardType");
-  const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
-  if (listed.length) return { paths: listed, operation: null };
+  if (process.platform !== "darwin") return { paths: [], operation: null, unreadable: true, text: clipboard.readText() };
+  const listed = readPasteboardFileList(clipboard.read("NSFilenamesPboardType"));
+  if (listed.paths.length) return { paths: listed.paths, operation: null, cutToken: listed.cutToken };
   const url = clipboard.read("public.file-url").trim();
   if (url.startsWith("file://")) {
     try { return { paths: [fileURLToPath(url)], operation: null }; } catch { return { paths: [], operation: null }; }
@@ -2049,28 +2065,35 @@ async function readPasteboardFiles(): Promise<PasteboardFiles> {
   return { paths: [], operation: null };
 }
 
-/** After a Cut is pasted: the pasteboard is emptied if it still holds those files. */
-async function clearPasteboardFiles(paths: readonly string[]): Promise<void> {
-  if (!pasteboardHolds(await readPasteboardFiles(), paths)) return;
-  clipboard.clear();
-}
-
 /**
  * Puts files on the system pasteboard the way Finder's Copy does, so Finder (and Mail, and Messages) can
- * paste them. A Mac's pasteboard has no Cut marker: a Cut is remembered in the window.
+ * paste them. A Mac's pasteboard has no Cut marker: a Cut's `token` goes into the file list beside the paths,
+ * and the host remembers the Cut (fileClipboard).
  */
-async function writePasteboardFilePaths(paths: readonly string[], operation: "copy" | "cut" = "copy"): Promise<void> {
-  if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${paths.map((path) => `<string>${encodeXmlText(path)}</string>`).join("")}</array></plist>`;
-  clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
+async function writePasteboardFilePaths(paths: readonly string[], token: string | null = null): Promise<void> {
+  if (process.platform !== "darwin") { clipboard.writeText(pasteboardFileText(paths)); return; }
+  clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(pasteboardFileList(paths, token), "utf8"));
 }
 
-function encodeXmlText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/** The windows' clipboard: the Cut, kept for every window, and Paste. Each change of the Cut reaches every window. */
+const fileClipboard = new FileClipboard({
+  read: readPasteboardFiles,
+  write: writePasteboardFilePaths,
+  clear: () => clipboard.clear(),
+  exists: existsOnDisk,
+  token: () => process.platform === "darwin" ? randomBytes(16).toString("hex") : null,
+  changed: (nativePaths) => {
+    const cut = nativePaths ? { nativePaths: [...nativePaths] } : null;
+    for (const window of fileManagerWindows.windows()) {
+      if (!window.webContents.isDestroyed()) window.webContents.send("amplefile:file-clipboard:cut-changed", cut);
+    }
+  },
+});
 
-function decodeXmlText(value: string): string {
-  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+/** Text AmpleFile puts on the clipboard (a sign-in code, an address): the pasteboard holds it now, so nothing is cut. */
+function copyTextToClipboard(text: string): void {
+  clipboard.writeText(text);
+  fileClipboard.replaced();
 }
 
 /**
@@ -2248,6 +2271,13 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: (window) => railTooltipOverlays.get(window.id)?.raise(),
+    // An address the person copied from a page replaces what was cut.
+    onCopied: () => fileClipboard.replaced(),
+    // A page puts a picture on the clipboard in its own time, or fails to: look again shortly, and forget the Cut
+    // only once the pasteboard no longer holds it.
+    onCopyingImage: () => {
+      for (const delay of [300, 2_000]) setTimeout(() => { void fileClipboard.current().catch(() => null); }, delay);
+    },
     declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
@@ -2814,7 +2844,7 @@ function buildEditableContextMenuTemplate(window: BrowserWindow, params: Context
 function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
   if (params.selectionText.length > 0) template.push({ role: "copy", enabled: params.editFlags.canCopy });
-  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => clipboard.writeText(params.linkURL) });
+  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => copyTextToClipboard(params.linkURL) });
   return template;
 }
 

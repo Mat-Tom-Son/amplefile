@@ -123,7 +123,7 @@ test("focused inspector owns close and refresh menu commands and shortcuts", asy
     createWindow: () => window as unknown as BrowserWindow, request: async () => { throw new Error("No capture request expected."); },
   });
   await inspector.open();
-  assert.equal(inspector.handleMenuCommand("reload-connected-folder-state"), true);
+  assert.equal(inspector.handleMenuCommand("refresh"), true);
   assert.equal(window.reloads, 1);
   assert.equal(inspector.handleMenuCommand("open-settings"), false);
   let prevented = false;

@@ -108,6 +108,7 @@ import { useFolderTabs, type PanelChat } from "./useFolderTabs";
 import { FolderTabStrip, type FolderTabItem } from "./FolderTabStrip";
 import { useFileManagerNavigation } from "./useFileManagerNavigation";
 import { useFileSelection } from "./useFileSelection";
+import { isPartialUndo } from "./file-manager-undo";
 import { useFileChanges } from "./useFileChanges";
 import { useFileClipboard } from "./useFileClipboard";
 import { useFileDrops } from "./useFileDrops";
@@ -539,7 +540,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // Hidden items (dotfiles, and what the system file manager hides) only while Show Hidden Files is on.
   const entries = useMemo(() => shownEntries(listing.entries, showHidden), [listing.entries, showHidden]);
   // The Kind column names a Connected Folder nested here the way the rest of the window does, and says a link is one.
-  const kindLabel = (entry: TreeEntry) => entry.link ? linkKindLabel(entry.link) : entry.nestedFolder ? "Connected Folder" : fileKindLabel(entry);
+  const kindLabel = (entry: TreeEntry) => entry.link ? linkKindLabel(entry.link, entry.package) : entry.nestedFolder ? "Connected Folder" : fileKindLabel(entry);
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     const shown = entries.filter((entry) => !hiddenPaths.has(hiddenKey(place, entry.path)) && (!needle || entry.name.toLocaleLowerCase().includes(needle)));
@@ -594,13 +595,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const changes = useFileChanges({ fixtureMode, place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError });
   const { deletePaths, duplicateSelection, renameEntry, runTrashDeletion } = changes;
   const clipboard = useFileClipboard({ fixtureMode, place, placeRoot, location, contentRef, changes, nameOfPlace, onError });
-  const { cutItems } = clipboard;
+  const { cutPaths } = clipboard;
   const drops = useFileDrops({ fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop: searchMode || recentsOpen, listing, changes, select, nameOfPlace, onError });
   const { dropTarget, setDropTarget, isItemDrag } = drops;
   const menus = useFileManagerMenus({
     mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, onError,
     actions: {
-      openEntry, openLocal, showOriginal, copyPaths,
+      openEntry, openLocal, showOriginal, showPackageContents, copyPaths,
       openEntryInNewTab: (entry) => openEntryInNewTab(entry),
       openPlaceInNewTab: (target) => openInNewTab({ place: target, path: "" }),
       openInNewWindow: !fixtureMode && window.ampleFileDesktop?.windows?.openInNewWindow ? (where) => openInNewWindow(where) : null,
@@ -711,9 +712,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     showTab(next.activeId);
   }
 
-  /** Where a folder row opens (a nested Connected Folder, a Standard Folder, or the folder itself), or null for anything else. */
+  /** Where a folder row opens (a nested Connected Folder, a Standard Folder, or the folder itself), or null for anything else, a Mac package included. */
   function folderLocationOf(entry: TreeEntry): FileManagerLocation | null {
-    if (entry.kind !== "folder" || entry.link) return null;
+    if (entry.kind !== "folder" || entry.link || entry.package) return null;
     const nested = nestedConnectedFolder(entry);
     if (nested) return { place: { kind: "connected-folder", id: nested.id }, path: "" };
     // A folder that is a Standard Folder opens as that one, so the sidebar shows where you are.
@@ -795,6 +796,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   async function openEntry(entry: TreeEntry) {
     if (entry.link) { await openLink(entry); return; }
+    // A Mac package (an app, a Pages document) opens in its app, as a file does: an app launches.
+    if (entry.package) { await openLocal(entry.path, "open"); return; }
     if (entry.kind === "folder") {
       const where = folderLocationOf(entry);
       if (where) navigate(where);
@@ -805,19 +808,35 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /**
    * Opening a symbolic link: a linked folder shows where it really is (the
-   * host resolves the link again now); a linked file opens what it points to
-   * in its default app; a broken link says so and opens nothing.
+   * host resolves the link again now); a linked file, or a linked Mac package
+   * such as /Applications/Safari.app, opens what it points to in its default
+   * app; a broken link says so and opens nothing.
    */
   async function openLink(entry: TreeEntry) {
     const link = entry.link;
     if (!link) return;
     if (link.target === "missing") { showToast({ text: `“${entry.name}” is a broken link. What it points to isn’t there.`, tone: "info" }); return; }
-    if (link.target === "folder") {
+    if (link.target === "folder" && !entry.package) {
       if (fixtureMode) { showToast({ text: "Opening links is disabled in the preview", tone: "info" }); return; }
       await openNativeFolder(placeNativePath(placeRoot, entry.path));
       return;
     }
     await openLinkInDesktop(entry, "open");
+  }
+
+  /**
+   * Show Package Contents: the window goes inside a Mac package, as into any
+   * folder; for a link to one, inside where the package really is.
+   */
+  async function showPackageContents(entry: TreeEntry) {
+    if (!entry.package) return;
+    if (entry.link) {
+      if (entry.link.target !== "folder") return;
+      if (fixtureMode) { showToast({ text: "Opening links is disabled in the preview", tone: "info" }); return; }
+      await openNativeFolder(placeNativePath(placeRoot, entry.path));
+      return;
+    }
+    navigate({ place, path: entry.path });
   }
 
   /** Show Original: the window goes to where the link's target really is, with it selected. */
@@ -973,7 +992,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   // The menu bar's commands that mean something here: Skills & Extensions
-  // (⌘⇧S) for the Connected Folder shown, New Chat (⌘⇧N) at the message box, and Refresh (⌘R).
+  // (⌘⇧S) for the Connected Folder shown, New Chat (⌘⇧N) at the message box, and Refresh (⌘R), which reads
+  // the folder shown again in any place, with the sidebar's Connected Folders and Standard Folders.
   useEffect(() => {
     if (!desktopAction) return;
     const { command } = desktopAction;
@@ -987,7 +1007,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       setPanelOpen(true);
       setPanelChat((current) => current ? { ...current, open: false } : current);
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
-    } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+    } else if (command === "refresh") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W): nothing behind a dialog. While the Browser pane has the keyboard it closes the browser tab in
@@ -1262,7 +1282,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const entry = changes.restorePointsUndo("the Worker’s changes", [{ connectedFolderId: connectedFolder.id, checkpointId: workerChanges.checkpointId }]);
     try {
       const redo = await entry.run();
-      if (redo) changes.recordRedo(redo);
+      if (redo && !isPartialUndo(redo)) changes.recordRedo(redo);
       worker.done();
       await listing.refresh();
       showToast({ text: "Undid the Worker’s changes", tone: "success" });
@@ -1373,7 +1393,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (event.key === " ") { event.preventDefault(); quickLook(focusPath); return; }
     if (event.key === "Enter" && selection.length === 1) { event.preventDefault(); requestRename(byPath.get(selection[0]!)); return; }
     if (event.key === "Escape" && previewShown) { event.preventDefault(); setPreviewOpen(false); return; }
-    if (event.key === "Escape") { if (selection.length) { event.preventDefault(); select([]); } return; }
+    // Esc clears the selection; with nothing selected, it cancels a Cut shown here (in every window).
+    if (event.key === "Escape") {
+      if (selection.length) { event.preventDefault(); select([]); }
+      else if (cutPaths && order.some((path) => cutPaths.has(path))) { event.preventDefault(); void clipboard.cancelCut(); }
+      return;
+    }
     if (!command && !event.altKey && event.key.length === 1 && /\S/.test(event.key)) {
       const typed = typeSelectRef.current;
       typed.text += event.key;
@@ -1729,7 +1754,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           focusPath={focusPath}
           dropTarget={dropTarget !== location.path ? dropTarget : null}
           markedPaths={markedPaths}
-          cutPaths={cutItems && samePlace(cutItems.place, place) ? cutItems.paths : null}
+          cutPaths={cutPaths}
           kindLabel={kindLabel}
           day={calendarDay}
           tintFor={nestedTint}
