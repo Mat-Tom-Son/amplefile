@@ -153,25 +153,84 @@ serve refs/proof/tampered-rpm
 refused "upgrade to a tampered RPM" upgrade
 [ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|digest|gpg|pgp' "$P/last.log" && pass "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed" || fail "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed"
 
-step "Upgrade to B through the repository, with AmpleFile 'running'"
-serve "refs/heads/$BRANCH"
-node "$S/scripts/linux-package-repository-proof/watch.mjs" "$UPDATES" watch "$P/statuses.jsonl" 120 &
-WATCHER=$!
-sleep 2
+step "The installed app runs while dnf upgrades it to B"
+# A person's session: their own user, a display and a session bus that
+# outlive any one AmpleFile process, so a relaunch has somewhere to open.
+useradd -m -u 1000 proof
+APP=/home/proof/amplefile-proof
+runuser -u proof -- mkdir -p "$APP/state" "$APP/agent" "$APP/runtime"
+chmod 700 "$APP/runtime"
+Xvfb :77 -screen 0 1600x1000x24 -nolisten tcp > "$P/xvfb.log" 2>&1 &
+BUS=$(runuser -u proof -- dbus-daemon --session --fork --nopidfile --print-address=1)
+APP_ENV=(HOME=/home/proof PATH=/usr/bin:/bin DISPLAY=:77 "DBUS_SESSION_BUS_ADDRESS=$BUS" "XDG_RUNTIME_DIR=$APP/runtime" XDG_SESSION_TYPE=x11
+  "AMPLEFILE_STATE_DIR=$APP/state" "AMPLEFILE_DESKTOP_STATE_DIR=$APP/state" "AMPLEFILE_CLI_STATE_DIR=$APP/state"
+  "AMPLEFILE_AGENT_DIR=$APP/agent" "PI_CODING_AGENT_DIR=$APP/agent" AMPLEFILE_DISABLE_LOGIN_SHELL_ENV=1)
+TOKEN=$APP/state/cli/act-token.json
+drive() { node "$S/scripts/linux-package-repository-proof/app-driver.mjs" 9222 "$@"; }
+# The main AmpleFile processes: the executable without Chromium's --type=.
+main_pids() { ps -u proof -o pid=,args= | awk '$2 == "/opt/AmpleFile/amplefile-desktop" && $0 !~ /--type=/ { print $1 }'; }
+field() { node -e 'const s = JSON.parse(process.argv[1]); console.log(String(s[process.argv[2]]))' "$1" "$2"; }
+for _ in $(seq 30); do [ -e /tmp/.X11-unix/X77 ] && break; sleep 0.2; done
+runuser -u proof -- env -i "${APP_ENV[@]}" setsid /opt/AmpleFile/amplefile-desktop --remote-debugging-port=9222 >> "$P/app.log" 2>&1 < /dev/null &
+BEFORE=$(drive status 120) || { tail -40 "$P/app.log"; fail "the installed app did not open a window"; }
+echo "    before: $BEFORE" | tee -a "$P/results.txt"
+OLD_PID=$(main_pids)
+[ "$(echo "$OLD_PID" | wc -w)" = 1 ] || fail "expected one AmpleFile main process, found: $OLD_PID"
+[ "$(field "$BEFORE" phase)" = unsupported ] && [ "$(field "$BEFORE" supported)" = false ] && [ "$(field "$BEFORE" updatesFrom)" = system ] \
+  && [ "$(field "$BEFORE" message)" = "AmpleFile updates arrive with your system's software updates." ] \
+  && pass "the running app (pid $OLD_PID) says its updates arrive with the system's software updates, with no update button or indicator" \
+  || fail "the running app's status before the upgrade"
+
 upgrade 2>&1 | tee "$P/upgrade.log"
 [ "$(installed)" = "$VERSION-2" ] || fail "B was not installed"
-rpm -qi "$PACKAGE" | grep -i '^Signature' | tee -a "$P/results.txt"
-pass "dnf upgraded A to B from the repository with gpgcheck=1 and repo_gpgcheck=1"
+pass "dnf upgraded A to B from the repository with gpgcheck=1 and repo_gpgcheck=1, while AmpleFile ran"
 grep -qx metadata_expire=1m "$ENTRY" && pass "the upgrade kept the person's change to $ENTRY" || fail "the upgrade kept the person's change to $ENTRY"
-for _ in $(seq 20); do grep -q '"phase":"ready"' "$P/statuses.jsonl" 2> /dev/null && break; sleep 0.5; done
-kill "$WATCHER" 2> /dev/null || true
-tail -1 "$P/statuses.jsonl" | tee -a "$P/results.txt"
-tail -1 "$P/statuses.jsonl" | grep -q '"phase":"ready"' && pass "the running app's watcher saw its installed files replaced and offers the restart" || fail "the running app's watcher saw its installed files replaced and offers the restart"
+echo "    old process's archive: $(ls -l "/proc/$OLD_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)" | tee -a "$P/results.txt"
+FIRST=$(drive check)
+READY=$(drive check)
+echo "    first look: $FIRST" | tee -a "$P/results.txt"
+echo "    second look: $READY" | tee -a "$P/results.txt"
+[ "$(field "$FIRST" phase)" = unsupported ] || fail "the first look after the upgrade already offered the restart"
+[ "$(field "$READY" phase)" = ready ] && [ "$(field "$READY" supported)" = true ] && [ "$(field "$READY" updatesFrom)" = system ] \
+  && { [ "$(field "$READY" message)" = "AmpleFile was updated. Restart AmpleFile to use the update." ] || [ "$(field "$READY" message)" = "AmpleFile $(field "$READY" availableVersion) was installed. Restart AmpleFile to use it." ]; } \
+  && pass "after the upgrade, the second look makes the real app offer the restart (ready, updatesFrom system)" \
+  || fail "the real app's status after the upgrade and two looks"
+[ "$(main_pids)" = "$OLD_PID" ] && pass "offering the restart restarted nothing on its own" || fail "AmpleFile restarted without being asked"
 
-step "A person who turns the repository off keeps that choice"
+step "Restart into B, as the person's confirmed click does"
+drive install
+for _ in $(seq 120); do kill -0 "$OLD_PID" 2> /dev/null || break; sleep 0.5; done
+kill -0 "$OLD_PID" 2> /dev/null && { tail -40 "$P/app.log"; fail "the old AmpleFile process did not exit"; }
+pass "the old AmpleFile process ($OLD_PID) exited"
+NEW_PID=
+for _ in $(seq 120); do NEW_PID=$(main_pids); [ -n "$NEW_PID" ] && break; sleep 0.5; done
+[ "$(echo "$NEW_PID" | wc -w)" = 1 ] || { tail -40 "$P/app.log"; fail "expected one relaunched AmpleFile process, found: '$NEW_PID'"; }
+AFTER=$(drive status 120) || { tail -40 "$P/app.log"; fail "the relaunched app did not open a window"; }
+EXE=$(readlink "/proc/$NEW_PID/exe")
+ARCHIVE=$(ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)
+echo "    relaunched pid $NEW_PID: exe $EXE, archive $ARCHIVE" | tee -a "$P/results.txt"
+echo "    after: $AFTER" | tee -a "$P/results.txt"
+[ "$EXE" = /opt/AmpleFile/amplefile-desktop ] && { [ -z "$ARCHIVE" ] || [ "$ARCHIVE" = /opt/AmpleFile/resources/app.asar ]; } \
+  && pass "a new AmpleFile process ($NEW_PID) started from the installed B files" || fail "the relaunched process does not run the installed files"
+[ "$(field "$AFTER" phase)" = unsupported ] && [ "$(field "$(drive check)" phase)" = unsupported ] && [ "$(field "$(drive check)" phase)" = unsupported ] \
+  && pass "the relaunched app says updates arrive with the system's again: no second ready status" || fail "the relaunched app offers a restart again"
+sleep 15
+[ "$(main_pids)" = "$NEW_PID" ] && pass "no restart loop: the same single process 15 seconds later" || fail "AmpleFile restarted again: $(main_pids)"
+
+step "An ordinary quit, with a restart offered but not chosen"
+# The person turns the repository off; dnf reinstalls B, replacing the files again.
 sed -i 's/^enabled=1$/enabled=0/' "$ENTRY"
 dnf -y -q reinstall "$RPM_B"
 grep -qx enabled=0 "$ENTRY" && ! dnf repolist --enabled | grep -q "^$REPOSITORY_ID " && pass "a reinstall keeps enabled=0, and dnf no longer checks the repository" || fail "a reinstall keeps enabled=0, and dnf no longer checks the repository"
+drive check > /dev/null
+[ "$(field "$(drive check)" phase)" = ready ] || fail "the reinstall did not offer the restart"
+[ -e "$TOKEN" ] && echo "    act token present before the quit" | tee -a "$P/results.txt"
+kill -TERM "$NEW_PID"
+for _ in $(seq 120); do kill -0 "$NEW_PID" 2> /dev/null || break; sleep 0.5; done
+kill -0 "$NEW_PID" 2> /dev/null && fail "AmpleFile did not quit"
+sleep 10
+[ -z "$(main_pids)" ] && pass "an ordinary quit (SIGTERM, as at logout) ends AmpleFile and opens nothing again" || fail "AmpleFile opened again after an ordinary quit: $(main_pids)"
+[ ! -e "$TOKEN" ] && pass "the quit ran AmpleFile's own shutdown (the CLI act token is gone)" || fail "the quit skipped AmpleFile's shutdown: $TOKEN remains"
 node "$S/scripts/linux-package-repository-proof/watch.mjs" "$UPDATES" once | tee "$P/about-off.txt"
 grep -q '"installation":null' "$P/about-off.txt" && pass "with the repository off, AmpleFile keeps the wording of a build without updates" || fail "with the repository off, AmpleFile keeps the wording of a build without updates"
 

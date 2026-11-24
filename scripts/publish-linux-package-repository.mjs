@@ -27,10 +27,11 @@
 // whose linux-package-repository branch is written; default this one),
 // --remote NAME (default origin), --no-fetch (do not fetch the published
 // branch first), --download-base URL (stand-in for the GitHub Release
-// download folder, for a local test server only).
+// download folder, for a local test server only; prepare refuses it unless
+// --git-dir is a separate repository).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants as fsConstants, existsSync } from "node:fs";
+import { constants as fsConstants, existsSync, realpathSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { gunzipSync } from "node:zlib";
@@ -137,6 +138,30 @@ export function assertNewerThanListed(candidate, listed) {
       throw new Error(`The repository already lists ${item.name} ${item.version}-${item.release}; ${candidate.version}-${candidate.release} is not newer. Every published build needs a higher version or release (tag linux-test-VERSION-N for a later build of one version).`);
     }
   }
+}
+
+/**
+ * `--download-base` points the metadata at a stand-in for GitHub's release
+ * downloads, for a local test server. Metadata with that address must never
+ * land on this checkout's own linux-package-repository branch, one push away
+ * from every enrolled computer, so it needs a `--git-dir` that is a different
+ * repository. Worktrees share one repository: they are compared by their
+ * common git directory, as `commonDirectory` resolves it.
+ */
+export function assertDownloadBaseAllowed({ downloadBase, gitDir, sourceRoot, commonDirectory }) {
+  if (!downloadBase) return;
+  const target = commonDirectory(gitDir);
+  if (!target) throw new Error(`--download-base ${downloadBase} is for a local test server only, so --git-dir must name a separate scratch repository; ${gitDir} is not a git repository.`);
+  if (target === commonDirectory(sourceRoot)) {
+    throw new Error(`--download-base ${downloadBase} is for a local test server only, and --git-dir ${gitDir} is this checkout's repository: its linux-package-repository branch would list packages at that address, one push away from every enrolled computer. Pass --git-dir naming a separate scratch repository, or drop --download-base to use the GitHub Release for the tag.`);
+  }
+}
+
+/** The absolute common git directory of the repository holding `directory`, or null. */
+export function gitCommonDirectory(directory) {
+  const result = spawnSync("git", ["-C", directory, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  try { return realpathSync(result.stdout.trim()); } catch { return result.stdout.trim(); }
 }
 
 /** SHA256SUMS with `name`'s line set to `sha256`, added when missing. */
@@ -419,6 +444,7 @@ function commitEnvironment(options) {
 }
 
 async function prepare(options) {
+  assertDownloadBaseAllowed({ downloadBase: options.downloadBase, gitDir: options.gitDir, sourceRoot: root, commonDirectory: gitCommonDirectory });
   const context = await preflight(options);
   try {
     const { identity, enrolment, fingerprint, workspace } = context;

@@ -599,6 +599,9 @@ pushes, tags, or edits a release:
   location, signs `repomd.xml` (detached, armored), verifies that signature
   against the committed key, and commits the branch's complete new content
   locally, on top of the published branch. It prints the push command.
+  `--download-base URL` points the metadata at a local test server instead of
+  the GitHub Release; `prepare` refuses it unless `--git-dir` names a separate
+  repository, so stand-in addresses can never reach this checkout's branch.
 
 ### Publishing a Linux prerelease
 

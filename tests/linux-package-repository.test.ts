@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -6,7 +7,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { parseRpmFileFlags, repositoryEntryProblems, rpmEnrolmentProblems } from "../scripts/verify-linux-packages.mjs";
 import {
+  assertDownloadBaseAllowed,
   assertNewerThanListed,
+  gitCommonDirectory,
   branchReadme,
   listedChecksum,
   missingTools,
@@ -235,4 +238,29 @@ test("the publish step's arguments", () => {
   assert.throws(() => parseArguments(["sign", "--tag", "v0.1.8"]), /linux-test-X\.Y\.Z/);
   assert.throws(() => parseArguments(["prepare", "--tag", "linux-test-0.1.8", "--download-base", "http://x"]), /ending in \//);
   assert.throws(() => parseArguments(["prepare", "--tag", "linux-test-0.1.8", "--force"]), /Unknown option/);
+});
+
+test("prepare refuses a stand-in download address unless it writes to a separate repository", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "amplefile-download-base-"));
+  const git = (...args: string[]) => execFileSync("git", args, { stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@invalid" } });
+  try {
+    const source = join(folder, "source");
+    const scratch = join(folder, "scratch");
+    const worktree = join(folder, "worktree");
+    const plain = join(folder, "plain");
+    git("init", "-q", source);
+    git("-C", source, "commit", "-q", "--allow-empty", "-m", "first");
+    git("-C", source, "worktree", "add", "-q", "--detach", worktree);
+    git("init", "-q", scratch);
+    await mkdir(plain);
+    const check = (gitDir: string, downloadBase: string | null = "http://127.0.0.1:8080/x/") => () => assertDownloadBaseAllowed({ downloadBase, gitDir, sourceRoot: source, commonDirectory: gitCommonDirectory });
+    assert.throws(check(source), /is for a local test server only, and --git-dir .* is this checkout's repository: its linux-package-repository branch would list packages at that address, one push away from every enrolled computer/);
+    assert.throws(check(join(source, ".")), /one push away/, "the same folder by another spelling");
+    assert.throws(check(worktree), /one push away/, "a worktree shares this checkout's branches");
+    assert.throws(check(plain), /must name a separate scratch repository; .* is not a git repository/);
+    assert.doesNotThrow(check(scratch));
+    assert.doesNotThrow(check(source, null), "without --download-base the GitHub Release is used, and this checkout is the target");
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });

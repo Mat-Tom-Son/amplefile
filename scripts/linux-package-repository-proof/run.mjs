@@ -80,7 +80,7 @@ const hosts = ["raw.githubusercontent.com", "github.com", "release-assets.github
 const node = realpathSync(process.execPath);
 let failed = null;
 try {
-  run("podman", ["run", "--rm", "--memory=2g", "--security-opt", "label=disable", ...hosts,
+  run("podman", ["run", "--rm", "--init", "--memory=3g", "--shm-size=1g", "--security-opt", "label=disable", ...hosts,
     "-v", `${work}:/proof`, "-v", `${node}:/usr/local/bin/node:ro`,
     "-e", `VERSION=${version}`, "-e", `OWNER=${repository.owner}`, "-e", `REPO=${repository.repo}`, "-e", `BRANCH=${repository.branch}`,
     "-e", `PACKAGE=${identity.packageName}`, "-e", `REPOSITORY_ID=${repository.id}`, "-e", `PRODUCT=${identity.productName}`,
