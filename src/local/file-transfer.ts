@@ -154,10 +154,10 @@ function clockTick(mtimeMs: number): number {
  * goes. On a disk that keeps fine times this is empty.
  */
 export function filesTooFreshToTell(source: string, read: CopiedSource): string[] {
-  const inside = source.endsWith(sep) ? source : `${source}${sep}`;
   const fresh: string[] = [];
-  for (const [path, was] of read) {
-    if (was.kind !== "file" || (path !== source && !path.startsWith(inside))) continue;
+  for (const path of moveReadPaths(source, read)) {
+    const was = read.get(path)!;
+    if (was.kind !== "file") continue;
     const tick = clockTick(was.mtimeMs);
     if (tick && was.readAt - was.mtimeMs < tick) fresh.push(path);
   }
@@ -259,12 +259,16 @@ export async function onOneDisk(item: string, folder: string): Promise<boolean> 
  * original is still where it was.
  */
 export async function sourceLostPart(source: string, read: CopiedSource): Promise<boolean> {
+  for (const path of moveReadPaths(source, read)) if (!await lstat(path).catch(() => null)) return true;
+  return false;
+}
+
+/** The source entries a move verifies, excluding Finder's notes inside folders. */
+export function* moveReadPaths(source: string, read: CopiedSource): IterableIterator<string> {
   const inside = source.endsWith(sep) ? source : `${source}${sep}`;
   for (const path of read.keys()) {
-    if (path !== source && (!path.startsWith(inside) || basename(path) === finderNote)) continue;
-    if (!await lstat(path).catch(() => null)) return true;
+    if (path === source || (path.startsWith(inside) && basename(path) !== finderNote)) yield path;
   }
-  return false;
 }
 
 /**
@@ -465,38 +469,6 @@ async function treeHeld(from: string, into: string, options: { identity: boolean
  */
 const sameTimeToleranceMs = 2_000;
 
-/** Moves a file or folder into a folder on the same computer (copying across disks), returning where it landed. */
-export async function moveInto(source: string, targetFolder: string, operation: FileOperationControl = untrackedFileOperation): Promise<string> {
-  if (isInside(source, targetFolder)) throw badRequest(`“${basename(source)}” can’t be moved into itself.`);
-  const destination = await freeDestination(targetFolder, basename(source));
-  try {
-    await rename(source, destination);
-  } catch (error) {
-    if ((error as { code?: string }).code !== "EXDEV") throw error;
-    // Across disks the item is copied, then its source goes. A cancel stops
-    // only the copy, which takes back what it wrote; once the copy is whole
-    // the move finishes, so the item is never in neither place.
-    await copyTree(source, destination, undefined, withoutCounts(operation));
-    await rm(source, { recursive: true, force: true });
-  }
-  return destination;
-}
-
-/** A move inside one place counts items, not what a copy across disks writes for one. */
-function withoutCounts(operation: FileOperationControl): FileOperationControl {
-  return {
-    get operationId() { return operation.operationId; },
-    get cancelRequested() { return operation.cancelRequested; },
-    stage: (stage, options) => operation.stage(stage, options),
-    addTotals: () => undefined,
-    setTotals: () => undefined,
-    current: (name) => operation.current(name),
-    itemsDone: () => undefined,
-    bytesDone: () => undefined,
-    boundary: (point) => operation.boundary(point),
-  };
-}
-
 /**
  * Copies to a destination that was free a moment ago, keeping modes,
  * modification times, and links as written. A copy that fails or is
@@ -558,7 +530,7 @@ async function copyEntry(
     for (const entry of entries) {
       const child = join(source, entry);
       if (filter && !filter(child)) continue;
-      await copyEntry(child, join(destination, entry), filter, operation, written, read);
+      await copyEntry(child, join(destination, entry), filter, operation, written, entry === finderNote ? undefined : read);
     }
     // A copied folder keeps its date, as a copied file does; then its mode, which may be read-only.
     await utimes(destination, info.atime, info.mtime).catch(() => undefined);

@@ -474,9 +474,9 @@ other surface.
       carried). No folder in it that holds something, nor the folder it is
       in, is read-only, so that all of it can go; AmpleFile never widens an
       original's permissions to remove it. And the copy lacks nothing else
-      the original has: see **What a copy carries**. Finder's `.DS_Store`
-      in a folder is not asked about in the first two: it is Finder's note
-      about the folder's window, not what the folder holds. All of this is
+      the original has: see **What a copy carries**. The checks leave out
+      `.DS_Store` inside a folder. Finder uses it to remember the folder's
+      window settings. All of this is
       checked before the copy replaces anything; that the original is still
       what the copy read is checked again as it goes, and for a plain
       original so is that all of it can go. A locked file is not seen

@@ -277,11 +277,18 @@ export async function renameStandardFolderEntry(id: StandardFolderId, relativePa
   if (name === basename(source)) return { path: toRelative(id, source, home) };
   const destination = join(dirname(source), name);
   await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true, finalLink: true });
-  const existing = await lstat(destination).catch(() => null);
-  // A case-only rename on a case-insensitive disk finds the source itself.
-  const sameItem = existing && name.toLocaleLowerCase() === basename(source).toLocaleLowerCase();
-  if (existing && !sameItem) throw conflict(`An item named “${name}” already exists here.`);
   try {
+    const [sourceInfo, existing] = await Promise.all([
+      lstat(source),
+      lstat(destination).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }),
+    ]);
+    // A spelling-only rename on a case-insensitive disk finds the source itself.
+    if (existing && (existing.dev !== sourceInfo.dev || existing.ino !== sourceInfo.ino)) {
+      throw conflict(`An item named “${name}” already exists here.`);
+    }
     await rename(source, destination);
   } catch (error) {
     throw accessError(error, id);

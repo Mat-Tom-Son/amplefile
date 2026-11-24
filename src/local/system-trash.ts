@@ -153,16 +153,17 @@ export interface ParsedTrashInfo {
 /** Strict percent-decoding to UTF-8 text; null for a stray `%`, bytes that are not text, or a NUL. */
 export function percentDecodePath(value: string): string | null {
   const bytes: number[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index]!;
+  for (let index = 0; index < value.length;) {
+    const char = String.fromCodePoint(value.codePointAt(index)!);
     if (char === "%") {
       const hex = value.slice(index + 1, index + 3);
       if (!/^[0-9a-fA-F]{2}$/.test(hex)) return null;
       bytes.push(Number.parseInt(hex, 16));
-      index += 2;
+      index += 3;
       continue;
     }
     bytes.push(...Buffer.from(char, "utf8"));
+    index += char.length;
   }
   const buffer = Buffer.from(bytes);
   const text = buffer.toString("utf8");
@@ -627,9 +628,11 @@ export async function planPutBack(
     throw new TrashError(409, `AmpleFile can’t put “${name}” back: its Trash record names a place outside the drive it was trashed on.`);
   }
   const recordedParent = dirname(item.info.originalPath);
+  const canonical = (path: string) => realpath(path).catch(() => resolve(path));
+  const top = item.directory.topdir ? await canonical(item.directory.topdir) : null;
   const parts = recordedParent.split("/").filter(Boolean);
   let real = "/";
-  const missingFolders: string[] = [];
+  let missingFrom = parts.length;
   for (const [index, part] of parts.entries()) {
     const candidate = join(real, part);
     let info: import("node:fs").Stats | null;
@@ -640,7 +643,7 @@ export async function planPutBack(
       info = null;
     }
     if (!info) {
-      missingFolders.push(...parts.slice(index).map((_, offset) => join(real, ...parts.slice(index, index + offset + 1))));
+      missingFrom = index;
       break;
     }
     if (info.isSymbolicLink()) {
@@ -658,16 +661,23 @@ export async function planPutBack(
     }
     real = candidate;
   }
-  const parent = missingFolders.length ? join(real, ...parts.slice(parts.length - missingFolders.length)) : real;
-  const holder = connectedFolders
-    .filter((connectedFolder) => pathInside(resolve(connectedFolder.connectedFolderRoot), parent))
+  real = await canonical(real);
+  const missingFolders = parts.slice(missingFrom).map((_, offset) => join(real, ...parts.slice(missingFrom, missingFrom + offset + 1)));
+  const parent = missingFolders.at(-1) ?? real;
+  if (top && !pathInside(top, parent)) {
+    throw new TrashError(409, `AmpleFile can’t put “${name}” back: its Trash record names a place outside the drive it was trashed on.`);
+  }
+  const canonicalFolders = await Promise.all(connectedFolders.map(async ({ id, name, connectedFolderRoot }) => ({
+    id, name, connectedFolderRoot: await canonical(connectedFolderRoot),
+  })));
+  const holder = canonicalFolders
+    .filter((connectedFolder) => pathInside(connectedFolder.connectedFolderRoot, parent))
     .sort((left, right) => right.connectedFolderRoot.length - left.connectedFolderRoot.length)[0] ?? null;
   if (missingFolders.length) {
-    const existing = real;
-    const home = resolve(options.home ?? trashOptionsForTests?.home ?? homedir());
+    const home = await canonical(options.home ?? trashOptionsForTests?.home ?? homedir());
     // Inside a Connected Folder its History records the new folders with the item.
-    const inside = item.directory.topdir ? pathInside(item.directory.topdir, existing)
-      : pathInside(home, existing) || Boolean(holder && pathInside(resolve(holder.connectedFolderRoot), existing));
+    const inside = top ? pathInside(top, real)
+      : pathInside(home, real) || Boolean(holder && pathInside(holder.connectedFolderRoot, real));
     const reserved = missingFolders.some((folder) => isAlwaysHiddenConnectedFolderEntry(basename(folder)));
     if (!inside || reserved || missingFolders.length > maxRecreatedFolders) {
       throw new TrashError(409, `AmpleFile can’t put “${name}” back: the folder it came from, ${recordedParent}, is gone. Move it out of the Trash by hand instead.`);
@@ -676,7 +686,7 @@ export async function planPutBack(
   if (isAlwaysHiddenConnectedFolderEntry(name) || parent.split("/").some((part) => isAlwaysHiddenConnectedFolderEntry(part))) {
     throw new TrashError(409, `AmpleFile can’t put “${name}” back into hidden AmpleFile or Pi data.`);
   }
-  return { parent, name, missingFolders, connectedFolder: holder ? { id: holder.id, connectedFolderRoot: resolve(holder.connectedFolderRoot), name: holder.name } : null };
+  return { parent, name, missingFolders, connectedFolder: holder };
 }
 
 export interface PutBackResult {

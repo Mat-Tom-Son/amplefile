@@ -120,6 +120,9 @@ test("a merged folder combines contents, applying the inner choice, and its rest
   await writeFile(join(target.connectedFolderRoot, "Photos", "Trip", "b.jpg"), "old b");
   await writeFile(join(source.connectedFolderRoot, "Photos", "Trip", "c.jpg"), "c");
   await writeFile(join(target.connectedFolderRoot, "Photos", "kept.jpg"), "kept");
+  const configuration = join(source.connectedFolderRoot, "Photos", "Trip", ".ampleﬁle");
+  await mkdir(configuration);
+  await writeFile(join(configuration, "settings.json"), "{}");
   const body = (conflicts: unknown) => ({
     mode: "copy",
     sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Photos" }],
@@ -139,6 +142,7 @@ test("a merged folder combines contents, applying the inner choice, and its rest
   assert.equal(await readFile(join(photos, "a.jpg"), "utf8"), "new a");
   assert.equal(await readFile(join(photos, "Trip", "b.jpg"), "utf8"), "new b");
   assert.equal(await readFile(join(photos, "Trip", "c.jpg"), "utf8"), "c");
+  assert.equal(existsSync(join(photos, "Trip", ".ampleﬁle")), false);
   assert.equal(await readFile(join(photos, "kept.jpg"), "utf8"), "kept", "what was only there stays");
   await restore(call, merged.body!.restorePoints);
   assert.equal(await readFile(join(photos, "a.jpg"), "utf8"), "old a");

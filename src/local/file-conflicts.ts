@@ -1,16 +1,16 @@
 import type { Stats } from "node:fs";
-import { lstat, readdir, rename, rm, rmdir } from "node:fs/promises";
+import { lstat, readdir, rename, rmdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
+import { foldedName, isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
 import {
   claimWorkingPath,
   copyItemTo,
   freeDestination,
   isInside,
-  placeFolderWithoutReplacing,
-  placeWithoutReplacing,
   removeOwnedItem,
+  renameInto,
   type CopiedSource,
 } from "./file-transfer.js";
 
@@ -153,14 +153,13 @@ export interface PlacementPlan {
   tops: Array<{ action: "place" | "replace" | "skip" | "merge"; destination: string }>;
 }
 
-/** Folders a merge never combines or replaces: a Connected Folder's identity stays its own. */
-const identityFolders = new Set([".amplefile"]);
-
 interface PlanOptions {
   /** Every item is a duplicate beside itself (⌘D). */
   duplicate?: boolean;
   /** A move carries `.amplefile`; a copy leaves it behind. */
   withIdentity?: boolean;
+  /** History cannot track a reserved path as a separate merge item. */
+  excludeReserved?: boolean;
   /** A move: an item already in the folder stays as it is. */
   move?: boolean;
   /**
@@ -262,8 +261,8 @@ async function planMerge(source: string, destination: string, inside: InsideConf
   for (const name of (await readdir(source)).sort()) {
     const child = join(source, name);
     const childDestination = join(destination, name);
-    if (identityFolders.has(name)) {
-      if (!options.withIdentity) continue;
+    if (isReservedConnectedFolderPathSegment(name) && (options.excludeReserved || !options.withIdentity)) continue;
+    if (foldedName(name) === ".amplefile") {
       // A merge never doubles or replaces a Connected Folder's identity.
       if (await lstat(childDestination).catch(() => null)) {
         plan.units.push({ source: child, destination: childDestination, action: "skip", duplicate: false, reason: "identity", top });
@@ -356,7 +355,7 @@ async function countClashes(source: string, destination: string, state: { clashe
   let names: string[];
   try { names = await readdir(source); } catch { return false; }
   for (const name of names) {
-    if (identityFolders.has(name)) continue;
+    if (isReservedConnectedFolderPathSegment(name)) continue;
     if (++state.visited > quickWalkEntries) return false;
     const existing = await lstat(join(destination, name)).catch(() => null);
     if (!existing) continue;
@@ -411,65 +410,44 @@ export interface PlacementRun {
 const replaceWorkingPrefix = ".AmpleFile-replace-";
 
 /**
- * Writes one unit where it goes: a placed item under its name (or the
- * " copy" naming), a replacement under a working name beside the item it
- * replaces. A move renames on the same disk and copies across disks, taking
- * the source away only once the copy is whole. A cancel inside the copy
- * takes back what it wrote.
+ * Writes one unit where it goes, or stages a replacement beside the item
+ * it replaces. Cross-device moves use the verified copy and release path
+ * in place-routes.ts.
  */
 export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise<StagedUnit> {
   const operation = run.operation ?? untrackedFileOperation;
   if (unit.action === "skip") return { unit, at: null, renamed: false, committed: true };
   const folder = dirname(unit.destination);
+  const name = basename(unit.destination);
   if (unit.action === "place") {
     if (run.mode === "move") {
-      // Never onto an item that took the name meanwhile.
-      try {
-        const at = await placeStaged(unit.source, folder, basename(unit.destination));
-        return { unit, at, renamed: true, committed: true };
-      } catch (error) {
-        if ((error as { code?: string }).code !== "EXDEV") throw error;
-      }
-      const destination = await freeDestination(folder, basename(unit.destination));
-      await copyItemTo(unit.source, destination, { withIdentity: true, operation });
-      await rm(unit.source, { recursive: true, force: true });
-      return { unit, at: destination, renamed: false, committed: true };
+      const at = await renameInto(unit.source, folder, name);
+      return { unit, at, renamed: true, committed: true };
     }
-    const destination = await freeDestination(folder, basename(unit.destination), { duplicate: unit.duplicate });
+    const destination = await freeDestination(folder, name, { duplicate: unit.duplicate });
     await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation, read: run.read });
     return { unit, at: destination, renamed: false, committed: true };
   }
   const working = claimWorkingPath(folder, replaceWorkingPrefix);
   try {
-    if (run.mode === "move") {
-      try {
-        await rename(unit.source, working.path);
-        return { unit, at: working.path, renamed: true, committed: false, release: working.release };
-      } catch (error) {
-        if ((error as { code?: string }).code !== "EXDEV") throw error;
-      }
-    }
-    await copyItemTo(unit.source, working.path, { withIdentity: run.mode === "move" || run.withIdentity, operation, read: run.read });
-    return { unit, at: working.path, renamed: false, committed: false, release: working.release };
+    const renamed = run.mode === "move";
+    if (renamed) await rename(unit.source, working.path);
+    else await copyItemTo(unit.source, working.path, { withIdentity: run.withIdentity, operation, read: run.read });
+    return { unit, at: working.path, renamed, committed: false, release: working.release };
   } catch (error) {
     working.release();
     throw error;
   }
 }
 
-/**
- * Commits a staged replacement: the item there is disposed of first, then the
- * replacement takes the name (or, should something take it meanwhile, the
- * " copy" naming). A move across disks takes the source away last.
- */
-export async function commitUnit(staged: StagedUnit, dispose: DisposeReplaced, run: PlacementRun): Promise<{ at: string; replaced: ReplacedItem | null }> {
+/** Disposes of the replaced item, then places the replacement without displacing a new arrival. */
+export async function commitUnit(staged: StagedUnit, dispose: DisposeReplaced): Promise<{ at: string; replaced: ReplacedItem | null }> {
   if (staged.committed || staged.unit.action !== "replace" || !staged.at) return { at: staged.at ?? staged.unit.destination, replaced: null };
   const replaced = await lstat(staged.unit.destination).catch(() => null) ? await dispose(staged.unit.destination) : null;
-  const at = await placeStaged(staged.at, dirname(staged.unit.destination), basename(staged.unit.destination));
+  const at = await renameInto(staged.at, dirname(staged.unit.destination), basename(staged.unit.destination));
   staged.release?.();
   staged.committed = true;
   staged.at = at;
-  if (run.mode === "move" && !staged.renamed) await rm(staged.unit.source, { recursive: true, force: true });
   return { at, replaced };
 }
 
@@ -490,19 +468,6 @@ export async function takeBackUnit(staged: StagedUnit): Promise<void> {
 /** After a move, removes each merged source folder its items all left, deepest first. */
 export async function removeEmptiedMergeSources(plan: PlacementPlan): Promise<void> {
   for (const merged of [...plan.merged].reverse()) await rmdir(merged.source).catch(() => undefined);
-}
-
-async function placeStaged(working: string, folder: string, name: string): Promise<string> {
-  const info = await lstat(working);
-  if (info.isDirectory()) return placeFolderWithoutReplacing(working, folder, name);
-  if (info.isFile()) {
-    const placed = await placeWithoutReplacing(working, folder, name);
-    await rm(working, { force: true });
-    return placed;
-  }
-  const destination = await freeDestination(folder, name);
-  await rename(working, destination);
-  return destination;
 }
 
 function badRequest(message: string): Error {

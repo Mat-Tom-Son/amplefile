@@ -307,8 +307,8 @@ How the item leaves depends on the disk:
   lacks no extended attribute or hide or lock flag the original has.
   A Mac original with an access control list stays as well. The host asks
   `/usr/bin/xattr`, `/usr/bin/stat`, and `/bin/ls` under a bound and a time
-  limit. It keeps originals whose extra metadata it cannot check. Finder's
-  `.DS_Store` in a folder is left out of the first two. Inside the journaled
+  limit. It keeps originals whose extra metadata it cannot check. The
+  checks leave out Finder's `.DS_Store` inside a folder. Inside the journaled
   step, that the original is still what the copy read is checked again, and
   for a plain original so is that all of it can go.
 

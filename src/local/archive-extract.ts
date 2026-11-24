@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
-import { basename, dirname, join, posix, resolve, sep } from "node:path";
+import { lstat, mkdir, open, readdir, readlink, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
+import { basename, dirname, join, posix, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { createGunzip, createInflateRaw, crc32 } from "node:zlib";
@@ -470,6 +470,39 @@ export function linkStaysInside(segments: readonly string[], target: string): bo
   return !resolved.split("/").some(isReservedConnectedFolderPathSegment);
 }
 
+/** Follows each link component without ever stepping out of the extracted tree. */
+async function linkTargetInside(root: string, parents: readonly string[], target: string): Promise<boolean> {
+  const path = [...parents];
+  const remaining = target.split("/").reverse();
+  let hops = 0;
+  while (remaining.length) {
+    const segment = remaining.pop()!;
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (path.pop() === undefined) return false;
+      continue;
+    }
+    if (isReservedConnectedFolderPathSegment(segment)) return false;
+    const candidate = join(root, ...path, segment);
+    try {
+      const info = await lstat(candidate);
+      if (info.isSymbolicLink()) {
+        if (++hops > 40) return false;
+        const link = await readlink(candidate);
+        if (!link || link.startsWith("/") || link.includes("\\") || /^[A-Za-z]:/.test(link)) return false;
+        remaining.push(...link.split("/").reverse());
+        continue;
+      }
+      if (remaining.length && !info.isDirectory()) return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+      // A missing target may appear after placement. Keep walking the path.
+    }
+    path.push(segment);
+  }
+  return true;
+}
+
 function refusedEntry(raw: string): Error {
   const shown = raw.replace(/\0/g, "␀").slice(0, 200);
   return badRequest(`This archive has an item that would land outside its folder (“${shown}”). Nothing was extracted.`);
@@ -645,7 +678,7 @@ class ExtractWriter extends EntryRules implements EntrySink {
     const single = this.top.single();
     const folder = single?.kind === "folder" ? single.name : null;
     if (folder !== null) await this.ensureFolders([folder]);
-    const made: Array<{ rawPath: string; path: string }> = [];
+    const made: Array<{ rawPath: string; path: string; parents: string[]; target: string }> = [];
     for (const link of this.pendingLinks) {
       if (folder !== null && (link.segments.length === 1 || !linkStaysInside(link.segments.slice(1), link.target))) {
         // A link at the folder's own name is a repeat of the folder.
@@ -665,20 +698,16 @@ class ExtractWriter extends EntryRules implements EntrySink {
         this.skipped.push({ path: link.rawPath, reason: "repeat" });
         continue;
       }
-      made.push({ rawPath: link.rawPath, path });
+      made.push({ rawPath: link.rawPath, path, parents: link.segments.slice(folder === null ? 0 : 1, -1), target: link.target });
     }
     if (!made.length) return;
     const root = await realpath(folder === null ? this.root : join(this.root, folder));
+    const outside: typeof made = [];
     for (const link of made) {
-      let leadsInside = true;
-      try {
-        const real = await realpath(link.path);
-        leadsInside = real === root || real.startsWith(`${root}${sep}`);
-      } catch (error) {
-        // A link to something the archive did not hold stays, as written; a loop does not.
-        leadsInside = (error as { code?: string }).code === "ENOENT";
-      }
-      if (leadsInside) { this.links += 1; continue; }
+      if (await linkTargetInside(root, link.parents, link.target)) this.links += 1;
+      else outside.push(link);
+    }
+    for (const link of outside) {
       await unlink(link.path);
       this.skipped.push({ path: link.rawPath, reason: "link" });
     }
@@ -903,6 +932,7 @@ async function readZipDirectory(handle: FileHandle, size: number): Promise<ZipEn
     for (let field = 0; field + 4 <= extra.length;) {
       const id = extra.readUInt16LE(field);
       const length = extra.readUInt16LE(field + 2);
+      if (field + 4 + length > extra.length) throw damaged();
       if (id === 0x0001) {
         let read = field + 4;
         const next = () => {

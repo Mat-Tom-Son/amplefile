@@ -132,6 +132,12 @@ test("rename and New Folder refuse names that would collide or hide, and change 
   assert.equal(existsSync(join(downloads, "a.txt")), false);
   // A case-only rename finds the item itself on a case-insensitive disk and still goes ahead.
   assert.deepEqual(await renameStandardFolderEntry("downloads", "notes.txt", "Notes.txt", root), { path: "Notes.txt" });
+  // On a case-sensitive disk two spellings can be two separate entries.
+  if (!existsSync(join(downloads, "notes.txt"))) {
+    await writeFile(join(downloads, "notes.txt"), "separate contents", { flag: "wx" });
+    await assert.rejects(renameStandardFolderEntry("downloads", "notes.txt", "Notes.txt", root), /already exists/);
+    assert.equal(await readFile(join(downloads, "notes.txt"), "utf8"), "separate contents");
+  }
 
   assert.deepEqual(await createStandardFolderFolder("downloads", "", "Receipts", root), { path: "Receipts" });
   await assert.rejects(createStandardFolderFolder("downloads", "", "Receipts", root), /already exists/);
