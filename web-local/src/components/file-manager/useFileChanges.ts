@@ -9,7 +9,7 @@ import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import { isExtractableArchive } from "../../../../src/shared/file-menu";
 import type { TreeEntry } from "../../types";
 import { parentPath } from "./file-manager-model";
-import { samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
+import { sameLocation, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 import { trashChangedEvent } from "./file-manager-trash";
 import { copiesLeftMessage, operationTitle, replacedMessage, stoppedMessage, undoCovers, type ConflictPolicy, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
 import { historyTurn, isBusyRefusal, isPartialUndo, moveBackPlan, movesUndo, pushUndo, transferConnectedFolderIds, transferLabel, type FileUndo, type MoveBackHost, type PartialUndo, type TransferBody } from "./file-manager-undo";
@@ -22,6 +22,8 @@ type TransferResult = TransferAnswer;
 /** What the window's file changes need from the folder shown. */
 export interface FileChangesContext {
   fixtureMode: boolean;
+  tabId: string;
+  folderView: boolean;
   place: FileManagerPlace;
   location: FileManagerLocation;
   /** The local API base for the place shown (`/api/connected-folders/…` or `/api/standard-folders/…`). */
@@ -47,10 +49,23 @@ export interface FileChangesContext {
  * undo stacks belong to the window, whichever folder it shows.
  */
 export function useFileChanges(context: FileChangesContext) {
-  const { fixtureMode, place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError } = context;
+  const { fixtureMode, tabId, folderView, place, location, apiBase, selection, byPath, fileOperations, conflictQuestion, setHiddenPaths, nameOfPlace, onError } = context;
+  const latest = useRef(context);
+  latest.current = context;
+
+  function folderStillShown(target = location): boolean {
+    return folderView && latest.current.folderView && latest.current.tabId === tabId
+      && sameLocation(latest.current.location, location) && sameLocation(latest.current.location, target);
+  }
+
+  function refreshListings(): Promise<unknown> {
+    const { listing, standard } = latest.current;
+    return Promise.all([listing.refresh(), standard.refresh()]);
+  }
   // ⌘Z and ⇧⌘Z for file changes: each entry undoes one change and returns the entry that redoes it.
   const undoStackRef = useRef<FileUndo[]>([]);
   const redoStackRef = useRef<FileUndo[]>([]);
+  const undoQueueRef = useRef(Promise.resolve());
 
   function transfer(body: TransferBody & { operationId?: string; conflicts?: ConflictPolicy }, beforeSend?: () => void): Promise<TransferResult> {
     return historyTurn(transferConnectedFolderIds(body), () => { beforeSend?.(); return api<TransferResult>("/api/file-transfer", { method: "POST", body }); });
@@ -125,13 +140,18 @@ export function useFileChanges(context: FileChangesContext) {
     // Nothing moved, and copies stayed in a plain folder, which has no History to take them back.
     else if (copiesLeft) recordUndo({ label, cannot: copiesLeft, run: async () => null });
     else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
-    await Promise.all([listing.refresh(), standard.refresh()]);
-    if (selectWritten && samePlace(target.place, place) && target.path === location.path && result.written.length) select(result.written);
+    await refreshListings();
+    if (selectWritten && result.written.length && folderStillShown(target)) latest.current.select(result.written);
   }
 
   function recordUndo(entry: FileUndo) {
     undoStackRef.current = pushUndo(undoStackRef.current, entry);
     redoStackRef.current = [];
+  }
+
+  function replaceUndoEntry(entry: FileUndo, replacement: FileUndo | null) {
+    const index = undoStackRef.current.indexOf(entry);
+    if (index !== -1) undoStackRef.current.splice(index, 1, ...(replacement ? [replacement] : []));
   }
 
   /** A change undone outside the stack (the Worker's receipt): ⇧⌘Z redoes it. */
@@ -162,7 +182,15 @@ export function useFileChanges(context: FileChangesContext) {
     restore: (point) => historyTurn([point.connectedFolderId], () => api(`/api/connected-folders/${encodeURIComponent(point.connectedFolderId)}/history/checkpoints/${encodeURIComponent(point.checkpointId)}/restore`, { method: "POST", body: {} })),
   };
 
-  async function undoFileChange(redo = false) {
+  function undoFileChange(redo = false): Promise<void> {
+    // A pending delete may need to finish before its restore can start.
+    // Keep an older step from reaching History ahead of that restore.
+    const turn = undoQueueRef.current.then(() => applyUndoFileChange(redo));
+    undoQueueRef.current = turn.catch(() => undefined);
+    return turn;
+  }
+
+  async function applyUndoFileChange(redo: boolean): Promise<void> {
     const stack = redo ? redoStackRef : undoStackRef;
     const entry = stack.current.at(-1);
     if (!entry) { showToast({ text: redo ? "Nothing to redo" : "Nothing to undo", tone: "info" }); return; }
@@ -178,7 +206,7 @@ export function useFileChanges(context: FileChangesContext) {
       if (entry.resumes && isBusyRefusal(caught)) stack.current = pushUndo(stack.current, entry);
       onError(errorText(caught));
       // What it did before it was refused shows.
-      await Promise.all([listing.refresh(), standard.refresh()]).catch(() => undefined);
+      await refreshListings().catch(() => undefined);
       return;
     }
     // A step that put back only part of the change says what it did not, in place of "Undid …".
@@ -189,7 +217,7 @@ export function useFileChanges(context: FileChangesContext) {
         if (redo) undoStackRef.current = pushUndo(undoStackRef.current, reverse);
         else redoStackRef.current = pushUndo(redoStackRef.current, reverse);
       }
-      await Promise.all([listing.refresh(), standard.refresh()]);
+      await refreshListings();
       showToast(partial ? { text: partial.said, tone: "info", durationMs: 12000 } : { text: `${redo ? "Redid" : "Undid"} ${entry.label}`, tone: "success" });
     } catch (caught) {
       // The step's own words are not lost to a listing that would not refresh.
@@ -230,8 +258,8 @@ export function useFileChanges(context: FileChangesContext) {
       }));
       if (reportOutcome("compress", result) && result.cancelled) return;
       if (result.restorePoints.length) recordUndo(restorePointsUndo(`Compress ${transferLabel(paths)}`, result.restorePoints));
-      await listing.refresh();
-      if (result.path && samePlace(at, place)) select([result.path]);
+      await latest.current.listing.refresh();
+      if (result.path && folderStillShown({ place: at, path: parentPath(result.path) })) latest.current.select([result.path]);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -265,9 +293,9 @@ export function useFileChanges(context: FileChangesContext) {
       const covers = undoCovers(result);
       if (!covers.covered) recordUndo({ label, cannot: covers.why!, run: async () => null });
       else if (result.restorePoints.length) recordUndo(restorePointsUndo(label, result.restorePoints));
-      await listing.refresh();
+      await latest.current.listing.refresh();
       reportOutcome("extract", result);
-      if (result.path && samePlace(at, place)) select([result.path]);
+      if (result.path && folderStillShown({ place: at, path: parentPath(result.path) })) latest.current.select([result.path]);
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -288,9 +316,11 @@ export function useFileChanges(context: FileChangesContext) {
         const points = [...result.restorePoints, ...(created.safetyCheckpointId ? [{ connectedFolderId: place.id, checkpointId: created.safetyCheckpointId }] : [])];
         recordUndo(restorePointsUndo("New Folder with Selection", points));
       }
-      await listing.refresh();
-      select([folderPath]);
-      requestRename({ name: folderPath.slice(folderPath.lastIndexOf("/") + 1), path: folderPath, kind: "folder" });
+      await latest.current.listing.refresh();
+      if (folderStillShown({ place, path: parent })) {
+        latest.current.select([folderPath]);
+        latest.current.requestRename({ name: folderPath.slice(folderPath.lastIndexOf("/") + 1), path: folderPath, kind: "folder" });
+      }
     } catch (caught) {
       onError(errorText(caught));
     }
@@ -313,34 +343,57 @@ export function useFileChanges(context: FileChangesContext) {
     const target = place;
     const keys = entriesToDelete.map((entry) => hiddenKey(target, entry.path));
     setHiddenPaths((current) => new Set([...current, ...keys]));
-    setSelection((current) => current.filter((path) => !paths.includes(path)));
+    if (folderStillShown()) latest.current.setSelection((current) => current.filter((path) => !paths.includes(path)));
     let cancelled = false;
-    const unhide = () => { cancelled = true; setHiddenPaths((current) => new Set([...current].filter((key) => !keys.includes(key)))); };
-    // ⌘Z while the notice is still up cancels the delete, as the notice's Undo does.
-    recordUndo({ label: `Delete ${entriesToDelete.length === 1 ? entriesToDelete[0]!.name : `${entriesToDelete.length} items`}`, run: async () => { unhide(); return null; } });
-    const commit = async () => {
-      if (cancelled) return;
+    let committing: Promise<FileUndo | null> | null = null;
+    const unhide = () => setHiddenPaths((current) => new Set([...current].filter((key) => !keys.includes(key))));
+    const cancel = () => {
+      if (cancelled || committing) return;
+      cancelled = true;
+      replaceUndoEntry(pendingEntry, null);
+      unhide();
+    };
+    // While the notice is up, either Undo cancels. Once a Connected Folder delete
+    // starts, ⌘Z can wait for its real restore point instead of claiming it cancelled.
+    const pendingEntry: FileUndo = {
+      label: `Delete ${entriesToDelete.length === 1 ? entriesToDelete[0]!.name : `${entriesToDelete.length} items`}`,
+      run: async () => {
+        if (!committing) { cancel(); return null; }
+        const committed = await committing;
+        return committed ? committed.run() : { said: "There is no completed delete to undo.", reverse: null };
+      },
+    };
+    recordUndo(pendingEntry);
+    const commit = async (): Promise<FileUndo | null> => {
+      let undo: FileUndo | null = null;
       try {
         if (target.kind === "standard") {
+          replaceUndoEntry(pendingEntry, null);
           const result = await trash!(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
           window.dispatchEvent(new Event(trashChangedEvent));
         } else if (target.kind === "connected-folder" && entriesToDelete.length === 1) {
           const pending: PendingDelete = { connectedFolderId: target.id, path: entriesToDelete[0]!.path, name: entriesToDelete[0]!.name, selectedPath: null, deletedTabPaths: new Set() };
           const result = await deleteLocalFileRequest(pending) as { safetyCheckpointId?: string; recentlyDeleted?: { entryId: string } };
-          // Once it has happened, ⌘Z brings it back through History, and from Recently Deleted what History could not keep (a link, a large file).
-          replaceDeleteUndo(entriesToDelete[0]!.name, target.id, result.safetyCheckpointId, result.recentlyDeleted ? [result.recentlyDeleted.entryId] : []);
+          undo = deleteUndo(pendingEntry.label, target.id, result.safetyCheckpointId, result.recentlyDeleted ? [result.recentlyDeleted.entryId] : []);
         } else if (target.kind === "connected-folder") {
           const result = await deleteLocalFilesRequest(target.id, entriesToDelete.map((entry) => entry.path));
           if (result.failed) onError(result.failed.error);
-          replaceDeleteUndo(`${entriesToDelete.length} items`, target.id, result.safetyCheckpointId, result.deleted.flatMap((row) => row.recentlyDeleted ? [row.recentlyDeleted.entryId] : []));
+          if (result.deleted.length) undo = deleteUndo(pendingEntry.label, target.id, result.safetyCheckpointId, result.deleted.flatMap((row) => row.recentlyDeleted ? [row.recentlyDeleted.entryId] : []));
         }
       } catch (caught) {
         onError(desktopErrorText(errorText(caught)));
       } finally {
-        await listing.refresh();
-        unhide();
+        replaceUndoEntry(pendingEntry, undo);
+        try {
+          await latest.current.listing.refresh();
+        } catch (caught) {
+          onError(errorText(caught));
+        } finally {
+          unhide();
+        }
       }
+      return undo;
     };
     const label = entriesToDelete.length === 1 ? entriesToDelete[0]!.name : formatItemCount(entriesToDelete.length, "item");
     showToast({
@@ -348,8 +401,8 @@ export function useFileChanges(context: FileChangesContext) {
       tone: "success",
       actionLabel: "Undo",
       durationMs: 6500,
-      onAction: unhide,
-      onClose: (reason) => { if (reason !== "action") void commit(); },
+      onAction: cancel,
+      onClose: (reason) => { if (reason !== "action" && !cancelled && !committing) committing = commit(); },
     });
   }
 
@@ -358,15 +411,10 @@ export function useFileChanges(context: FileChangesContext) {
    * happened: items History could not keep (a link, a large file) come back
    * from Recently Deleted first, then History's restore point puts back the rest.
    */
-  function replaceDeleteUndo(name: string, connectedFolderId: string, checkpointId: string | undefined, recentlyDeletedIds: readonly string[] = []) {
-    const label = `Delete ${name}`;
-    undoStackRef.current = undoStackRef.current.filter((entry) => entry.label !== label);
+  function deleteUndo(label: string, connectedFolderId: string, checkpointId: string | undefined, recentlyDeletedIds: readonly string[]): FileUndo | null {
     const history = checkpointId ? restorePointsUndo(label, [{ connectedFolderId, checkpointId }]) : null;
-    if (!recentlyDeletedIds.length) {
-      if (history) undoStackRef.current = pushUndo(undoStackRef.current, history);
-      return;
-    }
-    undoStackRef.current = pushUndo(undoStackRef.current, {
+    if (!recentlyDeletedIds.length) return history;
+    return {
       label,
       run: async () => {
         for (const entryId of recentlyDeletedIds) await api(`/api/settings/recently-deleted/${encodeURIComponent(entryId)}/restore`, { method: "POST", body: {} });
@@ -374,17 +422,17 @@ export function useFileChanges(context: FileChangesContext) {
         if (history) await history.run();
         return null;
       },
-    });
+    };
   }
 
   async function renameEntry(entry: TreeEntry, name: string) {
     if (name === entry.name || !apiBase) return;
     const result = await historyTurn(place.kind === "connected-folder" ? [place.id] : [], () => api<{ safetyCheckpointId?: string; path?: string }>(`${apiBase}/rename-local-entry`, { method: "POST", body: { path: entry.path, newName: name } }));
-    await listing.refresh();
     const renamed = [parentPath(entry.path), name].filter(Boolean).join("/");
     if (place.kind === "connected-folder" && result.safetyCheckpointId) recordUndo(restorePointsUndo(`Rename ${entry.name}`, [{ connectedFolderId: place.id, checkpointId: result.safetyCheckpointId }]));
     else if (place.kind === "standard") recordUndo(standardRenameUndo(`Rename ${entry.name}`, apiBase, renamed, entry.name, entry.path));
-    select([renamed]);
+    await latest.current.listing.refresh();
+    if (folderStillShown({ place, path: parentPath(entry.path) })) latest.current.select([renamed]);
     showToast({ text: `Renamed ${entry.name}`, tone: "success" });
   }
 

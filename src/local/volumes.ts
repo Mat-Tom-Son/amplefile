@@ -66,16 +66,17 @@ const maxListedVolumes = 256;
 export function decodeMountField(field: string): string | null {
   if (!field || field.includes("\0")) return null;
   const bytes: number[] = [];
-  for (let index = 0; index < field.length; index += 1) {
-    const char = field[index]!;
+  for (let index = 0; index < field.length;) {
+    const char = String.fromCodePoint(field.codePointAt(index)!);
     if (char === "\\" && /^[0-7]{3}$/.test(field.slice(index + 1, index + 4))) {
       const value = Number.parseInt(field.slice(index + 1, index + 4), 8);
       if (value > 255) return null;
       bytes.push(value);
-      index += 3;
+      index += 4;
       continue;
     }
     bytes.push(...Buffer.from(char, "utf8"));
+    index += char.length;
   }
   const buffer = Buffer.from(bytes);
   const text = buffer.toString("utf8");
@@ -193,13 +194,15 @@ export function linuxUserVolumes(mounts: readonly LinuxMount[], context: LinuxVo
 /** udev's names in `/dev/disk/by-label` escape unsafe bytes as `\xNN`. */
 export function decodeUdevLabel(name: string): string | null {
   const bytes: number[] = [];
-  for (let index = 0; index < name.length; index += 1) {
-    if (name[index] === "\\" && /^x[0-9a-fA-F]{2}$/.test(name.slice(index + 1, index + 4))) {
+  for (let index = 0; index < name.length;) {
+    const char = String.fromCodePoint(name.codePointAt(index)!);
+    if (char === "\\" && /^x[0-9a-fA-F]{2}$/.test(name.slice(index + 1, index + 4))) {
       bytes.push(Number.parseInt(name.slice(index + 2, index + 4), 16));
-      index += 3;
+      index += 4;
       continue;
     }
-    bytes.push(...Buffer.from(name[index]!, "utf8"));
+    bytes.push(...Buffer.from(char, "utf8"));
+    index += char.length;
   }
   const buffer = Buffer.from(bytes);
   const text = buffer.toString("utf8");

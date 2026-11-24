@@ -7,7 +7,7 @@ import type { AmpleFileSessionRole } from "./role-preamble.js";
 import { currentTurnEnvironment, describeTurnEnvironment, type PiTurnEnvironment } from "./turn-environment.js";
 import { promptTokensOf } from "./usage-tokens.js";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 import {
@@ -53,7 +53,7 @@ import { runBoundedInference, type BoundedInferenceOutcome, type BoundedInferenc
 import { appendConnectedFolderOperationsGuide } from "./connected-folder-operations-guide.js";
 import { appendToolFeedbackGuide } from "./tool-feedback-guide.js";
 import { connectedFolderTurnAssignmentMaxBytes, type PiConnectedFolderTurnContext } from "./connected-folder-turn-context.js";
-import type { AmpleFileDurableTurnUsage } from "./turn-store.js";
+import { writeFileAtomic, type AmpleFileDurableTurnUsage } from "./turn-store.js";
 import { localEditPath, parseChatToolImage, projectNativeEdit, turnPresentation } from "./turn-presentation.js";
 import { boundedLiveTurnPresentation } from "./turn-live-presentation.js";
 import { maxTurnToolEditDiffBytes, type AssistantPresentation, type ChatToolEdit, type ChatToolImage, type ChatWorkTrailEntry, type ChatLiveTurnPresentation } from "../../shared/chat-presentation.js";
@@ -262,6 +262,7 @@ export class PiConversationClient extends EventEmitter {
     await Promise.all(runs.map(run => run.settled));
   }
   private runtimeHost: AgentSessionRuntime | null = null;
+  private sessionBootstrap: { generation: number; promise: Promise<AgentSession> } | null = null;
   private resolvedRuntime: ResolvedPiRuntime | null = null;
   private uninstallRuntimeInspection: (() => void) | null = null;
   private unsubscribeSession: (() => void) | null = null;
@@ -736,6 +737,7 @@ export class PiConversationClient extends EventEmitter {
     const preserveActiveTurnTrail = this.promptInFlight;
     this.authController?.abort();
     this.runtimeGeneration += 1;
+    this.sessionBootstrap = null;
     if (this.activeExtensionTurn) this.activeExtensionTurn.cancelled = true;
     this.resolvedRuntime?.config.extensionUi?.forgetScope?.(this.extensionUiScope());
     // Bounded inference has no turn to settle; abort it so callers see an interruption, not a hang.
@@ -780,12 +782,31 @@ export class PiConversationClient extends EventEmitter {
   }
 
   private async createSessionIfNeeded(): Promise<AgentSession> {
-    if (this.runtimeHost) return this.runtimeHost.session;
     const generation = this.runtimeGeneration;
+    if (this.sessionBootstrap?.generation === generation) return this.sessionBootstrap.promise;
+    if (this.runtimeHost) return this.runtimeHost.session;
+    const bootstrap = { generation, promise: this.createSession(generation) };
+    this.sessionBootstrap = bootstrap;
+    try {
+      return await bootstrap.promise;
+    } finally {
+      if (this.sessionBootstrap === bootstrap) this.sessionBootstrap = null;
+    }
+  }
 
+  private assertSessionGeneration(generation: number): void {
+    if (generation === this.runtimeGeneration) return;
+    const error = new Error("Pi session initialization was cancelled.");
+    error.name = "PiTurnCancelledError";
+    throw error;
+  }
+
+  private async createSession(generation: number): Promise<AgentSession> {
     const initialRuntime = await resolvePiRuntime(this.connectedFolderRoot, this.runtimeProvider);
+    this.assertSessionGeneration(generation);
     await mkdir(initialRuntime.sessionDir, { recursive: true });
     const initialSessionPath = await resolveConversationSessionPath(initialRuntime.sessionDir, this.conversationId);
+    this.assertSessionGeneration(generation);
     const sessionManager = SessionManager.open(initialSessionPath, initialRuntime.sessionDir, this.connectedFolderRoot);
 
     const createRuntime = async (options: {
@@ -795,6 +816,7 @@ export class PiConversationClient extends EventEmitter {
       sessionStartEvent?: { type: "session_start"; reason: "startup" | "reload" | "new" | "resume" | "fork"; previousSessionFile?: string };
     }) => {
       const runtime = await resolvePiRuntime(options.cwd, this.runtimeProvider);
+      this.assertSessionGeneration(generation);
       this.resolvedRuntime = runtime;
       const recovery = new ProgressRecovery(options.cwd, options.sessionManager, () => {
         const owner = this.extensionTurn.getStore() ?? this.activeExtensionTurn;
@@ -908,27 +930,33 @@ export class PiConversationClient extends EventEmitter {
       sessionManager,
     });
     if (generation !== this.runtimeGeneration) {
-      this.resolvedRuntime = null;
       await settleWithin(runtimeHost.dispose(), 2_000).catch(() => undefined);
-      const error = new Error("Pi session initialization was cancelled.");
-      error.name = "PiTurnCancelledError";
-      throw error;
+      this.assertSessionGeneration(generation);
     }
     this.runtimeHost = runtimeHost;
-    runtimeHost.setRebindSession((session) => this.withSessionLifetime(() => this.bindSession(session)));
+    runtimeHost.setRebindSession((session) => this.withSessionLifetime(() => this.bindSession(session, generation)));
     runtimeHost.setBeforeSessionInvalidate(() => {
+      if (this.runtimeHost !== runtimeHost) return;
       this.unsubscribeSession?.();
       this.unsubscribeSession = null;
       this.uninstallRuntimeInspection?.();
       this.uninstallRuntimeInspection = null;
     });
     try {
-      await this.bindSession(runtimeHost.session);
+      await this.bindSession(runtimeHost.session, generation);
     } catch (error) {
-      this.runtimeHost = null;
-      await runtimeHost.dispose().catch(() => undefined);
+      if (this.runtimeHost === runtimeHost) {
+        this.unsubscribeSession?.();
+        this.unsubscribeSession = null;
+        this.uninstallRuntimeInspection?.();
+        this.uninstallRuntimeInspection = null;
+        this.runtimeHost = null;
+        this.resolvedRuntime = null;
+        await runtimeHost.dispose().catch(() => undefined);
+      }
       throw error;
     }
+    this.assertSessionGeneration(generation);
 
     if (runtimeHost.modelFallbackMessage) {
       this.emitEvent({ type: "status", message: runtimeHost.modelFallbackMessage });
@@ -939,7 +967,8 @@ export class PiConversationClient extends EventEmitter {
     return runtimeHost.session;
   }
 
-  private async bindSession(session: AgentSession): Promise<void> {
+  private async bindSession(session: AgentSession, generation: number): Promise<void> {
+    this.assertSessionGeneration(generation);
     this.unsubscribeSession?.();
     installRetryableProviderErrorNormalization(session);
     const inspector = this.resolvedRuntime?.config.modelContextInspector;
@@ -1015,7 +1044,7 @@ export class PiConversationClient extends EventEmitter {
         },
       }),
       abortHandler: () => {
-        void this.abort("Agent turn cancelled by an extension.");
+        if (this.runtimeHost?.session === session) void this.abort("Agent turn cancelled by an extension.");
       },
       commandContextActions: {
         waitForIdle: () => session.agent.waitForIdle(),
@@ -1024,11 +1053,14 @@ export class PiConversationClient extends EventEmitter {
         navigateTree: async () => { throw new Error(hostSessionMutationUnavailableMessage); },
         switchSession: async () => { throw new Error(hostSessionMutationUnavailableMessage); },
         reload: async () => {
-          await this.withSessionLifetime(() => this.session.reload());
+          this.assertSessionGeneration(generation);
+          await this.withSessionLifetime(() => session.reload());
+          this.assertSessionGeneration(generation);
           this.emitEvent({ type: "resources_changed", message: "Pi resources reloaded." });
         },
       },
       onError: (error) => {
+        if (this.runtimeHost?.session !== session) return;
         this.emitEvent({
           type: "error",
           message: `Extension error (${error.extensionPath}): ${error.error}`,
@@ -1036,7 +1068,8 @@ export class PiConversationClient extends EventEmitter {
         });
       },
     });
-    await this.writeSessionPointer(session.sessionFile);
+    this.assertSessionGeneration(generation);
+    await this.writeSessionPointer(session.sessionFile, generation);
   }
 
   private async promptWithTimeout(session: AgentSession, message: string, images: ImageContent[] = []): Promise<void> {
@@ -1571,10 +1604,21 @@ export class PiConversationClient extends EventEmitter {
     return { conversationId: this.conversationId, connectedFolderRoot: this.connectedFolderRoot };
   }
 
-  private async writeSessionPointer(sessionFile: string | undefined): Promise<void> {
+  private async writeSessionPointer(sessionFile: string | undefined, generation: number): Promise<void> {
     if (!sessionFile || !this.resolvedRuntime) return;
     const pointerPath = conversationPointerPath(this.resolvedRuntime.sessionDir, this.conversationId);
-    await writeFile(pointerPath, `${JSON.stringify({ sessionFile }, null, 2)}\n`, "utf8");
+    // A replacement client can open this Chat while a detached client's
+    // write drains. Publish pointers in order even across client instances.
+    const operation = (sessionPointerWrites.get(pointerPath) ?? Promise.resolve()).catch(() => undefined).then(() => {
+      this.assertSessionGeneration(generation);
+      return writeFileAtomic(pointerPath, `${JSON.stringify({ sessionFile }, null, 2)}\n`);
+    });
+    sessionPointerWrites.set(pointerPath, operation);
+    try {
+      await operation;
+    } finally {
+      if (sessionPointerWrites.get(pointerPath) === operation) sessionPointerWrites.delete(pointerPath);
+    }
   }
 
   private resetTurnState(): void {
@@ -1972,10 +2016,13 @@ function formatSessionStats(stats: ReturnType<AgentSession["getSessionStats"]>):
   ].join("\n");
 }
 
+const sessionPointerWrites = new Map<string, Promise<void>>();
+
 async function resolveConversationSessionPath(sessionDir: string, conversationId: string): Promise<string> {
   const stablePath = conversationSessionPath(sessionDir, conversationId);
   const pointerPath = conversationPointerPath(sessionDir, conversationId);
   try {
+    await sessionPointerWrites.get(pointerPath)?.catch(() => undefined);
     const parsed = JSON.parse(await readFile(pointerPath, "utf8")) as { sessionFile?: unknown };
     const candidate = typeof parsed.sessionFile === "string" ? resolve(parsed.sessionFile) : "";
     const root = `${resolve(sessionDir)}${sep}`;

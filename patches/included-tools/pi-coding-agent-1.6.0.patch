@@ -9,18 +9,17 @@
  // Compaction
  export { calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, findCutPoint, findTurnStartIndex, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.js";
  export { createEventBus } from "./core/event-bus.js";
-@@ -50,4 +50,9 @@
+@@ -51,4 +51,9 @@
  export { detectSupportedImageMimeTypeFromFile } from "./utils/mime.js";
  // Shell utilities
  export { getPowerShellConfig, getShellConfig } from "./utils/shell.js";
--//# sourceMappingURL=index.js.map
-\ No newline at end of file
-+//# sourceMappingURL=index.js.map
 +export { FileAuthStorageBackend as FileCredentialStoreBackend } from "./core/auth-storage.js";
 +export { loadMcpConfig, addMcpServerConfig, removeMcpServerConfig, updateMcpServerConfig } from "./extensions/mcp/config.js";
 +export { validateMcpServerConfig } from "./core/mcp-servers.js";
 +export { McpOAuthCredentialStore, signInMcpServer } from "./extensions/mcp/oauth.js";
 +export { createDefaultTransport, McpServerConnection } from "./extensions/mcp/runtime.js";
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -1,7 +1,7 @@
@@ -32,22 +31,20 @@
  export type { CacheWarmingDecision, CacheWarmingStatus } from "./core/cache-warmer.ts";
  export { type BranchPreparation, type BranchSummaryResult, type CollectEntriesResult, type CompactionResult, type CutPointResult, calculateContextTokens, collectEntriesForBranchSummary, compact, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type FileOperations, findCutPoint, findTurnStartIndex, type GenerateBranchSummaryOptions, generateBranchSummary, generateSummary, generateSummaryWithUsage, getLastAssistantUsage, prepareBranchEntries, serializeConversation, shouldCompact, } from "./core/compaction/index.ts";
  export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
-@@ -41,4 +41,10 @@
+@@ -42,4 +42,9 @@
  export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.ts";
  export { detectSupportedImageMimeTypeFromFile } from "./utils/mime.ts";
  export { getPowerShellConfig, getShellConfig } from "./utils/shell.ts";
--//# sourceMappingURL=index.d.ts.map
-\ No newline at end of file
-+//# sourceMappingURL=index.d.ts.map
 +export { FileAuthStorageBackend as FileCredentialStoreBackend } from "./core/auth-storage.ts";
 +export { loadMcpConfig, addMcpServerConfig, removeMcpServerConfig, updateMcpServerConfig } from "./extensions/mcp/config.ts";
 +export { validateMcpServerConfig } from "./core/mcp-servers.ts";
 +export { McpOAuthCredentialStore, signInMcpServer } from "./extensions/mcp/oauth.ts";
 +export { createDefaultTransport, McpServerConnection } from "./extensions/mcp/runtime.ts";
-+export type { LoadedMcpConfig, McpServerConfig, McpServerEntry } from "./extensions/mcp/config.ts";
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -2344,8 +2344,18 @@
+@@ -2511,8 +2511,18 @@
          // Skip compaction checks if this assistant message is older than the latest
          // compaction boundary. This prevents a stale pre-compaction usage/error
          // from retriggering compaction on the first prompt after compaction.
@@ -68,7 +65,7 @@
          if (assistantIsFromBeforeCompaction) {
              return false;
          }
-@@ -2432,7 +2442,7 @@
+@@ -2599,7 +2609,7 @@
                  const usageMsg = messages[estimate.lastUsageIndex];
                  if (compactionEntry &&
                      usageMsg.role === "assistant" &&

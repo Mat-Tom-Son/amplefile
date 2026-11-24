@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
@@ -120,6 +120,9 @@ test("a merged folder combines contents, applying the inner choice, and its rest
   await writeFile(join(target.connectedFolderRoot, "Photos", "Trip", "b.jpg"), "old b");
   await writeFile(join(source.connectedFolderRoot, "Photos", "Trip", "c.jpg"), "c");
   await writeFile(join(target.connectedFolderRoot, "Photos", "kept.jpg"), "kept");
+  const configuration = join(source.connectedFolderRoot, "Photos", "Trip", ".ampleﬁle");
+  await mkdir(configuration);
+  await writeFile(join(configuration, "settings.json"), "{}");
   const body = (conflicts: unknown) => ({
     mode: "copy",
     sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Photos" }],
@@ -139,6 +142,7 @@ test("a merged folder combines contents, applying the inner choice, and its rest
   assert.equal(await readFile(join(photos, "a.jpg"), "utf8"), "new a");
   assert.equal(await readFile(join(photos, "Trip", "b.jpg"), "utf8"), "new b");
   assert.equal(await readFile(join(photos, "Trip", "c.jpg"), "utf8"), "c");
+  assert.equal(existsSync(join(photos, "Trip", ".ampleﬁle")), false);
   assert.equal(await readFile(join(photos, "kept.jpg"), "utf8"), "kept", "what was only there stays");
   await restore(call, merged.body!.restorePoints);
   assert.equal(await readFile(join(photos, "a.jpg"), "utf8"), "old a");
@@ -527,6 +531,41 @@ test("Extract of an archive holding one file lands that file beside it and asks 
   assert.equal(kept.status, 201, JSON.stringify(kept.body));
   assert.equal(kept.body!.path, "report copy.txt");
   assert.equal(await readFile(join(folder.connectedFolderRoot, "report copy.txt"), "utf8"), "new report");
+});
+
+test("Extract Merge keeps links inside whole arrivals and reports links that depend on the existing tree", async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Archive links");
+  const root = folder.connectedFolderRoot;
+  await mkdir(join(root, "Trip"));
+  await mkdir(join(root, "Shared"));
+  await writeFile(join(root, "Shared", "note.txt"), "existing note");
+  await symlink("../Shared", join(root, "Trip", "shared"));
+
+  const zip = new JSZip();
+  const symbolicLink = { unixPermissions: 0o120777 };
+  zip.file("Trip/note-link", "shared/note.txt", symbolicLink);
+  zip.file("Trip/Intact/local.txt", "new note");
+  zip.file("Trip/Intact/inside-link", "local.txt", symbolicLink);
+  zip.file("Trip/Intact/other-link", "../shared/note.txt", symbolicLink);
+  await writeFile(join(root, "Trip.zip"), await zip.generateAsync({ type: "nodebuffer", platform: "UNIX" }));
+
+  const merged = await call("/api/file-transfer/extract", {
+    method: "POST",
+    body: {
+      place: { kind: "connected-folder", id: folder.id },
+      path: "Trip.zip",
+      conflicts: { items: { Trip: "merge" } },
+    },
+  });
+  assert.equal(merged.status, 201, JSON.stringify(merged.body));
+  assert.equal(merged.body!.links, 1);
+  assert.deepEqual(merged.body!.skipped.map(({ path }: { path: string }) => path).sort(), ["Trip/Intact/other-link", "Trip/note-link"]);
+  assert.ok(merged.body!.skipped.every(({ reason }: { reason: string }) => reason === "link"));
+  assert.equal(await readFile(join(root, "Trip", "Intact", "inside-link"), "utf8"), "new note");
+  assert.equal(await readlink(join(root, "Trip", "shared")), "../Shared");
+  await assert.rejects(lstat(join(root, "Trip", "note-link")), { code: "ENOENT" });
+  await assert.rejects(lstat(join(root, "Trip", "Intact", "other-link")), { code: "ENOENT" });
 });
 
 test("Extract never merges into a Mac package: Merge is not offered, and chosen anyway it keeps both", async (t) => {

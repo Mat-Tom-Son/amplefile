@@ -331,7 +331,7 @@ comparing models; repeated coached attempts do not establish an autonomous
 success rate. The live cases are separate from deterministic regression tests.
 Without compaction flags the autonomous driver uses native Pi settings (the
 normal model window, 16,384 reserved tokens and 20,000 recent tokens in Pi
-1.1.0). For a context-pressure variant, keep the same prompt and add `--compact-at
+1.6.0). For a context-pressure variant, keep the same prompt and add `--compact-at
 18000 --keep-recent 2000`; the host records those explicit compaction settings.
 This is a stress configuration, not the production default.
 

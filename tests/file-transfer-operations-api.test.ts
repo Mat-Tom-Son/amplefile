@@ -284,6 +284,20 @@ test("a move between Connected Folders cancelled while removing keeps what moved
   assert.equal(await readFile(join(source.connectedFolderRoot, "a.txt"), "utf8"), "a.txt");
 });
 
+test("Compress requires a shared parent inside the chosen place", async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  const place = { kind: "connected-folder", id: folder.id };
+  await mkdir(join(folder.connectedFolderRoot, "Nested"));
+  await writeFile(join(folder.connectedFolderRoot, "notes.txt"), "notes");
+  await writeFile(join(folder.connectedFolderRoot, "Nested", "notes.txt"), "nested notes");
+  const compress = (paths: string[]) => call("/api/file-transfer/compress", { method: "POST", body: { place, paths } });
+  assert.equal((await compress(["."])).status, 400);
+  assert.equal((await compress(["notes.txt", "Nested/notes.txt"])).status, 400);
+  assert.deepEqual((await readdir(folder.connectedFolderRoot)).sort(), [".amplefile", "Nested", "notes.txt"]);
+  assert.equal(existsSync(join(folder.connectedFolderRoot, "..", "Folder.zip")), false);
+});
+
 test("Compress cancelled over the API writes nothing", async (t) => {
   const { call } = await sandboxApi(t);
   const folder = await connectedFolder(call, "Folder");

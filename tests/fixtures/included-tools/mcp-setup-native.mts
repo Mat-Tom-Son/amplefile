@@ -26,6 +26,13 @@ const server=createServer(async(req,res)=>{
   json(200,{access_token:'oauth-private-token',refresh_token:'oauth-private-refresh',token_type:'Bearer',expires_in:900});return;
  }
  if(url.pathname==='/slow-mcp'){return;}
+ if(url.pathname==='/resources-mcp'&&req.method==='POST'){
+  let body='';for await(const chunk of req)body+=chunk;const q=JSON.parse(body);if(!('id'in q)){res.writeHead(202);res.end();return;}
+  assert.ok(['initialize','resources/list'].includes(q.method));
+  const result=q.method==='initialize'?{protocolVersion:q.params.protocolVersion,capabilities:{resources:{}},serverInfo:{name:'fixture',version:'1'}}:
+    {resources:[{uri:`file:///fixture/${q.params?.cursor??'first'}`,name:q.params?.cursor??'first'}],...(q.params?.cursor?{}:{nextCursor:'second'})};
+  json(200,{jsonrpc:'2.0',id:q.id,result});return;
+ }
  if(['/mcp','/empty-mcp'].includes(url.pathname)&&req.method==='POST'){
   authHeaders.push(String(req.headers.authorization));let body='';for await(const chunk of req)body+=chunk;const q=JSON.parse(body);if(!('id'in q)){res.writeHead(202);res.end();return;}
   const result=q.method==='initialize'?{protocolVersion:q.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}:q.method==='tools/list'?{tools:url.pathname==='/empty-mcp'?[]:[{name:'ping',description:'Return success',inputSchema:{type:'object',properties:{}}}]}:{content:[{type:'text',text:'Connection works'}]};json(200,{jsonrpc:'2.0',id:q.id,result});return;
@@ -65,6 +72,8 @@ try{
  }
  await native(aDir,aConfig);await native(bDir,bConfig);assert.ok(authHeaders.includes('Bearer connected-folder-a-token'));assert.ok(authHeaders.includes('Bearer connected-folder-b-token'));assert.ok(!authHeaders.includes('Bearer global-token'));console.log('PASS actual included wrapper and native HTTP transport use the owning Connected Folder token');
  const checked=await a.probe({scope:'project',name:'same'});assert.equal(checked.state,'ready');assert.equal(checked.tools,1);
+ await a.saveServer({scope:'project',name:'resources',definition:{url:origin+'/resources-mcp'}});
+ const resources=await a.probe({scope:'project',name:'resources'});assert.equal(resources.state,'ready');assert.equal(resources.tools,0);assert.equal(resources.resources,2);
  await a.saveServer({scope:'project',name:'empty',definition:{url:origin+'/empty-mcp',exposure:"direct"}});assert.equal((await a.probe({scope:'project',name:'empty'})).state,'empty');
  await a.saveServer({scope:'project',name:'unreachable',definition:{url:origin+'/missing',exposure:"direct"}});assert.equal((await a.probe({scope:'project',name:'unreachable'})).state,'error');
  await a.saveServer({scope:'project',name:'slow',definition:{url:origin+'/slow-mcp',exposure:"direct"}});const probeAbort=new AbortController();const pendingProbe=a.probe({scope:'project',name:'slow'},{signal:probeAbort.signal});setTimeout(()=>probeAbort.abort(),50);assert.equal((await pendingProbe).state,'cancelled');
@@ -74,5 +83,13 @@ try{
  await a.saveServer({scope:'project',name:'oauth',definition:oauth});let job=await a.startOAuth({scope:'project',name:'oauth'});assert.equal((await settle(a,job.id)).state,'connected');assert.ok(tokenFenceSeen>0);assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='oauth')!.credential,'present');assert.equal(fenced,0);console.log('PASS real PKCE loopback callback commits native tokens inside the host mutation fence');
  await a.saveServer({scope:'project',name:'stale',definition:oauth});mutateBeforeToken=true;job=await a.startOAuth({scope:'project',name:'stale'});assert.equal((await settle(a,job.id)).state,'failed');assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='stale')!.credential,'missing');mutateBeforeToken=false;console.log('PASS changed configuration rejects token persistence after browser authorization');
  await a.saveServer({scope:'project',name:'cancel',definition:oauth});openMode='hold';job=await a.startOAuth({scope:'project',name:'cancel'});for(let n=0;n<100&&!authorization;n++)await pause();await a.cancelOAuth(job.id);assert.equal(a.oauthStatus(job.id).state,'cancelled');assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='cancel')!.credential,'missing');console.log('PASS cancelled setup closes its callback and cannot save tokens');
+ authorization=undefined;
+ const previousExchanges=tokenSeen;
+ job=await a.startOAuth({scope:'project',name:'oauth'});
+ for(let n=0;n<100&&!authorization;n++)await pause();
+ assert.ok(authorization,'explicit reconnect opens the browser instead of refreshing the live credential');
+ await a.cancelOAuth(job.id);
+ assert.equal(tokenSeen,previousExchanges);
+ assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='oauth')!.credential,'present');
  console.log('ALL MCP SETUP CHECKS PASSED');
 }finally{for(const session of sessions){await session.extensionRunner.emit({type:'session_shutdown',reason:'shutdown'});session.dispose();}await a.dispose();await b.dispose();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});}

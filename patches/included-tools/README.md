@@ -2,7 +2,7 @@
 
 The manifest pins the upstream package version, source, license, every input/output file digest, and patch digest. `scripts/prepare-included-tools.mjs` refuses mixed or unknown source states and verifies the result. Integrations remain ordinary native Pi Extensions; `resources/included-tools` supplies the explicit host context through Pi's event bus. Narrow runtime/dependency corrections use the same reviewed patch lane. No separate Pi package format or tool registry is introduced.
 
-## Pi coding agent 1.1.0
+## Pi coding agent 1.6.0
 
 Pi owns canonical context, recovery omission entries, native model/auth runtime,
 MCP, codemode, tool discovery and cache warming. The remaining recovery patch
@@ -20,7 +20,7 @@ MCP OAuth uses Pi's file/refresh locks around an Electron-encrypted backend;
 browser/CLI development falls back to Pi's ordinary private profile files.
 
 See the pinned
-[SDK example](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/examples/sdk/14-codemode-mcp.ts).
+[SDK example](https://github.com/earendil-works/pi/blob/v1.6.0/packages/coding-agent/examples/sdk/14-codemode-mcp.ts).
 
 ## Computer 0.5.1: macOS action reliability
 
@@ -89,7 +89,7 @@ single-action interruption, scoped outlines, failed and unverified
 postconditions, reformatted values and the `wait_for` message. These fixtures
 need no desktop permission and do not certify live third-party applications.
 
-## Pi AI 1.1.0 identity retention
+## Pi AI 1.6.0
 
 The native direct ChatGPT OAuth flow now verifies the returned ID token against
 OpenAI's fixed public JWKS and checks signature, issuer, issued-client audience,
@@ -106,6 +106,13 @@ Token/JWKS bodies have size and time limits, redirects are rejected and upstream
 token error bodies never enter diagnostics. Install and built-ASAR guards pin
 the exact reviewed runtime bytes. Native tests cover forged/mismatched identities,
 encrypted-store reopen and refresh rotation with failed optional verification.
+
+The Codex provider backports
+[Pi #12437](https://github.com/earendil-works/pi/pull/12437). Its request-level
+reasoning effort comes from the first retained reply with the same model, or
+from the current selection for new context. Later changes are replayed as
+configuration updates, preserving the cached prompt prefix. The stock 1.6.0
+Codex transport used a fixed medium request effort for these models.
 
 Live direct-grant verification established that email arrives in the ID token
 while UserInfo returns only `sub`; its token rejects Codex account/usage reads.
@@ -128,7 +135,7 @@ invalid seals, cancellation and inspection failures without a helper restart.
 Packaged checks pin the verifier and caller
 bytes to this manifest.
 
-## Native MCP 1.1.0
+## Native MCP 1.6.0
 
 Service Connections uses `createMcpExtension` from Pi. The old adapter and its
 patch are removed. Catalog loaders supply an empty native server list and remain
@@ -139,10 +146,13 @@ Native MCP currently has no elicitation or sampling path.
 
 Trusted setup reuses Pi's config parser, transport and PKCE loopback flow. It
 pins the defining file, name, URL and config revision; bearer credentials use
-the host CredentialStore. OAuth commits only after a source recheck inside the
-capability fence. Project overrides narrow Everywhere exposure/enablement and
-cannot replace or revoke its credentials. Existing runtimes drain before auth
-changes; their credential stores refuse late refresh writes after shutdown.
+the host CredentialStore. Explicit OAuth setup stages a fresh sign-in to avoid
+rotating existing credentials before a source recheck inside the capability
+fence. An explicit connection check lists advertised resources using the
+probe's time limit. Chat sessions let Pi list resources on demand. Project
+overrides narrow Everywhere exposure and enablement without replacing or
+revoking its credentials. Existing runtimes drain before auth changes. Their
+credential stores refuse late refresh writes after shutdown.
 OAuth starts are serialized and cancelled setup never resumes after restart.
 Only the configured agent root and authorized Connected Folder's `.pi` are loaded.
 Chat `/mcp` is status only; setup commands direct the person to the trusted UI.
@@ -206,15 +216,15 @@ from the shipped payload, so packaged verification requires the reviewed
 runtime files and their exact hashes. Missing or replaced Pi runtime exports
 and recovery code still reject the archive before signing or loading tools.
 
-Pi 1.1.0 hoists brace-expansion 5.0.12 and protobufjs 7.6.5 through the
-reviewed root overrides and resolves undici 8.10.2 from its own declared nested
-dependency. The normalizer verifies actual resolution and only replaces known
+Pi 1.6.0 hoists brace-expansion 5.0.12 and protobufjs 7.6.5 through the
+reviewed root overrides and resolves the reviewed undici 8.12.4 from the
+root. The normalizer verifies actual resolution and only replaces known
 nested exceptions; it does not invent copies absent from the lockfile. A fresh
 `npm ci` and the dependency consumer tests verify the reproducible graph.
 
 The September 30, 2026 release review advances brace-expansion to 5.0.12 for
 bounded expansion and undici to 8.10.2 for its upstream transport security fixes.
-That review pinned Pi 0.80.6; the current integration above advances it to 1.1.0.
+That review pinned Pi 0.80.6; the current integration above advances it to 1.6.0.
 Electron advances within major 42 to 42.11.10, which includes the sandboxed
 preload-cache fix and upstream Chromium fixes. The reviewed image-size source
 patch remains in place with its malformed-input and packaged-byte tests.

@@ -406,9 +406,9 @@ The Pi catalog and import/install surfaces expose provenance, scope, status, dia
 
 Management adapters must preserve that checklist. Inventory is not authorization: seeing a capability through the kernel or CLI does not grant it to a Chat or permit another actor to mutate it.
 
-## Pi 1.1 runtime
+## Pi runtime
 
-The desktop embeds Pi 1.1.0. Its native codemode and tool_search factories are
+The desktop embeds Pi 1.6.0. Its native codemode and tool_search factories are
 loaded through Pi's ordinary resource loader and enabled alongside default tools
 when no explicit `defaultTools` setting exists. Native filters and replacements
 remain authoritative. Codemode can call ordinary and MCP tools plus image and

@@ -474,9 +474,9 @@ other surface.
       carried). No folder in it that holds something, nor the folder it is
       in, is read-only, so that all of it can go; AmpleFile never widens an
       original's permissions to remove it. And the copy lacks nothing else
-      the original has: see **What a copy carries**. Finder's `.DS_Store`
-      in a folder is not asked about in the first two: it is Finder's note
-      about the folder's window, not what the folder holds. All of this is
+      the original has: see **What a copy carries**. The checks leave out
+      `.DS_Store` inside a folder. Finder uses it to remember the folder's
+      window settings. All of this is
       checked before the copy replaces anything; that the original is still
       what the copy read is checked again as it goes, and for a plain
       original so is that all of it can go. A locked file is not seen
@@ -550,7 +550,9 @@ other surface.
     Nothing extracted is runnable beyond the execute bits the archive
     records (never setuid, setgid, or sticky); a link is made only when it
     points inside what Extract made (inside the one folder, when that is
-    all the archive holds); hard links, special files, `.amplefile/`,
+    all the archive holds). A Merge keeps links whose targets stay inside
+    a folder that arrives whole and reports the other links as skipped.
+    Hard links, special files, `.amplefile/`,
     `.pi/`, and `.work-fold/` entries (and any name a Mac volume would take
     as one of them, such as `.ampleﬁle`), and entries that would land
     outside are left out or refused; and the same 256 MB disk guard applies. A

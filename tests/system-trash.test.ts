@@ -70,6 +70,7 @@ async function putBack(options: TrashOptions, id: string, connectedFolders: Arra
 
 test("trash records are decoded strictly and refused when they name . or .., a stray %, or bytes that are not text", () => {
   assert.equal(percentDecodePath("/home/ana/My%20Notes/caf%C3%A9.txt"), "/home/ana/My Notes/café.txt");
+  assert.equal(percentDecodePath("/home/ana/📁%20notes"), "/home/ana/📁 notes");
   assert.equal(percentDecodePath("/bad%zz"), null);
   assert.equal(percentDecodePath("/trailing%"), null);
   assert.equal(percentDecodePath("/nul%00name"), null);
@@ -269,7 +270,9 @@ test("Put Back recreates a missing folder only where that is clearly safe", asyn
   const connectedFolderRoot = join(box.root, "srv");
   await mkdir(connectedFolderRoot);
   const found = await findTrashItem(item.id, box.options);
-  const plan = await planPutBack(found!, [{ id: "space-0000000000000000", connectedFolderRoot, name: "Shared" }], { home: box.home });
+  const connectedFolderAlias = join(box.root, "shared-alias");
+  await symlink(connectedFolderRoot, connectedFolderAlias);
+  const plan = await planPutBack(found!, [{ id: "space-0000000000000000", connectedFolderRoot: connectedFolderAlias, name: "Shared" }], { home: box.home });
   assert.equal(plan.connectedFolder?.id, "space-0000000000000000");
   assert.deepEqual(plan.missingFolders, [join(connectedFolderRoot, "shared")]);
 

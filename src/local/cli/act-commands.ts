@@ -1991,6 +1991,7 @@ async function runActCommand(
       }));
     case "files.delete":
       return toJson(await facade.filesDelete({
+        requestId: request.id,
         connectedFolder: command.connectedFolder!,
         path: command.path!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),

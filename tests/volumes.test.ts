@@ -113,6 +113,7 @@ test("a drive's label names it, and a removable disk outside the desktop's folde
   assert.equal(volumes.find((volume) => volume.mount.mountPoint === "/data")?.name, "Archive");
   assert.equal(volumes.find((volume) => volume.mount.mountPoint === "/mnt/data")?.ejectable, true);
   assert.equal(decodeUdevLabel("My\\x20Drive"), "My Drive");
+  assert.equal(decodeUdevLabel("📁\\x20Drive"), "📁 Drive");
   assert.equal(decodeUdevLabel("bad\\x00"), null);
   assert.equal(decodeUdevLabel("\\xff\\xfe"), null);
 });
@@ -120,6 +121,7 @@ test("a drive's label names it, and a removable disk outside the desktop's folde
 test("mount names are decoded from the kernel's escapes, and hostile lines are skipped", () => {
   assert.equal(decodeMountField("/run/media/ana/My\\040Disk\\011Tab\\134Slash"), "/run/media/ana/My Disk\tTab\\Slash");
   assert.equal(decodeMountField("/media/caf\\303\\251"), "/media/café");
+  assert.equal(decodeMountField("/media/📁\\040Drive"), "/media/📁 Drive");
   assert.equal(decodeMountField("/media/bad\\377"), null, "bytes that are not UTF-8");
   assert.equal(decodeMountField("/media/\\777"), null);
   const hostile = [

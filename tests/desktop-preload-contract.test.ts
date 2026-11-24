@@ -49,8 +49,8 @@ test("native clipboard writes require a trusted top-level sender and expose no r
   const body = handler.slice(0, handler.indexOf("\n  });\n"));
   assert.match(body, /modelContextWindow\.assertSender\(event\)/);
   assert.match(body, /assertTrustedRenderer\(event\)/);
-  assert.match(body, /frame\.processId !== mainFrame\.processId/);
-  assert.match(body, /frame\.routingId !== mainFrame\.routingId/);
+  assert.match(body, /!senderIsMainFrame\(event\)/);
+  assert.match(main, /frame\.processId === mainFrame\.processId && frame\.routingId === mainFrame\.routingId/);
   // Only validated content reaches the clipboard; a picture goes alone, decoded by Electron.
   assert.match(body, /writeDesktopClipboard\(value, \(content\) => clipboard\.write\(/);
   assert.match(body, /\{ image: nativeImage\.createFromDataURL\(content\.image\) \}/);
@@ -98,6 +98,14 @@ test("only the channels the AmpleFile Agent popover preload uses accept the popo
     if (!popoverChannels.has(channel!) && /^const \{ facade(?:, automationId)? \} = await automationSettings\(event(?:, value)?\);$/.test(firstLine!.trim())) continue;
     assert.equal(firstLine!.trim(), expected, `${channel} must start with ${expected}`);
   }
+  const messages = [...main.matchAll(/onRendererMessage\("([^"]+)"[\s\S]*?\n  \}(?:, (assert\w+))?\);/g)];
+  assert.ok(messages.length > 0);
+  for (const [, channel, assertSender] of messages) {
+    seen.add(channel!);
+    assert.equal(assertSender, popoverChannels.has(channel!) ? "assertMainOrAgentPopoverRenderer" : undefined, `${channel} checks its sender`);
+  }
+  assert.match(main, /assertSender: \(event: IpcMainEvent\) => void = assertTrustedMainRenderer,/);
+  assert.match(main, /ipcMain\.on\(channel,[^\n]+\n\s*try \{\s*assertSender\(event\);\s*handle\(event, \.\.\.args\);\s*\} catch/);
   for (const channel of popoverChannels) assert.ok(seen.has(channel), `${channel} has a handler`);
   assert.match(main, /const automationSettings = async \(event: IpcMainInvokeEvent, value\?: unknown\) => \{\n\s*assertTrustedMainRenderer\(event\);/);
   // The sender-scoped popover check is tied to the popover's own webContents.

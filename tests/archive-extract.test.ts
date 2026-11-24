@@ -527,6 +527,8 @@ test("links that stay inside the new folder are made, and one that escapes throu
     tarEntry("bin/", { type: "5" }),
     tarEntry("bin/thing", { type: "2", linkName: "../lib/libthing.so" }),
     tarEntry("dangling", { type: "2", linkName: "not-in-the-archive" }),
+    tarEntry("bin/later", { type: "2", linkName: "../library/missing.so" }),
+    tarEntry("library", { type: "2", linkName: "lib" }),
     // "here" is the new folder itself, so "here/.." would be the folder beside it.
     tarEntry("here", { type: "2", linkName: "." }),
     tarEntry("escape", { type: "2", linkName: "here/../outside" }),
@@ -538,11 +540,12 @@ test("links that stay inside the new folder are made, and one that escapes throu
   assert.equal(await readFile(join(result.path, "bin", "thing"), "utf8"), "library", "a link inside the folder works");
   assert.equal(await readlink(join(result.path, "bin", "thing")), "../lib/libthing.so", "kept as written");
   assert.equal(await readlink(join(result.path, "dangling")), "not-in-the-archive");
+  assert.equal(await readlink(join(result.path, "bin", "later")), "../library/missing.so");
   assert.ok(existsSync(join(result.path, "here")));
   assert.ok(!existsSync(join(result.path, "escape")), "a link reaching outside through another link is removed");
   assert.ok(!(await lstat(join(result.path, "loop")).catch(() => null)), "a link to itself is removed");
   assert.deepEqual(result.skipped.map((item) => `${item.reason}:${item.path}`).sort(), ["link:escape", "link:loop"]);
-  assert.equal(result.links, 4);
+  assert.equal(result.links, 6);
 });
 test("Extract keeps the execute bits an archive records, never a set-id or sticky bit, never more than 0755", async (t) => {
   const root = await folder(t);

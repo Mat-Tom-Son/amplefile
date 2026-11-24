@@ -180,8 +180,10 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
       const abort = () => { void connection.close(); }; owned.addEventListener("abort", abort, { once: true });
       try {
         owned.throwIfAborted(); await connection.getClient(); owned.throwIfAborted();
+        const resources = connection.hasResources ? await connection.allResources({ signal: owned }) : [];
+        owned.throwIfAborted();
         if (revision((await selected(selection)).definition) !== revision(definition)) return { ...empty, state: "error", detail: "This service changed while it was being checked. Check it again." };
-        const counts = { tools: connection.tools.length, resources: connection.resources.length, prompts: 0 };
+        const counts = { tools: connection.tools.length, resources: resources.length, prompts: 0 };
         const usable = counts.tools + counts.resources > 0;
         return { ...empty, ...counts, state: usable ? "ready" : "empty", detail: usable ? "The service initialized successfully and its capabilities are available." : "The service connected but did not advertise tools or resources." };
       } catch {
@@ -232,8 +234,18 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
         const connection = new McpServerConnection({ entry, cwd: paths.cwd ?? paths.agentDir, credentials: oauth, createTransport: createDefaultTransport, onTools: () => undefined });
         try {
           staged = await store.load();
+          if (staged) {
+            // Explicit setup stages new credentials. Refresh could rotate the live token before
+            // the definition is rechecked or while the person can still cancel.
+            const { tokens: _tokens, tokensExpireAt: _expiry, ...clientState } = staged;
+            staged = clientState;
+          }
           await signInMcpServer({ serverUrl: definition.url, settings: connection.oauthSettings(), signal: controller.signal,
-            store: { load: () => structuredClone(staged), save: (state) => { controller.signal.throwIfAborted(); staged = structuredClone(state); } },
+            store: {
+              load: () => structuredClone(staged),
+              save: (state) => { controller.signal.throwIfAborted(); staged = structuredClone(state); },
+              withRefreshLock: store.withRefreshLock,
+            },
             prompt: {
               showAuthorizationUrl(url) {
                 void (async () => {

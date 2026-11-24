@@ -168,26 +168,30 @@ function assistantEventForRenderer(event: PiChatEvent): Omit<PiChatEvent, "raw">
   return safeEvent;
 }
 
+/** Detach the selected instance before its asynchronous disposal can race another lookup. */
+export function detachCachedClient(state: LocalApiState, key: string, expected = state.clients.get(key)): PiConversationClient | undefined {
+  if (expected && state.clients.get(key) === expected) {
+    state.clients.delete(key);
+    return expected;
+  }
+  return undefined;
+}
+
 export async function invalidateAmpleFileClients(state: LocalApiState, connectedFolderId: string): Promise<void> {
   for (const [key, client] of [...state.clients]) {
     if (!key.startsWith(`${connectedFolderId}:`)) continue;
-    await client.stop().catch(() => undefined);
-    state.clients.delete(key);
+    await detachCachedClient(state, key, client)?.stop().catch(() => undefined);
   }
 }
 
 export async function invalidateAllClients(state: LocalApiState): Promise<void> {
   for (const [key, client] of [...state.clients]) {
-    await client.stop().catch(() => undefined);
-    state.clients.delete(key);
+    await detachCachedClient(state, key, client)?.stop().catch(() => undefined);
   }
 }
 
 /** Rebuilds a Chat's client that was marked while it was busy. */
 export async function refreshClientIfMarked(state: LocalApiState, key: string): Promise<void> {
   if (!state.clientsToRefresh.delete(key)) return;
-  const stale = state.clients.get(key);
-  if (!stale) return;
-  await stale.stop().catch(() => undefined);
-  state.clients.delete(key);
+  await detachCachedClient(state, key)?.stop().catch(() => undefined);
 }

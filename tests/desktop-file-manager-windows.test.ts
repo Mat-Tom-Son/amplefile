@@ -23,7 +23,11 @@ const clipboardHook = await readFile(new URL("../web-local/src/components/file-m
 
 class FakeWindow {
   destroyed = false;
-  constructor(readonly id: number) {}
+  constructor(readonly windowId: number) {}
+  get id(): number {
+    if (this.destroyed) throw new Error("Object has been destroyed");
+    return this.windowId;
+  }
   isDestroyed(): boolean { return this.destroyed; }
 }
 
@@ -52,6 +56,8 @@ test("the registry numbers windows with the smallest free slot and keeps them in
   two.destroyed = true;
   assert.deepEqual(windows.windows(), [three], "a destroyed window is never a target");
   assert.equal(windows.entry(two), null);
+  windows.focus(two);
+  assert.equal(windows.remove(two)?.window, two);
   assert.throws(() => windows.add(new FakeWindow(14), 1), /taken/);
   assert.equal(windows.add(new FakeWindow(15), 5).slot, 5, "a saved window keeps its slot");
 });
@@ -212,12 +218,12 @@ test("the browser host sends a page's events to its own window and lets only tha
   // A Worker's tab goes to its Connected Folder's window; a tab a page opens stays in that page's window.
   assert.match(browserHost, /home \?\? \(openedBy === "agent" \? this\.#options\.workerWindow\(owner\) : this\.#front\(\)\)/);
   assert.match(browserHost, /this\.#createPage\(newPageId\(this\.#pages\), details\.url, opener\.openedBy, options as WebContentsViewConstructorOptions, opener\.owner, this\.#home\(opener\)\)/);
-  assert.match(browserHost, /windowClosed\(window: BrowserWindow\): void \{[\s\S]*?pageFateOnWindowClose\(/);
+  assert.match(browserHost, /windowClosed\(window: BrowserWindow, windowId\?: number\): void \{[\s\S]*?pageFateOnWindowClose\(/);
   // main.ts routes every browser request to the window that sent it, and closing a window hands its pages on, never at Quit.
   for (const call of ["mount(parseBrowserViewRequest(value), requireSenderWindow(event))", "sync(parseBrowserTabsSync(value), requireSenderWindow(event))", "states(requireSenderWindow(event))", "respondPermission(pageId, requestId, decision, requireSenderWindow(event))"]) {
     assert.ok(main.includes(call), call);
   }
-  assert.match(section(main, 'window.on("closed", () => {', "\n  });\n"), /if \(!endingApp\) builtInBrowser\?\.windowClosed\(window\);/);
+  assert.match(section(main, 'window.on("closed", () => {', "\n  });\n"), /if \(!endingApp\) builtInBrowser\?\.windowClosed\(window, windowId\);/);
   assert.match(main, /workerWindow: \(owner\) => fileManagerWindows\.workerWindow\(owner\)\?\.window \?\? null/);
 });
 
@@ -240,7 +246,7 @@ test("menu commands go to the window the menu was used in, else the front window
   assert.match(main, /\{ label: "New Connected Folder", accelerator: "Alt\+CommandOrControl\+N", click: menuCommand\("new-connected-folder"\) \}/);
   // Check marks and enabled items follow the front window, and each window's own state is kept.
   assert.match(main, /window\.on\("focus", \(\) => \{\s*fileManagerWindows\.focus\(window\);\s*refreshApplicationMenuState\(\);/);
-  assert.match(section(main, 'ipcMain.on("amplefile:menu:set-state"', "\n  });\n"), /fileManagerWindows\.updateMenuState\(updated, value\);\s*refreshApplicationMenuState\(\);/);
+  assert.match(section(main, 'onRendererMessage("amplefile:menu:set-state"', "\n  });\n"), /fileManagerWindows\.updateMenuState\(updated, value\);\s*refreshApplicationMenuState\(\);/);
   assert.match(section(main, "function popupApplicationSubmenu("), /buildApplicationSubmenuTemplate\(menuId, entry\.menuState\)\)\.popup\(\{ window: entry\.window/);
 });
 
@@ -292,7 +298,7 @@ test("replies, dialogs, and native menus go to the window that asked", () => {
   assert.match(section(main, 'ipcMain.handle("amplefile:connected-folder:choose-folder"', "\n  });\n"), /const window = senderWindow\(event\);/);
   assert.equal((main.match(/const window = senderWindow\(event\);\n\s*const options = openWithDialogOptions\(process\.platform\);\n\s*const choice = window \? await dialog\.showOpenDialog\(window, options\)/g) ?? []).length, 2);
   assert.equal((main.match(/const window = senderWindow\(event\);\n\s*if \(!window\) throw new Error\("The AmpleFile window is not available\."\);\n\s*window\.previewFile/g) ?? []).length, 2);
-  assert.match(section(main, 'ipcMain.on("amplefile:window:control"', "\n  });\n"), /const window = senderWindow\(event\);/);
+  assert.match(section(main, 'onRendererMessage("amplefile:window:control"', "\n  });\n"), /const window = senderWindow\(event\);/);
   // A file manager window's renderer is trusted in its top frame; any registered window, not only the first.
   assert.match(section(main, "function assertTrustedMainRenderer("), /if \(!senderWindow\(event\) \|\| !mainFrameMatches\)/);
   // Events every window shows reach every window.

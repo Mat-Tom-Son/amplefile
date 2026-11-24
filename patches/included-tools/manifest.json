@@ -191,41 +191,66 @@
   },
   {
     "package": "@earendil-works/pi-coding-agent",
-    "version": "1.1.0",
-    "source": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent/v/1.1.0",
+    "version": "1.6.0",
+    "source": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent/v/1.6.0",
     "license": "MIT",
-    "patch": "pi-coding-agent-1.1.0.patch",
-    "sha256": "c825ec93fb0f6567460748d838c368f459315cdcc8aad3a89392705d5ab9fed0",
+    "patch": "pi-coding-agent-1.6.0.patch",
+    "sha256": "2e849be6db17badae763b24d3ec0e041468a455e5fe2c60aeea6567aaebdba2a",
     "files": [
       {
         "path": "dist/index.js",
-        "before": "5482298b995db935f7b96f5d6056fa1c36ac6fc80456be594ef65b83c62b0d30",
-        "after": "cd228e7d74c66d54b40801ad0c81bf2cb7ec20386f9339875a985445949aae5c"
+        "before": "4569157e6038be9840fa514db4b00a27fd0be9e3622cc7b49a281de6c027d7ff",
+        "after": "099f3d34475489af8df76c35ce672ec1043d6933cef11f30096412c583cffa3c"
       },
       {
         "path": "dist/index.d.ts",
-        "before": "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc",
-        "after": "59961f33ffa61aa88cddd5e3856ed3d804de098db7b65462d5345cbd39cfe166"
+        "before": "b896b72effa2ee729087181a294cf93c45abc323daad2aadbda5f449acafa54a",
+        "after": "2b67dc00edd9a195dceadbcb0f53d2499364465c26ad6fccb073cbbd354eeaae"
       },
       {
         "path": "dist/core/agent-session.js",
-        "before": "0ba5c847b4fd2fd838f71ea84885b9f3a4f15d9bf4b5493e2e88a41d1507e20b",
-        "after": "2256b06d3ec6835d9afcadf6a1ad7279efa809115ceaf784c94e7448283e14a6"
+        "before": "cd1c9fc3139e6dcd5320b55414aa5fdf12dbea32d4fd38da2c9a57be0d3677c3",
+        "after": "6dcd080020afed49236c2ec257f23f205547594011d3f5dfc5a7ee941dcebc0f"
       }
     ]
   },
   {
     "package": "@earendil-works/pi-ai",
-    "version": "1.1.0",
-    "source": "https://github.com/earendil-works/pi/tree/v1.1.0/packages/ai",
+    "version": "1.6.0",
+    "source": "https://github.com/earendil-works/pi/tree/v1.6.0/packages/ai",
     "license": "MIT",
-    "patch": "pi-ai-1.1.0.patch",
-    "sha256": "a48f8449ccc7983cee721ae2dee8a29ec5d5290fda7cefb7742a1fee326af37c",
+    "patch": "pi-ai-1.6.0.patch",
+    "sha256": "146c71d6ea8f9189a7af9ff6c2af9193a73a6d9586a7082302a3d2d131518731",
     "files": [
       {
         "path": "dist/auth/oauth/openai-chatgpt.js",
         "before": "4cf9fc758a07ffe4ee022326404b5dcc86767ee4154945c0417c7f95eaecdcc2",
         "after": "7baa1f343c9de65c4ef7e5a935fdaea88b11a6eda4453e10a7a7e1bb5a92a8ae"
+      },
+      {
+        "path": "dist/api/azure-openai-responses.js",
+        "before": "465b43563caceac531c36b712f72788066b23eb26ab11393b428306b1f23b636",
+        "after": "368ff90980207d352b60cbd5db7347e1ea0cc9621a16a48ae50f7c33911ef44f"
+      },
+      {
+        "path": "dist/api/openai-codex-responses.js",
+        "before": "0b791f5417669449c70d2e8a4cc9c3626b578c07f1c73abc455d6b69d15b50c6",
+        "after": "6d0f5c89420db541ff23a8d75685312096d3bba377fdaa64bf3a7de445e598c7"
+      },
+      {
+        "path": "dist/api/openai-responses-shared.js",
+        "before": "9cb668bc91df45533bbc5275b68e2430414d7dd7021f924819feec070f0e60c9",
+        "after": "c7cd151e092631e31ab69851fb2ad35d851032d601289dcaeb388294b4e75e5e"
+      },
+      {
+        "path": "dist/api/openai-responses-shared.d.ts",
+        "before": "0904da84ba1878d0a33c5e2890846dd8b077885c7bf1f8d899e54f58d57dc1fe",
+        "after": "00ad578d91efff43ebc966560a531d25c715d69efd9e68fa1f71ad567d731edc"
+      },
+      {
+        "path": "dist/api/openai-responses.js",
+        "before": "c35b80b2eb7f84b0ea1d939784943038956aefec7b624ed7862ebe2fd9d40c4b",
+        "after": "c53ced84ddc7d0d1ae69f9a29af4efc5b65c846414c6e9ea6884d48e7b4e888d"
       }
     ]
   }

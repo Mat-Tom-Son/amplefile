@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import { SafeMarkdownAnchor } from "../chat/SafeMarkdownAnchor";
 import remarkGfm from "remark-gfm";
 import {
   Add16Regular,
@@ -1149,7 +1150,7 @@ export function CapabilityDetailsDialog({ item, connectedFolderId, busy, onClose
               {item.kind === "extension" ? <div className="capability-extension-details"><CapabilityStringList title="Tools" items={item.tools} /><CapabilityStringList title="Commands" items={item.commands} /><CapabilityStringList title="Flags" items={item.flags} /></div> : null}
             </div>
           </details>
-          {item.kind === "skill" && item.content ? <details className="capability-technical-details"><summary><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" />Instructions</summary><div className="markdown-preview capability-skill-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{stripSkillFrontmatter(item.content)}</ReactMarkdown></div></details> : null}
+          {item.kind === "skill" && item.content ? <details className="capability-technical-details"><summary><ChevronRight16Regular className="capabilities-disclosure-chevron" aria-hidden="true" />Instructions</summary><div className="markdown-preview capability-skill-content"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: SafeMarkdownAnchor, img: ({ alt }) => <span>{alt ?? ""}</span> }}>{stripSkillFrontmatter(item.content)}</ReactMarkdown></div></details> : null}
         </div>
         <div className="capability-dialog-footer">
           {onToggle ? <button className="ui-control" type="button" disabled={busy} onClick={onToggle}>{item.enabled ? "Turn Off" : "Turn On"}</button> : null}

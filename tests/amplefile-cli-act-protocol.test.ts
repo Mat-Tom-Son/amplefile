@@ -1126,7 +1126,7 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
   const deleted = await execute(["files", "delete", "--connected-folder", "connected-folder-1", "--path", "docs/old.md"]);
   assert.match(deleted.stdout, /Deleted file docs\/old\.md in Fold Connected Folder \[connected-folder-1\]\./);
   assert.match(deleted.stdout, /Safety restore point: cp-20260810130200-cccccccc — restore it with 'history restore' to undo this delete\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", path: "docs/old.md" });
+  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", path: "docs/old.md", requestId: lastOk().requestId });
   assert.equal(lastOk().checkpointId, "cp-20260810130200-cccccccc");
   assert.deepEqual(lastOk().undoRef, { kind: "safety-checkpoint", value: "cp-20260810130200-cccccccc" });
 

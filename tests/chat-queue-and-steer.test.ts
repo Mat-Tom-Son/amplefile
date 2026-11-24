@@ -131,6 +131,8 @@ test("Stop holds the queued message for the person, and no later turn sends it",
   await waitFor(() => h.requests.length === 1, "the held turn");
   const queuePath = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/queue`;
   await call(h.api, queuePath, { method: "PUT", body: { content: "Not after a stop." } });
+  const chatPath = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}`;
+  assert.equal((await call(h.api, chatPath, { method: "DELETE" })).status, 409, "the active Chat refuses deletion");
 
   assert.equal((await call(h.api, `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/abort`, { method: "POST" })).status, 200);
   await waitFor(async () => (await h.api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId })).task.state === "aborted", "the stop");

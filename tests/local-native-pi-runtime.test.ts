@@ -144,6 +144,56 @@ test("host-backed Pi FileCredentialStore persists provider-neutral API key data"
   assert.deepEqual(await reopened.credentials.read("openrouter"), { type: "api_key", key: "test-key" });
 });
 
+test("concurrent Pi session readers share one startup", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-pi-bootstrap-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const connectedFolderRoot = join(root, "connected-folder");
+  await mkdir(connectedFolderRoot);
+  let resolutions = 0;
+  const client = new PiConversationClient("concurrent-startup", connectedFolderRoot, {
+    async resolveRuntime() {
+      resolutions += 1;
+      return { agentDir: join(root, "agent") };
+    },
+  });
+  t.after(() => client.stop());
+
+  const [first, second] = await Promise.all([client.getState(), client.getState()]);
+  assert.equal(second.sessionId, first.sessionId);
+  assert.equal(resolutions, 2, "resolve the startup path and runtime for only one native session");
+  assert.equal((await client.getState()).sessionId, first.sessionId);
+  assert.equal(resolutions, 2);
+});
+
+test("a stopped Pi bootstrap cannot displace a replacement", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-pi-replace-bootstrap-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const connectedFolderRoot = join(root, "connected-folder");
+  await mkdir(connectedFolderRoot);
+  const gate = Promise.withResolvers<void>();
+  const starting = Promise.withResolvers<void>();
+  let resolutions = 0;
+  const client = new PiConversationClient("replace-startup", connectedFolderRoot, {
+    async resolveRuntime() {
+      resolutions += 1;
+      if (resolutions === 2) {
+        starting.resolve();
+        await gate.promise;
+      }
+      return { agentDir: join(root, "agent") };
+    },
+  });
+  t.after(() => client.stop());
+  const stale = assert.rejects(client.getState(), { name: "PiTurnCancelledError" });
+  await starting.promise;
+  await client.stop();
+  const replacement = await client.getState();
+  gate.resolve();
+  await stale;
+  assert.equal((await client.getState()).sessionId, replacement.sessionId);
+  assert.equal(resolutions, 4);
+});
+
 test("aborting during Pi session initialization latches cancellation before prompt execution", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-pi-cancel-init-"));
   t.after(() => rm(root, { recursive: true, force: true }));

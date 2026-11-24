@@ -592,7 +592,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     },
     listing, contentRef, select, onError,
   });
-  const changes = useFileChanges({ fixtureMode, place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError });
+  const changes = useFileChanges({ fixtureMode, tabId, folderView: activeTab.view === "folder", place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError });
   const { deletePaths, duplicateSelection, renameEntry, runTrashDeletion } = changes;
   const clipboard = useFileClipboard({ fixtureMode, place, placeRoot, location, contentRef, changes, nameOfPlace, onError });
   const { cutPaths } = clipboard;
@@ -1855,7 +1855,20 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               // looked up by this id, so there a new one stays untargeted.
               targetConversationId={fixtureMode ? chat.conversationId : chat.activeId ?? chat.conversationId}
               contextPathRequest={null}
+              active={tab.id === tabId && chat.open}
               sendRequest={chat.sendRequest}
+              onSendRequestConsumed={(id) => {
+                folderTabs.setChat(tab.id, (current) => current?.key === chat.key && current.sendRequest?.id === id
+                  ? { ...current, sendRequest: null }
+                  : current);
+              }}
+              failedSend={chat.failedSend}
+              onSendFailureChange={(failure) => {
+                folderTabs.setChat(tab.id, (current) => current?.key === chat.key
+                  && (failure !== null || current.failedSend?.id === chat.failedSend?.id)
+                  ? { ...current, failedSend: failure }
+                  : current);
+              }}
               variant="panel"
               // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
               onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, folder.id)}

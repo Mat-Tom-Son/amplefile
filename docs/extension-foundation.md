@@ -82,7 +82,7 @@ is not rendered as a desktop component.
 | Computer Control | `@injaneity/pi-computer-use` 0.5.1; existing native observations/input coordination with reviewed helper lifecycle changes | Apple-silicon macOS helper built from source and included in the app signing lane. Accessibility and Screen Recording setup names the actual helper. Requested observations and actions, no continuous recorder. |
 | Web | `pi-web-access` 0.29.0 pure search and readable-page functions through an additive native factory | DuckDuckGo search needs no key; optional Brave key is entered in tool setup. Explicit HTTP(S) reading, bounded output and cancellation. No automatic cookie/profile import, media service, global fetch replacement or hidden model call. Challenges and rate limits remain visible failures. |
 | Documents | Ordinary JavaScript worker, maintained document libraries and a standard document-work Skill | DOCX/XLSX/PPTX/PDF creation, spreadsheet read/write, PDF text extraction and selected page rendering using bundled dependencies. No separate Node/Python required. The separate `document_engine` tool detects installed LibreOffice for Office rendering/XLSX recalculation and Tesseract for page-image OCR. These optional engines are not bundled; missing setup is explicit. Built-in PDF text extraction itself is not OCR. |
-| Service Connections | Pi 1.1.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP has no elicitation or sampling path. No automatic imports from other applications. |
+| Service Connections | Pi 1.6.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP has no elicitation or sampling path. No automatic imports from other applications. |
 
 Interactive web work—opening pages, signing in, clicking and typing—uses the
 [built-in browser](built-in-browser.md)'s `browser_*` tools, which every Worker
@@ -246,7 +246,7 @@ third-party code. Restart observes current reality without replaying input.
 license, version, patch hash and each before/after file digest. Preparation
 rejects unknown or partial source states. [Integration notes](../patches/included-tools/README.md)
 record compatibility constraints and dependency mitigations. The host embeds
-Pi 1.1.0; its loader's disabled module cache is not process-global isolation.
+Pi 1.6.0; its loader's disabled module cache is not process-global isolation.
 Patches make ownership and cold initialization explicit while retaining native
 transport and default upstream behavior where applicable.
 
@@ -274,7 +274,7 @@ artifact, and concurrent Chat/Stop tests must preserve unrelated work.
 - [Pi Extensions](https://pi.dev/docs/latest/extensions) and [Pi packages](https://pi.dev/docs/latest/packages)
 - [pi-computer-use](https://github.com/injaneity/pi-computer-use)
 - [pi-web-access](https://github.com/nicobailon/pi-web-access)
-- [Pi native MCP](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/mcp.md)
+- [Pi native MCP](https://github.com/earendil-works/pi/blob/v1.6.0/packages/coding-agent/docs/mcp.md)
 
 
 ### Optional installed document engines

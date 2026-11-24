@@ -14,7 +14,7 @@ import {
   subscribeFileOperations,
   type FileOperationEvent,
 } from "../src/local/file-operations.js";
-import { compressInto, copyInto, measureCopy, moveInto, setFileCopyStrategyForTests } from "../src/local/file-transfer.js";
+import { compressInto, copyInto, measureCopy, renameInto, setFileCopyStrategyForTests } from "../src/local/file-transfer.js";
 
 /**
  * Progress and cancel for the file manager's long operations
@@ -159,7 +159,7 @@ test("a move within one disk is a rename, which is never stopped halfway", async
   await writeFile(join(root, "big.bin"), Buffer.alloc(4096, 1));
   await mkdir(join(root, "Target"));
   holdAt(t, ({ operationId, point }) => { if (point === "chunk") cancelFileOperation(operationId); });
-  const moved = await runFileOperation("rename", "move", (operation) => moveInto(join(root, "big.bin"), join(root, "Target"), operation));
+  const moved = await runFileOperation("rename", "move", () => renameInto(join(root, "big.bin"), join(root, "Target"), "big.bin"));
   assert.equal(moved, join(root, "Target", "big.bin"), "a rename has no chunk to stop at and finishes");
   assert.ok(!existsSync(join(root, "big.bin")));
 });

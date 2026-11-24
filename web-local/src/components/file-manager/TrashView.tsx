@@ -142,10 +142,12 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
     const blocker = putBackBlocker(listing, items);
     if (blocker) { showToast({ text: blocker, tone: "info" }); return; }
     setBusy("put-back");
+    let restored = 0;
     let last: { result: PutBackResult; name: string } | null = null;
     try {
       for (const item of items) {
         const result = await api<PutBackResult>("/api/trash/put-back", { method: "POST", body: { itemId: item.id } });
+        restored += 1;
         last = { result, name: item.name };
       }
     } catch (caught) {
@@ -158,9 +160,12 @@ export function TrashView({ fixtureMode, query, onShow, onSelectionChange, onCou
     if (!last) return;
     const { result, name } = last;
     const location = result.location;
+    const partial = restored < items.length;
     showToast({
-      text: items.length === 1 ? putBackMessage(result, name) : `Put back ${items.length.toLocaleString()} items`,
-      tone: "success",
+      text: items.length === 1 ? putBackMessage(result, name) : partial
+        ? `Put back ${restored.toLocaleString()} of ${items.length.toLocaleString()} items`
+        : `Put back ${restored.toLocaleString()} items`,
+      tone: partial ? "info" : "success",
       ...(location ? { actionLabel: "Show", onAction: () => onShow({ place: location.place, path: location.path }, location.select) } : {}),
     });
   }

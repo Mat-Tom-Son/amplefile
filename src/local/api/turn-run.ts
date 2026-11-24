@@ -37,7 +37,7 @@ import { normalizeGeneratedConversationTitle } from "../../shared/chat-title.js"
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../state-paths.js";
 import { getConnectedFolder, registeredConnectedFolderOutline } from "../connected-folder.js";
 import { backgroundJobsForTurn } from "./background-jobs.js";
-import { getClient, refreshClientIfMarked } from "./conversation-clients.js";
+import { detachCachedClient, getClient, refreshClientIfMarked } from "./conversation-clients.js";
 import { broadcast, flushTurnCheckpoint, publishControlHint, turnStateEvent } from "./event-streams.js";
 import { errorMessage } from "./http.js";
 import { composeContinuationMessage, queueRequestGraphSettle } from "./request-routes.js";
@@ -270,8 +270,7 @@ export async function runAgentTurn(
     // completed tool results. Unexpected runtime failures still rebuild the
     // client from the durable Pi session on the next turn.
     if (!(error instanceof PiTurnFailure)) {
-      await client?.stop().catch(() => undefined);
-      state.clients.delete(key);
+      if (client) await detachCachedClient(state, key, client)?.stop().catch(() => undefined);
     }
   } finally {
     if (promptStarted) afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
@@ -305,13 +304,13 @@ export async function runAgentTurn(
       console.error(`Could not persist request settlement: ${errorMessage(error)}`);
       return null;
     });
+    // The Connected Folder's Worker instructions changed during this turn (Set up
+    // for me). Rebuild this Chat's client before the next turn can use it.
+    await refreshClientIfMarked(state, key);
     state.runningTurns.delete(key);
     state.cancelledTurnTasks.delete(taskId);
     state.activeTurnIdsByKey.delete(key);
     state.kernel.finishTask(taskId);
-    // The Connected Folder's Worker instructions changed during this turn (Set up
-    // for me). Rebuild this Chat's client so its next turn sees them.
-    await refreshClientIfMarked(state, key);
     settleTurnTask(state, taskId, {
       connectedFolderId,
       conversationId,

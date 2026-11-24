@@ -16,7 +16,7 @@ test("Pi resolves the reviewed dependency graph", async () => {
   for (const [name, expectedVersion] of [
     ["brace-expansion", "5.0.12"],
     ["protobufjs", "7.6.5"],
-    ["undici", "8.12.3"],
+    ["undici", "8.12.4"],
   ]) {
     const resolvedPackagePath = piRequire.resolve(`${name}/package.json`);
     const resolvedPackage = JSON.parse(await readFile(resolvedPackagePath, "utf8")) as { version?: string };

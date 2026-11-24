@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import JSZip from "jszip";
 
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
-import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, filesTooFreshToTell, finderCopyName, folderBlockingRemoval, isInside, moveInto, onOneDisk, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, type CopiedEntry, type CopiedSource } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, filesTooFreshToTell, finderCopyName, folderBlockingRemoval, isInside, onOneDisk, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, type CopiedEntry, type CopiedSource } from "../src/local/file-transfer.js";
 import { attributeNames, extraInWords, extrasCopyLacks, fileFlags, setAttributeCheckForTests } from "../src/local/extended-attributes.js";
 
 const exec = promisify(execFile);
@@ -51,7 +51,7 @@ test("a copied folder leaves a Connected Folder's identity behind, and a move la
   assert.ok(!existsSync(join(copied, ".amplefile")), "the copy is not the same Connected Folder");
   await writeFile(join(root, "plan.md"), "loose");
   await writeFile(join(root, "Archive", "plan.md"), "kept");
-  const moved = await moveInto(join(root, "plan.md"), join(root, "Archive"));
+  const moved = await renameInto(join(root, "plan.md"), join(root, "Archive"), "plan.md");
   assert.equal(moved, join(root, "Archive", "plan copy.md"));
   assert.ok(!existsSync(join(root, "plan.md")));
 });

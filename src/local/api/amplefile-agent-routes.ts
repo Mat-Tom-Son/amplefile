@@ -30,7 +30,7 @@ import type { AmpleFileActAgentRequest, AmpleFileActTurnState } from "../cli/act
 import { getConnectedFolder } from "../connected-folder.js";
 import { toActConversationRef } from "./act-support.js";
 import { normalizeAddressedConnectedFolderIds } from "./chat-routes.js";
-import { getClient } from "./conversation-clients.js";
+import { detachCachedClient, getClient } from "./conversation-clients.js";
 import { openChatStream } from "./event-streams.js";
 import { extensionSnapshot } from "./extension-ui.js";
 import { badRequest, boundedOptionalId, errorMessage, httpError, match, notFound, readJsonBody, sendJson } from "./http.js";
@@ -38,7 +38,7 @@ import { turnStatusFor } from "./request-records.js";
 import { requestLimitStopMessage, requestPresentation, stopAmpleFileAgentRequest } from "./request-routes.js";
 import { requestHasUnsettledWork } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiRequest, type LocalApiState } from "./state.js";
-import { acceptConversationTurn, changeQueuedMessage, optionalTurnIdentity, steerConversationTurn } from "./turn-acceptance.js";
+import { acceptConversationTurn, cancelQueuedMessage, optionalTurnIdentity, steerConversationTurn } from "./turn-acceptance.js";
 import { yieldBackgroundCompaction } from "./turn-run.js";
 
 /** The AmpleFile Agent's conversation surface: the same acceptance path, task records, and event stream as Connected Folder Chats, under the AmpleFile Agent scope id. */
@@ -308,7 +308,6 @@ async function deleteAmpleFileAgentConversation(
   const root = ampleFileAgentRoot();
   const key = clientKey(ampleFileAgentScopeId, conversationId);
   await yieldBackgroundCompaction(state, key);
-  changeQueuedMessage(state, key, null);
   assertAmpleFileAgentConversationMutable(state, conversationId);
   // This reservation uses the same conflict fence as compaction because a
   // transcript move must not race a new turn, rename, or real compaction.
@@ -326,7 +325,7 @@ async function deleteAmpleFileAgentConversation(
     }
     // An idle client can still hold the Pi session and extension callbacks.
     // Stop disposes that session before its transcript leaves the live root.
-    await state.clients.get(key)?.stop();
+    await detachCachedClient(state, key)?.stop();
     // `readConversationSummary` validated the id before this join. The source
     // remains a single known transcript below the app-owned management root.
     const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
@@ -350,7 +349,7 @@ async function deleteAmpleFileAgentConversation(
         { cause: error },
       );
     }
-    state.clients.delete(key);
+    cancelQueuedMessage(state, ampleFileAgentScopeId, conversationId);
     return { conversationId, recentlyDeleted: { entryId: entry.id, restoreBy: entry.restoreBy } };
   } finally {
     state.compactingConversations.delete(key);

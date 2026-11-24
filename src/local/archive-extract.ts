@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
-import { basename, dirname, join, posix, resolve, sep } from "node:path";
+import { lstat, mkdir, open, readdir, readlink, realpath, symlink, unlink, type FileHandle } from "node:fs/promises";
+import { basename, dirname, join, posix, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { createGunzip, createInflateRaw, crc32 } from "node:zlib";
@@ -38,7 +38,9 @@ import { untrackedFileOperation, type FileOperationControl } from "./file-operat
  *   drive letter, `..`) refuses the whole archive;
  * - a symbolic link is made only when it points inside what Extract makes,
  *   the one folder when that is all the archive holds (it is checked again
- *   once made); hard links and special files are left out;
+ *   once made). When merging into an existing folder, a link must stay
+ *   inside a subtree that moves intact; hard links and special files are
+ *   left out;
  * - nothing is written into `.amplefile/`, `.pi/`, or `.work-fold/`, or a
  *   name a Mac volume takes as one of them (".ampleﬁle";
  *   src/local/connected-folder-path-policy.ts);
@@ -80,8 +82,8 @@ export interface ExtractResult {
   links: number;
   bytes: number;
   /**
-   * Entries left out: a symbolic link pointing outside what was made (`link`),
-   * hard links, special files, Connected Folder or Pi configuration, and
+   * Entries left out: a symbolic link that could leave the tree moved with it
+   * (`link`), hard links, special files, Connected Folder or Pi configuration, and
    * repeats of a name already written.
    */
   skipped: Array<{ path: string; reason: ExtractSkipReason }>;
@@ -93,6 +95,8 @@ export interface StagedExtract extends ExtractResult, ExtractTarget {
   path: string;
   /** The folder the archive is in, where what was extracted goes. */
   parent: string;
+  /** Drops links that might use an existing component after Merge. Returns dropped top-level units. */
+  restrictLinksForMerge(placedSources: readonly string[]): Promise<ReadonlySet<string>>;
   /** Removes whatever is left of the working folder. */
   discard(): Promise<void>;
 }
@@ -159,7 +163,7 @@ export async function extractArchive(archive: string, operation: FileOperationCo
     const path = staged.kind === "file"
       ? await placeWithoutReplacing(staged.path, staged.parent, staged.name)
       : await placeFolderWithoutReplacing(staged.path, staged.parent, staged.name);
-    const { discard: _discard, name: _name, parent: _parent, single: _single, ...result } = staged;
+    const { discard: _discard, name: _name, parent: _parent, single: _single, restrictLinksForMerge: _restrict, ...result } = staged;
     return { ...result, path };
   } finally {
     await staged.discard();
@@ -233,9 +237,10 @@ export async function stageExtract(archive: string, operation: FileOperationCont
       parent,
       files: writer.files,
       folders: writer.folders,
-      links: writer.links,
+      get links() { return writer.links; },
       bytes: writer.bytes,
       skipped: writer.skipped,
+      restrictLinksForMerge: (sources) => writer.restrictLinksForMerge(sources),
       discard,
     };
   } catch (error) {
@@ -470,6 +475,39 @@ export function linkStaysInside(segments: readonly string[], target: string): bo
   return !resolved.split("/").some(isReservedConnectedFolderPathSegment);
 }
 
+/** Follows each link component without ever stepping out of the extracted tree. */
+async function linkTargetInside(root: string, parents: readonly string[], target: string): Promise<boolean> {
+  const path = [...parents];
+  const remaining = target.split("/").reverse();
+  let hops = 0;
+  while (remaining.length) {
+    const segment = remaining.pop()!;
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (path.pop() === undefined) return false;
+      continue;
+    }
+    if (isReservedConnectedFolderPathSegment(segment)) return false;
+    const candidate = join(root, ...path, segment);
+    try {
+      const info = await lstat(candidate);
+      if (info.isSymbolicLink()) {
+        if (++hops > 40) return false;
+        const link = await readlink(candidate);
+        if (!link || link.startsWith("/") || link.includes("\\") || /^[A-Za-z]:/.test(link)) return false;
+        remaining.push(...link.split("/").reverse());
+        continue;
+      }
+      if (remaining.length && !info.isDirectory()) return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+      // A missing target may appear after placement. Keep walking the path.
+    }
+    path.push(segment);
+  }
+  return true;
+}
+
 function refusedEntry(raw: string): Error {
   const shown = raw.replace(/\0/g, "␀").slice(0, 200);
   return badRequest(`This archive has an item that would land outside its folder (“${shown}”). Nothing was extracted.`);
@@ -570,6 +608,7 @@ class ExtractWriter extends EntryRules implements EntrySink {
   readonly settled = false;
   private readonly made = new Set<string>();
   private readonly pendingLinks: Array<{ rawPath: string; segments: string[]; target: string }> = [];
+  private readonly finishedLinks: Array<{ rawPath: string; path: string; target: string }> = [];
   private readonly macMetadata: Array<{ segments: string[]; path: string }> = [];
 
   constructor(
@@ -645,7 +684,7 @@ class ExtractWriter extends EntryRules implements EntrySink {
     const single = this.top.single();
     const folder = single?.kind === "folder" ? single.name : null;
     if (folder !== null) await this.ensureFolders([folder]);
-    const made: Array<{ rawPath: string; path: string }> = [];
+    const made: Array<{ rawPath: string; path: string; parents: string[]; target: string }> = [];
     for (const link of this.pendingLinks) {
       if (folder !== null && (link.segments.length === 1 || !linkStaysInside(link.segments.slice(1), link.target))) {
         // A link at the folder's own name is a repeat of the folder.
@@ -665,23 +704,70 @@ class ExtractWriter extends EntryRules implements EntrySink {
         this.skipped.push({ path: link.rawPath, reason: "repeat" });
         continue;
       }
-      made.push({ rawPath: link.rawPath, path });
+      made.push({ rawPath: link.rawPath, path, parents: link.segments.slice(folder === null ? 0 : 1, -1), target: link.target });
     }
     if (!made.length) return;
     const root = await realpath(folder === null ? this.root : join(this.root, folder));
+    const outside: typeof made = [];
     for (const link of made) {
-      let leadsInside = true;
-      try {
-        const real = await realpath(link.path);
-        leadsInside = real === root || real.startsWith(`${root}${sep}`);
-      } catch (error) {
-        // A link to something the archive did not hold stays, as written; a loop does not.
-        leadsInside = (error as { code?: string }).code === "ENOENT";
-      }
-      if (leadsInside) { this.links += 1; continue; }
+      if (await linkTargetInside(root, link.parents, link.target)) {
+        this.links += 1;
+        this.finishedLinks.push(link);
+      } else outside.push(link);
+    }
+    for (const link of outside) {
       await unlink(link.path);
       this.skipped.push({ path: link.rawPath, reason: "link" });
     }
+  }
+
+  /**
+   * A merge places disjoint units, and a unit can land at a different name
+   * if an existing item keeps its name. A link can go only inside a unit
+   * whose whole tree moves with it and whose own paths it never leaves.
+   */
+  async restrictLinksForMerge(placedSources: readonly string[]): Promise<ReadonlySet<string>> {
+    const units = new Map<string, string>();
+    const identities = new Map<string, string>();
+    const identity = async (path: string): Promise<string> => {
+      const known = identities.get(path);
+      if (known) return known;
+      const info = await lstat(path, { bigint: true });
+      const key = `${info.dev}:${info.ino}`;
+      identities.set(path, key);
+      return key;
+    };
+    // Match what the disk opened, including names with alternate spellings
+    // on a case-insensitive or Unicode-normalizing volume.
+    for (const path of placedSources) {
+      await this.operation.boundary("entry");
+      units.set(await identity(path), path);
+    }
+    const omittedUnits = new Set<string>();
+    const omitted: typeof this.finishedLinks = [];
+    for (const link of this.finishedLinks) {
+      await this.operation.boundary("entry");
+      const direct = units.get(await identity(link.path));
+      if (direct) {
+        omittedUnits.add(direct);
+        omitted.push(link);
+        continue;
+      }
+      const parents: string[] = [];
+      for (let ancestor = dirname(link.path); ancestor !== this.root; ancestor = dirname(ancestor)) {
+        if (units.has(await identity(ancestor))) {
+          if (!await linkTargetInside(ancestor, parents, link.target)) omitted.push(link);
+          break;
+        }
+        parents.unshift(basename(ancestor));
+      }
+    }
+    for (const link of omitted) {
+      await unlink(link.path);
+      this.links -= 1;
+      this.skipped.push({ path: link.rawPath, reason: "link" });
+    }
+    return omittedUnits;
   }
 
   /** Counts bytes about to be written and checks the disk now and then. */
@@ -903,6 +989,7 @@ async function readZipDirectory(handle: FileHandle, size: number): Promise<ZipEn
     for (let field = 0; field + 4 <= extra.length;) {
       const id = extra.readUInt16LE(field);
       const length = extra.readUInt16LE(field + 2);
+      if (field + 4 + length > extra.length) throw damaged();
       if (id === 0x0001) {
         let read = field + 4;
         const next = () => {
