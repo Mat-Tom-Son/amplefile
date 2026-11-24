@@ -819,7 +819,8 @@ export class AmpleFileRecentlyDeletedStore {
   /** Claims the restore name without replacing another item at that path. */
   async #installAtRestoreName(source: string, destination: string, releaseSource = false): Promise<Stats> {
     const sourceInfo = await lstat(source);
-    if (!sourceInfo.isDirectory()) {
+    // Darwin link() follows a symbolic link's target. Restore links by renaming them.
+    if (sourceInfo.isFile()) {
       const linked = await this.#io.link(source, destination).then(() => true, (error: NodeJS.ErrnoException) => {
         // A volume without hard links still supports an exclusive empty-file claim.
         if (["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EMLINK"].includes(error.code ?? "")) return false;
