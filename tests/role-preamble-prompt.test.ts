@@ -41,10 +41,10 @@ test("each request opens with the session's role and keeps Pi's tool list, rules
     const sent = requests.at(-1)!;
     const prompt = getSystemMessageText(sent[0] as SystemMessage);
     assert.ok(prompt.startsWith(`${ampleFileRolePreamble(role)}\n\n<tools>\n`), `${role} request opens with its role`);
-    assert.doesNotMatch(prompt, /expert coding assistant|coding agent harness\. You help users/);
+    assert.doesNotMatch(prompt, /coding assistant running inside pi|expert coding assistant/);
     assert.match(prompt, /<tools>\n- read: [^\n]+\n- bash: /);
     assert.match(prompt, /<rules>\n- [^\n]+\n[\s\S]*- Show file paths clearly when working with files\n<\/rules>/);
-    assert.match(prompt, /<docs>\nPi documentation \(read only when the user asks about pi itself/);
+    assert.match(prompt, /<docs>\nPi documentation \(read only when the user asks about the harness itself/);
     assert.match(prompt, new RegExp(`<cwd>\\n${cwd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n</cwd>`));
 
     // The hidden turn context reaches the same request with the host's clock.
@@ -69,6 +69,10 @@ test("the role hook replaces only Pi's default preamble and leaves a person's ow
   assert.equal(result.messages[0]!.sections!.preamble, ampleFileRolePreamble("worker"));
   assert.equal(result.messages[0]!.sections!.tools, sections.tools);
   assert.equal(sections.preamble, piDefaultPreamble, "the transcript's own message is not mutated");
+
+  const legacy = { ...sections, preamble: "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files." };
+  const restored = handler({ type: "context_with_system", messages: [{ role: "system", content: "", sections: legacy, timestamp: 0 }] });
+  assert.equal(restored?.messages[0]?.sections?.preamble, ampleFileRolePreamble("worker"));
 
   const own = { role: "system", content: "", sections: { preamble: "You are my research partner.", cwd: "<cwd>\n/folder\n</cwd>" }, timestamp: 0 };
   assert.equal(handler({ type: "context_with_system", messages: [own] }), undefined);
