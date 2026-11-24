@@ -154,6 +154,7 @@ refused "upgrade to a tampered RPM" upgrade
 [ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|digest|gpg|pgp' "$P/last.log" && pass "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed" || fail "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed"
 
 step "The installed app runs while dnf upgrades it to B"
+serve "refs/heads/$BRANCH"
 # A person's session: their own user, a display and a session bus that
 # outlive any one AmpleFile process, so a relaunch has somewhere to open.
 useradd -m -u 1000 proof
