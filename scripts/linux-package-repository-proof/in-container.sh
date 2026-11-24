@@ -188,7 +188,7 @@ upgrade 2>&1 | tee "$P/upgrade.log"
 [ "$(installed)" = "$VERSION-2" ] || fail "B was not installed"
 pass "dnf upgraded A to B from the repository with gpgcheck=1 and repo_gpgcheck=1, while AmpleFile ran"
 grep -qx metadata_expire=1m "$ENTRY" && pass "the upgrade kept the person's change to $ENTRY" || fail "the upgrade kept the person's change to $ENTRY"
-echo "    old process's archive: $(ls -l "/proc/$OLD_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)" | tee -a "$P/results.txt"
+echo "    old process's archive: $(runuser -u proof -- ls -l "/proc/$OLD_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)" | tee -a "$P/results.txt"
 FIRST=$(drive check) || fail "the status check after the upgrade did not answer"
 READY=$(drive check) || fail "the second status check after the upgrade did not answer"
 echo "    first look: $FIRST" | tee -a "$P/results.txt"
@@ -209,8 +209,8 @@ NEW_PID=
 for _ in $(seq 120); do NEW_PID=$(main_pids); [ -n "$NEW_PID" ] && break; sleep 0.5; done
 [ "$(echo "$NEW_PID" | wc -w)" = 1 ] || { tail -40 "$P/app.log"; fail "expected one relaunched AmpleFile process, found: '$NEW_PID'"; }
 AFTER=$(first_status) || { tail -40 "$P/app.log"; fail "the relaunched app did not open a window"; }
-EXE=$(readlink "/proc/$NEW_PID/exe" || true)
-ARCHIVE=$(ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1 || true)
+EXE=$(runuser -u proof -- readlink "/proc/$NEW_PID/exe" || true)
+ARCHIVE=$(runuser -u proof -- ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1 || true)
 echo "    relaunched pid $NEW_PID: exe $EXE, archive $ARCHIVE" | tee -a "$P/results.txt"
 echo "    after: $AFTER" | tee -a "$P/results.txt"
 [ "$EXE" = /opt/AmpleFile/amplefile-desktop ] && { [ -z "$ARCHIVE" ] || [ "$ARCHIVE" = /opt/AmpleFile/resources/app.asar ]; } \
