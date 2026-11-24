@@ -208,6 +208,9 @@ opaque id its listing minted; the host finds it again for every act.
   the shared Connected Folder reservation through the eject. It refuses, as a
   deletion does, while a turn or compaction runs there, a request is
   unsettled, or a background job or Automation run may be writing there.
+  The host compares registered roots as written and follows linked ancestors
+  under the shared drive guard when it needs the resolved location. If a
+  location cannot be checked, Eject refuses.
 
   On macOS `diskutil eject` takes the drive's whole physical disk, so those
   holds and refusals cover every mount that leaves with it, whether or not
@@ -267,8 +270,9 @@ opaque id its listing minted; the host finds it again for every act.
   the drives guard with an 8-second limit. A drive that does not answer in
   that time, or that the guard has already marked stalled, is left out of
   the listing and of Empty Trash without another call, and keeps its Trash
-  until it answers; so is any further drive while two file calls to drives
-  are still out. Sizing a drive's items and removing them, once it has
+  until it answers. A further drive is skipped while two file calls are
+  still out. The listing and Empty Trash name skipped drives in
+  `unavailableVolumes`. Sizing a drive's items and removing them, once it has
   answered, are not bounded.
 
 - `POST /api/trash/delete` (Delete Immediately) and `POST /api/trash/empty`

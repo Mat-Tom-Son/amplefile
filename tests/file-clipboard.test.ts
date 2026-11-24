@@ -45,7 +45,11 @@ class FakePasteboard {
  * The host and its windows: each window keeps what it last heard is cut, as the file manager draws it. Every
  * file is on disk until the test puts its path in `gone`.
  */
-function setUp(options: { token?: () => string | null; read?: (pasteboard: FakePasteboard) => PasteboardFiles | Promise<PasteboardFiles> } = {}) {
+function setUp(options: {
+  token?: () => string | null;
+  read?: (pasteboard: FakePasteboard) => PasteboardFiles | Promise<PasteboardFiles>;
+  exists?: (path: string) => Promise<boolean>;
+} = {}) {
   const pasteboard = new FakePasteboard();
   const windows = { one: null as string[] | null, two: null as string[] | null };
   const gone = new Set<string>();
@@ -54,7 +58,7 @@ function setUp(options: { token?: () => string | null; read?: (pasteboard: FakeP
     read: () => options.read ? options.read(pasteboard) : pasteboard.read(),
     write: (nativePaths, token) => pasteboard.writeFiles(nativePaths, token),
     clear: () => pasteboard.clear(),
-    exists: async (nativePath) => !gone.has(nativePath),
+    exists: options.exists ?? (async (nativePath) => !gone.has(nativePath)),
     token: options.token ?? (() => (++tokens).toString(16).padStart(32, "0")),
     changed: (nativePaths) => {
       windows.one = nativePaths ? [...nativePaths] : null;
@@ -305,6 +309,35 @@ test("a slow look at the pasteboard never forgets a newer Cut", async () => {
   assert.equal(await looking, null, "the old Cut is gone");
   assert.deepEqual(windows.one, [photos], "the newer one stays drawn");
   assert.equal(clipboard.remembered?.nativePaths[0], photos);
+});
+
+test("a Copy during the disk check invalidates an already planned Cut paste", async () => {
+  for (const fromAmpleFile of [true, false]) {
+    const entered = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    let running = false;
+    const { pasteboard, clipboard } = setUp({ exists: async () => {
+      if (running) {
+        entered.resolve();
+        await finished.promise;
+      }
+      return true;
+    } });
+    await clipboard.cut({ place: documents, paths: ["report.pdf"], nativePaths: [report] });
+    const { calls, transfer } = transfers();
+    const request = { target, mode: "copy" as const, internal: null };
+    const preview = await clipboard.paste({ ...request, conflicts: { check: true } }, [], transfer);
+    assert.ok("plan" in preview && preview.plan);
+    running = true;
+    const paste = clipboard.paste({ ...request, plan: preview.plan }, [], transfer);
+    await entered.promise;
+    pasteboard.finderCopies([report]);
+    if (fromAmpleFile) clipboard.replaced();
+    finished.resolve();
+    await assert.rejects(paste, /The clipboard changed/);
+    assert.equal(calls.length, 1, "only the conflict check reached the transfer");
+    assert.deepEqual(pasteboard.read().paths, [report], "the newer Copy stays");
+  }
 });
 
 /** A clipboard the desktop reads no files from (off the Mac): AmpleFile writes files there as their paths, as text. */

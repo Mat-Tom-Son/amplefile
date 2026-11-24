@@ -497,7 +497,9 @@ test("macOS leaves out the Trash of a drive that is not answering, without askin
   const began = Date.now();
   assert.deepEqual(await names(), ["backup.mov", "note.txt", "spare.mov"], "the other drives and the home Trash are still read");
   assert.ok(Date.now() - began < 4_000, "the Trash did not wait for the stalled drive");
+  assert.deepEqual((await listSystemTrash(options)).unavailableVolumes, ["Camera"]);
   const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.unavailableVolumes, ["Camera"]);
   assert.deepEqual(emptied.removed.map((item) => item.name).sort(), ["backup.mov", "note.txt", "spare.mov"]);
   assert.ok(existsSync(join(camera, ".Trashes", String(uid), "camera.mov")), "a drive that is not answering keeps its Trash");
 
@@ -511,4 +513,5 @@ test("macOS leaves out the Trash of a drive that is not answering, without askin
   secondAnswer(null);
   await new Promise((done) => setImmediate(done));
   assert.deepEqual(await names(), ["camera.mov", "spare.mov"]);
+  assert.equal((await listSystemTrash(options)).unavailableVolumes, undefined);
 });

@@ -10,6 +10,7 @@
  * gave; the host finds it again and decides everything else.
  */
 
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, relative, sep } from "node:path";
 
@@ -17,6 +18,7 @@ import { createLocalEventSink } from "../local-event-stream.js";
 import {
   getConnectedFolder,
   listConnectedFolders,
+  registeredConnectedFolderOutline,
   resolveConnectedFolderPath,
   withConnectedFolderHistoryOperation,
   withConnectedFolderHistoryOperations,
@@ -41,6 +43,7 @@ import {
   ejectVolume,
   listVolumeRecords,
   listVolumes,
+  mountCalls,
   noteVolumesMayHaveChanged,
   subscribeVolumes,
   volumeHolds,
@@ -154,10 +157,27 @@ async function ejectListedVolume(state: LocalApiState, volumeId: string): Promis
   if (!volume) throw notFound("That drive isn’t connected anymore.");
   if (!volume.ejectable) throw httpError(409, `“${volume.name}” can’t be ejected from AmpleFile.`);
   const leaving: EjectCompanion[] = [{ volume, certain: true }, ...await volumesEjectedWith(volume)];
-  const held = (await listConnectedFolders()).flatMap((connectedFolder) => {
-    const drive = driveHolding(leaving, connectedFolder.connectedFolderRoot);
-    return drive ? [{ connectedFolder, drive }] : [];
-  });
+  const held: Array<{ connectedFolder: { id: string; name: string; connectedFolderRoot: string }; drive: EjectCompanion }> = [];
+  for (const connectedFolder of await registeredConnectedFolderOutline()) {
+    const root = connectedFolder.connectedFolderRoot;
+    let drive = driveHolding(leaving, root);
+    if (!drive) {
+      // A registered path can have a linked ancestor. Use a bounded disk call
+      // before deciding that its work is on a different volume.
+      const resolved = await mountCalls.call(root, { kind: "file", share: "eject-root" }, async () => {
+        try {
+          return await realpath(root);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "ENOENT" || code === "ENOTDIR") return null;
+          throw error;
+        }
+      });
+      if (!resolved) throw httpError(409, `AmpleFile couldn’t check where “${connectedFolder.name}” is before ejecting “${volume.name}”. Try again once its drive answers.`);
+      if (resolved.value) drive = driveHolding(leaving, resolved.value);
+    }
+    if (drive) held.push({ connectedFolder, drive });
+  }
   let toolRan = false;
   try {
     await withConnectedFolderHistoryOperations(held.map(({ connectedFolder }) => connectedFolder.connectedFolderRoot), async () => {

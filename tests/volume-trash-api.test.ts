@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -194,12 +194,18 @@ test("Eject checks the Connected Folders on every mount that leaves with the dis
   const { api, call, sandbox } = await sandboxApi(t);
   const ran: EjectCommand[] = [];
   setEjectRunnerForTests(async (command) => { ran.push(command); return { code: 0, stdout: "", stderr: "" }; });
-  const created = await call("/api/connected-folders", { method: "POST", body: { name: "Field Notes" } });
+  const folderHome = join(sandbox, "photos-volume");
+  const linkedParent = join(sandbox, "linked-parent");
+  await mkdir(join(folderHome, "Field Notes"), { recursive: true });
+  await symlink(folderHome, linkedParent, "junction");
+  const connectedFolderRoot = join(linkedParent, "Field Notes");
+  const created = await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot } });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const connectedFolder = created.body!.connectedFolder as { id: string; connectedFolderRoot: string };
+  assert.equal(connectedFolder.connectedFolderRoot, connectedFolderRoot);
   // Two volumes of one disk, a drive on a disk of its own, and a share. The Connected Folder is on the first
   // volume, which is mounted somewhere the drives list does not show.
-  const photos = volume({ id: "volume-00000000000000000002", name: "Photos", mountPath: join(sandbox, "content"), device: "/dev/disk5s1", fileSystem: "apfs" });
+  const photos = volume({ id: "volume-00000000000000000002", name: "Photos", mountPath: folderHome, device: "/dev/disk5s1", fileSystem: "apfs" });
   const camera = volume({ id: "volume-00000000000000000003", name: "Camera", mountPath: join(sandbox, "camera"), device: "/dev/disk4s2", fileSystem: "exfat" });
   const archive = volume({ id: "volume-00000000000000000004", name: "Archive", mountPath: join(sandbox, "archive"), device: "/dev/disk6s1", fileSystem: "hfs" });
   const team = volume({ id: "volume-00000000000000000005", name: "Team", mountPath: join(sandbox, "team"), device: "//nas/team", fileSystem: "smbfs" });

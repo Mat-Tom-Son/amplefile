@@ -5,6 +5,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 
 import { assertDiskSpace, watchDiskSpace } from "./disk-space.js";
 import { untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
+import { extrasCopyLacks } from "./extended-attributes.js";
 import { comparableContains, comparablePath } from "./path-comparison.js";
 import { writeZip, type ZipWriterEntry } from "./zip-writer.js";
 
@@ -165,20 +166,32 @@ export function filesTooFreshToTell(source: string, read: CopiedSource): string[
 
 /** Whether two files hold the same bytes. */
 export async function sameBytes(left: string, right: string): Promise<boolean> {
-  const [a, b] = await Promise.all([open(left, "r").catch(() => null), open(right, "r").catch(() => null)]);
+  const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK;
+  const [a, b] = await Promise.all([open(left, flags).catch(() => null), open(right, flags).catch(() => null)]);
   try {
     if (!a || !b) return false;
+    const [leftBefore, rightBefore] = await Promise.all([a.stat(), b.stat()]);
+    if (!leftBefore.isFile() || !rightBefore.isFile() || leftBefore.size !== rightBefore.size) return false;
     const one = Buffer.allocUnsafe(256 * 1024);
     const other = Buffer.allocUnsafe(256 * 1024);
     for (;;) {
       const [x, y] = await Promise.all([readFully(a, one), readFully(b, other)]);
       if (x !== y || one.compare(other, 0, y, 0, x) !== 0) return false;
-      if (!x) return true;
+      if (!x) break;
     }
+    const [leftAfter, rightAfter] = await Promise.all([lstat(left), lstat(right)]);
+    return sameFileSnapshot(leftBefore, leftAfter) && sameFileSnapshot(rightBefore, rightAfter);
+  } catch {
+    return false;
   } finally {
     await a?.close().catch(() => undefined);
     await b?.close().catch(() => undefined);
   }
+}
+
+function sameFileSnapshot(before: Stats, after: Stats): boolean {
+  return after.isFile() && before.dev === after.dev && before.ino === after.ino
+    && before.size === after.size && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs;
 }
 
 /** Fills `buffer` from a file, as far as the file goes; returns how much. */
@@ -333,16 +346,17 @@ export async function copyHoldsAll(source: string, copy: string, options: { with
 
 /**
  * Whether an original and the copy a move left beside it still hold the
- * same things: every folder, file (size and time), and link of each is in
- * the other. `.amplefile` folders are not asked about, since the copy of an
- * item that stayed in its source drops them. Asked before Undo takes such a
- * copy away: when either changed since the move, the copy may be the only
- * place something is, so it stays.
+ * same things before Undo takes the copy away. Check the bytes, permissions,
+ * links and metadata the copy holds. The original can retain metadata and
+ * Connected Folder identity that the copy never received.
  */
 export async function treesMatch(original: string, copy: string): Promise<boolean> {
   const [one, other] = await Promise.all([lstat(original).catch(() => null), lstat(copy).catch(() => null)]);
   if (!one || !other) return false;
-  return await treeHeld(original, copy, { identity: "ignore" }) && await treeHeld(copy, original, { identity: "ignore" });
+  if (!await treeHeld(original, copy, { identity: "ignore" })) return false;
+  const entries: string[] = [];
+  if (!await treeHeld(copy, original, { identity: false, verifyContents: entries })) return false;
+  return !await extrasCopyLacks(copy, original, entries);
 }
 
 /**
@@ -415,17 +429,23 @@ async function makeFoldersWritable(path: string, widened: Array<{ path: string; 
 }
 
 /** Whether everything at `from` is also at `into`, the same. An `.amplefile` folder counts as held when carried whole (`identity`), never (`false`), or is not asked about (`"ignore"`). */
-async function treeHeld(from: string, into: string, options: { identity: boolean | "ignore" }): Promise<boolean> {
+async function treeHeld(from: string, into: string, options: { identity: boolean | "ignore"; verifyContents?: string[] }): Promise<boolean> {
   const [original, other] = await Promise.all([lstat(from).catch(() => null), lstat(into).catch(() => null)]);
-  if (!original) return true;
+  if (!original) return !options.verifyContents;
   if (!other) return false;
+  if (options.verifyContents) {
+    if ((original.mode & 0o7777) !== (other.mode & 0o7777)) return false;
+    options.verifyContents.push(from);
+  }
   if (original.isSymbolicLink()) {
     if (!other.isSymbolicLink()) return false;
     const [written, copied] = await Promise.all([readlink(from).catch(() => null), readlink(into).catch(() => null)]);
     return written !== null && written === copied;
   }
   if (original.isFile()) {
-    return other.isFile() && other.size === original.size && Math.abs(other.mtimeMs - original.mtimeMs) <= sameTimeToleranceMs;
+    return other.isFile() && other.size === original.size
+      && Math.abs(other.mtimeMs - original.mtimeMs) <= sameTimeToleranceMs
+      && (!options.verifyContents || await sameBytes(from, into));
   }
   if (!original.isDirectory() || !other.isDirectory()) return false;
   for (const entry of await readdir(from)) {

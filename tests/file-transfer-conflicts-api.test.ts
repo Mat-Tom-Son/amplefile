@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -552,6 +553,30 @@ test("Extract never merges into a Mac package: Merge is not offered, and chosen 
   assert.deepEqual(merged.body!.merged, []);
   assert.equal(await readFile(join(folder.connectedFolderRoot, "Tool.app", "Contents", "Info.plist"), "utf8"), "old");
   assert.equal(await readFile(join(folder.connectedFolderRoot, merged.body!.path, "Contents", "Info.plist"), "utf8"), "new");
+});
+
+test("a quarantined Extract keeps a nested Mac package whole through Merge", { skip: process.platform !== "darwin" }, async (t) => {
+  const { call } = await sandboxApi(t);
+  const folder = await connectedFolder(call, "Folder");
+  const root = folder.connectedFolderRoot;
+  const original = join(root, "Import", "Review.pages");
+  await mkdir(original, { recursive: true });
+  await writeFile(join(original, "old.txt"), "old document data");
+
+  const zip = new JSZip();
+  zip.file("Import/Review.pages/new.txt", "new document data");
+  const archive = join(root, "review.zip");
+  await writeFile(archive, await zip.generateAsync({ type: "nodebuffer" }));
+  const quarantine = "0081;00000000;AmpleFileTest;";
+  execFileSync("/usr/bin/xattr", ["-w", "com.apple.quarantine", quarantine, archive]);
+
+  const place = { kind: "connected-folder", id: folder.id };
+  const merged = await call("/api/file-transfer/extract", { method: "POST", body: { place, path: "review.zip", conflicts: { items: { Import: "merge" }, insideItems: { Import: "replace" } } } });
+  assert.equal(merged.status, 201, JSON.stringify(merged.body));
+  assert.deepEqual(await readdir(original), ["old.txt"]);
+  const newPackage = join(root, "Import", "Review copy.pages");
+  assert.equal(await readFile(join(newPackage, "new.txt"), "utf8"), "new document data");
+  assert.equal(execFileSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", newPackage], { encoding: "utf8" }).trim(), quarantine);
 });
 
 test("a replaced item History cannot keep goes whole into Recently Deleted", async (t) => {

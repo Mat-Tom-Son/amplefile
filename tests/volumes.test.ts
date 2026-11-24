@@ -664,7 +664,7 @@ test("a disk that won't go says which drives it holds, and says may of one the s
 test("the Trash looks for a drive's Trash folder only on disk volumes directly inside /Volumes", async () => {
   const table = `${await fixture("mount-macos.txt")}${macExtraMounts}`;
   assert.deepEqual(await listMacTrashTops({ mountTable: table }), ["/Volumes/AFScratch A", "/Volumes/AFScratch B", "/Volumes/Backup (2019)", "/Volumes/Notes on Trips"], "no share, nothing hidden or nested");
-  assert.deepEqual(await listMacTrashTops({ run: async () => ({ code: 1, stdout: "", stderr: "mount: failed" }) }), [], "an unreadable mount table gives none");
+  await assert.rejects(listMacTrashTops({ run: async () => ({ code: 1, stdout: "", stderr: "mount: failed" }) }), /couldn’t read which drives/i);
   // The whole table keeps what the drives list leaves out.
   assert.deepEqual(parseMacMountTable(table).filter((mount) => ["/", "/Volumes/.timemachine", "/Volumes/Outer/Inner", "/System/Volumes/Data/home"].includes(mount.mountPoint)).map((mount) => [mount.mountPoint, mount.device, mount.fileSystem]), [
     ["/", "/dev/disk3s1s1", "apfs"],

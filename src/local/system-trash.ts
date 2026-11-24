@@ -65,6 +65,8 @@ export interface TrashListing {
   truncated: boolean;
   /** Whether this computer's Trash supports Put Back at all (false on macOS). */
   putBackAvailable: boolean;
+  /** Mounted drives whose Trash could not be checked. */
+  unavailableVolumes?: string[];
 }
 
 /** One trash folder: where its `files/` and `info/` are, and where its relative paths start. */
@@ -453,12 +455,15 @@ const macPutBackNote = "Put this back from the Trash in Finder. AmpleFile can’
  * Trash delete, what is in that other folder.
  */
 async function macVolumeTrashRoot(top: string, uid: number): Promise<string | null> {
-  const drive = await lstat(top).catch(() => null);
-  if (!drive?.isDirectory() || drive.isSymbolicLink()) return null;
+  const drive = await lstat(top);
+  if (!drive.isDirectory() || drive.isSymbolicLink()) return null;
   let folder = top;
   for (const name of [".Trashes", String(uid)]) {
     folder = join(folder, name);
-    const info = await lstat(folder).catch(() => null);
+    const info = await lstat(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+      throw error;
+    });
     if (!info?.isDirectory() || info.isSymbolicLink() || info.dev !== drive.dev) return null;
   }
   return folder;
@@ -486,15 +491,13 @@ interface MacVolumeTrash {
  * and with two file calls to drives already out no third is made. What comes
  * after a drive has answered (sizing its items, removing them) is not bounded.
  */
-async function readMacVolumeTrash(top: string, uid: number, calls: MountCalls): Promise<MacVolumeTrash | null> {
-  const read = await calls.call(top, { kind: "file", limitMs: macVolumeTrashTimeoutMs }, async () => {
+async function readMacVolumeTrash(top: string, uid: number, calls: MountCalls): Promise<{ value: MacVolumeTrash | null } | null> {
+  return calls.call(top, { kind: "file", limitMs: macVolumeTrashTimeoutMs, share: `trash:${uid}` }, async () => {
     const root = await macVolumeTrashRoot(top, uid);
     if (!root) return null;
-    const names = await readdir(root, { withFileTypes: true }).catch(() => null);
-    const holderReal = names && await realpath(root).catch(() => null);
-    return names && holderReal ? { root, holderReal, names } : null;
+    const names = await readdir(root, { withFileTypes: true });
+    return { root, holderReal: await realpath(root), names };
   });
-  return read?.value ?? null;
 }
 
 /**
@@ -520,9 +523,11 @@ async function listMacTrash(options: TrashOptions): Promise<TrashListing> {
       }
     }
   }
+  const unavailableVolumes: string[] = [];
   for (const top of options.macVolumeTops ?? await listMacTrashTops()) {
     const read = await readMacVolumeTrash(top, uid, options.mountCalls ?? mountCalls);
-    if (read) sources.push({ root: read.root, trash: "volume", topdir: top, names: read.names });
+    if (!read) unavailableVolumes.push(basename(top));
+    else if (read.value) sources.push({ root: read.value.root, trash: "volume", topdir: top, names: read.value.names });
   }
   const items: TrashItem[] = [];
   let truncated = false;
@@ -549,7 +554,7 @@ async function listMacTrash(options: TrashOptions): Promise<TrashListing> {
     }
   }
   items.sort((left, right) => left.name.localeCompare(right.name));
-  return { items, truncated, putBackAvailable: false };
+  return { items, truncated, putBackAvailable: false, ...(unavailableVolumes.length ? { unavailableVolumes } : {}) };
 }
 
 // Put Back ---------------------------------------------------------------------
@@ -865,6 +870,8 @@ export interface TrashDeletionResult {
   notFound: string[];
   /** Leftover records (an info file without its item) Empty Trash removed. */
   strayRecordsRemoved: number;
+  /** Mounted drives whose Trash could not be checked for Empty Trash. */
+  unavailableVolumes?: string[];
   /** Stopped before every item was handled; `notDone` lists the ids left in the Trash. */
   cancelled?: true;
   notDone?: string[];
@@ -926,7 +933,7 @@ async function linuxSlots(options: TrashOptions, includeUnrecorded: boolean): Pr
 }
 
 /** macOS: every item deletion may take: `~/.Trash`, and the Trash folder of each drive that answers (`readMacVolumeTrash`). */
-async function macSlots(options: TrashOptions): Promise<TrashSlot[]> {
+async function macSlots(options: TrashOptions): Promise<{ slots: TrashSlot[]; unavailableVolumes: string[] }> {
   const home = resolve(options.home ?? homedir());
   const uid = currentUid(options);
   const slots: TrashSlot[] = [];
@@ -950,11 +957,13 @@ async function macSlots(options: TrashOptions): Promise<TrashSlot[]> {
     const holderReal = names && await realpath(homeRoot).catch(() => null);
     if (names && holderReal) add(homeRoot, holderReal, names);
   }
+  const unavailableVolumes: string[] = [];
   for (const top of options.macVolumeTops ?? await listMacTrashTops()) {
     const read = await readMacVolumeTrash(top, uid, options.mountCalls ?? mountCalls);
-    if (read) add(read.root, read.holderReal, read.names.map((entry) => entry.name));
+    if (!read) unavailableVolumes.push(basename(top));
+    else if (read.value) add(read.value.root, read.value.holderReal, read.value.names.map((entry) => entry.name));
   }
-  return slots;
+  return { slots, unavailableVolumes };
 }
 
 /**
@@ -1023,7 +1032,7 @@ export async function deleteTrashItemsImmediately(
   const platform = options.platform ?? process.platform;
   const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
   const wanted = [...new Set(ids)];
-  const slots = platform === "linux" ? (await linuxSlots(options, false)).slots : platform === "darwin" ? await macSlots(options) : [];
+  const slots = platform === "linux" ? (await linuxSlots(options, false)).slots : platform === "darwin" ? (await macSlots(options)).slots : [];
   const byId = new Map(slots.map((slot) => [slot.id, slot]));
   const chosen: TrashSlot[] = [];
   for (const id of wanted) {
@@ -1047,7 +1056,9 @@ export async function emptySystemTrash(givenOptions: TrashOptions = {}, operatio
   const platform = options.platform ?? process.platform;
   const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
   if (platform === "darwin") {
-    await deleteSlots(await macSlots(options), operation, result);
+    const { slots, unavailableVolumes } = await macSlots(options);
+    if (unavailableVolumes.length) result.unavailableVolumes = unavailableVolumes;
+    await deleteSlots(slots, operation, result);
     return result;
   }
   if (platform !== "linux") return result;

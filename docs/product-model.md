@@ -156,7 +156,8 @@ other surface.
   everything else mounted from that disk leaves with it, shown in the list or
   not. While a Connected Folder on any of it has unfinished work, the host
   refuses before anything changes, and its reason names the drive, the
-  Connected Folder, and the drive that Connected Folder is on. While a file
+  Connected Folder, and the drive that Connected Folder is on. The check
+  also follows linked ancestors of registered roots. While a file
   on the drive itself is in use, the Mac refuses and nothing changes. While a
   file on another drive of the disk is in use, the Mac has already unmounted
   the drive that was asked for when it refuses: the reason names the drives
@@ -191,8 +192,8 @@ other surface.
   Full Disk Access and says so when it is missing; macOS keeps no record of
   where an item came from that AmpleFile can read, so Put Back there points
   to Finder and the rest works. A drive's Trash is read from a disk, never
-  from a network share, and a drive that is not answering is left out of the
-  list and of Empty Trash until it answers.
+  from a network share. The list and the Empty Trash result name drives
+  whose Trash could not be checked. Their items stay where they are.
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
   Quick Look, Command-Down to open, Command-Up for the enclosing folder
@@ -378,8 +379,8 @@ other surface.
     the same way. Two folders merged in one operation each follow the answer
     given for them, and a Merge applied to all gives its answer to every
     folder it merges. The question is asked when the folders hold same-named
-    items; Extract always asks it, without a count, because an archive is
-    not read until it is extracted. A folder whose items were all skipped is
+    items. Extract asks without a count because its check reads only enough
+    to identify the item that will land. A folder whose items were all skipped is
     left as it was. After a
     Replace the notice says where the old item went: History keeps it in a
     Connected Folder (⌘Z brings it back), Recently Deleted holds what
@@ -411,10 +412,10 @@ other surface.
     part that could not be removed. What the move replaced in the target
     Connected Folder comes back from that folder's restore point, which
     also takes away a copy that stayed in both places. That restore point
-    is run only when every item went back cleanly and every such copy still
-    matches the original it was made from; otherwise it would take away an
-    item, or a change made since, from the only folder that has it, and ⌘Z
-    says History has the restore point. A copy the move left in a plain
+    is run only when every item went back cleanly and the original of each
+    retained copy still holds its contents, checked byte for byte along
+    with modes, links, and the Mac metadata the copy holds. Otherwise ⌘Z
+    keeps the copy and says History has the restore point. A copy the move left in a plain
     folder, of an item that never left its source, has no History to take
     it away: it stays, and ⌘Z says so. ⇧⌘Z does such a move again, for the
     items that went back, unless the move replaced something or merged
@@ -505,9 +506,8 @@ other surface.
       file has no tags; the original has them still. A move must not lose
       them, which is why it renames on one disk, and why across disks an
       original stays where it was, with the reason, when it has an extended
-      attribute or a hide or lock flag its copy lacks, or when what it has
-      could not be read. Access rules are not read: an item that has its
-      own and nothing else of these moves across disks without them.
+      attribute or a hide or lock flag its copy lacks, when it has a Mac
+      access control list, or when its extra metadata could not be read.
     - **Where items go.** Nothing is copied, moved, compressed, or extracted
       into a nested Connected Folder named through its parent, or into a
       folder inside one: the window opens a nested Connected Folder as
@@ -543,8 +543,10 @@ other surface.
     quarantine mark to everything Extract makes before it takes its name,
     as Archive Utility does, so an app from it gets Gatekeeper's first-open
     check; if the mark cannot be read or carried, nothing is extracted. A
-    package (see **Packages**) is never merged into: Merge is not offered
-    when Extract makes one, and a Merge asked for anyway keeps both.
+    package (see **Packages**) stays whole. A Merge of its enclosing folder
+    keeps a same-named package beside it, or skips it when the inner choice
+    is Skip. When Extract makes a package at the top level, the name-clash
+    dialog omits Merge.
     Nothing extracted is runnable beyond the execute bits the archive
     records (never setuid, setgid, or sticky); a link is made only when it
     points inside what Extract made (inside the one folder, when that is

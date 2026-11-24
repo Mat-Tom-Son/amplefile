@@ -1827,12 +1827,9 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     }
     try {
       const name = staged.name;
-      const choice = policy ? chosenForItem(policy, name) ?? policy.apply : undefined;
-      const placing = policy && choice === "merge" && staged.kind === "folder" && extractsPackage(name)
-        ? { ...policy, items: { ...policy.items, [name]: "keep-both" as const } }
-        : policy;
-      const plan = await planPlacements([{ source: staged.path, key: name, name }], staged.parent, placing, {
+      const plan = await planPlacements([{ source: staged.path, key: name, name }], staged.parent, policy, {
         newItems: true,
+        mayMerge: (destination) => !extractsPackage(basename(destination)),
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
       const label = `Before extracting ${basename(item.abs)}`;

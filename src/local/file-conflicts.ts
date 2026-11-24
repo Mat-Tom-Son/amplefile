@@ -169,6 +169,8 @@ interface PlanOptions {
    * keeps both instead.
    */
   mayChange?: (existing: string) => Promise<boolean>;
+  /** False keeps a folder intact under a free name when a Merge would combine it. */
+  mayMerge?: (existing: string) => boolean;
   /**
    * The items are new, written under a hidden working name in the target
    * folder (an Extract): beside the target is where they were made, not a
@@ -250,7 +252,7 @@ async function resolveChoice(
   if (choice === "skip" || choice === "keep-both") return choice;
   if (options.mayChange && !await options.mayChange(destination)) return "keep-both";
   const bothFolders = sourceInfo.isDirectory() && existing.isDirectory();
-  if (choice === "merge") return bothFolders ? "merge" : "keep-both";
+  if (choice === "merge") return bothFolders && options.mayMerge?.(destination) !== false ? "merge" : "keep-both";
   // A folder for a file, or a file for a folder, only by that item's own choice.
   if (sourceInfo.isDirectory() !== existing.isDirectory() && !explicit) return "keep-both";
   return "replace";
@@ -269,7 +271,12 @@ async function planMerge(source: string, destination: string, inside: InsideConf
       }
     }
     const [childInfo, existing] = await Promise.all([lstat(child), lstat(childDestination).catch(() => null)]);
-    if (existing && childInfo.isDirectory() && existing.isDirectory() && (!options.mayChange || await options.mayChange(childDestination))) {
+    const bothFolders = existing?.isDirectory() && childInfo.isDirectory();
+    if (bothFolders && options.mayMerge?.(childDestination) === false) {
+      plan.units.push(unitFor(child, childDestination, inside === "skip" ? "skip" : "keep-both", top));
+      continue;
+    }
+    if (bothFolders && (!options.mayChange || await options.mayChange(childDestination))) {
       plan.merged.push({ source: child, destination: childDestination, top });
       await planMerge(child, childDestination, inside, top, plan, options);
       continue;

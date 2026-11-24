@@ -93,7 +93,7 @@ export class FileClipboard {
    * The Cut while the pasteboard still holds what it put there and its items
    * are all where they were cut; otherwise the Cut is forgotten and every
    * window hears it. `pasteboard` is a reading already taken, so a paste reads
-   * the pasteboard once.
+   * it first and rechecks it if the disk check yielded.
    */
   async current(pasteboard?: PasteboardFiles): Promise<RememberedCut | null> {
     const cut = this.#cut;
@@ -105,16 +105,27 @@ export class FileClipboard {
     // An item was renamed, deleted, or moved by a paste that failed or was stopped partway. The Cut no longer
     // says where its items are, and the move would refuse it, so it is forgotten and leaves the pasteboard.
     // While its own paste runs, its items leave as they move: it is kept until that paste ends.
-    if (!this.#pasting.has(cut) && !(await this.#inPlace(cut))) {
-      await this.#forget(cut);
-      return null;
+    if (!this.#pasting.has(cut)) {
+      const inPlace = await this.#inPlace(cut);
+      if (this.#cut !== cut) return null;
+      if (!inPlace && !this.#pasting.has(cut)) {
+        await this.#forget(cut);
+        return null;
+      }
+      // Finder and other apps can replace the pasteboard during the disk check.
+      const latest = await this.#host.read();
+      if (this.#cut !== cut) return null;
+      if (!pasteboardHoldsCut(latest, cut)) {
+        this.#set(null);
+        return null;
+      }
     }
-    return cut;
+    return this.#cut === cut ? cut : null;
   }
 
   /**
    * A paste in any window (desktop/src/file-clipboard-paste.ts plans it): the
-   * pasteboard is read once; a Cut it still holds moves by the place it was
+   * pasteboard is checked again after any disk check; a Cut it still holds moves by the place it was
    * cut in. A finished paste of a Cut empties the pasteboard, as the system
    * file managers do, so it never moves twice, and every window hears that
    * nothing is cut. The conflicts-first check keeps it, and so does a paste
@@ -130,8 +141,9 @@ export class FileClipboard {
     connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>,
     transfer: (body: PasteTransfer) => Promise<Result>,
   ) {
-    const reading = await this.#host.read();
     const remembered = this.#cut;
+    const reading = await this.#host.read();
+    if (this.#cut !== remembered) throw new Error("The clipboard changed before the paste began. Paste again.");
     const cut = await this.current(reading);
     // The pasteboard held the Cut, but an item of it is gone, so it was just forgotten and left the pasteboard:
     // this paste was for it, and pastes nothing, never a copy of what was cut.
@@ -173,8 +185,10 @@ export class FileClipboard {
   }
 
   async #forget(cut: RememberedCut): Promise<void> {
-    if (pasteboardHoldsCut(await this.#host.read(), cut)) this.#host.clear();
-    if (this.#cut === cut) this.#set(null);
+    const reading = await this.#host.read();
+    if (this.#cut !== cut) return;
+    if (pasteboardHoldsCut(reading, cut)) this.#host.clear();
+    this.#set(null);
   }
 
   async #whilePasting<T>(cut: RememberedCut | null, run: () => Promise<T>): Promise<T> {

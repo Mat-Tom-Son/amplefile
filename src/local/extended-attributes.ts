@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 
 /**
@@ -10,18 +12,17 @@ import { basename, dirname, join, relative } from "node:path";
  * here, and the original is kept when the copy lacks something it has.
  *
  * The system's own tools are asked, without a shell: `/usr/bin/xattr` for
- * the names of the attributes and `/usr/bin/stat` for the flags, many paths
- * at a time, each call under a time limit and the whole check under one.
- * Anything that cannot be read or told apart counts as not known, and an
- * original whose extras are not known stays. Access control lists are not
- * read. Elsewhere than on the Mac nothing is asked.
+ * the attributes, `/usr/bin/stat` for the flags, and `/bin/ls` for access
+ * control lists. An original stays when its metadata cannot be verified or
+ * any entry has an ACL, which the copy engine does not carry. Elsewhere than
+ * on the Mac nothing is asked.
  *
  * A disk with no extended attributes of its own (FAT, exFAT) has macOS keep
  * a file's in a companion beside it, named `._file`. The companion is that
  * file's attributes, not an item with extras of its own: the system answers
- * for the file, and refuses to answer for the companion. So a companion
- * whose file is among the entries is not asked about; what it holds is
- * compared through the file.
+ * for the file, and refuses to answer for the companion. When both entries
+ * are present, a companion with the AppleDouble header is checked through
+ * the file. An ordinary file whose name starts with `._` is checked directly.
  */
 
 /** The mark macOS itself puts on a file an app wrote. Every copy gets its own, so it is not something a copy lacks. */
@@ -66,17 +67,30 @@ export async function extrasCopyLacks(source: string, copy: string, entries: rea
   if (entries.length > limits.maxEntries) return { unknown: `it holds more than ${limits.maxEntries.toLocaleString()} items` };
   if (entries.some((path) => path.includes("\n"))) return { unknown: "one of its names has a line break in it" };
   const present = new Set(entries);
-  const asked = entries.filter((path) => !isCompanionOf(path, present));
   const deadline = Date.now() + limits.totalTimeoutMs;
-  for (const batch of batches(asked)) {
+  for (const batch of batches(entries)) {
     if (Date.now() > deadline) return { unknown: "the check took too long" };
-    const copies = batch.map((path) => join(copy, relative(source, path)));
-    const [has, kept, flags, keptFlags] = await Promise.all([attributeNames(batch), attributeNames(copies), fileFlags(batch), fileFlags(copies)]);
-    if (!has || !kept || !flags || !keptFlags) return { unknown: "the system did not answer" };
-    for (const [index, path] of batch.entries()) {
+    const asked: string[] = [];
+    for (const path of batch) {
+      if (!isCompanionOf(path, present) || !await hasAppleDoubleHeader(path)) asked.push(path);
+    }
+    if (!asked.length) continue;
+    const copies = asked.map((path) => join(copy, relative(source, path)));
+    const [has, kept, flags, keptFlags, acl] = await Promise.all([
+      attributeNames(asked), attributeNames(copies), fileFlags(asked), fileFlags(copies), hasAccessControlList(asked),
+    ]);
+    if (!has || !kept || !flags || !keptFlags || acl === null) return { unknown: "the system did not answer" };
+    if (acl) return { path: source, name: "ACL" };
+    for (const [index, path] of asked.entries()) {
       const carried = kept[index]!;
-      const name = has[index]!.find((attribute) => attribute !== provenance && !carried.includes(attribute));
-      if (name) return { path, name };
+      for (const name of has[index]!) {
+        if (name === provenance) continue;
+        if (!carried.includes(name)) return { path, name };
+        if (Date.now() > deadline) return { unknown: "the check took too long" };
+        const [value, copiedValue] = await Promise.all([attributeValue(path, name), attributeValue(copies[index]!, name)]);
+        if (value === null || copiedValue === null) return { unknown: "the system did not answer" };
+        if (value !== copiedValue) return { path, name };
+      }
       if ((flags[index]! & personalFlags & ~keptFlags[index]!) !== 0) return { path, name: "flags" };
     }
   }
@@ -89,9 +103,25 @@ function isCompanionOf(path: string, present: ReadonlySet<string>): boolean {
   return name.startsWith("._") && name.length > 2 && present.has(join(dirname(path), name.slice(2)));
 }
 
+async function hasAppleDoubleHeader(path: string): Promise<boolean> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
+  if (!file) return false;
+  try {
+    if (!(await file.stat()).isFile()) return false;
+    const header = Buffer.alloc(4);
+    const { bytesRead } = await file.read(header, 0, header.length, 0);
+    return bytesRead === header.length && header.readUInt32BE(0) === 0x00051607;
+  } catch {
+    return false;
+  } finally {
+    await file.close();
+  }
+}
+
 /** What an attribute is, in a person's words. */
 export function extraInWords(name: string): string {
   if (name === "flags") return "a flag that hides or locks it";
+  if (name === "ACL") return "additional access rules";
   if (name === "com.apple.ResourceFork") return "a resource fork";
   if (name === "com.apple.metadata:_kMDItemUserTags") return "Finder tags";
   if (name === "com.apple.metadata:kMDItemFinderComment") return "a Finder comment";
@@ -142,6 +172,17 @@ export async function attributeNames(paths: readonly string[]): Promise<string[]
     for (const index of owners) names[index]!.push(line.slice(paths[index]!.length + 2));
   }
   return names;
+}
+
+/** The numbered ACL lines are separate from the escaped file names in the long listing. */
+async function hasAccessControlList(paths: readonly string[]): Promise<boolean | null> {
+  const answer = await ask("/bin/ls", ["-ledbn", "--", ...paths]);
+  return answer === null ? null : /^ +[0-9]+: /m.test(answer);
+}
+
+async function attributeValue(path: string, name: string): Promise<string | null> {
+  const answer = await ask("/usr/bin/xattr", ["-p", "-x", "-s", "--", name, path]);
+  return answer === null ? null : answer.replace(/\s+/g, "");
 }
 
 /** The flags of each path, in the paths' order; null when not known. */

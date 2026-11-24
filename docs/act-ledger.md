@@ -304,9 +304,10 @@ How the item leaves depends on the disk:
   what the copy read (a file read within one tick of a coarse clock is
   compared byte for byte), the copy holds all of it, no folder in it that
   holds something, nor the folder it is in, is read-only, and the copy
-  lacks no extended attribute or hide or lock flag the original has
-  (`/usr/bin/xattr` and `/usr/bin/stat` are asked, without a shell, under a
-  bound and a time limit; what cannot be read keeps the original). Finder's
+  lacks no extended attribute or hide or lock flag the original has.
+  A Mac original with an access control list stays as well. The host asks
+  `/usr/bin/xattr`, `/usr/bin/stat`, and `/bin/ls` under a bound and a time
+  limit. It keeps originals whose extra metadata it cannot check. Finder's
   `.DS_Store` in a folder is left out of the first two. Inside the journaled
   step, that the original is still what the copy read is checked again, and
   for a plain original so is that all of it can go.
@@ -328,7 +329,8 @@ a folder is not all-or-nothing, so after a removal fails the original is
 looked at again: when anything the copy read there is gone, the item counts
 as moved, since all of it is only in the target, and the answer names it as
 partly removed, with what is left still in the source (`partlyRemoved`).
-Undo then moves it back and never takes the copy away.
+Undo moves it back. When an original stayed whole, Undo verifies the retained
+copy's bytes, links, modes, and Mac metadata before removing that copy.
 
 The undo of a move between places is the reverse move, with the same rules
 and receipts; an item whose name is taken by now in the folder it came

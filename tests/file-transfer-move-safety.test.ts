@@ -178,7 +178,9 @@ test("a plain original that only partly goes counts as moved, is said to be part
   const unlock = () => run("/bin/chmod", ["-R", "-N", plain]).catch(() => undefined);
   t.after(unlock);
   try {
-    // A rule against deleting from one folder, set once the copy is made: nothing the checks read says so, and the removal stops when it meets it.
+    // Simulate a restriction encountered only at removal time. The ordinary ACL preflight is covered below.
+    setAttributeCheckForTests({ platform: "linux" });
+    t.after(() => setAttributeCheckForTests(null));
     atBoundary(t, "remove", () => run("/bin/chmod", ["+a", "everyone deny delete_child", join(plain, "proj", "sub")]));
     const moved = await transfer(call, { mode: "move", operationId: "partly", sources: [onDisk(join(plain, "proj"))], target: inFolder(work, "") });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
@@ -222,20 +224,23 @@ test("across disks, an original with something its copy does not carry stays whe
   await mkdir(join(plain, "Hidden"));
   await run("/usr/bin/chflags", ["hidden", join(plain, "Hidden")]);
   await writeFile(join(plain, "plain.txt"), "nothing but its contents");
+  await writeFile(join(plain, "restricted.txt"), "an explicit ACL");
+  await run("/bin/chmod", ["+a", "everyone deny execute", join(plain, "restricted.txt")]);
   const path = (name: string) => onDisk(join(plain, name)).path;
 
-  const moved = await transfer(call, { mode: "move", sources: ["note.textClipping", "Trip", "Hidden", "plain.txt"].map((name) => onDisk(join(plain, name))), target: inFolder(work, "") });
+  const moved = await transfer(call, { mode: "move", sources: ["note.textClipping", "Trip", "Hidden", "plain.txt", "restricted.txt"].map((name) => onDisk(join(plain, name))), target: inFolder(work, "") });
   assert.equal(moved.status, 200, JSON.stringify(moved.body));
   // Only the item with nothing but its contents left.
   assert.deepEqual(moved.body!.moves.map((move: any) => move.to), ["plain.txt"]);
-  assert.deepEqual(moved.body!.notRemoved, ["note.textClipping", "Trip", "Hidden"].map(path));
+  assert.deepEqual(moved.body!.notRemoved, ["note.textClipping", "Trip", "Hidden", "restricted.txt"].map(path));
   assert.deepEqual(moved.body!.failures.map((failure: any) => failure.error), [
     "“note.textClipping” has a resource fork, which a copy onto another disk does not carry, so it stays where it was.",
     "“tagged.txt” in “Trip” has Finder tags, which a copy onto another disk does not carry, so “Trip” stays where it was.",
     "“Hidden” has a flag that hides or locks it, which a copy onto another disk does not carry, so it stays where it was.",
+    "“restricted.txt” has additional access rules, which a copy onto another disk does not carry, so it stays where it was.",
   ]);
   assert.equal(await readFile(join(plain, "note.textClipping", "..namedfork", "rsrc"), "utf8"), "the clipping's text", "the clipping is whole where it was");
-  assert.deepEqual(await tree(plain), ["Hidden/", "Trip/", "Trip/tagged.txt=tagged", "note.textClipping="]);
+  assert.deepEqual(await tree(plain), ["Hidden/", "Trip/", "Trip/tagged.txt=tagged", "note.textClipping=", "restricted.txt=an explicit ACL"]);
   assert.deepEqual((await receipts(sandbox)).filter((receipt) => receipt.command === "files.move").map((receipt) => receipt.outcome), ["accepted", "ok"], "only the one removal was tried");
 
   // Out of a Connected Folder, and between two, the same.
@@ -277,8 +282,9 @@ test("⌘Z takes away a copy that stayed in both places only while it still matc
     const moved = await transfer(call, { mode: "move", sources: [onDisk(join(plain, name))], target: inFolder(work, "") });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
     assert.deepEqual(moved.body!.copies, [{ from: onDisk(join(plain, name)).path, fromPlace: computer, to: name }]);
-    // The copy's own read-only folder would stop History from taking it away; that is another test's subject.
+    // Make both copies writable so the fixture tests comparison rather than History's handling of a read-only folder.
     await chmod(join(work.connectedFolderRoot, name, "locked"), 0o755);
+    await chmod(join(plain, name, "locked"), 0o755);
     const plan = moveBackPlan(moved.body as MoveAnswer, { place: workPlace, path: "" });
     assert.ok(plan);
     return { plan, pair: [{ original: onDisk(join(plain, name)), copy: { place: workPlace, path: name } }] };
@@ -294,6 +300,16 @@ test("⌘Z takes away a copy that stayed in both places only while it still matc
     assert.ok(first);
     assert.equal(first.said, "Undid Move Edited. “Edited” in Work, or the original it was copied from, changed since the move, so nothing in Work was taken away; its History has the restore point from before the move.");
     assert.deepEqual(await tree(join(work.connectedFolderRoot, "Edited")), ["a.txt=a", "locked/", "locked/c.txt=c"], "the copy is still there");
+
+    // Same-length edits with a preserved modification time still change the copy.
+    const sameSize = await kept("Same Size");
+    const altered = join(work.connectedFolderRoot, "Same Size", "a.txt");
+    const before = await lstat(altered);
+    await writeFile(altered, "b");
+    await utimes(altered, before.atime, before.mtime);
+    assert.deepEqual(await changed(sameSize.pair), [0]);
+    assert.ok(partial(await movesUndo("Move Same Size", sameSize.plan, host).run()));
+    assert.equal(await readFile(altered, "utf8"), "b");
 
     // The original was thrown away after the move: the copy is all there is.
     const gone = await kept("Gone");

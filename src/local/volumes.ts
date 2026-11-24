@@ -673,11 +673,10 @@ async function findMacVolumes(options: VolumeListOptions): Promise<FoundVolume[]
 /**
  * The drives whose own Trash folder is read on macOS: the disk volumes mounted
  * directly inside `/Volumes`, from the mount table. A share is left out,
- * because nothing in this process ever asks a share anything. When the mount
- * table cannot be read there are none.
+ * because nothing in this process ever asks a share anything.
  */
 export async function listMacTrashTops(options: Pick<VolumeListOptions, "mountTable" | "run" | "volumesFolder"> = {}): Promise<string[]> {
-  const table = options.mountTable ?? await readMacMountTable(options.run ?? runTool).catch(() => "");
+  const table = options.mountTable ?? await readMacMountTable(options.run ?? runTool);
   return parseMacMounts(table, options.volumesFolder ?? "/Volumes")
     .filter((mount) => isDiskDevice(mount.device))
     .slice(0, maxListedVolumes)
@@ -1180,7 +1179,7 @@ export function subscribeVolumes(listener: VolumeListener): () => void {
 export function volumeHolds(volume: Pick<VolumeSummary, "mountPath">, path: string, platform: NodeJS.Platform = process.platform): boolean {
   const fold = (value: string) => {
     const resolved = resolve(value).replace(/[\\/]+$/, "") || sep;
-    return platform === "linux" ? resolved : resolved.toLocaleLowerCase();
+    return platform === "linux" ? resolved : resolved.normalize("NFC").toLocaleLowerCase();
   };
   const parent = fold(volume.mountPath);
   const child = fold(path);
