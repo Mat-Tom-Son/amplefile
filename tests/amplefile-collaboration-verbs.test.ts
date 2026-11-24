@@ -1002,6 +1002,38 @@ test("only answers queued in this app run continue when a Chat settles", async (
   }
 });
 
+test("a failed queued answer leaves the next answer eligible in the same settle", async (t) => {
+  const h = await collaborationHarness(t);
+  const turnStore = await AmpleFileTurnStore.create({ stateRoot: h.stateBase });
+  const accept = turnStore.accept.bind(turnStore);
+  let failedRequestId: string | undefined;
+  t.mock.method(turnStore, "accept", async (input: Parameters<typeof accept>[0]) => {
+    if (input.requestId === failedRequestId) throw new Error("Fixture refusal for the first queued answer");
+    return accept(input);
+  });
+  const api = await h.open({ turnStore });
+  try {
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Two queued answers" });
+    h.held.add(connectedFolder.id);
+    const active = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold" });
+    const ask = (question: string) => api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: active.taskId, question, respondent: "person", asynchronous: true });
+    const first = await ask("First format?");
+    const next = await ask("Second format?");
+    failedRequestId = `answer-${first.question.questionId}`;
+    for (const asked of [first, next]) {
+      const answer = await api.actFacade.chatAnswer({ connectedFolder: connectedFolder.id, questionId: asked.question.questionId, answer: "/hold Answer" });
+      assert.equal(answer.queued, true);
+    }
+    await h.release(active.taskId);
+    await waitFor(async () => Boolean(api.requests.question(next.question.questionId)?.continuationTaskId));
+    await h.release(api.requests.question(next.question.questionId)!.continuationTaskId!);
+    assert.equal(api.requests.question(first.question.questionId)?.continuationTaskId, null);
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
 test("the request graph is a management-scope read and is refused from inside a Connected Folder", async (t) => {
   const h = await collaborationHarness(t);
   const api = await h.open();

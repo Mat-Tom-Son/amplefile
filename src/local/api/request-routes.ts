@@ -203,23 +203,23 @@ export async function evaluateRequestGraphSettle(state: LocalApiState, taskId: s
   }
   for (const candidate of [...candidates.values()].sort((a, b) => b.depth - a.depth)) {
     const key = clientKey(candidate.owner.connectedFolderId ?? ampleFileAgentScopeId, candidate.owner.conversationId);
-    if (!state.runningTurns.has(key) && !state.compactingConversations.has(key)) {
-      const answered = state.requests.questions(candidate.requestId).find((question) =>
-        state.queuedAsyncAnswers.has(question.questionId) && question.asynchronous
-        && question.state === "answered" && question.continuationTaskId === null);
-      if (answered && candidate.stopRequestedAt === null) {
-        state.queuedAsyncAnswers.delete(answered.questionId);
+    let dispatchedAnswer = false;
+    if (candidate.stopRequestedAt === null && !state.runningTurns.has(key) && !state.compactingConversations.has(key)) {
+      for (const question of state.requests.questions(candidate.requestId)) {
+        if (!question.asynchronous || question.state !== "answered" || question.continuationTaskId !== null
+          || !state.queuedAsyncAnswers.delete(question.questionId)) continue;
         try {
           const facade = createAmpleFileActFacade(state);
-          if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: answered.questionId, answer: answered.answer! });
-          else await facade.agentAnswer({ questionId: answered.questionId, answer: answered.answer! });
-          continue;
+          if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: question.questionId, answer: question.answer! });
+          else await facade.agentAnswer({ questionId: question.questionId, answer: question.answer! });
+          dispatchedAnswer = true;
+          break;
         } catch (error) {
           console.error(`A queued answer could not continue its Chat: ${errorMessage(error)}`);
         }
       }
     }
-    await maybeStartRequestContinuation(state, candidate.requestId);
+    if (!dispatchedAnswer) await maybeStartRequestContinuation(state, candidate.requestId);
   }
 }
 
