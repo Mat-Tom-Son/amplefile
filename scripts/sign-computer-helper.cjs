@@ -10,7 +10,12 @@ module.exports = async function signComputerHelper(context) {
     : join(context.appOutDir, "resources");
   const verified = verifyAsarFileIntegrity(join(resources, "app.asar"), { includeUnpacked: true });
   console.log(`Verified ${verified.checkedFiles} ASAR file hashes before signing.`);
-  if (context.electronPlatformName !== "darwin") return;
+  if (context.electronPlatformName !== "darwin") {
+    // The reviewed Pi and parser patches ship on Linux too; the Mac checks them below with its built-ASAR smoke.
+    const { verifyPackagedReviewedPatches } = await import("./verify-packaged-native-tools.mjs");
+    console.log((await verifyPackagedReviewedPatches(join(resources, "app.asar"))).join("\n"));
+    return;
+  }
   const { verifyPackagedNativeTools } = await import("./verify-packaged-native-tools.mjs");
   console.log(await verifyPackagedNativeTools(join(resources, "app.asar")));
   const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);

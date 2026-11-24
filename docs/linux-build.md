@@ -70,6 +70,10 @@ npm run desktop:make:linux
 `AmpleFile-VERSION-linux-x86_64.rpm` and `.AppImage`,
 the unpacked application, `linux-build.json`, and `SHA256SUMS`.
 Use `npm run desktop:make:linux -- --dir` for an unpacked diagnostic build.
+Packaging checks the archive's file hashes and then, as the Mac build does,
+that it carries the reviewed patched runtime files of both Pi packages and the
+image-size parser (`verifyPackagedReviewedPatches` in
+`scripts/verify-packaged-native-tools.mjs`); a package without them fails.
 Existing installer candidates are not overwritten. Move the earlier artifacts
 to an archive before rebuilding the same local version.
 
