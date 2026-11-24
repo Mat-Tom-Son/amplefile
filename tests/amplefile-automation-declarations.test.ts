@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -363,8 +363,9 @@ test("unknown kinds, versions, fields, and unpinned references fail closed", () 
   assert.throws(() => normalizeAmpleFileAutomationDeclaration({ ...declaration, id: "check-12345678" }), /Automation id is invalid/);
 });
 
-test("proposal files read bounded and refuse damage", async () => {
+test("proposal files read bounded and refuse damage", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-automation-declaration-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, `weekly-review${ampleFileAutomationProposalFileSuffix}`);
   await writeFile(path, `${JSON.stringify(proposalValue)}\n`);
   assert.deepEqual(await readAmpleFileAutomationProposal(path), normalizeAmpleFileAutomationProposal(proposalValue));
