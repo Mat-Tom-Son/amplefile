@@ -550,7 +550,9 @@ other surface.
     Nothing extracted is runnable beyond the execute bits the archive
     records (never setuid, setgid, or sticky); a link is made only when it
     points inside what Extract made (inside the one folder, when that is
-    all the archive holds); hard links, special files, `.amplefile/`,
+    all the archive holds). A Merge keeps links whose targets stay inside
+    a folder that arrives whole and reports the other links as skipped.
+    Hard links, special files, `.amplefile/`,
     `.pi/`, and `.work-fold/` entries (and any name a Mac volume would take
     as one of them, such as `.ampleﬁle`), and entries that would land
     outside are left out or refused; and the same 256 MB disk guard applies. A

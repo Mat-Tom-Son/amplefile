@@ -1793,6 +1793,10 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
         mayMerge: (destination) => !extractsPackage(basename(destination)),
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
+      if (plan.merged.length && staged.links) {
+        const omitted = await staged.restrictLinksForMerge(plan.units.filter((unit) => unit.action !== "skip").map((unit) => unit.source));
+        plan.units = plan.units.filter((unit) => !omitted.has(unit.source));
+      }
       const label = `Before extracting ${basename(item.abs)}`;
       const placeExtracted = async () => {
         const executed = await executePlacement(plan, {
@@ -1818,6 +1822,9 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
       };
       operation.stage("finishing");
       return target.connectedFolder && planReplaces(plan) ? await withSettledReplace(state, target.connectedFolder, placeExtracted) : await placeExtracted();
+    } catch (error) {
+      if (isFileOperationCancelled(error)) return { path: null, restorePoints: [] as TransferRestorePoint[], cancelled: true as const };
+      throw error;
     } finally {
       await staged.discard();
     }
