@@ -73,33 +73,33 @@ pass "check: tools present, and the secret key of the committed public key is in
 
 step "Sign build A ($TAG_A)"
 "${PUBLISH[@]}" sign --tag "$TAG_A" --build-dir "$P/build-1"
-rpmkeys -Kv "$RPM_A" | grep -qi 'signature.*NOKEY' && pass "A is signed; a computer without the key reports NOKEY"
+{ rpmkeys -Kv "$RPM_A" || true; } | grep -qi 'signature.*NOKEY' && pass "A is signed; a computer without the key reports NOKEY" || fail "A is signed; a computer without the key reports NOKEY"
 
 step "Prepare A before it is uploaded"
 refused "prepare before upload" "${PUBLISH[@]}" prepare --tag "$TAG_A" --build-dir "$P/build-1" --git-dir "$P/pkgrepo" --no-fetch
-grep -q 'answered 404' "$P/last.log" && pass "prepare refuses until the signed RPM is a release asset"
+grep -q 'answered 404' "$P/last.log" && pass "prepare refuses until the signed RPM is a release asset" || fail "prepare refuses until the signed RPM is a release asset"
 
 step "Upload A and prepare the repository"
 upload "$TAG_A" "$RPM_A"; sums "$TAG_A"
 "${PUBLISH[@]}" prepare --tag "$TAG_A" --build-dir "$P/build-1" --git-dir "$P/pkgrepo" --no-fetch
 git -C "$P/pkgrepo" ls-tree -r --name-only "refs/heads/$BRANCH" | tee "$P/branch-files.txt"
 grep -qx README.md "$P/branch-files.txt" && grep -qx 'rpm/x86_64/repodata/repomd.xml.asc' "$P/branch-files.txt" && ! grep -q '\.rpm$' "$P/branch-files.txt" \
-  && pass "the branch holds README.md and rpm/x86_64/repodata with repomd.xml.asc, and no RPM"
+  && pass "the branch holds README.md and rpm/x86_64/repodata with repomd.xml.asc, and no RPM" || fail "the branch holds README.md and rpm/x86_64/repodata with repomd.xml.asc, and no RPM"
 [ "$(curl -s -o /dev/null -w '%{http_code} %{content_type}' "$RAW/rpm/x86_64/repodata/repomd.xml")" = "200 text/plain; charset=utf-8" ] \
   && [ "$(curl -s -o /dev/null -w '%{http_code}' "$RAW/rpm/x86_64/repodata/")" = 404 ] \
-  && pass "the stand-in serves branch files as text/plain with no directory listing"
+  && pass "the stand-in serves branch files as text/plain with no directory listing" || fail "the stand-in serves branch files as text/plain with no directory listing"
 
 step "Install A from the RPM file"
 dnf -y -q install "$RPM_A"
 [ "$(installed)" = "$VERSION-1" ] || fail "A is not installed"
 rpm -qc "$PACKAGE" | grep -qx "$ENTRY" || fail "$ENTRY is not a config file of $PACKAGE"
 rpm -q --qf '[%{FILENAMES} %{FILEFLAGS:fflags}\n]' "$PACKAGE" | grep -E "^($ENTRY|$KEY) " | tee -a "$P/results.txt"
-cmp "$KEY" "$S/desktop/linux/RPM-GPG-KEY-$REPOSITORY_ID" || fail "the installed key is not the committed key"
+[ "$(sha256sum < "$KEY")" = "$(sha256sum < "$S/desktop/linux/RPM-GPG-KEY-$REPOSITORY_ID")" ] || fail "the installed key is not the committed key"
 grep -qx gpgcheck=1 "$ENTRY" && grep -qx repo_gpgcheck=1 "$ENTRY" && grep -qx "baseurl=https://raw.githubusercontent.com/$OWNER/$REPO/$BRANCH/rpm/\$basearch" "$ENTRY" || fail "the entry is not the checked entry"
 dnf repolist --enabled | grep -q "^$REPOSITORY_ID " || fail "dnf does not list the repository"
 pass "installing A enrolled the computer: $ENTRY (%config(noreplace), gpgcheck=1, repo_gpgcheck=1) and $KEY"
 node "$S/scripts/linux-package-repository-proof/watch.mjs" "$UPDATES" once | tee "$P/about-a.txt"
-grep -q "updates arrive with your system's software updates" "$P/about-a.txt" && pass "Settings → About would say updates arrive with the system's software updates"
+grep -q "updates arrive with your system's software updates" "$P/about-a.txt" && pass "Settings → About would say updates arrive with the system's software updates" || fail "Settings → About would say updates arrive with the system's software updates"
 # The person's own change to the entry, which upgrades must keep.
 sed -i 's/^metadata_expire=6h$/metadata_expire=1m/' "$ENTRY"
 
@@ -111,26 +111,26 @@ pass "dnf imported the key from $KEY, verified repomd.xml.asc, and found A up to
 step "Sign build B ($TAG_B) and refuse wrong uploads"
 "${PUBLISH[@]}" sign --tag "$TAG_B" --build-dir "$P/build-2"
 refused "prepare B before upload" "${PUBLISH[@]}" prepare --tag "$TAG_B" --build-dir "$P/build-2" --git-dir "$P/pkgrepo" --no-fetch
-grep -q 'answered 404' "$P/last.log" && pass "prepare B refuses before upload"
+grep -q 'answered 404' "$P/last.log" && pass "prepare B refuses before upload" || fail "prepare B refuses before upload"
 mkdir -p "$P/releases/$TAG_B"; cp "$RPM_A" "$P/releases/$TAG_B/$(basename "$RPM_B")"; sums "$TAG_B"
 refused "prepare B with other bytes uploaded" "${PUBLISH[@]}" prepare --tag "$TAG_B" --build-dir "$P/build-2" --git-dir "$P/pkgrepo" --no-fetch
-grep -q 'is not the local signed RPM' "$P/last.log" && pass "prepare refuses a release asset that is not the local signed RPM"
+grep -q 'is not the local signed RPM' "$P/last.log" && pass "prepare refuses a release asset that is not the local signed RPM" || fail "prepare refuses a release asset that is not the local signed RPM"
 cp "$RPM_B" "$P/releases/$TAG_B/"
 refused "prepare B with a stale SHA256SUMS" "${PUBLISH[@]}" prepare --tag "$TAG_B" --build-dir "$P/build-2" --git-dir "$P/pkgrepo" --no-fetch
-grep -q "SHA256SUMS lists" "$P/last.log" && pass "prepare refuses when the release's SHA256SUMS does not list the signed RPM"
+grep -q "SHA256SUMS lists" "$P/last.log" && pass "prepare refuses when the release's SHA256SUMS does not list the signed RPM" || fail "prepare refuses when the release's SHA256SUMS does not list the signed RPM"
 sums "$TAG_B"
 "${PUBLISH[@]}" prepare --tag "$TAG_B" --build-dir "$P/build-2" --git-dir "$P/pkgrepo" --no-fetch
-[ "$(git -C "$P/pkgrepo" rev-list --count "refs/heads/$BRANCH")" = 2 ] && pass "B's repository content is a second commit on the branch"
+[ "$(git -C "$P/pkgrepo" rev-list --count "refs/heads/$BRANCH")" = 2 ] && pass "B's repository content is a second commit on the branch" || fail "B's repository content is a second commit on the branch"
 refused "prepare B again" "${PUBLISH[@]}" prepare --tag "$TAG_B" --build-dir "$P/build-2" --git-dir "$P/pkgrepo" --no-fetch
 grep -q 'is not newer' "$P/last.log" || fail "B again was refused for another reason"
 refused "prepare A after B" "${PUBLISH[@]}" prepare --tag "$TAG_A" --build-dir "$P/build-1" --git-dir "$P/pkgrepo" --no-fetch
-grep -q "already lists $PACKAGE $VERSION-2; $VERSION-1 is not newer" "$P/last.log" && pass "prepare refuses a version-release that is not higher than the listed one"
+grep -q "already lists $PACKAGE $VERSION-2; $VERSION-1 is not newer" "$P/last.log" && pass "prepare refuses a version-release that is not higher than the listed one" || fail "prepare refuses a version-release that is not higher than the listed one"
 
 step "Tampered metadata: repomd.xml changed, its signature not"
 tampered_commit refs/proof/tampered-metadata sed -i -E 's#<revision>([0-9]+)</revision>#<revision>1\1</revision>#' rpm/x86_64/repodata/repomd.xml
 serve refs/proof/tampered-metadata
 refused "upgrade from tampered metadata" upgrade
-[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|gpg|pgp' "$P/last.log" && pass "dnf refuses repository metadata whose signature does not verify; A stays installed"
+[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|gpg|pgp' "$P/last.log" && pass "dnf refuses repository metadata whose signature does not verify; A stays installed" || fail "dnf refuses repository metadata whose signature does not verify; A stays installed"
 
 step "Tampered RPM: bytes changed after signing, metadata regenerated and signed to match"
 mkdir -p "$P/tampered/x86_64" "$P/releases/tampered" "$P/build-tampered"
@@ -148,7 +148,7 @@ gpg --batch --yes --local-user "$FINGERPRINT" --armor --detach-sign "$P/tampered
 tampered_commit refs/proof/tampered-rpm sh -c "rm -rf rpm/x86_64/repodata && cp -r '$P/tampered/x86_64/repodata' rpm/x86_64/repodata"
 serve refs/proof/tampered-rpm
 refused "upgrade to a tampered RPM" upgrade
-[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|digest|gpg|pgp' "$P/last.log" && pass "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed"
+[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|digest|gpg|pgp' "$P/last.log" && pass "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed" || fail "dnf refuses a package whose signature does not verify, though the signed metadata lists it; A stays installed"
 
 step "Upgrade to B through the repository, with AmpleFile 'running'"
 serve "refs/heads/$BRANCH"
@@ -159,18 +159,18 @@ upgrade 2>&1 | tee "$P/upgrade.log"
 [ "$(installed)" = "$VERSION-2" ] || fail "B was not installed"
 rpm -qi "$PACKAGE" | grep -i '^Signature' | tee -a "$P/results.txt"
 pass "dnf upgraded A to B from the repository with gpgcheck=1 and repo_gpgcheck=1"
-grep -qx metadata_expire=1m "$ENTRY" && pass "the upgrade kept the person's change to $ENTRY"
+grep -qx metadata_expire=1m "$ENTRY" && pass "the upgrade kept the person's change to $ENTRY" || fail "the upgrade kept the person's change to $ENTRY"
 for _ in $(seq 20); do grep -q '"phase":"ready"' "$P/statuses.jsonl" 2> /dev/null && break; sleep 0.5; done
 kill "$WATCHER" 2> /dev/null || true
 tail -1 "$P/statuses.jsonl" | tee -a "$P/results.txt"
-tail -1 "$P/statuses.jsonl" | grep -q '"phase":"ready"' && pass "the running app's watcher saw its installed files replaced and offers the restart"
+tail -1 "$P/statuses.jsonl" | grep -q '"phase":"ready"' && pass "the running app's watcher saw its installed files replaced and offers the restart" || fail "the running app's watcher saw its installed files replaced and offers the restart"
 
 step "A person who turns the repository off keeps that choice"
 sed -i 's/^enabled=1$/enabled=0/' "$ENTRY"
 dnf -y -q reinstall "$RPM_B"
-grep -qx enabled=0 "$ENTRY" && ! dnf repolist --enabled | grep -q "^$REPOSITORY_ID " && pass "a reinstall keeps enabled=0, and dnf no longer checks the repository"
+grep -qx enabled=0 "$ENTRY" && ! dnf repolist --enabled | grep -q "^$REPOSITORY_ID " && pass "a reinstall keeps enabled=0, and dnf no longer checks the repository" || fail "a reinstall keeps enabled=0, and dnf no longer checks the repository"
 node "$S/scripts/linux-package-repository-proof/watch.mjs" "$UPDATES" once | tee "$P/about-off.txt"
-grep -q '"installation":null' "$P/about-off.txt" && pass "with the repository off, AmpleFile keeps the wording of a build without updates"
+grep -q '"installation":null' "$P/about-off.txt" && pass "with the repository off, AmpleFile keeps the wording of a build without updates" || fail "with the repository off, AmpleFile keeps the wording of a build without updates"
 
 step "Done"
 cat "$P/results.txt"

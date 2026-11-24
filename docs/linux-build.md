@@ -3,8 +3,11 @@
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
 packages. [Linux test preview 0.2.1](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.2.1)
 uses a separate prerelease tag in the source repository. The public Mac release
-and updater remain separate; Linux previews have no automatic update feed.
-The build command itself never publishes.
+and updater remain separate. On Fedora, an RPM built with the committed
+signing key enrols the computer in AmpleFile's signed dnf repository, so later
+previews arrive with the system's software updates
+([Package repository](#package-repository)); the DEB and AppImage have no
+update path. The build command itself never publishes.
 
 The window fits its own display’s work area on startup and after display-scale
 changes, including when restoring a placement from a larger screen. The Linux
@@ -67,8 +70,14 @@ npm run desktop:make:linux
 ```
 
 `out/linux` holds `AmpleFile-VERSION-linux-amd64.deb`,
-`AmpleFile-VERSION-linux-x86_64.rpm` and `.AppImage`,
-the unpacked application, `linux-build.json`, and `SHA256SUMS`.
+`AmpleFile-VERSION-RELEASE-linux-x86_64.rpm`, `AmpleFile-VERSION-linux-x86_64.AppImage`,
+the unpacked application, `linux-build.json`, and `SHA256SUMS`. The RPM's
+release is 1 unless `npm run desktop:make:linux -- --rpm-release N` sets it for
+the Nth build of one version (tag `linux-test-VERSION-N`); only the RPM carries
+it, in the package and the file name. The build says whether the RPM enrols the
+computer in the package repository, which it does exactly when the public key
+is committed at `desktop/linux/RPM-GPG-KEY-amplefile`; without it the RPM is
+built as before and `linux-build.json` records `"packageRepository": null`.
 Use `npm run desktop:make:linux -- --dir` for an unpacked diagnostic build.
 Packaging checks the archive's file hashes and then, as the Mac build does,
 that it carries the reviewed patched runtime files of both Pi packages and the
@@ -77,7 +86,7 @@ image-size parser (`verifyPackagedReviewedPatches` in
 Existing installer candidates are not overwritten. Move the earlier artifacts
 to an archive before rebuilding the same local version.
 
-On Fedora, install the RPM with `sudo dnf install ./AmpleFile-VERSION-linux-x86_64.rpm`.
+On Fedora, install the RPM with `sudo dnf install ./AmpleFile-VERSION-RELEASE-linux-x86_64.rpm`.
 On Ubuntu, install the DEB with `sudo apt install ./AmpleFile-VERSION-linux-amd64.deb`.
 The installer adds the `amplefile` command without replacing another owner's
 command. Both packages recommend GNOME Keyring for credential storage, a weak
@@ -237,9 +246,21 @@ Use **File → Quit** to end the app. The first time the last window closes, a
 desktop notification says AmpleFile is still running and how to reopen or
 quit it; it needs no tray icon and appears once per profile.
 
-Linux previews have no update feed, so the menus and tray offer no **Check for
-Updates…**, Settings → About says updates are not available in this build,
-and the sidebar shows no update indicator.
+AmpleFile has no update feed of its own on Linux, so the menus and tray offer
+no **Check for Updates…**. On an RPM installed from the package repository,
+Settings → About says AmpleFile's updates arrive with the system's software
+updates; the system's package manager is the only thing that checks, and
+AmpleFile makes no update request of its own. When a `dnf upgrade` replaces
+AmpleFile's installed files while it runs, AmpleFile notices (it looks at its
+installed `app.asar` once a minute, and counts a change once the next look
+finds it unchanged) and shows **Restart to Update** at the foot of the sidebar
+and in About, naming the installed version. A click asks first, through the
+same question as a Mac update, naming the Worker Chats and AmpleFile Agent
+work a restart would stop; AmpleFile never restarts on its own, and accepted
+work keeps running until the person chooses. Quitting normally is fine too:
+the next launch runs the new version. A DEB, an AppImage, an RPM built
+without the key, and an RPM whose repository entry is turned off
+(`enabled=0`) keep the wording of a build without updates, with no indicator.
 
 Copying files offers them on the clipboard in every form Linux apps paste:
 `x-special/gnome-copied-files` (GNOME Files, Nemo, Caja, Thunar),
@@ -512,6 +533,136 @@ declare desktop runtime dependencies. For AppImage, install libei,
 libxkbcommon, GStreamer base plugins, the PipeWire GStreamer plugin, and the
 appropriate xdg-desktop-portal backend through the distribution.
 
+## Package repository
+
+An RPM built while the public signing key is committed at
+`desktop/linux/RPM-GPG-KEY-amplefile` enrols the computer it is installed on:
+it installs the dnf repository entry `/etc/yum.repos.d/amplefile.repo` and the
+public key `/etc/pki/rpm-gpg/RPM-GPG-KEY-amplefile`. The entry is a
+`%config(noreplace)` file, so an upgrade keeps a person's change to it,
+including `enabled=0`. It reads:
+
+```ini
+[amplefile]
+name=AmpleFile Linux preview builds
+baseurl=https://raw.githubusercontent.com/Mat-Tom-Son/amplefile/linux-package-repository/rpm/$basearch
+type=rpm-md
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-amplefile
+skip_if_unavailable=True
+metadata_expire=6h
+```
+
+dnf checks both the RPM's own signature (`gpgcheck`) and the signature on the
+repository metadata (`repo_gpgcheck`) against that key, and asks the person to
+confirm the key's fingerprint the first time it uses it. An unreachable
+repository is skipped rather than failing the rest of a system upgrade. The
+address comes from `linuxPackageRepositoryUrl` in
+`src/shared/product-identity.json`; `scripts/linux-package-repository.cjs`
+derives the entry, the paths, the branch, and the release download folder from
+it. There is no unsigned or unchecked form of the entry: a build without the
+key installs no entry at all.
+
+The repository is the `linux-package-repository` branch of the source
+repository, served as plain files from `raw.githubusercontent.com`. It is
+generated, not source: a README at its top says so, and `rpm/x86_64/repodata/`
+holds the metadata and `repomd.xml.asc`. It lists only the newest published
+build. The RPM is not on the branch; it stays the GitHub prerelease's asset,
+and the metadata's package location is that asset's address. Every published
+build must have a higher version-release than the one the branch lists, so a
+later build of one version uses the next RPM release.
+
+`npm run desktop:linux:repository` does the signing and the metadata, and never
+pushes, tags, or edits a release:
+
+- `check` names whatever is missing: `rpmsign` (`rpm-sign`), `createrepo_c`,
+  `gpg`, `rpmkeys`, `git`, the committed public key, or the secret key for it
+  in this computer's GnuPG keyring. `sign` and `prepare` check the same up
+  front.
+- `sign --tag TAG` signs `out/linux`'s RPM for the tag with the key named by
+  the committed public key's fingerprint, verifies the signature against a
+  throwaway rpm database that holds only the committed key, and rewrites the
+  RPM's digest in `out/linux/SHA256SUMS` and `linux-build.json`. It refuses an
+  RPM whose name, version, release or architecture does not match the tag, an
+  RPM that does not carry the exact entry and the committed key (one without
+  them would unenrol every computer that upgrades to it), and an RPM signed by
+  any other key. An RPM it already signed is left as it is.
+- `prepare --tag TAG` refuses unless the RPM is signed with the committed key,
+  is newer than the build the published branch lists (it fetches the branch
+  first; `--no-fetch` skips that), and is byte for byte the release's asset,
+  which it downloads and hashes, as listed in the release's `SHA256SUMS`. It
+  then runs `createrepo_c` with the release asset folder as the package
+  location, signs `repomd.xml` (detached, armored), verifies that signature
+  against the committed key, and commits the branch's complete new content
+  locally, on top of the published branch. It prints the push command.
+
+### Publishing a Linux prerelease
+
+Publish only when asked. One ordered list, from a clean, pushed `linux-build`:
+
+1. Build: `node scripts/test-linux-native.mjs`, then
+   `npm run desktop:make:linux` (add `-- --rpm-release N` for tag
+   `linux-test-VERSION-N`). Check that it says the RPM enrols the computer.
+2. Sign: `npm run desktop:linux:repository -- sign --tag TAG`. From here on
+   the signed RPM is the release's RPM; never upload the unsigned one.
+3. Tag: an annotated `TAG` on the build commit, pushed.
+4. Release folder `out/linux-prerelease-VERSION[-N]`: the three installers,
+   `AmpleFile-VERSION-linux-source.tar.gz` (`git archive --prefix=amplefile-VERSION/`),
+   `linux-build.json`, `release-source.json` (schema
+   `amplefile.linux-preview-source.v1`), and `SHA256SUMS` over all six, made
+   after signing.
+5. Release: `gh release create TAG --verify-tag --prerelease --latest=false`
+   with the folder's files. The Mac release stays latest.
+6. Repository: `npm run desktop:linux:repository -- prepare --tag TAG`.
+7. Push the branch it prepared: `git push origin linux-package-repository`.
+   Enrolled computers see the build on their next update check.
+8. Point the README and this page's preview link at the new prerelease.
+
+### Package repository signing key
+
+The key belongs to the owner and lives only in their GnuPG keyring and its
+backup, never in the repository, a release, or GitHub. Its public half is
+committed, and its fingerprint is read from that file, so nothing guesses
+which key signs.
+
+Create it (RSA 4096 has the widest RPM compatibility; only an ed25519 key has
+been tried on Fedora 44 so far):
+
+```sh
+gpg --quick-gen-key "AmpleFile Linux packages" rsa4096 sign never
+gpg --list-secret-keys --with-colons "AmpleFile Linux packages" | grep '^fpr' | head -1
+```
+
+Back it up before publishing anything signed with it: an offline copy of
+`gpg --export-secret-keys --armor FINGERPRINT` and of the revocation
+certificate gpg wrote under `~/.gnupg/openpgp-revocs.d/`, kept somewhere other
+than this computer. Losing it means enrolled computers can only be moved to a
+new key by hand.
+
+Commit the public half, then build:
+
+```sh
+gpg --export --armor FINGERPRINT > desktop/linux/RPM-GPG-KEY-amplefile
+npm run desktop:linux:repository -- check
+```
+
+The file must hold exactly one public key block and nothing secret; the build
+refuses anything else.
+
+To rotate it later, publish one build signed by the old key whose
+`desktop/linux/RPM-GPG-KEY-amplefile` holds both public keys: computers that
+upgrade to it receive the new key in a file that arrived under the old key's
+signature. Once that build has been out long enough for every enrolled
+computer to take it, commit the file with only the new key, and sign the next
+build and its metadata with the new key; dnf finds the new key in the
+installed file and asks the person to confirm its fingerprint once. A computer
+that skipped the transition build cannot verify the new build, and gets back
+on track by installing the RPM from the release by hand. If the old key was
+compromised, say so in the release notes and have people check the new
+fingerprint before confirming it.
+
 ## Verification
 
 The build runs its probes on a private X display with the person's Wayland
@@ -530,12 +681,23 @@ clipboard helper with its provenance and licenses), the desktop entry
 categories, `GenericName` and `Comment`) and the hicolor icons from 16 to 512
 pixels (plus the scalable SVG in DEB/RPM). The DEB and RPM must declare every
 configured dependency and the keyring recommendation, and carry maintainer
-scripts that set no default application. A format is skipped, with a printed
-notice, only when its extraction tools are missing. To check existing artifacts:
+scripts that set no default application. The RPM must have the expected
+release and, with the key committed, carry the repository entry exactly as
+generated, as `%config(noreplace)`, with `gpgcheck=1` and `repo_gpgcheck=1`,
+and the committed key as a replaceable file; without the key it must carry
+neither. A format is skipped, with a printed notice, only when its extraction
+tools are missing. To check existing artifacts:
 
 ```sh
-node scripts/verify-linux-packages.mjs out/linux --version VERSION
+node scripts/verify-linux-packages.mjs out/linux --version VERSION --rpm-release RELEASE
 ```
+
+[The package repository proof](../scripts/linux-package-repository-proof/README.md)
+runs the whole repository lane in a throwaway Fedora 44 container with a
+throwaway key and a local stand-in for GitHub's hosts: install, enrolment,
+signing, publishing, the refusals, tampered metadata and a tampered RPM, and an
+upgrade under a running update watcher. It does not reach the real
+`raw.githubusercontent.com`.
 
 To check persistence across cold launches:
 
@@ -559,7 +721,7 @@ or is removed, refusal of a rotated output, and the product's refusal of Sway
 itself. It does not qualify Sway, which still lacks a lock signal. Real niri capture
 was also checked on a 1920×1200 display at 125%, including exact PNG pixels and
 selected-output coordinate mapping. These fixtures do not establish hardware GPU, physical
-sleep, IME, paid-provider or public signed-repository qualification.
+sleep, IME or paid-provider qualification.
 
 The `linux-file-manager-bus`, `linux-file-manager-integration` and
 `linux-file-manager-settings` tests cover the file manager choices: the D-Bus
