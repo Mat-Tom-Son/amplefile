@@ -518,7 +518,7 @@
 }
 
 /* Segmented controls, as the panel's Info and History. */
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .ai-models-scope-control, .capabilities-type-chips, .connected-folder-segmented) {
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) {
   display: flex;
   gap: 0;
   width: fit-content;
@@ -532,8 +532,7 @@
   box-shadow: none;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button,
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label {
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button {
   display: inline-flex;
   flex: 1 1 auto;
   align-items: center;
@@ -554,8 +553,7 @@
   white-space: nowrap;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button:is(.active, [aria-checked="true"], [aria-pressed="true"]),
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label.active {
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button:is(.active, [aria-checked="true"], [aria-pressed="true"]) {
   background: var(--fm-btn);
   box-shadow: var(--fm-btn-shadow);
 }
@@ -565,18 +563,43 @@
   height: 14px;
 }
 
-/* AI Models: the scope is a segmented control under its heading ("This Worker · Home projects"). */
+/* AI Models: two balanced, unmistakable scope cards (This Worker vs AmpleFile Agent). */
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control {
-  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   width: 100%;
-  margin-top: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > legend {
-  position: absolute;
-  top: -20px;
-  left: 4px;
-  float: none;
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fm-card-line);
+  border-radius: 10px;
+  background: var(--fm-card);
+  box-shadow: none;
+  color: var(--fm-text);
+  cursor: default;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label:hover:not(.active) {
+  background: color-mix(in srgb, var(--fm-text) 3%, var(--fm-card));
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label.active {
+  border-color: var(--fm-accent);
+  background: color-mix(in srgb, var(--fm-accent) 13%, var(--fm-card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fm-accent) 45%, transparent);
 }
 
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label input {
@@ -585,24 +608,124 @@
   pointer-events: none;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label span {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--fm-cap);
+  color: var(--fm-text2);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label small {
-  display: inline;
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label.active .ai-models-scope-icon {
+  background: var(--fm-accent);
+  color: var(--fm-on-accent);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-copy strong {
+  color: var(--fm-text);
+  font-size: calc(13px * var(--fm-scale));
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-copy small {
   color: var(--fm-text2);
-  font-size: inherit;
+  font-size: calc(11.5px * var(--fm-scale));
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-check {
+  color: var(--fm-accent);
+}
+
+/* AI Models inset cards: uniform edge-to-edge rows and clean section spacing. */
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-scope-card,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-image-section {
+  padding: 0;
+  border: 0.5px solid var(--fm-card-line);
+  border-radius: 10px;
+  background: var(--fm-card);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-scope-card .ai-models-row,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-image-section .ai-models-row {
+  padding: 10px 14px;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-image-section .ai-models-row-note {
+  margin: 0;
+  padding: 0 14px 10px;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-scope-card .ai-models-instructions-block {
+  margin-top: 0;
+  padding: 12px 14px 14px;
+  border-top: 0.5px solid var(--fm-card-line);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-provider-item + .ai-models-provider-item,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-provider-list + .ai-models-add-provider,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-provider-drawer {
+  border-top: 0.5px solid var(--fm-card-line);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-provider-drawer {
+  background: color-mix(in srgb, var(--fm-text) 2.5%, var(--fm-card));
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-provider-row:first-child {
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-connection-section .ai-models-add-provider-toggle {
+  color: var(--fm-link);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-text-link,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-text-action {
+  color: var(--fm-link);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-auth-badge {
+  background: var(--fm-cap);
+  color: var(--fm-text2);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-available-list {
+  border: 0.5px solid var(--fm-card-line);
+  background: var(--fm-card);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-available-row + .ai-models-available-row {
+  border-top: 0.5px solid var(--fm-card-line);
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-section-heading {
+  justify-content: space-between;
+}
+
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-section-meta {
+  color: var(--fm-text2);
+  font-size: calc(11.5px * var(--fm-scale));
   font-weight: 400;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label small::before {
-  content: "· ";
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel section.ai-models-scope-card .ai-models-instructions-header h3 {
+  position: static;
+  margin: 0;
+  font-size: calc(13px * var(--fm-scale));
+  font-weight: 500;
 }
 
 /* Lists inside a card: each item a row, as History's. */
@@ -622,10 +745,6 @@
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.settings-field > span:first-child, .professional-field-label, .settings-field-label) {
   color: var(--fm-text2);
   font-size: calc(12px * var(--fm-scale));
-  font-weight: 500;
-}
-
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label span {
   font-weight: 500;
 }
 

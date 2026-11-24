@@ -55,15 +55,20 @@ export function ImageModelSection({ settings, onChange }: {
   const value = settings.selected && settings.selectedAvailable ? modelCatalogKey(settings.selected) : modelCatalogKey(automaticEntry);
 
   return (
-    <section className="ai-models-settings-section" aria-labelledby="image-model-heading">
-      <div className="ai-models-section-heading"><h3 id="image-model-heading">Image Model</h3></div>
-      <div className="professional-field">
-        <span className="professional-field-label" id="image-model-label">Used by every Worker and the AmpleFile Agent to make pictures</span>
-        <ModelCatalogList id="image-model" labelledBy="image-model-label" models={entries} value={value} groupByProvider disabled={saving} onChange={(key) => { void choose(key); }} />
-        {!settings.models.length ? <span className="professional-field-hint">Connect a provider with image models above, such as OpenRouter, to make pictures.</span> : null}
-        {settings.selected && !settings.selectedAvailable ? <span className="professional-field-hint">The chosen model's provider is not connected, so Automatic is used until it is.</span> : null}
-        {error ? <span className="professional-field-hint" role="alert">{error}</span> : null}
+    <section className="ai-models-settings-section ai-models-image-section" aria-labelledby="image-model-heading">
+      <div className="ai-models-section-heading">
+        <h3 id="image-model-heading">Image Model</h3>
+        <span className="ai-models-section-meta">Shared</span>
       </div>
+      <div className="ai-models-row ai-models-model-row">
+        <span className="ai-models-row-title" id="image-model-label">Default</span>
+        <div className="ai-models-model-picker">
+          <ModelCatalogList id="image-model" labelledBy="image-model-label" models={entries} value={value} groupByProvider disabled={saving} onChange={(key) => { void choose(key); }} />
+        </div>
+      </div>
+      {!settings.models.length ? <p className="ai-models-row-note">Connect a provider with image models to generate pictures.</p> : null}
+      {settings.selected && !settings.selectedAvailable ? <p className="ai-models-row-note">Using Automatic until the chosen provider reconnects.</p> : null}
+      {error ? <p className="ai-models-row-note error" role="alert">{error}</p> : null}
     </section>
   );
 }

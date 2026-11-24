@@ -975,22 +975,23 @@ Line** adds the `amplefile` command to Terminal and writes the Skill for
 Claude Code or Codex, so other AI agents can use AmpleFile
 ([details](amplefile-agent-and-cli.md#other-ai-agents-settings--command-line)).
 
-**AI Models** separates model defaults, shared provider connections, and
-Worker instructions. Its scope is chosen with two large buttons, **This
-Worker**, naming the Connected Folder, and **AmpleFile Agent**. The model is a
-dropdown: closed, it shows the chosen model; open, it starts with a search
-box and groups every connected provider's chat models by provider and vendor
-(for OpenRouter, the vendor prefix of the model name), and choosing a model
-closes it. **Provider connections** is separate, with saved connections
-grouped above available providers. Connection setup keeps the model choice
-and draft, including Azure endpoint and deployment setup. Unsaved model and
-instruction drafts survive page and scope changes while Settings stays open;
-credentials are not cached across scope changes. Accepted saves keep their
-completion if Settings closes, so reopening waits for their result. External
-settings changes refresh clean forms and offer an explicit reload when
-drafts are present. An **Image Model** section holds one machine-wide choice
-for every Worker and the AmpleFile Agent, with **Automatic** first
-([Image generation](image-generation.md)).
+**AI Models** groups per-scope model and Worker instructions separately from
+shared provider connections. Its scope is chosen with two distinct cards,
+**This Worker**, naming the Connected Folder, and **AmpleFile Agent**. The
+model is a dropdown: closed, it shows the chosen model; open, it starts with a
+search box and groups every connected provider's chat models by provider and
+vendor (for OpenRouter, the vendor prefix of the model name), and choosing a
+model closes it and saves immediately. **Provider Connections** sits below as a
+compact list of connected providers (each expandable to inspect or manage) with
+a **Connect Provider** drawer for available providers. Connection setup leaves
+the active model selection alone, including Azure endpoint and deployment setup.
+Unsaved instruction and Foundry drafts survive page and scope changes while
+Settings stays open; credentials are not cached across scope changes. Accepted
+saves keep their completion if Settings closes, so reopening waits for their
+result. External settings changes refresh clean forms and offer an explicit
+reload when drafts are present. An **Image Model** section holds one
+machine-wide choice for every Worker and the AmpleFile Agent, with **Automatic**
+first ([Image generation](image-generation.md)).
 
 Credentials are shared machine-wide, while model choices and Worker
 instructions are machine-local preferences keyed by portable Connected Folder
@@ -1056,20 +1057,20 @@ identity-check failure after token rotation clears that identity while
 keeping the replacement auth credential, so model access does not break.
 
 The direct ChatGPT-plan grant does not authorize Codex workspace or usage
-reads. **View Codex connection** selects the distinct **OpenAI (Codex
-subscription)** entry; a person signs in explicitly to that connection. Its
-details read the selected workspace name and plan and the provider's actual
-usage windows, used percentages, reset timestamps, and available reset count.
-Reads pin the workspace header and refuse usage whose returned account id
-differs or is missing. They never infer a workspace from email, a user id, an
-API organization, or a client id, and never substitute a default workspace.
-No reset is consumed by this display. Usage refreshes every minute while the
-details are open and on window focus; **Refresh account details** also
-updates it without changing the model. A missing field reads **Not returned
-by this sign-in**; a failed read says **Unavailable** and explains the
-failure. **Manage usage in ChatGPT** opens the provider's usage page. Account
-details stay in Settings, outside Chat, CLI snapshots, portable Connected
-Folder records, and model prompts.
+reads. **Codex Connection** selects the distinct **OpenAI (Codex)** entry; a
+person signs in explicitly to that connection. Its details read the selected
+workspace name and plan and the provider's actual usage windows, used
+percentages, reset timestamps, and available reset count. Reads pin the
+workspace header and refuse usage whose returned account id differs or is
+missing. They never infer a workspace from email, a user id, an API
+organization, or a client id, and never substitute a default workspace. No
+reset is consumed by this display. Usage refreshes every minute while the
+details are open and on window focus; **Refresh** also updates it without
+changing the model. Fields not returned by a sign-in (such as workspace on a
+direct OpenAI sign-in) are omitted; a failed read explains that account details
+are unavailable. **Usage** opens the provider's usage page. Account details
+stay in Settings, outside Chat, CLI snapshots, portable Connected Folder
+records, and model prompts.
 
 [Application appearance](application-appearance.md) covers editable presets,
 palettes and accent, interface and conversation typography, reading width and

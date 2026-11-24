@@ -56,10 +56,12 @@ export function useFileDrops(context: FileDropsContext) {
     window.addEventListener("pointerdown", clearInternalDrag, true);
     window.addEventListener("mousedown", clearInternalDrag, true);
     window.addEventListener("keydown", clearOnEscape, true);
+    window.addEventListener("blur", clearInternalDrag);
     return () => {
       window.removeEventListener("pointerdown", clearInternalDrag, true);
       window.removeEventListener("mousedown", clearInternalDrag, true);
       window.removeEventListener("keydown", clearOnEscape, true);
+      window.removeEventListener("blur", clearInternalDrag);
     };
   }, []);
 

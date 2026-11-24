@@ -360,10 +360,10 @@ export async function copyHoldsAll(source: string, copy: string, options: { with
   return treeHeld(source, copy, { identity: options.withIdentity === true });
 }
 
-/** Compares the bytes and modes of everything a move must keep, and pins the copies it checked. */
+/** Compares the bytes of everything a move must keep, and pins the copies it checked. */
 export async function verifyMoveCopyContents(source: string, copy: string): Promise<Map<string, Stats> | null> {
   const checked = new Map<string, Stats>();
-  return await treeHeld(source, copy, { identity: true, verifyContents: [], checked }) ? checked : null;
+  return await treeHeld(source, copy, { identity: true, verifyContents: [], checkMode: false, checked }) ? checked : null;
 }
 
 /** Whether the destination entries compared by a move still have the same identities, contents, and metadata. */
@@ -461,13 +461,13 @@ async function makeFoldersWritable(path: string, widened: Array<{ path: string; 
 }
 
 /** Whether everything at `from` is also at `into`, the same. An `.amplefile` folder counts as held when carried whole (`identity`), never (`false`), or is not asked about (`"ignore"`). */
-async function treeHeld(from: string, into: string, options: { identity: boolean | "ignore"; verifyContents?: string[]; checked?: Map<string, Stats> }): Promise<boolean> {
+async function treeHeld(from: string, into: string, options: { identity: boolean | "ignore"; verifyContents?: string[]; checkMode?: boolean; checked?: Map<string, Stats> }): Promise<boolean> {
   const [original, other] = await Promise.all([lstat(from).catch(() => null), lstat(into).catch(() => null)]);
   if (!original) return !options.verifyContents;
   if (!other) return false;
   options.checked?.set(into, other);
   if (options.verifyContents) {
-    if ((original.mode & 0o7777) !== (other.mode & 0o7777)) return false;
+    if (options.checkMode !== false && (original.mode & 0o7777) !== (other.mode & 0o7777)) return false;
     options.verifyContents.push(from);
   }
   if (original.isSymbolicLink()) {

@@ -600,7 +600,7 @@ export interface PutBackPlan {
   /** Folders to create first, outermost first. */
   missingFolders: string[];
   /** The registered Connected Folder that holds the destination, deepest first; History records the Put Back there. */
-  connectedFolder: { id: string; connectedFolderRoot: string; name: string } | null;
+  connectedFolder: { id: string; connectedFolderRoot: string; canonicalRoot: string; name: string } | null;
 }
 
 /** At most this many missing folders are recreated for one item. */
@@ -668,16 +668,16 @@ export async function planPutBack(
     throw new TrashError(409, `AmpleFile can’t put “${name}” back: its Trash record names a place outside the drive it was trashed on.`);
   }
   const canonicalFolders = await Promise.all(connectedFolders.map(async ({ id, name, connectedFolderRoot }) => ({
-    id, name, connectedFolderRoot: await canonical(connectedFolderRoot),
+    id, name, connectedFolderRoot: resolve(connectedFolderRoot), canonicalRoot: await canonical(connectedFolderRoot),
   })));
   const holder = canonicalFolders
-    .filter((connectedFolder) => pathInside(connectedFolder.connectedFolderRoot, parent))
-    .sort((left, right) => right.connectedFolderRoot.length - left.connectedFolderRoot.length)[0] ?? null;
+    .filter((connectedFolder) => pathInside(connectedFolder.canonicalRoot, parent))
+    .sort((left, right) => right.canonicalRoot.length - left.canonicalRoot.length)[0] ?? null;
   if (missingFolders.length) {
     const home = await canonical(options.home ?? trashOptionsForTests?.home ?? homedir());
     // Inside a Connected Folder its History records the new folders with the item.
     const inside = top ? pathInside(top, real)
-      : pathInside(home, real) || Boolean(holder && pathInside(holder.connectedFolderRoot, real));
+      : pathInside(home, real) || Boolean(holder && pathInside(holder.canonicalRoot, real));
     const reserved = missingFolders.some((folder) => isAlwaysHiddenConnectedFolderEntry(basename(folder)));
     if (!inside || reserved || missingFolders.length > maxRecreatedFolders) {
       throw new TrashError(409, `AmpleFile can’t put “${name}” back: the folder it came from, ${recordedParent}, is gone. Move it out of the Trash by hand instead.`);
