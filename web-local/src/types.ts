@@ -169,6 +169,12 @@ export interface ChatSendRequest {
   text: string;
   paths: readonly string[];
 }
+export interface ChatSendFailure {
+  id: number;
+  text: string;
+  message: string;
+}
+
 export interface PendingChatSend {
   conversation: ConversationSummary;
   content: string;

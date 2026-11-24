@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type SetStateAction } from "react";
 
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import { windowStorageKey } from "../../lib/window-storage";
-import type { ChatSendRequest } from "../../types";
+import type { ChatSendFailure, ChatSendRequest } from "../../types";
 import type { FileManagerLocation } from "./file-manager-places";
 import {
   activeFolderTab,
@@ -34,8 +34,9 @@ export const folderTabsStorageKey = () => windowStorageKey("amplefile.file-manag
  * The Chat a tab's panel holds (docs/product-model.md): one per tab, in the
  * Connected Folder it belongs to. `conversationId` is the Chat opened from
  * History; a new one from the message box keeps it null and learns
- * `activeId`, and its `sendRequest` is dropped once it has gone, so showing
- * the Chat again never sends it twice.
+ * `activeId`. Its `sendRequest` is dropped when preparation starts, so
+ * showing the Chat again never sends it twice. A failed preparation stays
+ * here until the Chat panel can put its text back into the composer.
  */
 export interface PanelChat {
   key: number;
@@ -44,6 +45,7 @@ export interface PanelChat {
   activeId: string | null;
   title: string;
   sendRequest: ChatSendRequest | null;
+  failedSend?: ChatSendFailure | null;
   open: boolean;
 }
 

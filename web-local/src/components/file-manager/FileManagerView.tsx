@@ -1862,6 +1862,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
                   ? { ...current, sendRequest: null }
                   : current);
               }}
+              failedSend={chat.failedSend}
+              onSendFailureChange={(failure) => {
+                folderTabs.setChat(tab.id, (current) => current?.key === chat.key
+                  && (failure !== null || current.failedSend?.id === chat.failedSend?.id)
+                  ? { ...current, failedSend: failure }
+                  : current);
+              }}
               variant="panel"
               // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
               onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, folder.id)}

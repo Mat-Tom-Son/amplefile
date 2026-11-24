@@ -40,7 +40,7 @@ import type { AssistantPresentation } from "../../../../src/shared/chat-presenta
 import { resolveFixtureConnectedFolderPathCandidates } from "../../lib/connected-folder-path-links";
 import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
 import type { AgentCatalog, AgentCommand, AgentModel, AgentStatus, ComposerState, ChatContextPathRequest,
-  ChatLifecycleView, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RuntimePreviewEntry, TreeEntry, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../../types";
+  ChatLifecycleView, ChatSendFailure, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RuntimePreviewEntry, TreeEntry, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../../types";
 import type { WorkRequestView } from "../../../../src/shared/request-presentation";
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
@@ -115,6 +115,8 @@ export function ChatPanel({
   contextPathRequest,
   sendRequest = null,
   onSendRequestConsumed,
+  failedSend,
+  onSendFailureChange,
   variant = "default",
   onAddPathToChatContext,
   onUploadDroppedFiles,
@@ -144,6 +146,8 @@ export function ChatPanel({
   /** Sends at once with these references (the file manager's message box). */
   sendRequest?: ChatSendRequest | null;
   onSendRequestConsumed?: (id: number) => void;
+  failedSend?: ChatSendFailure | null;
+  onSendFailureChange?: (failure: ChatSendFailure | null) => void;
   /**
    * `panel`: the file manager's right panel (docs/product-model.md),
    * drawn as the design draws it. Its composer is Reply and Send
@@ -837,6 +841,13 @@ export function ChatPanel({
     const timer = window.setTimeout(() => {
       handledSendRequestRef.current = request.id;
       onSendRequestConsumed?.(request.id);
+      const reportFailure = (message: string) => {
+        if (onSendFailureChange) onSendFailureChange({ id: request.id, text: request.text, message });
+        else {
+          setError(message);
+          setDraft((current) => current.trim() ? current : request.text);
+        }
+      };
       void (async () => {
         const staged: ContextAttachment[] = [];
         for (const path of request.paths) {
@@ -844,16 +855,22 @@ export function ChatPanel({
           try {
             staged.push((await api<{ attachment: ContextAttachment }>(`/api/connected-folders/${connectedFolder.id}/context-attachments`, { method: "POST", body: { path } })).attachment);
           } catch (caught) {
-            setError(errorText(caught));
-            setDraft((current) => current.trim() ? current : request.text);
+            reportFailure(errorText(caught));
             return;
           }
         }
-        await sendMessage(request.text, { attachments: staged });
+        await sendMessage(request.text, { attachments: staged, onPreparationFailed: reportFailure });
       })();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sendRequest?.id]);
+
+  useEffect(() => {
+    if (!failedSend) return;
+    setError(failedSend.message);
+    setDraft((current) => current.trim() ? current : failedSend.text);
+    onSendFailureChange?.(null);
+  }, [failedSend]);
 
   useEffect(() => {
     if (userPinnedToBottomRef.current) scrollMessagesToBottom("auto");
@@ -1303,7 +1320,7 @@ export function ChatPanel({
     }
   }
 
-  async function sendMessage(contentOverride?: string, options: { withoutAttachments?: boolean; attachments?: ContextAttachment[] } = {}) {
+  async function sendMessage(contentOverride?: string, options: { withoutAttachments?: boolean; attachments?: ContextAttachment[]; onPreparationFailed?: (message: string) => void } = {}) {
     const content = (contentOverride ?? draft).trim();
     // Continue sends only its own words: files staged for the person's draft stay staged.
     const attachmentsForSend = options.withoutAttachments ? [] : options.attachments ?? contextAttachments;
@@ -1417,10 +1434,11 @@ export function ChatPanel({
       setRunning(false);
       clearRuntimePreviews();
       resetTurnArtifactTracking();
-      setError(errorText(sendError));
-      // Restore the failed message only into an empty composer — never over a
-      // newer draft — and put the cursor back where retrying happens.
-      setDraft((current) => (current.trim() ? current : content));
+      if (options.onPreparationFailed) options.onPreparationFailed(errorText(sendError));
+      else {
+        setError(errorText(sendError));
+        setDraft((current) => current.trim() ? current : content);
+      }
       window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
       setMessages((current) => current.filter((message) => message.id !== localUserMessage.id));
     }

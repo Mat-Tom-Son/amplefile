@@ -65,6 +65,7 @@ export function useFileChanges(context: FileChangesContext) {
   // ⌘Z and ⇧⌘Z for file changes: each entry undoes one change and returns the entry that redoes it.
   const undoStackRef = useRef<FileUndo[]>([]);
   const redoStackRef = useRef<FileUndo[]>([]);
+  const undoQueueRef = useRef(Promise.resolve());
 
   function transfer(body: TransferBody & { operationId?: string; conflicts?: ConflictPolicy }, beforeSend?: () => void): Promise<TransferResult> {
     return historyTurn(transferConnectedFolderIds(body), () => { beforeSend?.(); return api<TransferResult>("/api/file-transfer", { method: "POST", body }); });
@@ -181,7 +182,15 @@ export function useFileChanges(context: FileChangesContext) {
     restore: (point) => historyTurn([point.connectedFolderId], () => api(`/api/connected-folders/${encodeURIComponent(point.connectedFolderId)}/history/checkpoints/${encodeURIComponent(point.checkpointId)}/restore`, { method: "POST", body: {} })),
   };
 
-  async function undoFileChange(redo = false) {
+  function undoFileChange(redo = false): Promise<void> {
+    // A pending delete may need to finish before its restore can start.
+    // Keep an older step from reaching History ahead of that restore.
+    const turn = undoQueueRef.current.then(() => applyUndoFileChange(redo));
+    undoQueueRef.current = turn.catch(() => undefined);
+    return turn;
+  }
+
+  async function applyUndoFileChange(redo: boolean): Promise<void> {
     const stack = redo ? redoStackRef : undoStackRef;
     const entry = stack.current.at(-1);
     if (!entry) { showToast({ text: redo ? "Nothing to redo" : "Nothing to undo", tone: "info" }); return; }
