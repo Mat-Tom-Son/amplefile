@@ -836,16 +836,17 @@ export class AmpleFileRecentlyDeletedStore {
     }
 
     if (process.platform === "darwin") {
-      try {
-        await macRenameWithoutReplacing(source, destination);
-      } catch (error) {
+      const moved = await macRenameWithoutReplacing(source, destination).then(() => true, (error: NodeJS.ErrnoException) => {
         // If the helper stopped after the syscall, the item may already be there.
-        if (pathOccupied(source) || !sameFileAt(destination, sourceInfo)) throw error;
-      }
-      return sourceInfo;
+        if (!pathOccupied(source) && sameFileAt(destination, sourceInfo)) return true;
+        // Volumes without RENAME_EXCL (ExFAT, FAT32, SMB, NFS, FUSE) fall through to the exclusive claim below.
+        if (["ENOTSUP", "EOPNOTSUPP", "ENOSYS"].includes(error.code ?? "")) return false;
+        throw error;
+      });
+      if (moved) return sourceInfo;
     }
 
-    // On other hosts reserve an empty directory or file, then replace just that reservation.
+    // Reserve an empty directory or file when the volume cannot rename exclusively.
     const folder = sourceInfo.isDirectory();
     let claim: Stats;
     if (folder) {

@@ -257,24 +257,22 @@ Results expose their source and link back to it. Search, type filters, and sorti
 
 ## Authentication and external connections
 
-**Settings → AI Models** separates **Model** from **Provider connections**.
+**Settings → AI Models** separates **Model** from **Provider Connections**.
 The model picker searches every connected provider's chat models, grouped by
 provider and vendor. Its closed control shows the model and connection name;
-selection uses the provider/model pair so identical model IDs remain distinct.
-Provider connections groups saved connections above available providers and
-shows the credential's actual source and its machine-wide scope.
-API-key entry is masked with an explicit Show/Hide control. A saved API key
-can be replaced through **Change API Key** without removing it first; Cancel
-clears the entered replacement and keeps the saved key. Provider connections
-are shared; **Save Model** separately saves the displayed Worker's or AmpleFile
-agent's model. Connecting or replacing a credential preserves model drafts and
-does not save a new model default. Foundry's **Save Azure settings** (OpenAI)
-or **Save Foundry settings** saves that connection's endpoint, deployment names,
-and optional base-model choices; selecting a deployment uses **Save Model**.
-Failed saves keep the entered key for correction;
-successful saves clear it. Keys are never read back into the form or carried
-across provider or scope changes. Account sign-in and Azure deployment setup
-continue through their existing provider-specific paths.
+selection uses the provider/model pair so identical model IDs remain distinct
+and saves immediately on choice. Provider Connections lists saved connections
+above a **Connect Provider** drawer for available providers and shows each
+connection's credential badge and machine-wide scope. API-key entry is masked
+with an explicit Show/Hide control. A saved API key can be replaced through
+**Change Key** without removing it first; Cancel clears the entered replacement
+and keeps the saved key. Provider connections are shared; connecting or
+replacing a credential never silently changes the chosen Worker or AmpleFile
+Agent model. Foundry's **Save Settings** saves that connection's endpoint,
+deployment names, and optional base-model choices. Failed saves keep the
+entered key for correction; successful saves clear it. Keys are never read back
+into the form or carried across provider or scope changes. Account sign-in and
+Azure deployment setup continue through their existing provider-specific paths.
 
 The provider list and account buttons use Pi's complete native provider catalog
 and authentication metadata, including providers with no chat models. **Guided

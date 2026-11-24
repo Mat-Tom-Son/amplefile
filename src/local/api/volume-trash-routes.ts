@@ -270,13 +270,16 @@ async function putBackTrashItem(itemId: string): Promise<PutBackResponse> {
     const connectedFolder = plan.connectedFolder;
     result = await withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
       const registered = await getConnectedFolder(connectedFolder.id);
-      if (registered.connectedFolderRoot !== connectedFolder.connectedFolderRoot) throw httpError(409, "That Connected Folder moved. Try again.");
+      if (registered.connectedFolderRoot !== connectedFolder.connectedFolderRoot
+        || await realpath(registered.connectedFolderRoot).catch(() => null) !== connectedFolder.canonicalRoot) {
+        throw httpError(409, "That Connected Folder moved. Try again.");
+      }
       // The Connected Folder's path policy, for the folder that exists: no links, no hidden AmpleFile or Pi data.
       const existingParent = plan.missingFolders[0] ? dirname(plan.missingFolders[0]) : plan.parent;
-      resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, insideConnectedFolder(connectedFolder.connectedFolderRoot, existingParent));
+      resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, insideConnectedFolder(connectedFolder.canonicalRoot, existingParent));
       const record = await readTrashRecord(item);
       const placed = await performPutBack(item, plan);
-      const written = insideConnectedFolder(connectedFolder.connectedFolderRoot, plan.missingFolders[0] ?? placed.path);
+      const written = insideConnectedFolder(connectedFolder.canonicalRoot, plan.missingFolders[0] ?? placed.path);
       try {
         const checkpoint = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           deleteOnRestore: [written],

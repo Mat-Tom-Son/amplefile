@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import JSZip from "jszip";
 
 import { setDiskSpaceProbeForTests } from "../src/local/disk-space.js";
-import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, copyItemTo, filesTooFreshToTell, finderCopyName, folderBlockingRemoval, isInside, onOneDisk, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, type CopiedEntry, type CopiedSource } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, checkedMoveCopyUnchanged, compressInto, copyHoldsAll, copyInto, copyItemTo, filesTooFreshToTell, finderCopyName, folderBlockingRemoval, isInside, onOneDisk, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, verifyMoveCopyContents, type CopiedEntry, type CopiedSource } from "../src/local/file-transfer.js";
 import { attributeNames, extraInWords, extrasCopyLacks, fileFlags, setAttributeCheckForTests } from "../src/local/extended-attributes.js";
 
 const exec = promisify(execFile);
@@ -517,4 +517,25 @@ test("a copied folder keeps its date, as a copied file does", async (t) => {
   const landed = await copyInto(source, join(root));
   assert.equal((await lstat(landed)).mtimeMs, was.getTime());
   assert.equal((await lstat(join(landed, "inner"))).mtimeMs, was.getTime());
+});
+
+test("verifyMoveCopyContents accepts POSIX mode differences across filesystems while rejecting content edits", async (t) => {
+  const root = await folder(t);
+  const source = join(root, "source.txt");
+  const copy = join(root, "copy.txt");
+  await writeFile(source, "important bytes");
+  await chmod(source, 0o664);
+  await copyItemTo(source, copy, { withIdentity: true });
+  await chmod(copy, 0o644);
+  const checked = await verifyMoveCopyContents(source, copy);
+  assert.ok(checked, "umask or FAT/SMB mode differences do not fail cross-disk copy verification");
+  assert.equal(await checkedMoveCopyUnchanged(checked), true);
+  // Subsequent tampering (even a mode change or same-length rewrite) is still caught.
+  await chmod(copy, 0o600);
+  assert.equal(await checkedMoveCopyUnchanged(checked), false);
+  const before = await lstat(copy);
+  await chmod(copy, 0o644);
+  await writeFile(copy, "tampered! bytes");
+  await utimes(copy, before.atime, before.mtime);
+  assert.equal(await verifyMoveCopyContents(source, copy), null);
 });

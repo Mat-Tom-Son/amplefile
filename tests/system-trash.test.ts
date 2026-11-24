@@ -274,6 +274,8 @@ test("Put Back recreates a missing folder only where that is clearly safe", asyn
   await symlink(connectedFolderRoot, connectedFolderAlias);
   const plan = await planPutBack(found!, [{ id: "space-0000000000000000", connectedFolderRoot: connectedFolderAlias, name: "Shared" }], { home: box.home });
   assert.equal(plan.connectedFolder?.id, "space-0000000000000000");
+  assert.equal(plan.connectedFolder?.connectedFolderRoot, connectedFolderAlias);
+  assert.equal(plan.connectedFolder?.canonicalRoot, await realpath(connectedFolderRoot));
   assert.deepEqual(plan.missingFolders, [join(connectedFolderRoot, "shared")]);
 
   // Never into hidden AmpleFile or Pi data.

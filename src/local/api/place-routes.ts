@@ -1318,7 +1318,7 @@ async function moveRows(
     };
   };
   const changedWhileCopied = (source: string) => httpError(409, `“${basename(source)}” changed while it was being copied, so it stays where it was.`);
-  const unavailableCopy = (source: string) => Object.assign(httpError(409, `The copy of “${basename(source)}” changed or is no longer where it was written. The original stays where it was.`), { unavailableCopy: true });
+  const unavailableCopy = (source: string) => httpError(409, `The copy of “${basename(source)}” changed or is no longer where it was written. The original stays where it was.`);
   operation.stage(rows.some((row) => !renames.has(row.index)) ? "removing" : "moving");
   for (const [position, row] of rows.entries()) {
     try {
@@ -1433,7 +1433,7 @@ async function moveRows(
       // from the copy is named, not hidden.
       failures.push({ path: rowPath(row.unit), error: plainFileError(error, source) });
       const copyOf = stagedAt(row);
-      if (!stagedCopyStillAt(copyOf) || (error as { unavailableCopy?: boolean }).unavailableCopy) {
+      if (!stagedCopyStillAt(copyOf)) {
         copyOf.release?.();
         staged[row.index] = null;
         continue;

@@ -472,6 +472,17 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "- **Drives and Trash.** Eject checks unfinished work on all volumes that leave with the disk. Drives that stop answering stay listed without a space estimate, and Trash identifies drives it couldn’t check.",
     );
   }
+  if (version === "0.2.1") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **GPT‑6.2 Sol and Astra.** Pi 1.6.0 adds both models to the ChatGPT sign-in catalog. The Codex connection uses the selected reasoning effort when a new context starts.",
+      "- **AI Models settings.** Pick a model for This Worker or the AmpleFile Agent and it saves immediately. Manage shared provider connections and see the account details your connection returns.",
+      "- **File manager fixes.** Moves verify copies before removing originals. Restoring from Recently Deleted, merging extracted archives, dragging files back from Finder, and undoing file changes are more reliable.",
+      "- **Chat and window fixes.** Reopening the Chat panel keeps failed drafts without sending them again. Browser tabs keep their window ownership, and quitting waits for an update that is already being prepared.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",
