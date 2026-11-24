@@ -1872,7 +1872,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               onConversationActivated={(conversation: ConversationSummary | null) => {
                 if (!conversation) return;
                 folderTabs.setChat(tab.id, (current) => current && current.key === chat.key
-                  ? { ...current, sendRequest: null, activeId: conversation.id, title: chatTitleOrNull(conversation.title) ?? current.title }
+                  ? { ...current, activeId: conversation.id, title: chatTitleOrNull(conversation.title) ?? current.title }
                   : current);
               }}
               onRunningChange={(conversationId, running) => activity.setRunning(keyFor(conversationId), running)}

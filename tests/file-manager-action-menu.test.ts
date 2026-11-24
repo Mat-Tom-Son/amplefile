@@ -66,6 +66,22 @@ test("the Action menu reads Customize, Organize, Skills & Extensions, then Disco
   assert.deepEqual(view.switched, [], "the folder shown is already the one asked about");
 });
 
+test("reopening the panel does not replay the Organize send request", async (t) => {
+  const view = await mountWindow(t);
+  const starts = () => view.requests.filter(request => request.method === "POST" && request.path === "/api/connected-folders/lab/conversations").length;
+  const panelToggle = view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!;
+  await view.dom.act(() => view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Action"]')!.click());
+  await view.dom.act(() => view.menuItem("Organize").click());
+  await view.dom.waitFor(() => starts() === 1);
+
+  await view.dom.act(() => panelToggle.click());
+  assert.equal(view.container.querySelector("aside.fm-panel"), null);
+  await view.dom.act(() => panelToggle.click());
+  assert.ok(view.container.querySelector(".fm-panel.is-chat"));
+  await view.dom.act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.equal(starts(), 1);
+});
+
 test("a Connected Folder's right-click menu offers the same, names a managed one's deletion, and Organize goes to that Connected Folder first", async (t) => {
   const view = await mountWindow(t);
   await view.dom.act(() => { view.sidebarItem("Garden").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 200 })); });
