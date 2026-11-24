@@ -146,7 +146,7 @@ async function deleteSettledConnectedFolderEntryWithRecovery(
 
 /**
  * One delete under a restore point already taken: erased when History kept a
- * copy of all of it, else moved whole into Recently deleted with the files
+ * copy of all of it, else moved whole into Recently Deleted with the files
  * History could not keep. One row and each row of a several-row delete run it.
  */
 export async function applyConnectedFolderDelete(
@@ -189,7 +189,7 @@ export async function applyConnectedFolderDelete(
     }
     throw new AmpleFileCliError(
       "failure",
-      `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error).replace(/\.$/u, "")}. Nothing was deleted.`,
+      `AmpleFile could not move ${entry.path} to Recently Deleted: ${errorMessage(error).replace(/\.$/u, "")}. Nothing was deleted.`,
       { cause: error },
     );
   }
@@ -215,7 +215,7 @@ export interface AmpleFileBatchDeleteResult {
  * Several rows deleted under one History restore point. Each row
  * keeps what one delete has: the busy refusal and the shared active-work
  * reservation held through every effect, the same path checks, its own
- * receipt, and History or Recently deleted for whatever History cannot keep.
+ * receipt, and History or Recently Deleted for whatever History cannot keep.
  *
  * Every row is checked before anything is deleted. If a row still fails
  * partway, the rows already deleted stay deleted, the rest are left alone, and

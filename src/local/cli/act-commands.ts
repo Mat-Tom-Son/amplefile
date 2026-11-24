@@ -167,7 +167,7 @@ export interface AmpleFileCliActParsedCommand {
   source?: string;
   /** An Automation id for `automations …`. */
   automation?: string;
-  /** Recently deleted item id for recently-deleted.restore. */
+  /** Recently Deleted item id for recently-deleted.restore. */
   entry?: string;
   /** Result-envelope summary for chat.report (docs/collaboration-contract.md). */
   summary?: string;
@@ -1341,7 +1341,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    // Recently deleted sits above Connected Folders (docs/act-ledger.md):
+    // Recently Deleted sits above Connected Folders (docs/act-ledger.md):
     // each item names the Connected Folder it came from, so neither verb takes
     // --connected-folder.
     case "recently-deleted list":
@@ -2499,9 +2499,9 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         .join("; ");
       const more = uncovered.length > 5 ? `; and ${uncovered.length - 5} more` : "";
       return `Deleted ${kindLabel} ${terminalText(record.path)} in ${connectedFolderLabel}.\n`
-        + `It is in Recently deleted until ${terminalText(recovery.restoreBy)} because History could not keep a copy of `
+        + `It is in Recently Deleted until ${terminalText(recovery.restoreBy)} because History could not keep a copy of `
         + `${uncovered.length} file${uncovered.length === 1 ? "" : "s"}: ${named}${more}.\n`
-        + `Put it back with 'recently-deleted restore --entry ${terminalText(recovery.entryId)}', or in Settings → Recently deleted.\n`;
+        + `Put it back with 'recently-deleted restore --entry ${terminalText(recovery.entryId)}', or in Settings → Recently Deleted.\n`;
     }
     case "files.mkdir":
       return `Created folder ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
@@ -2570,7 +2570,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       const cleanup = record.cleanupPending === true ? " Final cleanup completes at the next start." : "";
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
       if (!recentlyDeleted) return `Deleted the managed folder of ${connectedFolderLabel}.${cleanup}\n`;
-      return `Deleted ${connectedFolderLabel}. Its folder is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)}; `
+      return `Deleted ${connectedFolderLabel}. Its folder is in Recently Deleted until ${terminalText(recentlyDeleted.restoreBy)}; `
         + `put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.${cleanup}\n`;
     }
     case "tools.import-skill":
@@ -2607,7 +2607,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         held?: unknown;
       }>;
       const days = terminalText(record.retentionDays);
-      if (!entries.length) return `Nothing in Recently deleted (items are kept ${days} days).\n`;
+      if (!entries.length) return `Nothing in Recently Deleted (items are kept ${days} days).\n`;
       const lines = entries.slice(0, 50).map((entry) => {
         const where = entry.kind === "skill" && entry.scope === "everywhere"
           ? "from Everywhere"
@@ -2626,7 +2626,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       const damaged = Number(record.damagedCount) > 0
         ? `\n${terminalText(record.damagedCount)} item(s) could not be read; they are left alone.`
         : "";
-      return `${entries.length} item(s) in Recently deleted (kept ${days} days):\n${lines.join("\n")}${more}${damaged}\n`;
+      return `${entries.length} item(s) in Recently Deleted (kept ${days} days):\n${lines.join("\n")}${more}${damaged}\n`;
     }
     case "recently-deleted.restore": {
       const restored = (record.restored ?? {}) as {
@@ -2829,7 +2829,7 @@ function skillNameList(names: unknown): string {
   return Array.isArray(names) ? names.map((name) => terminalText(name)).join(", ") : terminalText(names);
 }
 
-/** Person-facing names for what is waiting in Recently deleted. */
+/** Person-facing names for what is waiting in Recently Deleted. */
 function recentlyDeletedKindLabel(kind: unknown): string {
   switch (kind) {
     case "file": return "file";
@@ -2868,7 +2868,7 @@ const actSafetyCheckpointCommands: ReadonlySet<AmpleFileCliActCommandName> = new
   "files.move",
   "files.rename",
   "files.delete",
-  // Restoring from Recently deleted is additive, and the restore point it
+  // Restoring from Recently Deleted is additive, and the restore point it
   // records is what undoes it.
   "recently-deleted.restore",
 ]);
@@ -3186,7 +3186,7 @@ function actUndoRef(
     }
     case "files.delete":
       // A delete History could not fully cover is undone by putting the
-      // Recently deleted item back, not by the partial restore point.
+      // Recently Deleted item back, not by the partial restore point.
       if (record.recovery?.kind === "recently-deleted" && typeof record.recovery.entryId === "string") {
         return { kind: "recently-deleted-entry", value: record.recovery.entryId };
       }

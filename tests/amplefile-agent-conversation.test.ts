@@ -93,16 +93,16 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /agent overview --json/);
     // Receipts, not gates (docs/act-ledger.md): every verb
     // runs on the first call and returns a receipt, destruction is reversible
-    // through History or Recently deleted, limits are named rather than
+    // through History or Recently Deleted, limits are named rather than
     // hidden, needs-you is a question, and the setup surfaces have no verb.
     assert.match(ampleFileAgentContext, /## Receipts, not gates/);
     assert.match(ampleFileAgentContext, /Every verb runs on the first call and returns a receipt\./);
     assert.match(ampleFileAgentContext, /Every destruction is reversible\./);
-    assert.match(ampleFileAgentContext, /moves into Recently deleted/);
+    assert.match(ampleFileAgentContext, /moves into Recently Deleted/);
     assert.match(ampleFileAgentContext, /recently-deleted list --json/);
     assert.match(ampleFileAgentContext, /recently-deleted restore --entry <id>/);
     assert.match(ampleFileAgentContext, /30 days by default/);
-    assert.match(ampleFileAgentContext, /no verb empties Recently deleted early/);
+    assert.match(ampleFileAgentContext, /no verb empties Recently Deleted early/);
     assert.doesNotMatch(ampleFileAgentContext, /Limits are defaults, not gates\./);
     assert.match(ampleFileAgentContext, /Needs you means a question\./);
     assert.match(ampleFileAgentContext, /Setup stays with the person\./);
@@ -110,7 +110,7 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     // Reversible destruction reaches the file and Connected Folder verbs themselves.
     assert.match(ampleFileAgentContext, /Deletion refuses until the affected Connected Folder's work has settled/);
     assert.match(ampleFileAgentContext, /Never bypass that refusal with raw tools/);
-    assert.match(ampleFileAgentContext, /moves its folder into Recently deleted/);
+    assert.match(ampleFileAgentContext, /moves its folder into Recently Deleted/);
     // The instructions cite the help topics.
     assert.match(ampleFileAgentContext, /amplefile help <family>/);
     assert.match(ampleFileAgentContext, /help recently-deleted/);
@@ -152,10 +152,15 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     // truncation disclosed, seen markers untouched, never self-scheduled.
     assert.match(ampleFileAgentContext, /never present a truncated section as complete/);
     assert.match(ampleFileAgentContext, /narration never advances a marker/);
-    // Seen markers are per-surface — the popover and the main window — and
+    // Seen markers are per-surface — the popover and the file manager windows — and
     // narration advances neither of them.
-    assert.match(ampleFileAgentContext, /the popover and the main window separately/);
-    assert.match(ampleFileAgentContext, /not the popover's, not the main window's\./);
+    assert.match(ampleFileAgentContext, /the popover and the file manager windows \(which share one marker\) separately/);
+    // What the AmpleFile Agent is told about the window: several windows, plain folders without verbs, and the Trash apart from Recently Deleted.
+    assert.match(ampleFileAgentContext, /a person may have several windows open/);
+    assert.match(ampleFileAgentContext, /has none of them/);
+    assert.match(ampleFileAgentContext, /no `amplefile` verb lists it/);
+    assert.doesNotMatch(ampleFileAgentContext, /covers nearly everything/);
+    assert.match(ampleFileAgentContext, /not the popover's, not the windows'\./);
     assert.doesNotMatch(ampleFileAgentContext, /remote:<grantId>/);
     assert.match(ampleFileAgentContext, /Narration is on demand only\./);
     // Needs-you is a question list, never work waiting to be let through.
@@ -196,7 +201,7 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /Read each receipt before reporting/);
     assert.match(ampleFileAgentContext, /never call a request done while any child is running, waiting, failed, lost, or stopped/);
     assert.match(ampleFileAgentContext, /When a child asked a question, quote the question/);
-    assert.match(ampleFileAgentContext, /say whether History or Recently deleted holds it/);
+    assert.match(ampleFileAgentContext, /say whether History or Recently Deleted holds it/);
     assert.match(ampleFileAgentContext, /Account for every attached item by name/);
     assert.match(ampleFileAgentContext, /record a question with `agent ask`/);
     // The AmpleFile Agent is never taught a gate vocabulary (docs/act-ledger.md
