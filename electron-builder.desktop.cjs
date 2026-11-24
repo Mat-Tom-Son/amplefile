@@ -1,6 +1,7 @@
 const path = require("node:path");
 const identity = require("./src/shared/product-identity.json");
 const { resolveMacReleaseFeed } = require("./scripts/mac-release-feed.cjs");
+const { RPM_RELEASE_VARIABLE, linuxRpmEnrolment, linuxRpmRelease, rpmArtifactName } = require("./scripts/linux-package-repository.cjs");
 
 const root = __dirname;
 const macReleaseBuild = process.env.AMPLEFILE_MAC_RELEASE_BUILD === "1";
@@ -16,6 +17,19 @@ const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out
 const linuxIconSet = path.join(root, "out", "generated-assets", "linux-icons");
 // fpm source=destination mapping for the scalable hicolor icon.
 const scalableIconMapping = `${path.join(linuxIconSet, "scalable", `${identity.packageName}.svg`)}=/usr/share/icons/hicolor/scalable/apps/${identity.packageName}.svg`;
+// The RPM release: 1, or N for the Nth build of one version (tag
+// linux-test-VERSION-N). The DEB and AppImage do not carry it.
+const rpmRelease = linuxRpmRelease(process.env[RPM_RELEASE_VARIABLE]);
+// With the public key committed, the RPM enrols the computer in the Fedora
+// package repository (scripts/linux-package-repository.cjs): it installs the
+// dnf entry, as a config file an upgrade keeps, and the key the entry checks.
+// The build script writes the entry; without the key there is neither.
+const rpmEnrolment = linuxRpmEnrolment(root, identity);
+const rpmEnrolmentOptions = rpmEnrolment.enrolled ? ["--config-files", rpmEnrolment.repository.repositoryFile] : [];
+const rpmEnrolmentFiles = rpmEnrolment.enrolled ? [
+  `${path.join(root, "out", "generated-linux-assets", "rpm", path.basename(rpmEnrolment.repository.repositoryFile))}=${rpmEnrolment.repository.repositoryFile}`,
+  `${rpmEnrolment.keyPath}=${rpmEnrolment.repository.publicKeyFile}`,
+] : [];
 
 module.exports = {
   appId: unsignedMacBuild ? identity.macSmokeAppId : identity.productionAppId,
@@ -121,13 +135,14 @@ module.exports = {
     fpm: [scalableIconMapping],
   },
   rpm: {
+    artifactName: rpmArtifactName(identity, "${version}", rpmRelease),
     afterInstall: "out/generated-linux-assets/after-install.sh",
     afterRemove: "out/generated-linux-assets/after-remove.sh",
     depends: ["glibc >= 2.39", "gtk3", "libnotify", "nss", "libXScrnSaver", "libXtst", "xdg-utils", "glib2", "at-spi2-core", "libsecret", "libuuid", "mesa-libgbm", "alsa-lib", "expect",
       "libei >= 1.2", "libxkbcommon", "gstreamer1", "gstreamer1-plugins-base", "pipewire-gstreamer", "xdg-desktop-portal"],
     // Electron Builder has no RPM recommends option; fpm writes the weak
     // dependency into the spec, matching the DEB's keyring recommendation.
-    fpm: ["--rpm-tag", "Recommends: gnome-keyring", scalableIconMapping],
+    fpm: ["--rpm-tag", "Recommends: gnome-keyring", "--iteration", rpmRelease, ...rpmEnrolmentOptions, scalableIconMapping, ...rpmEnrolmentFiles],
   },
   mac: {
     extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }],

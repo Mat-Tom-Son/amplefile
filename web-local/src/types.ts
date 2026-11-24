@@ -540,6 +540,8 @@ export interface DesktopUpdateStatus {
   checkedAt: string | null;
   message: string;
   error: string | null;
+  /** "system" when the computer's package manager installs updates: "ready" then means installed, waiting for a restart. */
+  updatesFrom?: "app" | "system";
 }
 export interface ShortcutRow { keys: string[]; action: string }
 export interface ShortcutGroup { title: string; rows: ShortcutRow[] }
