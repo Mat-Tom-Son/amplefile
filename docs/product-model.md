@@ -716,7 +716,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Al
   selection, and Chat), panel, Browser pane tabs, and size and place on the
   screen, and the Connected Folder it shows, which names the window in its
   title. The window's title, Open Recent, and **New Window** follow the tab
-  in front. Every window sees the same Connected
+  in front; while that tab shows a plain folder, the computer, the Trash, or
+  Recents, the window shows no Connected Folder and is titled AmpleFile. Every window sees the same Connected
   Folders, Standard Folders, drives, Trash, running Chats, running file
   operations, and Cut, so a change made in one (a rename, a new Connected
   Folder, a finished copy, items cut) shows in the others.
@@ -740,8 +741,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Al
   front window and each further one in a new window, as a system file
   manager does.
 - **Browser pages** belong to the window that opened them; a page a Worker
-  opens appears in the window showing that Worker's Connected Folder, else the
-  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+  opens appears in the window whose tab in front shows that Worker's Connected
+  Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
 - **Closing and quitting:** closing one of several windows closes only it.
   Closing the last window keeps AmpleFile and every accepted Chat turn,
   Automation, and file operation running; reopening AmpleFile (the Dock, the

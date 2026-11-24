@@ -1,6 +1,6 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
 import { finderOpenPaths } from "./finder-open-paths.js";
-import { FileManagerWindows, parseWindowLocation, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
+import { FileManagerWindows, parseWindowLocation, shownConnectedFolder, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
 import {
   cascadeBounds,
   parseWindowPlacements,
@@ -818,9 +818,10 @@ async function createFileManagerWindow(options: FileManagerWindowOptions = {}): 
   window.webContents.on("did-start-navigation", () => railTooltipOverlay.hide());
   window.webContents.on("render-process-gone", () => railTooltipOverlay.hide());
   window.webContents.on("page-title-updated", (event) => {
-    if ((process.platform !== "darwin" && process.platform !== "linux") || !fileManagerWindows.entry(window)?.connectedFolder) return;
+    const entry = fileManagerWindows.entry(window);
+    if ((process.platform !== "darwin" && process.platform !== "linux") || !entry?.connectedFolder) return;
     event.preventDefault();
-    applyNativeActiveConnectedFolderToWindow(fileManagerWindows.entry(window));
+    applyNativeActiveConnectedFolderToWindow(entry);
   });
   configureWindowStatePersistence(window, slot);
   const refreshDisplayBounds = () => {
@@ -1319,7 +1320,10 @@ function registerIpc(): void {
   // folder the renderer names (Open in New Window in its menus) or where this one is.
   onRendererMessage("amplefile:window:set-location", (event, value: unknown) => {
     const entry = fileManagerWindows.entry(senderWindow(event));
-    if (entry) entry.location = parseWindowLocation(value);
+    if (!entry) return;
+    entry.location = parseWindowLocation(value);
+    // The title names the Connected Folder the tab in front shows, and none for a plain folder.
+    applyNativeActiveConnectedFolderToWindow(entry);
   });
   ipcMain.handle("amplefile:window:new-window", async (event) => {
     assertTrustedMainRenderer(event);
@@ -2142,12 +2146,14 @@ function startItemDrag(sender: Electron.WebContents, items: string[]): boolean {
 }
 
 /**
- * The Connected Folder a window shows. Each window has its own, and it is
- * used for that window's title (and its represented folder on a Mac) and for
- * the Open Recent list, which records Connected Folders in the order any
- * window showed them. Nothing else reads it: the kernel resolves the CLI's
- * context from the caller's directory, and the AmpleFile Agent works above
- * every Connected Folder, so neither follows a window.
+ * The Connected Folder a window last showed. Each window has its own. The
+ * Open Recent list records Connected Folders in the order any window showed
+ * them; the window's title (and its represented folder on a Mac) and the
+ * window a Worker's browser page appears in follow `shownConnectedFolder`,
+ * which is none while the tab in front is a plain folder, Trash, or Recents.
+ * Nothing else reads it: the kernel resolves the CLI's context from the
+ * caller's directory, and the AmpleFile Agent works above every Connected
+ * Folder, so neither follows a window.
  */
 async function setWindowConnectedFolder(window: BrowserWindow | null, connectedFolderId: string | null): Promise<void> {
   const entry = fileManagerWindows.entry(window);
@@ -2343,8 +2349,9 @@ function applyNativeActiveConnectedFolderToWindow(entry: FileManagerWindowEntry<
   if ((process.platform !== "darwin" && process.platform !== "linux") || !entry || !window || window.isDestroyed()) return;
   // The window title names the Connected Folder shown, as on the Mac, so task
   // switchers and window lists (niri's included) tell windows apart.
-  if (process.platform === "darwin") window.setRepresentedFilename(entry.connectedFolder?.connectedFolderRoot ?? "");
-  window.setTitle(entry.connectedFolder?.name ?? productName);
+  const shown = shownConnectedFolder(entry);
+  if (process.platform === "darwin") window.setRepresentedFilename(shown?.connectedFolderRoot ?? "");
+  window.setTitle(shown?.name ?? productName);
 }
 
 /**

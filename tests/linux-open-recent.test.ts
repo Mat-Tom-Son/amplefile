@@ -72,7 +72,7 @@ test("the record lives in the app profile and is replaced atomically", async () 
 test("Linux records shown Connected Folders, titles the window like the Mac, and offers Open Recent", () => {
   assert.match(main, /if \(process\.platform === "darwin"\) app\.addRecentDocument\(connectedFolder\.connectedFolderRoot\);\s*if \(process\.platform === "linux"\) void updateRecentConnectedFolders\(\(ids\) => recordRecentConnectedFolder\(ids, connectedFolder\.id\)\);/);
   assert.match(main, /\.\.\.\(process\.platform === "linux" \? \[linuxOpenRecentMenuItem\(\)\] : \[\]\),/);
-  assert.match(main, /if \(process\.platform === "darwin"\) window\.setRepresentedFilename\([^;]*;\s*window\.setTitle\(entry\.connectedFolder\?\.name \?\? productName\);/);
+  assert.match(main, /const shown = shownConnectedFolder\(entry\);\s*if \(process\.platform === "darwin"\) window\.setRepresentedFilename\([^;]*;\s*window\.setTitle\(shown\?\.name \?\? productName\);/);
   // A recent entry opens only through the registered-folder path a launcher argument uses.
   assert.match(main, /async function openRecentConnectedFolder[\s\S]*?pendingOpenPaths\.push\(connectedFolder\.connectedFolderRoot\);\s*await drainPendingOpenPaths\(\);/);
 });

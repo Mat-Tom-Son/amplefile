@@ -21,7 +21,7 @@ const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vi
 const rawWindowSlot = Number(argumentValue("window-slot"));
 const windowSlot = Number.isInteger(rawWindowSlot) && rawWindowSlot >= 1 && rawWindowSlot <= 64 ? rawWindowSlot : 1;
 const windowFresh = argumentValue("window-fresh") === "1";
-type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null };
+type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null; view?: "trash" | "recents" };
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,

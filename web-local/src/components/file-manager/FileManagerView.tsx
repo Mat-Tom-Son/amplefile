@@ -210,7 +210,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const location = history.location;
   const setLocation = (next: FileManagerLocation) => setHistory((current) => ({ ...current, location: next }));
   // The desktop follows the tab in front: File → New Window opens at its folder, and the window's title and Open Recent name it.
-  useEffect(() => { if (!fixtureMode) reportWindowLocation(location); }, [fixtureMode, location.place.kind, location.place.id, location.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!fixtureMode) reportWindowLocation(location, activeTab.view); }, [fixtureMode, location.place.kind, location.place.id, location.path, activeTab.view]); // eslint-disable-line react-hooks/exhaustive-deps
   const place = location.place;
   const connectedFolder = place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === place.id) ?? null : null;
   const standardFolder = place.kind === "standard" ? standard.folders.find((item) => item.id === place.id) ?? null : null;

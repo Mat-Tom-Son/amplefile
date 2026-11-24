@@ -334,7 +334,7 @@ declare global {
         newWindow: () => Promise<boolean>;
         /** Open in New Window: another window at this place and folder, with `select` selected there. */
         openInNewWindow: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null }) => Promise<boolean>;
-        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null) => void;
+        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; view?: "trash" | "recents" } | null) => void;
       };
       menu: {
         /** What the menu bar reflects; a key left out keeps its value. */
