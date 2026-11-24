@@ -3,16 +3,70 @@ import test from "node:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxProvider, fauxAssistantMessage, fauxToolCall, type Usage } from "@earendil-works/pi-ai";
+import { fauxProvider, fauxAssistantMessage, fauxToolCall, type Message, type Usage } from "@earendil-works/pi-ai";
+import { stream as streamCodex } from "@earendil-works/pi-ai/api/openai-codex-responses";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { HostCredentialStore } from "../src/local/agent/auth-storage.js";
-import { piAuthInteraction, getPiSetupStatus, listPiModels } from "../src/local/agent/pi-runtime-config.js";
+import { ensurePiDefaultModel, piAuthInteraction, getPiSetupStatus, listPiModels } from "../src/local/agent/pi-runtime-config.js";
 import { createIncludedMcpSetup, includedNativeMcpOptions } from "../src/local/agent/included-mcp-setup.js";
 import { PiConversationClient, type PiChatEvent } from "../src/local/agent/pi-client.js";
 import { ModelContextInspector } from "../src/local/agent/model-context-inspector.js";
 import { createEncryptedMcpCredentialBackend } from "../desktop/src/pi-mcp-credentials.js";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { McpOAuthCredentialStore } from "@earendil-works/pi-coding-agent";
+
+test("ChatGPT sign-in offers GPT-6.2 and sends the selected starting reasoning effort", async t => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-codex-catalog-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture" } })).toString("base64url");
+  const token = `header.${claims}.fixture-signature`;
+  const credentials = FileCredentialStore.inMemory({
+    "openai-codex": { type: "oauth", access: token, refresh: "fixture", expires: Date.now() + 60_000 },
+  });
+  const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null });
+  const settingsManager = SettingsManager.inMemory();
+  const provider = { resolveRuntime: async () => ({ agentDir: root, credentials, modelRuntime, settingsManager }) };
+  t.mock.method(globalThis, "fetch", async (url: string | URL) => {
+    assert.equal(new URL(url).origin, "https://chatgpt.com");
+    const item = { type: "message", id: "msg_fixture", role: "assistant" };
+    const part = { type: "output_text", text: "Fixture reply" };
+    const events = [
+      { type: "response.output_item.added", item: { ...item, status: "in_progress", content: [] } },
+      { type: "response.content_part.added", part: { ...part, text: "" } },
+      { type: "response.output_text.delta", delta: part.text },
+      { type: "response.output_item.done", item: { ...item, status: "completed", content: [part] } },
+      { type: "response.completed", response: { id: "response-fixture", status: "completed" } },
+    ];
+    return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  });
+
+  const models = await listPiModels(root, provider);
+  assert.deepEqual(await ensurePiDefaultModel(root, "openai-codex", provider), { provider: "openai-codex", id: "gpt-6.2-sol" });
+  for (const [id, initialEffort] of [["gpt-6.2-sol", "high"], ["gpt-6.2-astra", "xhigh"]] as const) {
+    assert.ok(models.some(model => model.provider === "openai-codex" && model.id === id && model.configured && model.reasoning));
+    const model = modelRuntime.getModel("openai-codex", id);
+    assert.ok(model?.api === "openai-codex-responses");
+    const messages: Message[] = [];
+    for (const [currentEffort, expectedUpdates] of [
+      [initialEffort, []], [initialEffort, []], ["low", ["low"]], ["low", ["low"]],
+    ] as const) {
+      messages.push({ role: "user", content: "Fixture turn", timestamp: Date.now() });
+      let payload: { reasoning: { effort: string }; input: { type?: string; reasoning?: { effort: string } }[] } | undefined;
+      const reply = await streamCodex(model, normalizeContext({ systemPrompt: "Fixture prompt", messages }), {
+        apiKey: token, transport: "sse", reasoningEffort: currentEffort,
+        onPayload(body) { payload = body as typeof payload; },
+      }).result();
+      assert.equal(reply.stopReason, "stop");
+      assert.equal(reply.providerThinkingLevel, currentEffort);
+      assert.equal(payload?.reasoning.effort, initialEffort);
+      assert.deepEqual(payload?.input.filter(item => item.type === "configuration_update").map(item => item.reasoning?.effort), expectedUpdates);
+      messages.push(JSON.parse(JSON.stringify(reply)));
+    }
+  }
+});
 
 test("desktop MCP credentials keep native locking and never fall back to plaintext", async t => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-mcp-encrypted-"));

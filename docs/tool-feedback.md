@@ -24,7 +24,7 @@ handling, and continuation remain authoritative.
 
 ## Reuse before adding
 
-The installed Pi 1.1.0 provides these mechanisms:
+The installed Pi 1.6.0 provides these mechanisms:
 
 | Need | Existing mechanism | AmpleFile responsibility |
 |---|---|---|
@@ -301,7 +301,7 @@ refused.
 - [Pi Extensions](https://pi.dev/docs/latest/extensions): native tool results,
   result hooks, guidance, Skills integration and terminal rendering.
 - [Pi SDK](https://pi.dev/docs/latest/sdk): embedded sessions and native tools.
-- The installed Pi 1.1.0 `createReadTool`, `convertToLlm` and `ToolDefinition`
+- The installed Pi 1.6.0 `createReadTool`, `convertToLlm` and `ToolDefinition`
   exports; AmpleFile's [Pi client](../src/local/agent/pi-client.ts) constructs
   native sessions and projects their events into bounded UI activity.
 

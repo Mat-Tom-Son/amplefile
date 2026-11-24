@@ -72,7 +72,7 @@ function verifyPiDependencyNormalization() {
   const expectedVersions = new Map([
     ["brace-expansion", "5.0.12"],
     ["protobufjs", "7.6.5"],
-    ["undici", "8.12.3"],
+    ["undici", "8.12.4"],
   ]);
   for (const [name, expectedVersion] of expectedVersions) {
     try {

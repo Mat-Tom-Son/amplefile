@@ -1,0 +1,398 @@
+--- a/dist/auth/oauth/openai-chatgpt.js
++++ b/dist/auth/oauth/openai-chatgpt.js
+@@ -4,7 +4,7 @@
+  * This public-client flow uses no client secret and sends the resulting user
+  * access token directly to api.openai.com.
+  */
+-import { randomBytes } from "node:crypto";
++import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+ import { createServer } from "node:http";
+ import { oauthErrorHtml, oauthSuccessHtml } from "../../utils/oauth-page.js";
+ import { getProviderEnvValue } from "../../utils/provider-env.js";
+@@ -107,25 +107,65 @@
+         });
+     });
+ }
++async function readBoundedJson(response) {
++    const reader = response.body?.getReader();
++    if (!reader) throw new Error("OpenAI returned an empty response");
++    const chunks = [];
++    let bytes = 0;
++    try {
++        for (;;) {
++            const { done, value } = await reader.read();
++            if (done) break;
++            bytes += value.byteLength;
++            if (bytes > 256 * 1024) throw new Error("OpenAI response exceeded its size limit");
++            chunks.push(value);
++        }
++        const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
++        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("OpenAI returned an invalid object");
++        return data;
++    } catch {
++        throw new Error("OpenAI returned an invalid or oversized response");
++    } finally { await reader.cancel().catch(() => {}); }
++}
+ async function requestToken(body, signal) {
+     const response = await fetch(TOKEN_URL, {
+-        method: "POST",
+-        headers: {
+-            accept: "application/json",
+-            "content-type": "application/x-www-form-urlencoded",
+-        },
+-        body,
+-        signal,
++        method: "POST", redirect: "error",
++        headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
++        body, signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+     });
+     if (!response.ok) {
+-        const responseBody = await response.text().catch(() => "");
+-        throw new Error(`OpenAI OAuth token request failed (${response.status}): ${responseBody || response.statusText}`);
+-    }
+-    const data = await response.json();
+-    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+-        throw new Error("OpenAI OAuth token response must be an object");
+-    }
+-    return data;
++        await response.body?.cancel();
++        throw new Error("OpenAI OAuth token request failed (HTTP " + response.status + ")");
++    }
++    return readBoundedJson(response);
++}
++async function verifiedIdentity(idToken, access, clientId, signal, expectedNonce, expectedSubject) {
++    const fail = () => { throw new Error("OpenAI ID token could not be verified; reconnect ChatGPT"); };
++    try {
++        if (typeof idToken !== "string" || idToken.length > 128 * 1024) return fail();
++        const parts = idToken.split(".");
++        if (parts.length !== 3 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) return fail();
++        const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
++        const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
++        if (!header || header.alg !== "RS256" || typeof header.kid !== "string" || header.crit || !claims || typeof claims !== "object" || Array.isArray(claims)) return fail();
++        const response = await fetch("https://auth.openai.com/.well-known/jwks.json", {
++            headers: { accept: "application/json" }, redirect: "error",
++            signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
++        });
++        if (!response.ok) { await response.body?.cancel(); return fail(); }
++        const jwks = await readBoundedJson(response);
++        const key = Array.isArray(jwks.keys) && jwks.keys.find(key => key.kid === header.kid && key.kty === "RSA" && (!key.alg || key.alg === "RS256") && (!key.use || key.use === "sig") && (!key.key_ops || Array.isArray(key.key_ops) && key.key_ops.includes("verify")));
++        if (!key || !verify("RSA-SHA256", Buffer.from(parts[0] + "." + parts[1]), createPublicKey({ key, format: "jwk" }), Buffer.from(parts[2], "base64url"))) return fail();
++        const now = Date.now() / 1000;
++        const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
++        if (claims.iss !== "https://auth.openai.com" || !audience.includes(clientId) || audience.length > 1 && claims.azp !== clientId || claims.azp && claims.azp !== clientId) return fail();
++        if (typeof claims.sub !== "string" || !claims.sub || expectedSubject && claims.sub !== expectedSubject) return fail();
++        if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= now || claims.nbf !== undefined && (typeof claims.nbf !== "number" || !Number.isFinite(claims.nbf) || claims.nbf > now + 30) || claims.iat !== undefined && (typeof claims.iat !== "number" || !Number.isFinite(claims.iat) || claims.iat > now + 30)) return fail();
++        if (expectedNonce !== undefined && (!expectedNonce || claims.nonce !== expectedNonce)) return fail();
++        if (claims.at_hash !== undefined && claims.at_hash !== createHash("sha256").update(access).digest().subarray(0, 16).toString("base64url")) return fail();
++        const email = typeof claims.email === "string" && claims.email.length <= 320 && !/[\u0000-\u001f\u007f]/u.test(claims.email) ? claims.email.trim() || null : null;
++        return { issuer: claims.iss, subject: claims.sub, clientId, email, emailVerified: claims.email_verified === true, verifiedAt: new Date().toISOString() };
++    } catch { return fail(); }
+ }
+ function requireTokenString(value, field) {
+     if (typeof value !== "string" || value.trim().length === 0) {
+@@ -153,7 +193,7 @@
+         scopes,
+     };
+ }
+-async function exchangeAuthorizationCode(code, verifier, clientId, signal) {
++async function exchangeAuthorizationCode(code, verifier, clientId, nonce, signal) {
+     const token = await requestToken(new URLSearchParams({
+         grant_type: "authorization_code",
+         client_id: clientId,
+@@ -162,12 +202,9 @@
+         redirect_uri: REDIRECT_URI,
+         resource: RESOURCE,
+     }), signal);
+-    // Pi does not use the ID token to identify the user or read profile data.
+-    // Keep the presence check as part of the token-response contract.
+-    if (typeof token.id_token !== "string" || token.id_token.trim().length === 0) {
+-        throw new Error("OpenAI OAuth token response did not contain an ID token");
+-    }
+-    return credentialFromTokenResponse(token, clientId);
++    const credential = credentialFromTokenResponse(token, clientId);
++    const identity = await verifiedIdentity(token.id_token, credential.access, clientId, signal, nonce);
++    return { ...credential, idToken: token.id_token, identity };
+ }
+ async function refreshAccessToken(credential, signal) {
+     const clientId = credential.clientId;
+@@ -180,7 +217,20 @@
+         refresh_token: credential.refresh,
+         resource: RESOURCE,
+     }), signal);
+-    return credentialFromTokenResponse(token, clientId);
++    const next = credentialFromTokenResponse(token, clientId);
++    if (token.id_token !== undefined) {
++        try {
++            const identity = await verifiedIdentity(token.id_token, next.access, clientId, signal, undefined, credential.identity?.subject);
++            return { ...next, idToken: token.id_token, identity };
++        } catch {
++            // The provider has already rotated the refresh token. Never discard its
++            // replacement because an optional identity/JWKS read failed afterwards.
++            // Clear identity rather than presenting unverified or mismatched data.
++            return next;
++        }
++    }
++    // A refresh without an ID token must preserve the previously verified sign-in identity.
++    return { ...next, ...(credential.idToken ? { idToken: credential.idToken } : {}), ...(credential.identity ? { identity: credential.identity } : {}) };
+ }
+ /** OpenAI identifies each installation ("agent host") by a stable URI such as `urn:uuid:<uuid>`. */
+ function agentHostId(deviceId) {
+@@ -232,7 +282,7 @@
+     try {
+         const result = await Promise.race([callback.result, manualCode]);
+         interaction.notify({ type: "progress", message: "Exchanging authorization code for tokens..." });
+-        return await exchangeAuthorizationCode(result.code, verifier, result.clientId, interaction.signal);
++        return await exchangeAuthorizationCode(result.code, verifier, result.clientId, nonce, interaction.signal);
+     }
+     catch (error) {
+         if (interaction.signal.aborted)
+--- a/dist/api/azure-openai-responses.js
++++ b/dist/api/azure-openai-responses.js
+@@ -5,11 +5,11 @@
+ import { headersToRecord } from "../utils/headers.js";
+ import { getIdentityHeaders } from "../utils/identity.js";
+ import { retryProviderRequest } from "../utils/provider-retry.js";
+-import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../utils/transcript.js";
++import { getDeclaredTools, resolveTranscript } from "../utils/transcript.js";
+ import { resolveAzureConfig, resolveDeploymentName } from "./azure-openai-config.js";
+ import { createGrammarToolInputProperties } from "./constrained-sampling.js";
+ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+-import { convertResponsesMessages, convertResponsesTools, getResponsesToolSupport, processResponsesStream, } from "./openai-responses-shared.js";
++import { prepareResponsesPrompt, processResponsesStream } from "./openai-responses-shared.js";
+ import { buildBaseOptions, resolveSamplingParams } from "./simple-options.js";
+ const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure"]);
+ // OpenAI Responses rejects max_output_tokens below 16: https://github.com/earendil-works/pi/issues/6265
+@@ -127,12 +127,7 @@
+ function buildParams(model, context, options, deploymentName, grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(context.messages), model.compat?.supportsOpenAIGrammarTools ?? false)) {
+     const supportsAdditionalTools = model.compat?.supportsAdditionalTools ?? false;
+     const supportsToolSearch = model.compat?.supportsToolSearch ?? false;
+-    const transcriptTools = resolveTranscriptTools(context.messages, getResponsesToolSupport({
+-        supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+-        supportsAdditionalTools,
+-        supportsToolSearch,
+-    }));
+-    const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS, {
++    const { input, requestTools } = prepareResponsesPrompt(model, context, AZURE_TOOL_CALL_PROVIDERS, {
+         grammarToolInputProperties,
+         supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+         supportsAdditionalTools,
+@@ -144,7 +139,7 @@
+     });
+     const params = {
+         model: deploymentName,
+-        input: messages,
++        input,
+         stream: true,
+         prompt_cache_key: model.compat?.promptCacheKeyMode === "disabled" ? undefined : clampOpenAIPromptCacheKey(options?.sessionId),
+         store: false,
+@@ -155,12 +150,8 @@
+     if (options?.temperature !== undefined) {
+         params.temperature = options?.temperature;
+     }
+-    if (transcriptTools.requestTools.length > 0) {
+-        params.tools = convertResponsesTools(transcriptTools.requestTools, {
+-            supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+-            supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
+-        });
+-    }
++    if (requestTools.length > 0)
++        params.tools = requestTools;
+     if (options?.toolChoice !== undefined) {
+         params.tool_choice = options.toolChoice;
+     }
+--- a/dist/api/openai-codex-responses.js
++++ b/dist/api/openai-codex-responses.js
+@@ -7,11 +7,11 @@
+ import { headersToRecord } from "../utils/headers.js";
+ import { getIdentityHeaders } from "../utils/identity.js";
+ import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.js";
+-import { getDeclaredTools, normalizeContext, resolveTranscript, resolveTranscriptTools } from "../utils/transcript.js";
++import { getDeclaredTools, normalizeContext, resolveTranscript } from "../utils/transcript.js";
+ import { uuidv7 } from "../utils/uuid.js";
+ import { createGrammarToolInputProperties } from "./constrained-sampling.js";
+ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+-import { convertResponsesMessages, convertResponsesTools, getResponsesToolSupport, processResponsesStream, } from "./openai-responses-shared.js";
++import { convertResponsesMessages, prepareResponsesPrompt, processResponsesStream } from "./openai-responses-shared.js";
+ import { buildBaseOptions } from "./simple-options.js";
+ // ============================================================================
+ // Configuration
+@@ -31,8 +31,6 @@
+ const PREVIOUS_RESPONSE_NOT_FOUND_CODE = "previous_response_not_found";
+ // The Responses API rejects max_output_tokens below 16: https://github.com/earendil-works/pi/issues/6265
+ const MIN_OUTPUT_TOKENS = 16;
+-// Fixed reasoning.effort while configuration_update items carry the thinking level.
+-const CONFIGURATION_UPDATE_REQUEST_EFFORT = "medium";
+ const CODEX_RESPONSE_STATUSES = new Set([
+     "completed",
+     "incomplete",
+@@ -396,27 +394,24 @@
+     const supportsOpenAIGrammarTools = model.compat?.supportsOpenAIGrammarTools ?? false;
+     const supportsAdditionalTools = model.compat?.supportsAdditionalTools ?? false;
+     const supportsToolSearch = model.compat?.supportsToolSearch ?? false;
+-    const transcriptTools = resolveTranscriptTools(context.messages, getResponsesToolSupport({
+-        supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+-        supportsAdditionalTools,
+-        supportsToolSearch,
+-    }));
+-    // The system prompt goes into a leading developer item, not top-level `instructions`, as in Codex.
+-    // From GPT-6.2 on, the backend appends `instructions` after `input`, so every new turn changed the
+-    // prompt before the system prompt and it was never served from the prompt cache (#12273).
+-    const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
++    // Keep the system prompt in a leading developer item, not top-level instructions: GPT-6.2+
++    // appends instructions after input, preventing cache reuse across turns (#12273).
++    // On the Codex backend, medium + a high update can reason less than request-level high (#12361).
++    // Pin the initial effort instead. The public OpenAI Responses API was not implicated.
++    const { input, requestTools, requestEffortBaseline } = prepareResponsesPrompt(model, context, CODEX_TOOL_CALL_PROVIDERS, {
+         grammarToolInputProperties,
+         supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+         supportsAdditionalTools,
+         supportsToolSearch,
+         toolOptions: { strict: null, supportsStrictMode, supportsOpenAIGrammarTools },
+         configurationUpdateEffort,
++        effortBaseline: "initial",
+     });
+     const body = {
+         model: model.id,
+         store: false,
+         stream: true,
+-        input: messages,
++        input,
+         text: { verbosity: options?.textVerbosity || "low" },
+         include: ["reasoning.encrypted_content"],
+         prompt_cache_key: cacheSessionId,
+@@ -432,17 +427,10 @@
+     if (options?.serviceTier !== undefined) {
+         body.service_tier = options.serviceTier;
+     }
+-    if (transcriptTools.requestTools.length > 0) {
+-        body.tools = convertResponsesTools(transcriptTools.requestTools, {
+-            strict: null,
+-            supportsStrictMode,
+-            supportsOpenAIGrammarTools,
+-        });
+-    }
++    if (requestTools.length > 0)
++        body.tools = requestTools;
+     if (options?.reasoningEffort !== undefined) {
+-        const effort = configurationUpdateEffort === undefined
+-            ? resolveReasoningEffort(model, options.reasoningEffort)
+-            : CONFIGURATION_UPDATE_REQUEST_EFFORT;
++        const effort = requestEffortBaseline ?? resolveReasoningEffort(model, options.reasoningEffort);
+         if (effort !== null) {
+             body.reasoning = {
+                 effort,
+--- a/dist/api/openai-responses-shared.js
++++ b/dist/api/openai-responses-shared.js
+@@ -89,7 +89,16 @@
+ function renderToolRemovalNotice(names) {
+     return `The following tools are no longer available. Do not call them:\n${names.map((name) => `- ${name}`).join("\n")}`;
+ }
++/** Render input items for replay, as used by Codex WebSocket continuation. Use `prepareResponsesPrompt` to build a request. */
+ export function convertResponsesMessages(model, context, allowedToolCallProviders, options) {
++    return renderResponsesTranscript(model, context, allowedToolCallProviders, options).input;
++}
++/** Place transcript-derived declarations and effort changes consistently in input and top-level request fields. */
++export function prepareResponsesPrompt(model, context, allowedToolCallProviders, options) {
++    const { input, requestTools, requestEffortBaseline } = renderResponsesTranscript(model, context, allowedToolCallProviders, options);
++    return { input, requestTools: convertResponsesTools(requestTools, options?.toolOptions), requestEffortBaseline };
++}
++function renderResponsesTranscript(model, context, allowedToolCallProviders, options) {
+     const normalizedContext = resolveTranscript(context, options?.supportsMidConvoSystemMessages);
+     const messages = [];
+     const normalizeIdPart = (part) => {
+@@ -159,7 +168,18 @@
+             tools: convertResponsesTools(tools, { ...options?.toolOptions, toolSearchResult: true }),
+         });
+     };
++    let requestEffortBaseline;
++    let previousEffort;
+     const pushConfigurationUpdate = (effort) => {
++        if (options?.effortBaseline === "initial") {
++            if (previousEffort === effort)
++                return;
++            previousEffort = effort;
++            if (requestEffortBaseline === undefined) {
++                requestEffortBaseline = effort;
++                return;
++            }
++        }
+         messages.push({
+             type: "configuration_update",
+             reasoning: { effort: effort },
+@@ -327,7 +347,7 @@
+     }
+     if (options?.configurationUpdateEffort !== undefined)
+         pushConfigurationUpdate(options.configurationUpdateEffort);
+-    return messages;
++    return { input: messages, requestTools: transcriptTools.requestTools, requestEffortBaseline };
+ }
+ // =============================================================================
+ // Tool conversion
+--- a/dist/api/openai-responses-shared.d.ts
++++ b/dist/api/openai-responses-shared.d.ts
+@@ -49,6 +49,14 @@
+     supportsToolSearch?: boolean;
+ }): TranscriptToolSupport;
+ export declare function convertResponsesMessages<TApi extends Api>(model: Model<TApi>, context: TranscriptContext, allowedToolCallProviders: ReadonlySet<string>, options?: ConvertResponsesMessagesOptions): ResponseInput;
++/** Place transcript-derived declarations and effort changes consistently in input and top-level request fields. */
++export declare function prepareResponsesPrompt<TApi extends Api>(model: Model<TApi>, context: TranscriptContext, allowedToolCallProviders: ReadonlySet<string>, options?: ConvertResponsesMessagesOptions & {
++    effortBaseline?: "initial";
++}): {
++    input: ResponseInput;
++    requestTools: OpenAITool[];
++    requestEffortBaseline: string | undefined;
++};
+ export declare function convertResponsesTools(tools: readonly Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[];
+ export declare function processResponsesStream<TApi extends Api>(openaiStream: AsyncIterable<ResponseStreamEvent>, output: AssistantMessage, stream: AssistantMessageEventStream, model: Model<TApi>, options?: OpenAIResponsesStreamOptions): Promise<void>;
+ //# sourceMappingURL=openai-responses-shared.d.ts.map
+\ No newline at end of file
+--- a/dist/api/openai-responses.js
++++ b/dist/api/openai-responses.js
+@@ -6,11 +6,11 @@
+ import { getIdentityHeaders } from "../utils/identity.js";
+ import { getProviderEnvValue } from "../utils/provider-env.js";
+ import { retryProviderRequest } from "../utils/provider-retry.js";
+-import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../utils/transcript.js";
++import { getDeclaredTools, resolveTranscript } from "../utils/transcript.js";
+ import { createGrammarToolInputProperties } from "./constrained-sampling.js";
+ import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
+ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+-import { convertResponsesMessages, convertResponsesTools, getResponsesToolSupport, processResponsesStream, } from "./openai-responses-shared.js";
++import { prepareResponsesPrompt, processResponsesStream } from "./openai-responses-shared.js";
+ import { buildBaseOptions, resolveSamplingParams } from "./simple-options.js";
+ const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
+ // OpenAI Responses rejects max_output_tokens below 16: https://github.com/earendil-works/pi/issues/6265
+@@ -240,8 +240,7 @@
+     });
+ }
+ function buildParams(model, context, options, compat, grammarToolInputProperties, configurationUpdateEffort) {
+-    const transcriptTools = resolveTranscriptTools(context.messages, getResponsesToolSupport(compat));
+-    const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
++    const { input, requestTools } = prepareResponsesPrompt(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
+         grammarToolInputProperties,
+         supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+         supportsAdditionalTools: compat.supportsAdditionalTools,
+@@ -258,7 +257,7 @@
+     const omitUnsupportedFields = isChatGPTSignIn(model, options?.apiKey);
+     const params = {
+         model: model.id,
+-        input: messages,
++        input,
+         stream: true,
+         prompt_cache_key: sendPromptCacheKey ? clampOpenAIPromptCacheKey(options?.sessionId) : undefined,
+         prompt_cache_retention: omitUnsupportedFields ? undefined : getPromptCacheRetention(compat, cacheRetention),
+@@ -274,12 +273,8 @@
+     if (options?.serviceTier !== undefined) {
+         params.service_tier = options.serviceTier;
+     }
+-    if (transcriptTools.requestTools.length > 0) {
+-        params.tools = convertResponsesTools(transcriptTools.requestTools, {
+-            supportsStrictMode: compat.supportsStrictMode,
+-            supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+-        });
+-    }
++    if (requestTools.length > 0)
++        params.tools = requestTools;
+     if (options?.toolChoice !== undefined) {
+         params.tool_choice = options.toolChoice;
+     }
