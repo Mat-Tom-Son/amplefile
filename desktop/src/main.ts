@@ -609,6 +609,12 @@ async function startInteractiveApp(): Promise<void> {
     if (process.platform === "linux") void updateRecentConnectedFolders((ids) => ids);
     registerRendererProtocol();
     registerIpc();
+    // On Linux the update source makes no network call, so it starts before
+    // the first window: that window's first status read is then the real one,
+    // never the "not available" stand-in (an RPM from the package repository
+    // would otherwise say so until its status event arrives, if it arrives
+    // after the window subscribes).
+    if (process.platform === "linux") configureUpdater();
     await ensureWindow();
     configureUpdater();
     createTrayIfSupported();

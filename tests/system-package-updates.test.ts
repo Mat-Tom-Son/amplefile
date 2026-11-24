@@ -212,3 +212,11 @@ test("the indicator, About and the restart question name a system-installed upda
   assert.match(updateIndicatorFor(app)!.tooltip, /is ready\. AmpleFile asks, then quits and opens again to install it\./);
   assert.equal(updateRestartConfirm("install", app, { chats: [], ampleFileAgentWorking: false }, []).confirmLabel, "Update and Restart");
 });
+
+test("on Linux the update source starts before the first window reads its status", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
+  // Otherwise the window's first read is the "not available" stand-in, and
+  // the real status event can arrive before the window subscribes.
+  assert.match(main, /if \(process\.platform === "linux"\) configureUpdater\(\);\s*await ensureWindow\(\);\s*configureUpdater\(\);/);
+});
