@@ -26,6 +26,8 @@ export interface WindowMenuState {
   showHiddenFiles: boolean;
   /** The window shows the file manager, with its folder tabs: New Tab, Close Tab, and the tab items act on it. */
   folderTabsOpen: boolean;
+  /** On Linux, the current tab shows a folder that can be opened in a terminal. */
+  terminalFolderOpen?: boolean;
   /** View → Show Tab Bar: the window's folder tab strip shows even with one tab. */
   showTabBar: boolean;
 }
@@ -189,9 +191,11 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     if (!entry) return null;
     const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
     entry.menuState = {
+      ...entry.menuState,
       connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : entry.menuState.connectedFolderOpen,
       showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : entry.menuState.showHiddenFiles,
       folderTabsOpen: typeof record.folderTabsOpen === "boolean" ? record.folderTabsOpen : entry.menuState.folderTabsOpen,
+      ...(typeof record.terminalFolderOpen === "boolean" ? { terminalFolderOpen: record.terminalFolderOpen } : {}),
       showTabBar: typeof record.showTabBar === "boolean" ? record.showTabBar : entry.menuState.showTabBar,
     };
     return entry.menuState;

@@ -6,7 +6,7 @@ import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import type { ChatActivityStatus, ConnectedFolderSummary } from "../../types";
 import { closedSidebarParents, sidebarConnectedFolderRows } from "./file-manager-model";
 import { placeKey, type FileManagerLocation, type FileManagerPlace, type StandardFolderSummary } from "./file-manager-places";
-import type { DriveRow } from "./file-manager-drives";
+import type { DriveRow, MountableVolume } from "./file-manager-drives";
 import { SidebarDrives, SidebarTrashRow } from "./FileManagerSidebarPlaces";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
@@ -32,7 +32,7 @@ export interface SidebarDropHandlers {
  * (nested ones indented under their parent, behind a caret), and the drives,
  * with the update indicator at its foot.
  */
-export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, standardFolders, recentsOpen, trashOpen, atPlaceTop, isCurrent, folderStatuses, folderLook, drives, currentDrive, ejecting, drop, onOpenRecents, onOpenTrash, onAddStandardFolder, onOpenPlace, onStandardFolderMenu, onAddConnectedFolderMenu, onConnectedFolderMenu, onOpenDrive, onEjectDrive, isNewTabClick, onOpenInNewTab, foot }: {
+export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, standardFolders, recentsOpen, trashOpen, atPlaceTop, isCurrent, folderStatuses, folderLook, drives, currentDrive, ejecting, mountable, mounting, onMountDrive, drop, onOpenRecents, onOpenTrash, onAddStandardFolder, onOpenPlace, onStandardFolderMenu, onAddConnectedFolderMenu, onConnectedFolderMenu, onOpenDrive, onEjectDrive, isNewTabClick, onOpenInNewTab, foot }: {
   connectedFolders: readonly ConnectedFolderSummary[];
   /** The Connected Folder shown, whose parents are kept open so where you are is in view. */
   shownConnectedFolder: ConnectedFolderSummary | null;
@@ -47,6 +47,9 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
   drives: readonly DriveRow[];
   currentDrive: string | null;
   ejecting: string | null;
+  mountable: readonly MountableVolume[];
+  mounting: string | null;
+  onMountDrive: (volume: MountableVolume) => void;
   drop: SidebarDropHandlers;
   onOpenRecents: () => void;
   onOpenTrash: () => void;
@@ -168,7 +171,7 @@ export function FileManagerSidebar({ connectedFolders, shownConnectedFolder, sta
           </li>;
         })}
       </ul>
-      <SidebarDrives rows={drives} currentKey={currentDrive} ejecting={ejecting} onEject={onEjectDrive} openProps={(row) => newTabProps(row.location, () => onOpenDrive(row))} />
+      <SidebarDrives rows={drives} currentKey={currentDrive} ejecting={ejecting} onEject={onEjectDrive} mountable={mountable} mounting={mounting} onMount={onMountDrive} openProps={(row) => newTabProps(row.location, () => onOpenDrive(row))} />
     </div>
     {foot}
   </nav>;

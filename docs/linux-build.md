@@ -107,23 +107,33 @@ iCloud Drive is Mac-only. The parser reads data without evaluating shell code.
 See the [XDG user directories contract](https://wiki.freedesktop.org/www/Software/xdg-user-dirs/).
 
 The window speaks Linux: Ctrl instead of ⌘ in shortcuts and hints, "this
-computer" instead of "this Mac", **Show in File Manager**, and "your file
-manager" where the Mac app names Finder. **View → Show Hidden Files** has
+computer" instead of "this Mac", and "your file manager" where the Mac app
+names Finder. **View → Show Hidden Files** has
 GNOME Files' key, Ctrl+H; on Linux it shows names starting with a period
 (GNOME's `~` backups and `.hidden` lists are always shown). The window owns
 the key, so it works in the browser preview too, and the menu shows it with
-a check mark. Right-clicking an item opens the window's own menu with the
-same items as the Mac's native one (Copy, Cut, Duplicate, Compress, Extract
-for an archive, Paste Here, Rename, Move to Trash or Delete). A link's menu
-adds Open (not for a broken link), **Show Original**, **Show in File
-Manager**, and **Copy Link Path**, and its other items act on the link
-itself. Dragging items out hands the desktop every selected file, folder,
+a check mark. The item menu offers Copy, Cut, Duplicate, Compress, Extract
+for an archive, Paste Here, Rename, Move to Trash or Delete. A link's menu
+adds Open for a working link, **Show Original**, and **Copy Link Path**,
+and its other items act on the link itself. Dragging items out hands the desktop every selected file, folder,
 and link at once. Deleting in a Standard Folder or any other folder moves
 items to the desktop's Trash (a link goes there as itself); in a Connected
 Folder, History brings them back, and a link, which History keeps no copy
 of, waits in Recently Deleted. An item a Replace takes the place of in a
 plain folder also goes to the desktop's Trash, through Electron's
 `shell.trashItem`.
+
+**Open Terminal Here** is in **File**, the folder background menu, and a
+folder's own menu, including a Standard Folder or Connected Folder in the
+sidebar. It uses the desktop's `xdg-terminal-exec` selection, then the
+command and optional quoted arguments in `$TERMINAL`, then the first
+installed terminal it recognizes. The host launches the terminal directly
+with the chosen folder as its working directory.
+
+**Info** reads a selected item's Created date when the filesystem supplies
+one, its Permissions as symbolic and octal mode, and its Owner and Group.
+When an account name cannot be resolved, Info shows its numeric id. For a
+symbolic link these details describe the link itself.
 
 The sidebar's **Trash** is the [freedesktop.org Trash](https://specifications.freedesktop.org/trash-spec/latest/):
 the home Trash in `$XDG_DATA_HOME/Trash` (`~/.local/share/Trash` by default)
@@ -133,10 +143,14 @@ and the reverse. Put Back returns an item to the path its `.trashinfo`
 records. Empty Trash empties all of them, after the window asks, and shows
 its progress with Stop in the operations area, as Delete Immediately does.
 
-**Drives** lists what is mounted for the person: the startup disk is the
-**File System** row, then drives under `/run/media`, `/media`, `/mnt`, and
-the like, named by their label. The host watches the mount table, so a drive
-plugged in or ejected elsewhere appears or goes on its own. Eject uses
+**Drives** lists the startup disk as **File System**, then mounted drives
+under `/run/media`, `/media`, `/mnt`, and the like. Unmounted filesystems on
+removable or hot-pluggable drives, including USB sticks, also appear, named
+by their label when available. Click one to mount it through `udisksctl` and
+open its folder. The host refreshes its `lsblk` inventory on block-device
+events from `udevadm monitor` and mount changes from `findmnt --poll`. If a
+monitor is unavailable, directory watches and a slow check cover its events.
+Mounting covers filesystems UDisks can mount without prompting. Eject uses
 `gio mount -e`, or `udisksctl` when gio is not there; with neither installed
 the window says so. The space shown in the path bar is the drive's free space
 as `statfs` reports it to the person. With no Automations yet, Settings → Automations

@@ -93,7 +93,7 @@ import { TintedFolder } from "./file-manager-folder";
 import { useFolderAutomations } from "../../hooks/useFolderAutomations";
 import { useCalendarDay } from "../../hooks/useCalendarDay";
 // Drives, the Trash, thumbnails, folder sizes, plain-folder search, and the window with no Connected Folder.
-import { currentDriveKey, driveRows, ejectMessage, locationIsOnDrive, statusWithSpace, type DriveRow } from "./file-manager-drives";
+import { currentDriveKey, driveLocation, driveRows, ejectMessage, locationIsOnDrive, statusWithSpace, type DriveRow, type MountableVolume } from "./file-manager-drives";
 import { useDrives, useVolumeSpace } from "./useDrives";
 import { TrashView } from "./TrashView";
 import { type TrashItem } from "./file-manager-trash";
@@ -348,6 +348,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // Mounted drives, kept current by the host's events, and the one being ejected.
   const drives = useDrives(fixtureMode);
   const [ejecting, setEjecting] = useState<string | null>(null);
+  const [mounting, setMounting] = useState<string | null>(null);
   // The window's key handler is installed once; it reaches the current undo through this.
   const undoFileChangeRef = useRef<(redo: boolean) => Promise<void>>(async () => undefined);
   // Copies, moves, Compresses, and Extracts running now, with their progress and Stop; and the name-clash question.
@@ -575,6 +576,13 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // A Standard Folder or the computer place searches names and text below it through the host's folder search.
   const plainSearch = place.kind === "standard" && searchScope === "here";
   const searchMode = searching && !trashOpen && (searchScope === "all" || place.kind === "connected-folder" || plainSearch);
+  const terminalFolderOpen = activeTab.view === "folder" && !fixtureMode;
+  useEffect(() => {
+    const desktop = window.ampleFileDesktop;
+    if (!desktop?.openTerminal) return;
+    desktop.menu?.setState({ terminalFolderOpen });
+    return () => desktop.menu?.setState({ terminalFolderOpen: false });
+  }, [terminalFolderOpen]);
 
   // ---- The window's parts (their own files) ----
   const { anchorRef, select, clickEntry, bandRef, startBand, bandJustEnded } = useFileSelection({
@@ -601,7 +609,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const menus = useFileManagerMenus({
     mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, onError,
     actions: {
-      openEntry, openLocal, showOriginal, showPackageContents, copyPaths,
+      openEntry, openLocal, openTerminal, showOriginal, showPackageContents, copyPaths,
       openEntryInNewTab: (entry) => openEntryInNewTab(entry),
       openPlaceInNewTab: (target) => openInNewTab({ place: target, path: "" }),
       openInNewWindow: !fixtureMode && window.ampleFileDesktop?.windows?.openInNewWindow ? (where) => openInNewWindow(where) : null,
@@ -882,6 +890,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
+  async function openTerminal(target: FileManagerLocation) {
+    try {
+      await window.ampleFileDesktop?.openTerminal?.({ place: target.place, path: target.path });
+    } catch (caught) {
+      onError(desktopErrorText(errorText(caught)));
+    }
+  }
+
   function quickLook(path: string | null) {
     // A link is opened, shown, or its path copied; nothing previews it.
     const target = path ? byPath.get(path) ?? null : null;
@@ -1008,6 +1024,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       setPanelChat((current) => current ? { ...current, open: false } : current);
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "refresh") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+    else if (command === "open-terminal" && terminalFolderOpen) void openTerminal(location);
     else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W): nothing behind a dialog. While the Browser pane has the keyboard it closes the browser tab in
@@ -1218,6 +1235,17 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** A drive in the sidebar opens in the computer place at its mount path. */
   function openDrive(row: DriveRow) {
     navigate(row.location);
+  }
+
+  async function mountDrive(volume: MountableVolume) {
+    setMounting(volume.id);
+    try {
+      navigate(driveLocation(await drives.mount(volume)));
+    } catch (caught) {
+      showToast({ text: errorText(caught), tone: "error" });
+    } finally {
+      setMounting(null);
+    }
   }
 
   /** Eject: the host's plain reason when the drive is busy or refused; leaving it first when it is the folder shown. */
@@ -1545,6 +1573,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       drives={sidebarDrives}
       currentDrive={currentDrive}
       ejecting={ejecting}
+      mountable={drives.mountable}
+      mounting={mounting}
+      onMountDrive={(volume) => void mountDrive(volume)}
       drop={{ over: drops.sidebarDrop, dragOver: drops.sidebarDragOver, dragLeave: () => drops.setSidebarDrop(null), drop: (target, name, event) => void drops.sidebarDropInto(target, name, event) }}
       onOpenRecents={() => void openRecents()}
       onOpenTrash={openTrash}

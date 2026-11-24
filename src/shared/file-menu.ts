@@ -12,6 +12,7 @@ export type FileMenuCommand =
   | "open-in-new-tab"
   | "open-in-new-window"
   | "open-with"
+  | "open-terminal"
   | "show-package-contents"
   | "reveal"
   | "show-original"
@@ -65,6 +66,8 @@ export interface FileMenuCapabilities {
   newTab?: boolean;
   /** Open in New Window, for a folder where the desktop can open another window. */
   newWindow?: boolean;
+  /** Linux desktop: open the folder in an installed terminal. */
+  terminal?: boolean;
 }
 
 export interface FileMenuTarget {
@@ -103,7 +106,8 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
     if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" && !packaged ? "Open Folder" : "Open", command: "open" });
     if (request.capabilities.open && packaged) items.push(showContents);
     if (request.capabilities.original) items.push({ type: "item", label: "Show Original", command: "show-original" });
-    items.push(reveal, { type: "item", label: "Copy Link Path", command: "copy-path" });
+    if (platform !== "linux") items.push(reveal);
+    items.push({ type: "item", label: "Copy Link Path", command: "copy-path" });
     if (request.capabilities.organize && request.path) items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.path && (request.capabilities.rename || request.capabilities.delete)) {
       items.push({ type: "separator" });
@@ -123,10 +127,9 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (request.kind === "folder" && request.capabilities.newTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
   if (request.kind === "folder" && request.capabilities.newWindow) items.push({ type: "item", label: "Open in New Window", command: "open-in-new-window" });
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
-  items.push(
-    reveal,
-    { type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" },
-  );
+  if (platform === "linux" && request.kind === "folder" && !packaged && request.capabilities.terminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
+  if (platform !== "linux") items.push(reveal);
+  items.push({ type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" });
   if (request.capabilities.organize && request.path) {
     items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.kind === "file" && request.capabilities.extract) items.push({ type: "item", label: `Extract “${name}”`, command: "extract" });

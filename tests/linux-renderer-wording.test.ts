@@ -34,7 +34,7 @@ test("the computer and its file manager are named for the platform", () => {
   assert.equal(systemFileManagerName("darwin"), "Finder");
   assert.equal(systemFileManagerName("linux"), "your file manager");
   assert.equal(revealInFileManagerLabel("darwin"), "Show in Finder");
-  assert.equal(revealInFileManagerLabel("linux"), "Show in File Manager");
+  assert.equal(revealInFileManagerLabel("linux"), null);
   assert.equal(browserLoadErrorText({ code: -106, description: "ERR_INTERNET_DISCONNECTED" }, "darwin"), "This Mac isn’t connected to the internet.");
   assert.equal(browserLoadErrorText({ code: -106, description: "ERR_INTERNET_DISCONNECTED" }, "linux"), "This computer isn’t connected to the internet.");
 });
@@ -84,6 +84,6 @@ test("renderer strings that name the Mac go through the platform helpers", async
   assert.match(commandLine, /`Not found on this \$\{computer\}`/);
   assert.match(commandLine, /`\$\{name\} isn't set up on this \$\{computer\}\.`/);
   assert.doesNotMatch(commandLine, /this Mac/);
-  assert.match(browserPages, /actionLabel: revealInFileManagerLabel\(\)/);
+  assert.match(browserPages, /const revealLabel = revealInFileManagerLabel\(\)/);
   assert.doesNotMatch(shortcuts, /Finder can paste|in Finder\./);
 });
