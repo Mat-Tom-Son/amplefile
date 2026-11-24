@@ -14,8 +14,12 @@
 const { existsSync, readFileSync } = require("node:fs");
 const path = require("node:path");
 
-/** How a Linux prerelease tag names the version and, for a later build of it, the RPM release. */
-const LINUX_PRERELEASE_TAG = /^linux-test-(\d+\.\d+\.\d+)(?:-([2-9]|[1-9]\d+))?$/;
+/**
+ * How a Linux prerelease tag names the version and, for a later build of it,
+ * the RPM release: linux-X.Y.Z, or linux-X.Y.Z-N with N from 2. The earlier
+ * previews' linux-test-* tags stay as published; new ones never use them.
+ */
+const LINUX_PRERELEASE_TAG = /^linux-(\d+\.\d+\.\d+)(?:-([2-9]|[1-9]\d+))?$/;
 /** The environment variable the build reads the RPM release from. */
 const RPM_RELEASE_VARIABLE = "AMPLEFILE_LINUX_RPM_RELEASE";
 
@@ -86,10 +90,14 @@ function linuxRpmRelease(value) {
   return release;
 }
 
-/** `linux-test-0.1.8` is 0.1.8 release 1; `linux-test-0.1.8-2` is 0.1.8 release 2. */
+/** `linux-0.2.2` is 0.2.2 release 1; `linux-0.2.2-2` is 0.2.2 release 2. */
 function linuxPrereleaseTag(tag) {
+  const form = "linux-X.Y.Z, or linux-X.Y.Z-N (N from 2) for a later build of one version";
+  if (/^linux-test-/.test(text(tag))) {
+    throw new Error(`${JSON.stringify(tag)} has the earlier previews' linux-test- form, which new releases do not use. A Linux prerelease tag is ${form}.`);
+  }
   const match = LINUX_PRERELEASE_TAG.exec(text(tag));
-  if (!match) throw new Error(`A Linux prerelease tag is linux-test-X.Y.Z or linux-test-X.Y.Z-N (N from 2), not ${JSON.stringify(tag)}.`);
+  if (!match) throw new Error(`A Linux prerelease tag is ${form}, not ${JSON.stringify(tag)}.`);
   return Object.freeze({ tag: match[0], version: match[1], release: match[2] ?? "1" });
 }
 

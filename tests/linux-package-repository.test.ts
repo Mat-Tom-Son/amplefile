@@ -50,7 +50,7 @@ test("the package repository address lives once, in the product identity", () =>
   assert.equal(repository.repositoryFile, "/etc/yum.repos.d/amplefile.repo");
   assert.equal(repository.publicKeyFile, "/etc/pki/rpm-gpg/RPM-GPG-KEY-amplefile");
   assert.equal(repository.committedPublicKey, "desktop/linux/RPM-GPG-KEY-amplefile");
-  assert.equal(repository.releaseDownloadBase("linux-test-0.1.8-2"), "https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-test-0.1.8-2/");
+  assert.equal(repository.releaseDownloadBase("linux-0.1.8-2"), "https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-0.1.8-2/");
   assert.throws(() => repositoryLane.resolveLinuxPackageRepository({ ...identity, linuxPackageRepositoryUrl: "https://example.com/rpm/$basearch" }), /raw\.githubusercontent\.com/);
   assert.throws(() => repositoryLane.resolveLinuxPackageRepository({ ...identity, linuxPackageRepositoryUrl: "https://raw.githubusercontent.com/someone/else/branch/rpm/$basearch" }), /must live in Mat-Tom-Son\/amplefile/);
 });
@@ -75,10 +75,14 @@ test("the RPM release comes from the tag, defaults to 1, and is in the asset nam
   assert.equal(repositoryLane.linuxRpmRelease(""), "1");
   assert.equal(repositoryLane.linuxRpmRelease("2"), "2");
   for (const bad of ["0", "01", "-1", "2a", "1.1"]) assert.throws(() => repositoryLane.linuxRpmRelease(bad), /whole number/);
-  assert.deepEqual({ ...repositoryLane.linuxPrereleaseTag("linux-test-0.1.8") }, { tag: "linux-test-0.1.8", version: "0.1.8", release: "1" });
-  assert.deepEqual({ ...repositoryLane.linuxPrereleaseTag("linux-test-0.1.8-2") }, { tag: "linux-test-0.1.8-2", version: "0.1.8", release: "2" });
-  for (const bad of ["v0.1.8", "linux-test-0.1", "linux-test-0.1.8-1", "linux-test-0.1.8-x", "linux-test-0.1.8-0"]) {
-    assert.throws(() => repositoryLane.linuxPrereleaseTag(bad), /linux-test-X\.Y\.Z/);
+  assert.deepEqual({ ...repositoryLane.linuxPrereleaseTag("linux-0.1.8") }, { tag: "linux-0.1.8", version: "0.1.8", release: "1" });
+  assert.deepEqual({ ...repositoryLane.linuxPrereleaseTag("linux-0.1.8-2") }, { tag: "linux-0.1.8-2", version: "0.1.8", release: "2" });
+  for (const bad of ["v0.1.8", "linux-0.1", "linux-0.1.8-1", "linux-0.1.8-x", "linux-0.1.8-0", "linux-0.1.8-rc1"]) {
+    assert.throws(() => repositoryLane.linuxPrereleaseTag(bad), /A Linux prerelease tag is linux-X\.Y\.Z, or linux-X\.Y\.Z-N \(N from 2\)/);
+  }
+  // The earlier previews' tags stay published; a new build never takes that form.
+  for (const old of ["linux-test-0.2.1", "linux-test-0.1.8-2"]) {
+    assert.throws(() => repositoryLane.linuxPrereleaseTag(old), /has the earlier previews' linux-test- form, which new releases do not use\. A Linux prerelease tag is linux-X\.Y\.Z/);
   }
   assert.equal(repositoryLane.rpmArtifactName(identity, "0.1.8", "2"), "AmpleFile-0.1.8-2-linux-x86_64.rpm");
 });
@@ -161,7 +165,7 @@ const primaryXml = `<?xml version="1.0" encoding="UTF-8"?>
   <arch>x86_64</arch>
   <version epoch="0" ver="0.1.8" rel="2"/>
   <checksum type="sha256" pkgid="YES">${"a".repeat(64)}</checksum>
-  <location xml:base="https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-test-0.1.8-2/" href="AmpleFile-0.1.8-2-linux-x86_64.rpm"/>
+  <location xml:base="https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-0.1.8-2/" href="AmpleFile-0.1.8-2-linux-x86_64.rpm"/>
 </package>
 </metadata>`;
 
@@ -169,7 +173,7 @@ test("prepare refuses a build that is not newer than the one the branch lists", 
   const listed = primaryPackages(primaryXml);
   assert.deepEqual(listed, [{
     name: "amplefile-desktop", arch: "x86_64", epoch: "0", version: "0.1.8", release: "2", sha256: "a".repeat(64),
-    base: "https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-test-0.1.8-2/", href: "AmpleFile-0.1.8-2-linux-x86_64.rpm",
+    base: "https://github.com/Mat-Tom-Son/amplefile/releases/download/linux-0.1.8-2/", href: "AmpleFile-0.1.8-2-linux-x86_64.rpm",
   }]);
   const candidate = (version: string, release: string) => ({ name: "amplefile-desktop", epoch: "0", version, release });
   assert.throws(() => assertNewerThanListed(candidate("0.1.8", "2"), listed), /already lists amplefile-desktop 0\.1\.8-2; 0\.1\.8-2 is not newer/);
@@ -218,26 +222,27 @@ test("SHA256SUMS follows the signed RPM, and the branch README marks the branch 
   assert.equal(listedChecksum(withChecksum("", name, "4".repeat(64)), name), "4".repeat(64));
   assert.equal(listedChecksum(sums, "missing.rpm"), null);
   const repository = repositoryLane.resolveLinuxPackageRepository(identity);
-  const readme = branchReadme({ identity, repository, tag: "linux-test-0.1.8-2", rpm: { version: "0.1.8", release: "2", arch: "x86_64" }, sha256: "3".repeat(64), fingerprint: "A".repeat(40) });
+  const readme = branchReadme({ identity, repository, tag: "linux-0.1.8-2", rpm: { version: "0.1.8", release: "2", arch: "x86_64" }, sha256: "3".repeat(64), fingerprint: "A".repeat(40) });
   assert.match(readme, /^# AmpleFile Linux package repository\n\nThis branch is generated\. It is not AmpleFile's source code/);
   assert.match(readme, /lists only the newest build/);
-  assert.match(readme, /amplefile-desktop 0\.1\.8-2 \(x86_64\), from \[linux-test-0\.1\.8-2\]/);
+  assert.match(readme, /amplefile-desktop 0\.1\.8-2 \(x86_64\), from \[linux-0\.1\.8-2\]/);
   assert.match(readme, /The RPM itself is not on this branch/);
 });
 
 test("the publish step's arguments", () => {
-  const prepare = parseArguments(["prepare", "--tag", "linux-test-0.1.8-2", "--no-fetch", "--download-base", "http://127.0.0.1:8080/x/"]);
+  const prepare = parseArguments(["prepare", "--tag", "linux-0.1.8-2", "--no-fetch", "--download-base", "http://127.0.0.1:8080/x/"]);
   assert.equal(prepare.stage, "prepare");
-  assert.equal(prepare.tag, "linux-test-0.1.8-2");
+  assert.equal(prepare.tag, "linux-0.1.8-2");
   assert.equal(prepare.fetch, false);
   assert.equal(prepare.remote, "origin");
   assert.equal(prepare.downloadBase, "http://127.0.0.1:8080/x/");
   assert.equal(parseArguments(["check"]).tag, null);
   assert.throws(() => parseArguments(["sign"]), /needs --tag/);
-  assert.throws(() => parseArguments(["push", "--tag", "linux-test-0.1.8"]), /Usage/);
-  assert.throws(() => parseArguments(["sign", "--tag", "v0.1.8"]), /linux-test-X\.Y\.Z/);
-  assert.throws(() => parseArguments(["prepare", "--tag", "linux-test-0.1.8", "--download-base", "http://x"]), /ending in \//);
-  assert.throws(() => parseArguments(["prepare", "--tag", "linux-test-0.1.8", "--force"]), /Unknown option/);
+  assert.throws(() => parseArguments(["push", "--tag", "linux-0.1.8"]), /Usage/);
+  assert.throws(() => parseArguments(["sign", "--tag", "v0.1.8"]), /linux-X\.Y\.Z/);
+  assert.throws(() => parseArguments(["sign", "--tag", "linux-test-0.1.8"]), /earlier previews' linux-test- form/);
+  assert.throws(() => parseArguments(["prepare", "--tag", "linux-0.1.8", "--download-base", "http://x"]), /ending in \//);
+  assert.throws(() => parseArguments(["prepare", "--tag", "linux-0.1.8", "--force"]), /Unknown option/);
 });
 
 test("prepare refuses a stand-in download address unless it writes to a separate repository", async () => {

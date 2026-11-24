@@ -4,8 +4,8 @@
 // and pushes the prepared branch.
 //
 //   npm run desktop:linux:repository -- check
-//   npm run desktop:linux:repository -- sign --tag linux-test-X.Y.Z[-N]
-//   npm run desktop:linux:repository -- prepare --tag linux-test-X.Y.Z[-N]
+//   npm run desktop:linux:repository -- sign --tag linux-X.Y.Z[-N]
+//   npm run desktop:linux:repository -- prepare --tag linux-X.Y.Z[-N]
 //
 // Order, which this script enforces:
 //   1. sign     signs out/linux's RPM with the key whose public half is
@@ -135,7 +135,7 @@ export function primaryPackages(xml) {
 export function assertNewerThanListed(candidate, listed) {
   for (const item of listed.filter(entry => entry.name === candidate.name)) {
     if (rpmEvrCompare(candidate, item) <= 0) {
-      throw new Error(`The repository already lists ${item.name} ${item.version}-${item.release}; ${candidate.version}-${candidate.release} is not newer. Every published build needs a higher version or release (tag linux-test-VERSION-N for a later build of one version).`);
+      throw new Error(`The repository already lists ${item.name} ${item.version}-${item.release}; ${candidate.version}-${candidate.release} is not newer. Every published build needs a higher version or release (tag linux-VERSION-N for a later build of one version).`);
     }
   }
 }
@@ -561,7 +561,7 @@ export function parseArguments(argv) {
       options.downloadBase = base;
     } else throw new Error(`Unknown option ${flag}.`);
   }
-  if (stage !== "check" && !options.tag) throw new Error(`${stage} needs --tag linux-test-X.Y.Z[-N].`);
+  if (stage !== "check" && !options.tag) throw new Error(`${stage} needs --tag linux-X.Y.Z[-N].`);
   return options;
 }
 

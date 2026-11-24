@@ -18,7 +18,7 @@ const linuxIconSet = path.join(root, "out", "generated-assets", "linux-icons");
 // fpm source=destination mapping for the scalable hicolor icon.
 const scalableIconMapping = `${path.join(linuxIconSet, "scalable", `${identity.packageName}.svg`)}=/usr/share/icons/hicolor/scalable/apps/${identity.packageName}.svg`;
 // The RPM release: 1, or N for the Nth build of one version (tag
-// linux-test-VERSION-N). The DEB and AppImage do not carry it.
+// linux-VERSION-N). The DEB and AppImage do not carry it.
 const rpmRelease = linuxRpmRelease(process.env[RPM_RELEASE_VARIABLE]);
 // With the public key committed, the RPM enrols the computer in the Fedora
 // package repository (scripts/linux-package-repository.cjs): it installs the

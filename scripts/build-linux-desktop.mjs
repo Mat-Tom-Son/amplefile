@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const { RPM_RELEASE_VARIABLE, linuxRpmEnrolment, linuxRpmRelease, rpmArtifactName } = createRequire(import.meta.url)("./linux-package-repository.cjs");
 if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Build Linux x64 candidates on Linux x64.");
 const args = process.argv.slice(2);
-// --rpm-release N: the Nth build of this version (tag linux-test-VERSION-N).
+// --rpm-release N: the Nth build of this version (tag linux-VERSION-N).
 const releaseIndex = args.indexOf("--rpm-release");
 const rpmRelease = linuxRpmRelease(releaseIndex === -1 ? process.env[RPM_RELEASE_VARIABLE] : args[releaseIndex + 1]);
 const optionArguments = releaseIndex === -1 ? args : args.filter((_, index) => index !== releaseIndex && index !== releaseIndex + 1);

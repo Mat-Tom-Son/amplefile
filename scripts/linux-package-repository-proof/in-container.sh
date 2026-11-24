@@ -9,8 +9,8 @@ set -euo pipefail
 P=/proof
 S=$P/source
 : "${VERSION:?}" "${OWNER:?}" "${REPO:?}" "${BRANCH:?}" "${PACKAGE:?}" "${REPOSITORY_ID:?}" "${PRODUCT:?}"
-TAG_A=linux-test-$VERSION
-TAG_B=linux-test-$VERSION-2
+TAG_A=linux-$VERSION
+TAG_B=linux-$VERSION-2
 RPM_A=$P/build-1/$PRODUCT-$VERSION-1-linux-x86_64.rpm
 RPM_B=$P/build-2/$PRODUCT-$VERSION-2-linux-x86_64.rpm
 ENTRY=/etc/yum.repos.d/$REPOSITORY_ID.repo

@@ -2,7 +2,9 @@
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
 packages. [Linux test preview 0.2.1](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.2.1)
-uses a separate prerelease tag in the source repository. The public Mac release
+uses a separate prerelease tag in the source repository: earlier previews
+carry `linux-test-*` tags, and new ones `linux-VERSION`, or `linux-VERSION-N`
+for a later build of one version. The public Mac release
 and updater remain separate. On Fedora, an RPM built with the committed
 signing key enrols the computer in AmpleFile's signed dnf repository, so later
 previews arrive with the system's software updates
@@ -73,7 +75,7 @@ npm run desktop:make:linux
 `AmpleFile-VERSION-RELEASE-linux-x86_64.rpm`, `AmpleFile-VERSION-linux-x86_64.AppImage`,
 the unpacked application, `linux-build.json`, and `SHA256SUMS`. The RPM's
 release is 1 unless `npm run desktop:make:linux -- --rpm-release N` sets it for
-the Nth build of one version (tag `linux-test-VERSION-N`); only the RPM carries
+the Nth build of one version (tag `linux-VERSION-N`); only the RPM carries
 it, in the package and the file name. The build says whether the RPM enrols the
 computer in the package repository, which it does exactly when the public key
 is committed at `desktop/linux/RPM-GPG-KEY-amplefile`; without it the RPM is
@@ -605,11 +607,17 @@ pushes, tags, or edits a release:
 
 ### Publishing a Linux prerelease
 
-Publish only when asked. One ordered list, from a clean, pushed `linux-build`:
+Publish only when asked. One ordered list, from a clean, pushed `linux-build`.
+`TAG` is `linux-VERSION` (for example `linux-0.2.2`), or `linux-VERSION-N`
+(N from 2) for a later build of a version already published, which the RPM
+carries as release N; `npm run desktop:linux:repository` refuses anything
+else, including the earlier previews' `linux-test-*` form, whose tags and
+releases stay as they are. The owner bumps the version for the next build
+rather than publishing another build of the current one.
 
 1. Build: `node scripts/test-linux-native.mjs`, then
    `npm run desktop:make:linux` (add `-- --rpm-release N` for tag
-   `linux-test-VERSION-N`). Check that it says the RPM enrols the computer.
+   `linux-VERSION-N`). Check that it says the RPM enrols the computer.
 2. Sign: `npm run desktop:linux:repository -- sign --tag TAG`. From here on
    the signed RPM is the release's RPM; never upload the unsigned one.
 3. Tag: an annotated `TAG` on the build commit, pushed.
@@ -619,11 +627,29 @@ Publish only when asked. One ordered list, from a clean, pushed `linux-build`:
    `amplefile.linux-preview-source.v1`), and `SHA256SUMS` over all six, made
    after signing.
 5. Release: `gh release create TAG --verify-tag --prerelease --latest=false`
-   with the folder's files. The Mac release stays latest.
+   with the folder's files, published, not left as a draft. Title it as the
+   earlier ones are, naming Linux: "AmpleFile VERSION — Linux Preview: …".
+   Its notes give the install commands with the files' names, including the
+   RPM's `AmpleFile-VERSION-RELEASE-linux-x86_64.rpm`
+   (`sudo dnf install ./AmpleFile-0.2.2-1-linux-x86_64.rpm`). The Mac
+   release stays latest.
 6. Repository: `npm run desktop:linux:repository -- prepare --tag TAG`.
 7. Push the branch it prepared: `git push origin linux-package-repository`.
    Enrolled computers see the build on their next update check.
 8. Point the README and this page's preview link at the new prerelease.
+
+The release step is shaped by two readers. The website's Linux download
+button (`site/build.mjs`) asks GitHub for the source repository's recent
+releases and opens the page of the newest one that is a prerelease, is not a
+draft, and has a tag starting with `linux-`, which matches both the earlier
+`linux-test-*` tags and the new `linux-*` ones, so the site needs no change
+for the new form. It links to that release's page, not to a file, so the
+page's title and notes are what a visitor reads, and they must name Linux and
+give the install commands for the files listed there. And every installed
+Mac copy is offered whatever release is marked latest
+([macOS release](macos-release.md)), so a Linux release must stay a
+prerelease, never be marked latest, and never sit as a draft (a draft is
+skipped by the site, and the button would keep opening the previous preview).
 
 ### Package repository signing key
 
