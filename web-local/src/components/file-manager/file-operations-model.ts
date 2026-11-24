@@ -59,7 +59,7 @@ export interface ReplacedItem { path: string; recovery: "history" | "recently-de
 /** The transfer engine's answer to a copy, move, Duplicate, paste, Compress, or Extract, every optional part included. */
 export interface TransferAnswer {
   mode?: string;
-  /** Compress and Extract: the new archive or folder, or null when nothing was made. */
+  /** Compress and Extract: the new archive, or what Extract made (the archive's one item or a new folder), or null when nothing was made. */
   path?: string | null;
   written: string[];
   restorePoints: TransferRestorePoint[];
@@ -77,10 +77,15 @@ export interface TransferAnswer {
   conflicts?: TransferConflict[];
   // Paste through the desktop.
   nothing?: boolean;
+  /** The items were cut in a window of this app or copied in this one, and pasted by place. */
   fromHere?: boolean;
   count?: number;
   moved?: boolean;
   cut?: boolean;
+  /** Where the items pasted by place came from (a Cut in any window, or this window's Copy). */
+  from?: { place: FileManagerPlace; paths: string[] } | null;
+  /** What the paste carries, as the desktop planned it; the run after the conflicts check sends it back. */
+  plan?: string;
 }
 
 /** One operation the window started, as its operations area shows it. */

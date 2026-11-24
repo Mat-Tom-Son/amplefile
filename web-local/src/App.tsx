@@ -33,7 +33,7 @@ const fixtureRequested = new URLSearchParams(window.location.search).get("fixtur
 /** The Connected Folder this window shows, kept for this window (web-local/src/lib/window-storage.ts). */
 const activeConnectedFolderStorageKey = windowStorageKey("amplefile.connected-folder.active");
 
-type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "toggle-hidden-files" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "new-tab" | "next-tab" | "previous-tab" | "toggle-tab-bar";
+type DesktopActionCommand = "toggle-hidden-files" | "new-chat" | "refresh" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "new-tab" | "next-tab" | "previous-tab" | "toggle-tab-bar";
 /** A cross-cutting request handled by the open Connected Folder view. */
 type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string };
 
@@ -219,7 +219,7 @@ export function App() {
       else if (command === "open-settings") openSettings();
       else if (command === "open-about") openSettings("about");
       else if (command === "open-keyboard-shortcuts") openKeyboardShortcuts();
-      else if (command === "new-chat" || command === "reload-connected-folder-state" || command === "open-capabilities" || command === "open-skills" || command === "open-extensions" || command === "open-command-palette" || command === "close-tab" || command === "toggle-sidebar" || command === "toggle-agent-panel" || command === "toggle-hidden-files"
+      else if (command === "new-chat" || command === "refresh" || command === "open-capabilities" || command === "open-skills" || command === "open-extensions" || command === "open-command-palette" || command === "close-tab" || command === "toggle-hidden-files"
         || command === "new-tab" || command === "next-tab" || command === "previous-tab" || command === "toggle-tab-bar") {
         setDesktopAction({ id: Date.now(), command });
       }

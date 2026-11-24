@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { FileOperationCancelledError, untrackedFileOperation, type FileOperationControl } from "../src/local/file-operations.js";
+import { MountCalls } from "../src/local/volumes.js";
 import {
   deleteTrashItemsImmediately,
   emptySystemTrash,
@@ -473,4 +474,41 @@ test("macOS takes a drive's Trash only from real folders on that drive, never th
   const emptied = await emptySystemTrash(options);
   assert.deepEqual(emptied.removed.map((item) => item.name), ["clip.mov"]);
   assert.equal(await readFile(join(elsewhere, String(uid), "precious.txt"), "utf8"), "keep me", "nothing behind a link is touched");
+});
+
+test("macOS leaves out the Trash of a drive that is not answering, without asking it again, and of any more drives while two calls are out", async (t) => {
+  const box = await sandbox(t);
+  await mkdir(join(box.home, ".Trash"), { recursive: true });
+  await writeFile(join(box.home, ".Trash", "note.txt"), "1");
+  const drives = ["Backup", "Camera", "Spare"].map((name) => join(box.root, "Volumes", name));
+  for (const drive of drives) {
+    await mkdir(join(drive, ".Trashes", String(uid)), { recursive: true });
+    await writeFile(join(drive, ".Trashes", String(uid), `${drive.split("/").at(-1)!.toLowerCase()}.mov`), "1");
+  }
+  const [backup, camera, spare] = drives as [string, string, string];
+  const calls = new MountCalls({ limitMs: 40 });
+  const options: TrashOptions = { platform: "darwin", home: box.home, uid, macVolumeTops: drives, mountCalls: calls };
+  const names = async () => (await listSystemTrash(options)).items.map((item) => item.name);
+  assert.deepEqual(await names(), ["backup.mov", "camera.mov", "note.txt", "spare.mov"]);
+
+  // The drives list's call to Camera never returns: the guard marks the drive stalled.
+  let answer: (value: null) => void = () => undefined;
+  assert.equal(await calls.measure(camera, "file", () => new Promise((done) => { answer = done; })), null);
+  const began = Date.now();
+  assert.deepEqual(await names(), ["backup.mov", "note.txt", "spare.mov"], "the other drives and the home Trash are still read");
+  assert.ok(Date.now() - began < 4_000, "the Trash did not wait for the stalled drive");
+  const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.removed.map((item) => item.name).sort(), ["backup.mov", "note.txt", "spare.mov"]);
+  assert.ok(existsSync(join(camera, ".Trashes", String(uid), "camera.mov")), "a drive that is not answering keeps its Trash");
+
+  // A second drive stalls: with two file calls out, no third drive is asked.
+  await writeFile(join(spare, ".Trashes", String(uid), "spare.mov"), "1");
+  let secondAnswer: (value: null) => void = () => undefined;
+  assert.equal(await calls.measure(backup, "file", () => new Promise((done) => { secondAnswer = done; })), null);
+  assert.deepEqual(await names(), []);
+  // They answer at last, and the Trash reads every drive again.
+  answer(null);
+  secondAnswer(null);
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(await names(), ["camera.mov", "spare.mov"]);
 });

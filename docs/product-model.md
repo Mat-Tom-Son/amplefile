@@ -152,11 +152,23 @@ other surface.
   system, then every mounted drive the host lists, by name; hovering one
   shows its free and total space. Each opens in the computer place at its
   mount path, so it follows the other-folder rules. An ejectable drive has an
-  **Eject** button beside it; the host refuses while a file on it is in use
-  or a Connected Folder on it has unfinished work, and the window shows its
-  reason as it is. A drive coming or going updates the list on its own, and
-  ejecting the drive shown goes back to where the window opened. The host
-  reads `/Volumes` on this computer; nothing about a drive leaves it.
+  **Eject** button beside it. Ejecting a drive takes its whole disk, so
+  everything else mounted from that disk leaves with it, shown in the list or
+  not. While a Connected Folder on any of it has unfinished work, the host
+  refuses before anything changes, and its reason names the drive, the
+  Connected Folder, and the drive that Connected Folder is on. While a file
+  on the drive itself is in use, the Mac refuses and nothing changes. While a
+  file on another drive of the disk is in use, the Mac has already unmounted
+  the drive that was asked for when it refuses: the reason names the drives
+  the disk holds, and the list shows what is left. The window shows each
+  reason as it is. When the Mac cannot say which disk a drive is on, the host
+  treats it as sharing the disk rather than risk ejecting it under running
+  work. A drive coming or going updates the list on its own, and ejecting the
+  drive shown goes back to where the window opened. A drive that has stopped
+  answering (a share whose server has gone) stays in the list without its
+  space, and the host does not ask it again until it has answered. The host
+  reads this computer's own list of mounted drives; nothing about a drive
+  leaves it.
 - **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
   area: what was moved to the Trash from any app, this window's Standard
   Folders and other folders included, with Name, Original Location, Date
@@ -178,7 +190,9 @@ other surface.
   something to the Trash. Search filters it by name. On a Mac the list needs
   Full Disk Access and says so when it is missing; macOS keeps no record of
   where an item came from that AmpleFile can read, so Put Back there points
-  to Finder and the rest works.
+  to Finder and the rest works. A drive's Trash is read from a disk, never
+  from a network share, and a drive that is not answering is left out of the
+  list and of Empty Trash until it answers.
 - **Contents:** list and icon views, sortable columns (Name, Date Modified,
   Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
   Quick Look, Command-Down to open, Command-Up for the enclosing folder
@@ -186,7 +200,8 @@ other surface.
   Command-Delete, Return to rename, typing to jump to a name, and the
   Copy, Cut, Paste, and Duplicate keys under **Finder's file actions**).
   Double-click opens a folder here and a file in its default app; an
-  archive opens in its default app too, and **Extract** is in its menu. Dragging from empty
+  archive opens in its default app too, and **Extract** is in its menu; a
+  Mac package (see **Packages**) opens in its app. Dragging from empty
   space, or in the list from a row outside its icon and name, draws a
   selection rectangle that selects what it touches; Shift or Command adds
   to the selection, and the list scrolls while the pointer is near its top
@@ -280,21 +295,56 @@ other surface.
   Compress, and dragging it. A copied or moved link is made again as a link
   pointing where it did (a relative link is kept as written, so it can read
   as broken in its new folder); Compress stores it as a link, and Extract
-  makes a link again when it points inside the new folder. History keeps no
+  makes a link again when it points inside what Extract made. History keeps no
   copy of a link, so a link deleted in a Connected Folder waits in Recently
   Deleted, and History's restore point undoes its rename or move. Nothing
   is ever written through a link or into a linked folder: a link is never
   a folder a path goes through, so New Folder, Paste, a drop, or adding
   files into one is not offered, and the host refuses each. Attaching a
   link to a Chat is not offered.
+- **Packages:** on a Mac, a folder Finder shows as one item is one item
+  here too: an app (`.app`), a bundle or plug-in, an installer package
+  stored as a folder, a Photos, Music, or TV library, an iMovie, Final Cut
+  Pro, Logic Pro, or GarageBand project, a Keynote, Pages, or Numbers
+  document, an `.rtfd`, an Xcode project, workspace, or playground, a sparse
+  bundle, and the like (`src/shared/mac-packages.ts`; a `.framework` is a
+  plain folder, as in Finder). The host marks them, and links to them, in
+  every listing on macOS only. Double-click, ⌘↓, and Open open one in its
+  default app through the same path a file takes, so an app launches; a
+  link to one, as `/Applications/Safari.app` is, opens the app it points
+  to. That path asks macOS to open it as a Finder double-click does, so
+  Gatekeeper checks an app marked as downloaded, one Extract made from a
+  downloaded archive included, before it first runs. Its menu offers **Show Package Contents**, which goes inside, and no
+  New Folder, Paste, Open in New Tab, or Connect This Folder; a drop on it
+  lands in the folder shown. Its Kind says what it is (**Application**,
+  **Pages document**, **Photos library**). Copy, move, Compress, drag,
+  search, and Info's size treat it as the folder it is.
 - **Finder's file actions:** ⌘C copies the selection, also onto the system
   pasteboard so Finder can paste it; ⌘X cuts it:
-  the items stay where they are, drawn dimmed, until ⌘V moves them or the
-  clipboard holds something else. ⌘V pastes what was copied or cut here or
-  in Finder (the desktop process reads the pasteboard and pastes; the window
-  never reads the clipboard); ⌥⌘V moves what was copied; ⌘D duplicates. A
-  Mac's pasteboard has no Cut marker, so a Cut is this window's own. The Edit menu's
-  Cut, Copy, and Paste do the same while the folder list has the keyboard.
+  the items stay where they are, drawn dimmed in every window, until ⌘V in
+  any window moves them, under the same rules as a move by paste in the
+  window that cut them. ⌘V pastes what was copied or cut here, in another
+  window, or in Finder (the desktop process reads the pasteboard and pastes;
+  the window never reads the clipboard); ⌥⌘V moves what was copied; ⌘D
+  duplicates. A paste that asks about taken names first then carries
+  exactly what it asked about: if the pasteboard changed while the question
+  was open, the paste is refused and says to paste again. A Mac's
+  pasteboard has no Cut marker, so ⌘X puts the files there as Finder's Copy
+  does, and the desktop app remembers the Cut by exactly what it put there.
+  The Cut is forgotten, and no window draws it any more, once it is pasted;
+  once **Esc** cancels it (with nothing selected, in a folder that shows a
+  cut item); once any of its items is no longer where it was cut (renamed
+  or deleted since, or moved by a paste that failed or was stopped partway);
+  each of these leaves nothing to paste. On a Mac it is also forgotten once
+  the pasteboard holds something else: a Copy here, text, or anything
+  another app copies. Finder copying the same files afresh is a Copy of
+  them, never the Cut, and pastes as a copy. Elsewhere the clipboard holds
+  the items' paths as text, and the Cut lasts while it still does, so
+  forgetting a Cut never empties text copied since. A Copy of items, a Copy
+  button, or a copied address here forgets the Cut at once; anything else on
+  the pasteboard is noticed when a window comes to the front or at the next
+  paste. The Edit menu's Cut, Copy, and Paste do the same while the folder
+  list has the keyboard.
   The right-click menu (the native menu on the Mac, the window's own with
   the same items elsewhere) adds Copy, Cut, Duplicate, Compress, **Extract**
   for an archive, New Folder with Selection, and Paste Here. Files dropped
@@ -349,16 +399,43 @@ other surface.
     under a hidden working name, at any size (with the 64-bit zip records a
     large archive needs) and with each item's Unix mode, and stores a link
     as a link; it refuses to start, and stops, when the disk would keep less
-    than 256 MB free. **Extract** turns a `.zip`, `.tar`, `.tar.gz`, or
-    `.tgz` into a new folder beside it named after it (an archive whose
-    whole content is one folder of that name gives that folder), at any
-    size, and selects it when done; it is the archive's menu item, and
-    double-clicking an archive still opens it in its default app. Nothing
-    extracted is runnable beyond the execute bits the archive records
-    (never setuid, setgid, or sticky); a link is made only when it points
-    inside the new folder; hard links, special files, and entries that would
-    land outside the folder are left out or refused; and the same 256 MB
-    disk guard applies. A damaged or password-protected archive says so.
+    than 256 MB free. **Extract** works as Finder's Archive Utility does: a
+    `.zip`, `.tar`, `.tar.gz`, or `.tgz` whose whole content is one file or
+    one folder, of any name, gives that item beside it, so Compress then
+    Extract gives the item back; an archive of several items gives a new
+    folder beside it named after it, never with a leading dot
+    (`.agents.zip` gives `agents`). An archive whose one item is a link, a
+    hidden item (`.env`, `.agents/`), or a file or folder named as Pi's
+    project instructions (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`),
+    and an empty archive, give that folder too, so nothing hidden or read as
+    instructions lands straight in the folder unseen. Names are compared as
+    a Mac volume compares them, so a look-alike (`agentſ.md`) counts, and
+    once extracted the volume is asked again whether the one item opens as
+    an instructions file. The resource forks and attributes a Mac stores
+    beside each item (Archive Utility's `__MACOSX`, and a `._Name` file that
+    is AppleDouble or sits beside its `Name`, as a Mac's `tar` writes them)
+    and what Extract leaves out are not items and are not written; any other
+    `._Name` file is an ordinary file. It works at any
+    size and, when done, selects the item or folder it made; a taken name
+    asks the name-clash question about that name (reading only enough of
+    the archive to know it, and no more than 64 MB of a tar, past which a
+    first item is taken as the one item; should more follow, they land in
+    the folder named after the archive, keeping both names); it is the
+    archive's menu item, and double-clicking an archive still opens it in
+    its default app. On a Mac, an archive marked as downloaded passes that
+    quarantine mark to everything Extract makes before it takes its name,
+    as Archive Utility does, so an app from it gets Gatekeeper's first-open
+    check; if the mark cannot be read or carried, nothing is extracted. A
+    package (see **Packages**) is never merged into: Merge is not offered
+    when Extract makes one, and a Merge asked for anyway keeps both.
+    Nothing extracted is runnable beyond the execute bits the archive
+    records (never setuid, setgid, or sticky); a link is made only when it
+    points inside what Extract made (inside the one folder, when that is
+    all the archive holds); hard links, special files, `.amplefile/`,
+    `.pi/`, and `.work-fold/` entries (and any name a Mac volume would take
+    as one of them, such as `.ampleﬁle`), and entries that would land
+    outside are left out or refused; and the same 256 MB disk guard applies. A
+    damaged or password-protected archive says so.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it, above the place's top too, where
   it lives (see **Other folders**); a long path keeps the disk and its
@@ -488,9 +565,9 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
   screen, and the Connected Folder it shows, which names the window in its
   title. The window's title, Open Recent, and **New Window** follow the tab
   in front. Every window sees the same Connected
-  Folders, Standard Folders, drives, Trash, running Chats, and running file
-  operations, so a change made in one (a rename, a new Connected Folder, a
-  finished copy) shows in the others.
+  Folders, Standard Folders, drives, Trash, running Chats, running file
+  operations, and Cut, so a change made in one (a rename, a new Connected
+  Folder, a finished copy, items cut) shows in the others.
 - **The front window:** the menus act on the window in front. A command goes
   to it, and the View menu's check marks and the items that need a Connected
   Folder follow it. A dialog, a native menu, or a site's question opens over
@@ -1068,13 +1145,19 @@ on the CLI, with the same receipts and the same named limits.
 - macOS uses its native hidden-inset title bar and application, File, Edit,
   View, Window, and Help menus. Each window's size and position, and the
   theme, are kept, and each window's renderer recovers from a crash on its
-  own ([Windows](#windows)).
+  own ([Windows](#windows)). File → **Refresh** (⌘R) reads the folder shown
+  again in any place (a Connected Folder, a Standard Folder, the disk, or
+  any other folder) with the sidebar's Connected Folders and Standard
+  Folders; **New Chat** and **Skills & Extensions** wait for a Connected
+  Folder.
 - Closing one of several windows closes only it. Closing the last window
   keeps AmpleFile running; the Dock icon brings the windows back. **Quit**
   exits cleanly. Closing a window never stops an accepted turn.
 - The menu-bar item opens the AmpleFile Agent popover on click; a right
   click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
-  for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
+  for Updates...**, and **Quit AmpleFile**. View → **Toggle AmpleFile
+  Agent** (⌘J) shows or hides the same popover from any window, with or
+  without a Connected Folder. Files or links dropped on the
   icon become reference chips. The popover works with every window
   closed, holds drops without sending, and its Stop names the AmpleFile
   agent turn and every delegated Connected Folder turn it aborts.

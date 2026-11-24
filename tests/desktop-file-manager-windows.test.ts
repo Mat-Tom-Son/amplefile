@@ -19,6 +19,7 @@ import {
 const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
 const browserHost = await readFile(new URL("../desktop/src/built-in-browser.ts", import.meta.url), "utf8");
 const preload = await readFile(new URL("../desktop/src/preload.cts", import.meta.url), "utf8");
+const clipboardHook = await readFile(new URL("../web-local/src/components/file-manager/useFileClipboard.ts", import.meta.url), "utf8");
 
 class FakeWindow {
   destroyed = false;
@@ -233,7 +234,7 @@ test("menu commands go to the window the menu was used in, else the front window
   const send = section(main, "function sendRendererMenuCommand(");
   assert.match(send, /const window = fileManagerWindows\.target\(menuWindow\)\?\.window;/);
   assert.match(send, /ensureWindow\(\)\.then\(\(\) => sendRendererMenuCommand\(command\)\)/, "with no window open the windows come back first");
-  assert.doesNotMatch(main, /click: \(\) => sendRendererMenuCommand\("(?:new-chat|close-tab|toggle-hidden-files|toggle-sidebar)"\)/);
+  assert.doesNotMatch(main, /click: \(\) => sendRendererMenuCommand\("(?:new-chat|close-tab|toggle-hidden-files|refresh)"\)/);
   // File → New Window takes Command-N; New Connected Folder moves to Option-Command-N.
   assert.match(main, /\{ id: "new-window", label: "New Window", accelerator: "CommandOrControl\+N", click: \(_item, window\) => \{ void openNewWindow\(\{ from: window \}\)/);
   assert.match(main, /\{ label: "New Connected Folder", accelerator: "Alt\+CommandOrControl\+N", click: menuCommand\("new-connected-folder"\) \}/);
@@ -241,6 +242,49 @@ test("menu commands go to the window the menu was used in, else the front window
   assert.match(main, /window\.on\("focus", \(\) => \{\s*fileManagerWindows\.focus\(window\);\s*refreshApplicationMenuState\(\);/);
   assert.match(section(main, 'ipcMain.on("amplefile:menu:set-state"', "\n  });\n"), /fileManagerWindows\.updateMenuState\(updated, value\);\s*refreshApplicationMenuState\(\);/);
   assert.match(section(main, "function popupApplicationSubmenu("), /buildApplicationSubmenuTemplate\(menuId, entry\.menuState\)\)\.popup\(\{ window: entry\.window/);
+});
+
+test("a Cut is the host's, for every window: a paste in any window moves it, and each change reaches every window", () => {
+  // The host keeps the Cut (desktop/src/file-clipboard.ts) and tells every file manager window when it changes.
+  const host = section(main, "const fileClipboard = new FileClipboard({", "\n});\n");
+  assert.match(host, /read: readPasteboardFiles,/);
+  assert.match(host, /token: \(\) => process\.platform === "darwin" \? randomBytes\(16\)\.toString\("hex"\) : null,/);
+  assert.match(host, /for \(const window of fileManagerWindows\.windows\(\)\) \{\s*if \(!window\.webContents\.isDestroyed\(\)\) window\.webContents\.send\("amplefile:file-clipboard:cut-changed", cut\);/);
+  // Paste, Cut, the question of what is cut, and Esc's cancel all go through it, from the trusted window only.
+  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:paste"', "\n  });\n"), /assertTrustedMainRenderer\(event\);[\s\S]*?return fileClipboard\.paste\(request, await listConnectedFolders\(\), \(body\) => transferFileEntries\(body\)\);/);
+  const write = section(main, 'ipcMain.handle("amplefile:file-clipboard:write"', "\n  });\n");
+  assert.match(write, /value\.operation === "cut"[\s\S]*?parseCutItems\(value\)[\s\S]*?await fileClipboard\.cut\(/);
+  assert.match(write, /await writePasteboardFilePaths\(paths\);\s*\/\/ A Copy replaces whatever was cut\.\s*fileClipboard\.replaced\(\);/);
+  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:cut"', "\n  });\n"), /assertTrustedMainRenderer\(event\);\s*const cut = await fileClipboard\.current\(\);/);
+  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:cancel-cut"', "\n  });\n"), /assertTrustedMainRenderer\(event\);\s*await fileClipboard\.cancel\(\);/);
+  // Text a window puts on the clipboard replaces a Cut too, and so does everything else AmpleFile copies: a sign-in
+  // code, an Extension's text, a link address, and an address or picture from a built-in browser page.
+  assert.match(section(main, 'ipcMain.handle("amplefile:clipboard:write"', "\n  });\n"), /fileClipboard\.replaced\(\);/);
+  assert.match(section(main, "function copyTextToClipboard("), /clipboard\.writeText\(text\);\s*fileClipboard\.replaced\(\);/);
+  assert.deepEqual(main.match(/clipboard\.writeText\(\w+/g), ["clipboard.writeText(pasteboardFileText", "clipboard.writeText(text"], "every other text goes through copyTextToClipboard");
+  assert.match(section(main, "function ensureBuiltInBrowser("), /onCopied: \(\) => fileClipboard\.replaced\(\),/);
+  assert.deepEqual(browserHost.match(/clipboard\.writeText\(\w+/g), ["clipboard.writeText(text"], "the browser's Copy items go through #copyText");
+  assert.match(browserHost, /#copyText\(text: string\): void \{\s*clipboard\.writeText\(text\);\s*this\.#options\.onCopied\?\.\(\);/);
+  // A page copies a picture in its own time, or fails to: the host looks again, and forgets the Cut only once it is replaced.
+  assert.match(browserHost, /contents\.copyImageAt\(params\.x, params\.y\); this\.#options\.onCopyingImage\?\.\(\);/);
+  assert.match(section(main, "function ensureBuiltInBrowser("), /onCopyingImage: \(\) => \{[\s\S]*?setTimeout\(\(\) => \{ void fileClipboard\.current\(\)\.catch\(\(\) => null\); \}, delay\);/);
+  // A Cut is forgotten once an item is no longer where it was cut; off the Mac the clipboard's text is read back.
+  assert.match(section(main, "const fileClipboard = new FileClipboard({", "\n});\n"), /exists: existsOnDisk,/);
+  assert.match(section(main, "async function readPasteboardFiles("), /unreadable: true, text: clipboard\.readText\(\)/);
+  // The run after the conflicts check carries the check's plan.
+  assert.match(clipboardHook, /const plan = asked\.plan;[\s\S]*?\.\.\.\(plan \? \{ plan \} : \{\}\)/);
+  // The Mac's file list carries the Cut's token; the window no longer keeps a Cut of its own or checks the pasteboard itself.
+  assert.match(section(main, "async function writePasteboardFilePaths("), /clipboard\.writeBuffer\("NSFilenamesPboardType", Buffer\.from\(pasteboardFileList\(paths, token\), "utf8"\)\)/);
+  assert.match(section(main, "async function readPasteboardFiles("), /readPasteboardFileList\(clipboard\.read\("NSFilenamesPboardType"\)\)/);
+  assert.doesNotMatch(main, /amplefile:file-clipboard:holds/);
+  assert.match(preload, /cut: \(\) => ipcRenderer\.invoke\("amplefile:file-clipboard:cut"\)/);
+  assert.match(preload, /cancelCut: \(\) => ipcRenderer\.invoke\("amplefile:file-clipboard:cancel-cut"\)/);
+  assert.match(preload, /ipcRenderer\.on\("amplefile:file-clipboard:cut-changed", listener\);/);
+  assert.doesNotMatch(preload, /holds:/);
+  // Each window asks what is cut when it opens and when it comes to the front, and hears each change.
+  assert.match(clipboardHook, /desktop\.onCutChanged\(/);
+  assert.match(clipboardHook, /check\(\);\s*window\.addEventListener\("focus", check\);/);
+  assert.match(clipboardHook, /desktop\.write\(nativePaths, "cut", \{ place, paths \}\)/);
 });
 
 test("replies, dialogs, and native menus go to the window that asked", () => {

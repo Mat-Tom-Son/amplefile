@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { lstat, readdir, readFile, readlink, stat, statfs } from "node:fs/promises";
+import { lstat, readdir, readFile, readlink, statfs } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
@@ -18,9 +18,14 @@ import { basename, dirname, join, resolve, sep } from "node:path";
  * the home folder), or when it is any other real block-device mount outside
  * the system's own folders. Kernel and pseudo filesystems, snap and other
  * loop mounts, and every other mount of the disk the system started from
- * (Fedora's btrfs `/home` subvolume) are left out. On macOS the source is
- * `/Volumes` without the startup disk. Mount points are never followed: a link
- * in `/Volumes` (the startup disk's own entry) is skipped.
+ * (Fedora's btrfs `/home` subvolume) are left out. On macOS the source is the
+ * system's mount table too, as `/sbin/mount` prints it: the mounts directly
+ * inside `/Volumes`. The startup disk is not among them, because its entry
+ * there is a link, not a mount.
+ *
+ * Finding the drives asks no drive anything, so a share whose server has gone
+ * cannot hold the list up. Measuring a drive does ask it, and is bounded
+ * (`MountCalls`).
  */
 
 export interface VolumeSummary {
@@ -30,13 +35,13 @@ export interface VolumeSummary {
   name: string;
   /** Where it is mounted; the window opens it through the computer place. */
   mountPath: string;
-  /** Null when the drive cannot be measured (no permission, or a stalled network share). */
+  /** Null when the drive cannot be measured (no permission, or a drive that has stopped answering). */
   totalBytes: number | null;
   /** Space the person can still use, as Finder and Files report it. */
   freeBytes: number | null;
   /** Whether AmpleFile offers Eject for it: a drive the person can remove or unmount without an administrator. */
   ejectable: boolean;
-  /** The filesystem type, as supporting detail ("ext4", "exfat", "apfs"). */
+  /** The filesystem type, as supporting detail ("ext4", "exfat", "apfs", "smbfs"). */
   fileSystem: string | null;
 }
 
@@ -232,8 +237,147 @@ async function linuxRemovableDevices(mounts: readonly LinuxMount[]): Promise<Set
   return removable;
 }
 
+// System tools ---------------------------------------------------------------
+
+export interface ToolCommand { command: string; args: string[] }
+export interface ToolResult { code: number | null; stdout: string; stderr: string; missing?: boolean }
+export interface ToolLimits {
+  /** How long the tool may run before it is stopped. */
+  timeoutMs?: number;
+  /** How much of each output stream is kept, in characters. */
+  maxOutput?: number;
+  /**
+   * A tool that only reads. One that runs over its time is killed outright and
+   * let go of, so a tool the kernel will not let die (one waiting on a share
+   * whose server has gone) cannot hold this process open. Its answer comes only
+   * when it has really gone, which may be never: a caller that cannot wait
+   * races it (`answerWithin`).
+   */
+  readOnly?: boolean;
+}
+export type ToolRunner = (command: ToolCommand, limits?: ToolLimits) => Promise<ToolResult>;
+/** Eject's tools have the same shape. */
+export type EjectCommand = ToolCommand;
+export type EjectCommandResult = ToolResult;
+export type EjectRunner = ToolRunner;
+
+const toolTimeoutMs = 60_000;
+const maxToolOutput = 16 * 1024;
+
+/** Runs one tool without a shell, with a time limit and bounded output. */
+export const runTool: ToolRunner = (command, limits = {}) => new Promise((done) => {
+  const maxOutput = limits.maxOutput ?? maxToolOutput;
+  let child: ChildProcess;
+  let stdout = "";
+  let stderr = "";
+  try {
+    child = spawn(command.command, command.args, { shell: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, LC_ALL: "C" } });
+  } catch {
+    done({ code: null, stdout, stderr, missing: true });
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (!limits.readOnly) { child.kill("SIGTERM"); return; }
+    child.kill("SIGKILL");
+    child.unref();
+    for (const stream of [child.stdout, child.stderr]) (stream as { unref?: () => void } | null)?.unref?.();
+  }, limits.timeoutMs ?? toolTimeoutMs);
+  timer.unref();
+  // Decoded as a stream, so a name whose bytes fall in two chunks stays whole.
+  child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { if (stdout.length < maxOutput) stdout = (stdout + chunk).slice(0, maxOutput); });
+  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { if (stderr.length < maxOutput) stderr = (stderr + chunk).slice(0, maxOutput); });
+  child.once("error", (error) => {
+    clearTimeout(timer);
+    done({ code: null, stdout, stderr: stderr || error.message, missing: (error as { code?: string }).code === "ENOENT" });
+  });
+  child.once("close", (code) => { clearTimeout(timer); done({ code, stdout, stderr }); });
+});
+
+/** A tool's answer, or null when none has come a moment after the tool's own time limit. */
+async function answerWithin(answer: Promise<ToolResult>, timeoutMs: number): Promise<ToolResult | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<null>((done) => { timer = setTimeout(() => done(null), timeoutMs + 250); });
+  try { return await Promise.race([answer, late]); }
+  finally { clearTimeout(timer); }
+}
+
+/** Maps with at most `atOnce` running together, keeping the order. */
+async function mapLimited<T, R>(items: readonly T[], atOnce: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(atOnce, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await map(items[index]!);
+    }
+  }));
+  return results;
+}
+
+// macOS mounts -------------------------------------------------------------
+
+export interface MacMount {
+  /** The device node (`/dev/disk4s2`) or the share (`//ana@nas/photos`). */
+  device: string;
+  mountPoint: string;
+  fileSystem: string;
+  options: string[];
+}
+
+/**
+ * `/sbin/mount`'s lines, `<device> on <mount point> (<type>, <option>, …)`:
+ * every mount on the computer. Read as untrusted text. A name may hold spaces,
+ * " on ", and parentheses, so the options are the last parenthesized group. A
+ * device node holds no space, so its mount point starts at the first ` on /`;
+ * for anything else (a share, an automount map) it starts at the last. A line
+ * that does not parse is skipped, and a mount point mounted over again shows
+ * the newest mount.
+ */
+export function parseMacMountTable(text: string): MacMount[] {
+  const newest = new Map<string, MacMount>();
+  for (const line of text.split("\n")) {
+    if (!line.endsWith(")") || line.length > 16_384 || line.includes("\0")) continue;
+    const open = line.lastIndexOf(" (");
+    if (open < 0) continue;
+    const head = line.slice(0, open);
+    const at = head.startsWith("/dev/") ? head.indexOf(" on /") : head.lastIndexOf(" on /");
+    if (at <= 0) continue;
+    const path = head.slice(at + " on ".length);
+    if (path.split("/").some((part) => part === "." || part === "..")) continue;
+    const options = line.slice(open + 2, -1).split(",").map((option) => option.trim()).filter(Boolean);
+    if (!options.length || !/^[\w.-]{1,64}$/.test(options[0]!)) continue;
+    const mountPoint = path.length > 1 ? path.replace(/\/+$/, "") : path;
+    newest.set(mountPoint, { device: head.slice(0, at), mountPoint, fileSystem: options[0]!, options });
+  }
+  return [...newest.values()];
+}
+
+/** The mounts directly inside one folder, without hidden names: what the drives list shows of `/Volumes`. */
+export function parseMacMounts(text: string, folder = "/Volumes"): MacMount[] {
+  const parent = folder.replace(/\/+$/, "");
+  return parseMacMountTable(text).filter((mount) => {
+    if (!mount.mountPoint.startsWith(`${parent}/`)) return false;
+    const name = mount.mountPoint.slice(parent.length + 1);
+    return name !== "" && !name.startsWith(".") && !name.includes("/");
+  });
+}
+
+const mountTableTimeoutMs = 5_000;
+
+/** The mount table as `mount` prints it from what the kernel already holds: it asks no file system, so no share can stall it. */
+async function readMacMountTable(run: ToolRunner): Promise<string> {
+  const result = await answerWithin(run({ command: "/sbin/mount", args: [] }, { timeoutMs: mountTableTimeoutMs, maxOutput: maxMountInfoBytes, readOnly: true }), mountTableTimeoutMs);
+  if (!result || result.code !== 0) throw new Error("AmpleFile couldn’t read which drives are connected.");
+  return result.stdout;
+}
+
+// Measuring ------------------------------------------------------------------
+
+export interface VolumeSpace { totalBytes: number; freeBytes: number }
+
 /** Space on the filesystem holding a path, without following a link at the path itself. */
-export async function measureVolume(path: string): Promise<{ totalBytes: number; freeBytes: number } | null> {
+export async function measureVolume(path: string): Promise<VolumeSpace | null> {
   try {
     const info = await statfs(path);
     const total = Number(info.blocks) * Number(info.bsize);
@@ -245,14 +389,146 @@ export async function measureVolume(path: string): Promise<{ totalBytes: number;
   }
 }
 
-/** A stalled network share must not hold the list up. */
-const measureTimeoutMs = 1_500;
+/**
+ * `df -kP <mount>`'s answer: POSIX's one line for the file system, in 1024-byte
+ * blocks. The share's name comes first and the mount point last, and either
+ * may hold spaces, so the numbers are found by counting back from the end past
+ * as many words as the mount point has.
+ */
+export function parseDfSpace(output: string, mountPath: string): VolumeSpace | null {
+  const line = output.split("\n").map((text) => text.trim()).filter(Boolean).at(-1);
+  if (!line) return null;
+  const words = line.split(/\s+/);
+  const mountAt = words.length - mountPath.trim().split(/\s+/).length;
+  if (mountAt < 5 || !words[mountAt]!.startsWith("/")) return null;
+  const [blocks, , available, capacity] = words.slice(mountAt - 4, mountAt) as [string, string, string, string];
+  if (!/^\d+$/.test(blocks) || !/^-?\d+$/.test(available) || !/^(\d+%|-)$/.test(capacity)) return null;
+  const total = Number(blocks) * 1024;
+  const free = Math.max(0, Number(available)) * 1024;
+  if (!Number.isFinite(total) || !Number.isFinite(free)) return null;
+  return { totalBytes: total, freeBytes: Math.min(free, total) };
+}
 
-async function measureWithin(path: string): Promise<{ totalBytes: number; freeBytes: number } | null> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<null>((done) => { timer = setTimeout(() => done(null), measureTimeoutMs); timer.unref(); });
-  try { return await Promise.race([measureVolume(path), timeout]); }
-  finally { clearTimeout(timer); }
+/** A share's space, asked by `df` in a process of its own. */
+async function measureWithDf(mountPath: string, run: ToolRunner, timeoutMs: number, platform: NodeJS.Platform): Promise<VolumeSpace | null> {
+  const result = await run({ command: platform === "darwin" ? "/bin/df" : "df", args: ["-kP", mountPath] }, { timeoutMs, readOnly: true });
+  return result.code === 0 ? parseDfSpace(result.stdout, mountPath) : null;
+}
+
+/** A drive that has not answered in this long is listed without its space. */
+const measureTimeoutMs = 1_500;
+/** libuv gives the whole process four file threads; the list never has more than this many file calls to drives out at once. */
+const maxFileCallsOut = 2;
+/** How many shares are asked at once. */
+const sharesMeasuredAtOnce = 8;
+
+interface MountCall {
+  /** Null when the call threw. Never rejects. */
+  answer: Promise<{ value: unknown } | null>;
+  deadline: number;
+  stalled: boolean;
+  share: string | undefined;
+}
+
+export interface MountCallOptions {
+  /** `"file"`: file calls made in this process, holding one of its file threads. `"tool"`: a process of its own. */
+  kind: "file" | "tool";
+  /** How long the call may take before the mount counts as not answering; the guard's own limit when left out. */
+  limitMs?: number;
+  /** Callers that give the same name while such a call is out get its answer instead of making their own. */
+  share?: string;
+}
+
+/**
+ * Keeps calls to drives from piling up on one that has stopped answering. A
+ * file call on a share whose server has gone, or on a failing disk, can wait
+ * for ever, and nothing takes it back: in this process it holds one of libuv's
+ * four file threads until it returns, and every file route shares those four.
+ *
+ * So each mount has one call out at a time, whoever makes it: the drives list
+ * measuring space, or the Trash looking for a drive's Trash folder. A caller
+ * that finds one out waits for it, within its own limit, and then makes its
+ * own; callers after the same answer (`share`) take that one. A call that
+ * outlives its limit marks the mount stalled: its caller gets nothing, and so
+ * does every caller after, at once, until that call has returned. However
+ * often a list is read, a stalled drive holds one call.
+ *
+ * A file call is not started while `maxFileCallsOut` of them are out, so
+ * together they never take more than that many of the four threads; the drive
+ * it was for gets nothing until there is room. A tool holds a process of its
+ * own instead, which is killed at the limit; the mount stays closed until that
+ * process has really gone.
+ */
+export class MountCalls {
+  readonly limitMs: number;
+  readonly #maxFileCallsOut: number;
+  readonly #calls = new Map<string, MountCall>();
+  #fileCallsOut = 0;
+
+  constructor(limits: { limitMs?: number; maxFileCallsOut?: number } = {}) {
+    this.limitMs = limits.limitMs ?? measureTimeoutMs;
+    this.#maxFileCallsOut = limits.maxFileCallsOut ?? maxFileCallsOut;
+  }
+
+  /** What `start` answers for a mount, or null when the mount has not answered in time, is stalled, or may not be asked now. */
+  async call<T>(mountPath: string, options: MountCallOptions, start: () => Promise<T>): Promise<{ value: T } | null> {
+    const limitMs = options.limitMs ?? this.limitMs;
+    const giveUpAt = Date.now() + limitMs;
+    for (;;) {
+      const out = this.#calls.get(mountPath);
+      if (!out) break;
+      if (out.stalled) return null;
+      if (!await this.#settledBy(out, Math.min(out.deadline, giveUpAt))) {
+        // Past its own limit the mount is closed until it returns. A caller that only ran out of patience leaves it open.
+        if (Date.now() >= out.deadline) out.stalled = true;
+        return null;
+      }
+      if (options.share !== undefined && out.share === options.share) return await out.answer as { value: T } | null;
+    }
+    if (options.kind === "file" && this.#fileCallsOut >= this.#maxFileCallsOut) return null;
+    const begun: MountCall = {
+      answer: Promise.resolve().then(start).then((value) => ({ value }), () => null),
+      deadline: Date.now() + limitMs,
+      stalled: false,
+      share: options.share,
+    };
+    if (options.kind === "file") this.#fileCallsOut += 1;
+    void begun.answer.then(() => {
+      if (this.#calls.get(mountPath) === begun) this.#calls.delete(mountPath);
+      if (options.kind === "file") this.#fileCallsOut -= 1;
+    });
+    this.#calls.set(mountPath, begun);
+    if (await this.#settledBy(begun, begun.deadline)) return await begun.answer as { value: T } | null;
+    begun.stalled = true;
+    return null;
+  }
+
+  /** A drive's space, shared by every listing that asks while the call is out. */
+  async measure(mountPath: string, kind: "file" | "tool", start: () => Promise<VolumeSpace | null>): Promise<VolumeSpace | null> {
+    return (await this.call(mountPath, { kind, share: "space" }, start))?.value ?? null;
+  }
+
+  /** Whether a call has returned by a time; the wait is cleared either way. */
+  async #settledBy(call: MountCall, until: number): Promise<boolean> {
+    const left = until - Date.now();
+    if (left <= 0) return false;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<false>((done) => { timer = setTimeout(() => done(false), left); });
+    try { return await Promise.race([call.answer.then(() => true as const), late]); }
+    finally { clearTimeout(timer); }
+  }
+}
+
+/** The one guard this process's readers of drives share, so each skips what another found stalled. */
+export const mountCalls = new MountCalls();
+
+/**
+ * Whether a mount is a disk's volume (a device node) rather than a share or a
+ * FUSE mount. A disk's volume is measured in this process; anything else is
+ * asked from a process of its own.
+ */
+function isDiskDevice(device: string): boolean {
+  return device.startsWith("/dev/") && device !== "/dev/fuse";
 }
 
 const idKey = randomBytes(32);
@@ -263,9 +539,11 @@ function volumeId(mountPath: string, device: string): string {
 
 /** What one listing knows about a volume beyond what the window sees: how to eject it. */
 export interface VolumeRecord extends VolumeSummary {
-  /** The device or share behind the mount, for the eject tool; never sent to the window. */
+  /** The device (`/dev/sdb1`, `/dev/disk4s2`) or share (`//nas/photos`) behind the mount; never sent to the window. */
   device: string;
 }
+
+type FoundVolume = Omit<VolumeRecord, "totalBytes" | "freeBytes">;
 
 export interface VolumeListOptions {
   platform?: NodeJS.Platform;
@@ -275,12 +553,18 @@ export interface VolumeListOptions {
   mountInfo?: string;
   labels?: ReadonlyMap<string, string>;
   removable?: ReadonlySet<string>;
-  /** macOS: the folder holding mounted volumes (tests pass a sandbox). */
+  /** macOS: the folder holding mounted volumes. */
   volumesFolder?: string;
-  /** macOS: whether a `/Volumes` entry is a mounted volume (tests stand in for a real mount). */
-  isMounted?: (path: string, info: import("node:fs").Stats) => boolean;
-  /** Skip measuring (tests that only check which drives are listed). */
-  measure?: (path: string) => Promise<{ totalBytes: number; freeBytes: number } | null>;
+  /** macOS: `/sbin/mount`'s output (tests pass a sample). */
+  mountTable?: string;
+  /** Replaces measuring altogether (tests that only check which drives are listed). */
+  measure?: (path: string) => Promise<VolumeSpace | null>;
+  /** The file call that measures a disk's volume in this process (tests pass one that never returns). */
+  statfs?: (path: string) => Promise<VolumeSpace | null>;
+  /** Runs `mount` and `df` (tests answer for them). */
+  run?: ToolRunner;
+  /** The bound on calls to drives (tests bring their own, with a short limit). */
+  mountCalls?: MountCalls;
 }
 
 type VolumeSource = (options?: VolumeListOptions) => Promise<VolumeRecord[]>;
@@ -295,37 +579,65 @@ export function setVolumeSourceForTests(source: VolumeSource | null): void {
 export async function listVolumeRecords(options: VolumeListOptions = {}): Promise<VolumeRecord[]> {
   if (volumeSourceForTests) return volumeSourceForTests(options);
   const platform = options.platform ?? process.platform;
-  const measure = options.measure ?? measureWithin;
-  if (platform === "linux") {
-    const text = options.mountInfo ?? await readMountInfo();
-    const mounts = parseMountInfo(text);
-    const visible = linuxUserVolumes(mounts, {
-      home: options.home ?? homedir(),
-      user: options.user ?? safeUserName(),
-      labels: options.labels ?? (options.mountInfo === undefined ? await linuxDeviceLabels() : new Map()),
-      removable: options.removable ?? (options.mountInfo === undefined ? await linuxRemovableDevices(mounts) : new Set()),
-    });
-    return Promise.all(visible.map(async ({ mount, name, ejectable }) => {
-      const space = await measure(mount.mountPoint);
-      return {
-        id: volumeId(mount.mountPoint, `${mount.majorMinor}:${mount.source}`),
-        name,
-        mountPath: mount.mountPoint,
-        totalBytes: space?.totalBytes ?? null,
-        freeBytes: space?.freeBytes ?? null,
-        ejectable,
-        fileSystem: mount.fileSystem,
-        device: mount.source,
-      };
-    }));
-  }
-  if (platform === "darwin") return listMacVolumes(options.volumesFolder ?? "/Volumes", measure, options.isMounted);
-  return [];
+  const found = platform === "linux" ? await findLinuxVolumes(options) : platform === "darwin" ? await findMacVolumes(options) : [];
+  const spaces = await measureVolumes(found, options, platform);
+  return found.map((volume) => {
+    const space = spaces.get(volume.mountPath);
+    return { ...volume, totalBytes: space?.totalBytes ?? null, freeBytes: space?.freeBytes ?? null };
+  });
 }
 
 /** The drives as the window sees them. */
 export async function listVolumes(options: VolumeListOptions = {}): Promise<VolumeSummary[]> {
   return (await listVolumeRecords(options)).map(({ device: _device, ...volume }) => volume);
+}
+
+/**
+ * Each drive's space. A disk's volume is measured in this process, one after
+ * another, so a healthy list has one file call out at a time. A share is asked
+ * by `df`, several at once, each in a process of its own. Both go through
+ * `MountCalls`.
+ */
+async function measureVolumes(volumes: readonly FoundVolume[], options: VolumeListOptions, platform: NodeJS.Platform): Promise<Map<string, VolumeSpace | null>> {
+  const spaces = new Map<string, VolumeSpace | null>();
+  const measure = options.measure;
+  if (measure) {
+    await Promise.all(volumes.map(async (volume) => { spaces.set(volume.mountPath, await measure(volume.mountPath)); }));
+    return spaces;
+  }
+  const calls = options.mountCalls ?? mountCalls;
+  const fileCall = options.statfs ?? measureVolume;
+  const run = options.run ?? runTool;
+  await Promise.all([
+    (async () => {
+      for (const volume of volumes) {
+        if (isDiskDevice(volume.device)) spaces.set(volume.mountPath, await calls.measure(volume.mountPath, "file", () => fileCall(volume.mountPath)));
+      }
+    })(),
+    mapLimited(volumes.filter((volume) => !isDiskDevice(volume.device)), sharesMeasuredAtOnce, async (volume) => {
+      spaces.set(volume.mountPath, await calls.measure(volume.mountPath, "tool", () => measureWithDf(volume.mountPath, run, calls.limitMs, platform)));
+    }),
+  ]);
+  return spaces;
+}
+
+async function findLinuxVolumes(options: VolumeListOptions): Promise<FoundVolume[]> {
+  const text = options.mountInfo ?? await readMountInfo();
+  const mounts = parseMountInfo(text);
+  const visible = linuxUserVolumes(mounts, {
+    home: options.home ?? homedir(),
+    user: options.user ?? safeUserName(),
+    labels: options.labels ?? (options.mountInfo === undefined ? await linuxDeviceLabels() : new Map()),
+    removable: options.removable ?? (options.mountInfo === undefined ? await linuxRemovableDevices(mounts) : new Set()),
+  });
+  return visible.map(({ mount, name, ejectable }) => ({
+    id: volumeId(mount.mountPoint, `${mount.majorMinor}:${mount.source}`),
+    name,
+    mountPath: mount.mountPoint,
+    ejectable,
+    fileSystem: mount.fileSystem,
+    device: mount.source,
+  }));
 }
 
 async function readMountInfo(): Promise<string> {
@@ -338,43 +650,38 @@ function safeUserName(): string {
 }
 
 /**
- * `/Volumes` without the startup disk: its entry there is a link to `/`, and
- * links are skipped; an entry on the same device as `/` or as `/Volumes`
- * itself is a folder, not a mounted volume.
+ * The mounts directly inside `/Volumes`, from the system's mount table. The
+ * startup disk is not one: its entry in `/Volumes` is a link, and it is mounted
+ * at `/`. Nothing here touches a drive.
  */
-async function listMacVolumes(
-  folder: string,
-  measure: (path: string) => Promise<{ totalBytes: number; freeBytes: number } | null>,
-  isMounted?: (path: string, info: import("node:fs").Stats) => boolean,
-): Promise<VolumeRecord[]> {
-  const names = await readdir(folder).catch(() => [] as string[]);
-  const folderInfo = await stat(folder).catch(() => null);
-  const startup = await stat("/").catch(() => null);
-  const data = await stat("/System/Volumes/Data").catch(() => null);
-  const volumes: VolumeRecord[] = [];
-  for (const name of names.slice(0, maxListedVolumes)) {
-    if (!name || name.startsWith(".")) continue;
-    const path = join(folder, name);
-    const info = await lstat(path).catch(() => null);
-    if (!info?.isDirectory() || info.isSymbolicLink()) continue;
-    const mounted = isMounted
-      ? isMounted(path, info)
-      : !(folderInfo && info.dev === folderInfo.dev) && !(startup && info.dev === startup.dev) && !(data && info.dev === data.dev);
-    if (!mounted) continue;
-    const space = await measure(path);
-    volumes.push({
-      id: volumeId(path, String(info.dev)),
-      name,
-      mountPath: path,
-      totalBytes: space?.totalBytes ?? null,
-      freeBytes: space?.freeBytes ?? null,
+async function findMacVolumes(options: VolumeListOptions): Promise<FoundVolume[]> {
+  const table = options.mountTable ?? await readMacMountTable(options.run ?? runTool);
+  return parseMacMounts(table, options.volumesFolder ?? "/Volumes")
+    .slice(0, maxListedVolumes)
+    .map((mount) => ({
+      id: volumeId(mount.mountPoint, mount.device),
+      name: basename(mount.mountPoint),
+      mountPath: mount.mountPoint,
       // Every mounted volume but the startup disk can be ejected with diskutil; it says when one cannot.
       ejectable: true,
-      fileSystem: null,
-      device: path,
-    });
-  }
-  return volumes.sort((left, right) => left.name.localeCompare(right.name));
+      fileSystem: mount.fileSystem,
+      device: mount.device,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * The drives whose own Trash folder is read on macOS: the disk volumes mounted
+ * directly inside `/Volumes`, from the mount table. A share is left out,
+ * because nothing in this process ever asks a share anything. When the mount
+ * table cannot be read there are none.
+ */
+export async function listMacTrashTops(options: Pick<VolumeListOptions, "mountTable" | "run" | "volumesFolder"> = {}): Promise<string[]> {
+  const table = options.mountTable ?? await readMacMountTable(options.run ?? runTool).catch(() => "");
+  return parseMacMounts(table, options.volumesFolder ?? "/Volumes")
+    .filter((mount) => isDiskDevice(mount.device))
+    .slice(0, maxListedVolumes)
+    .map((mount) => mount.mountPoint);
 }
 
 /**
@@ -396,10 +703,6 @@ export async function volumeSpaceForPath(path: string): Promise<{ totalBytes: nu
 
 // Eject ------------------------------------------------------------------
 
-export interface EjectCommand { command: string; args: string[] }
-export interface EjectCommandResult { code: number | null; stdout: string; stderr: string; missing?: boolean }
-export type EjectRunner = (command: EjectCommand) => Promise<EjectCommandResult>;
-
 /**
  * The system's own tools, in the order tried. On Linux, `gio mount -e`
  * unmounts and safely removes the drive as Files does; `gio mount -u` unmounts
@@ -420,36 +723,242 @@ export function ejectCommands(volume: Pick<VolumeRecord, "mountPath" | "device">
   ];
 }
 
-const ejectTimeoutMs = 60_000;
-const maxToolOutput = 16 * 1024;
-
-/** Runs one tool without a shell, with a time limit and bounded output. */
-export const runEjectCommand: EjectRunner = (command) => new Promise((done) => {
-  let child: ChildProcess;
-  let stdout = "";
-  let stderr = "";
-  try {
-    child = spawn(command.command, command.args, { shell: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, LC_ALL: "C" } });
-  } catch {
-    done({ code: null, stdout, stderr, missing: true });
-    return;
-  }
-  const timer = setTimeout(() => child.kill("SIGTERM"), ejectTimeoutMs);
-  timer.unref();
-  child.stdout?.on("data", (chunk: Buffer) => { if (stdout.length < maxToolOutput) stdout += chunk.toString("utf8"); });
-  child.stderr?.on("data", (chunk: Buffer) => { if (stderr.length < maxToolOutput) stderr += chunk.toString("utf8"); });
-  child.once("error", (error) => {
-    clearTimeout(timer);
-    done({ code: null, stdout, stderr: stderr || error.message, missing: (error as { code?: string }).code === "ENOENT" });
-  });
-  child.once("close", (code) => { clearTimeout(timer); done({ code, stdout, stderr }); });
-});
-
 let ejectRunnerForTests: EjectRunner | null = null;
 
-/** Tests record the tools an eject would run; null restores spawning them. */
+/** Tests record the tools an eject would run, `mount` and `diskutil info` among them; null restores spawning them. */
 export function setEjectRunnerForTests(runner: EjectRunner | null): void {
   ejectRunnerForTests = runner;
+}
+
+export type PropertyListValue = string | number | boolean | PropertyListValue[] | Map<string, PropertyListValue>;
+
+const maxPropertyListLength = 1024 * 1024;
+const maxPropertyListDepth = 32;
+
+function decodeXmlText(text: string): string {
+  return text.replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-fA-F]{1,6});/g, (whole, entity: string) => {
+    if (entity === "amp") return "&";
+    if (entity === "lt") return "<";
+    if (entity === "gt") return ">";
+    if (entity === "quot") return "\"";
+    if (entity === "apos") return "'";
+    const code = entity[1] === "x" ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
+}
+
+const propertyListTags = new Set(["plist", "dict", "array", "key", "string", "integer", "real", "date", "data", "true", "false"]);
+
+/**
+ * Reads the XML property list a system tool prints (`diskutil info -plist`).
+ * Untrusted text, read strictly: bounded in length and depth, and null unless
+ * it is one property list from `<plist>` to `</plist>`, made only of
+ * property-list elements with nothing but space between them and nothing
+ * after. A dictionary is a Map, so no key can be taken for a property of the
+ * object. Dates and data stay text.
+ */
+export function parsePropertyList(text: string): PropertyListValue | null {
+  if (text.length > maxPropertyListLength) return null;
+  const tag = /<(\/?)([A-Za-z][\w.-]*)(?:\s[^<>]*)?(\/?)>/g;
+  let at = text.indexOf("<plist");
+  if (at < 0) return null;
+  /** The next element's tag, when only space lies before it and it is a property list's. */
+  const nextTag = (): RegExpExecArray | null => {
+    tag.lastIndex = at;
+    const found = tag.exec(text);
+    if (!found || text.slice(at, found.index).trim() || !propertyListTags.has(found[2]!)) return null;
+    at = tag.lastIndex;
+    return found;
+  };
+  const textUntilClose = (name: string): string | null => {
+    const end = text.indexOf(`</${name}>`, at);
+    if (end < 0) return null;
+    const raw = text.slice(at, end);
+    at = end + name.length + 3;
+    return raw.includes("<") ? null : decodeXmlText(raw);
+  };
+  const read = (open: RegExpExecArray | null, depth: number): PropertyListValue | undefined => {
+    if (!open || open[1] || depth > maxPropertyListDepth) return undefined;
+    const name = open[2]!;
+    const empty = open[3] === "/";
+    if (name === "true" || name === "false") return empty ? name === "true" : undefined;
+    if (name === "dict") {
+      const dict = new Map<string, PropertyListValue>();
+      while (!empty) {
+        const next = nextTag();
+        if (next?.[1] && next[2] === "dict") break;
+        if (!next || next[1] || next[2] !== "key" || next[3]) return undefined;
+        const key = textUntilClose("key");
+        const value = key === null ? undefined : read(nextTag(), depth + 1);
+        if (key === null || value === undefined) return undefined;
+        dict.set(key, value);
+      }
+      return dict;
+    }
+    if (name === "array") {
+      const items: PropertyListValue[] = [];
+      while (!empty) {
+        const next = nextTag();
+        if (next?.[1] && next[2] === "array") break;
+        const value = read(next, depth + 1);
+        if (value === undefined) return undefined;
+        items.push(value);
+      }
+      return items;
+    }
+    if (name === "key" || name === "plist") return undefined;
+    const content = empty ? "" : textUntilClose(name);
+    if (content === null) return undefined;
+    if (name !== "integer" && name !== "real") return content;
+    const number = Number(content.trim());
+    return content.trim() && Number.isFinite(number) ? number : undefined;
+  };
+  const top = nextTag();
+  if (!top || top[1] || top[3] || top[2] !== "plist") return null;
+  const value = read(nextTag(), 0);
+  const close = nextTag();
+  if (value === undefined || !close?.[1] || close[2] !== "plist" || text.slice(at).trim()) return null;
+  return value;
+}
+
+/** The whole disk a partition is on: `disk4` for `disk4s2`, and for `disk4` itself. */
+function wholeDiskOf(identifier: unknown): string | null {
+  const match = typeof identifier === "string" ? /^(disk\d{1,6})(?:s\d{1,6})*$/.exec(identifier) : null;
+  return match ? match[1]! : null;
+}
+
+/**
+ * The physical disks under a volume, from `diskutil info -plist <mount>`. An
+ * APFS volume's own whole disk is its container, a disk the system makes up;
+ * what leaves when it is ejected is the disk each of the container's physical
+ * stores is a partition of (two for a Fusion Drive). Any other volume's is the
+ * whole disk its partition is on. An empty list is diskutil's own error: it
+ * knows no disk there, as for a share. Null is an answer that does not say.
+ *
+ * Not tried against a CoreStorage volume or an AppleRAID set, where
+ * `ParentWholeDisk` names the logical disk rather than the ones under it.
+ */
+export function physicalDisksFromDiskutilInfo(text: string): string[] | null {
+  const info = parsePropertyList(text);
+  if (!(info instanceof Map)) return null;
+  if (info.get("Error") === true) return [];
+  const disks = new Set<string>();
+  const stores = info.get("APFSPhysicalStores");
+  if (stores !== undefined && !Array.isArray(stores)) return null;
+  for (const store of stores ?? []) {
+    const disk = wholeDiskOf(store instanceof Map ? store.get("APFSPhysicalStore") : null);
+    if (!disk) return null;
+    disks.add(disk);
+  }
+  if (!disks.size) {
+    const disk = wholeDiskOf(info.get("ParentWholeDisk") ?? info.get("DeviceIdentifier"));
+    if (!disk) return null;
+    disks.add(disk);
+  }
+  return [...disks].sort();
+}
+
+const diskInfoTimeoutMs = 10_000;
+const disksAskedAtOnce = 4;
+/** Mounts asked about in one eject; any beyond count as unplaced. */
+const maxMountsAsked = 256;
+
+/** A mount as Eject sees one: enough to name it, find what is on it, and ask the system about it. */
+export type MountedVolume = Pick<VolumeRecord, "name" | "mountPath" | "device" | "fileSystem">;
+
+async function macVolumeDisks(volume: MountedVolume): Promise<string[] | null> {
+  const run = ejectRunnerForTests ?? runTool;
+  const result = await answerWithin(run({ command: "diskutil", args: ["info", "-plist", volume.mountPath] }, { timeoutMs: diskInfoTimeoutMs, maxOutput: maxPropertyListLength, readOnly: true }), diskInfoTimeoutMs);
+  // diskutil's own error comes as a property list too, with a failing exit code.
+  return result && !result.missing ? physicalDisksFromDiskutilInfo(result.stdout) : null;
+}
+
+/** The physical disks under a volume: none when the system knows no disk there, null when they cannot be told. */
+export type VolumeDiskSource = (volume: MountedVolume) => Promise<readonly string[] | null>;
+let volumeDiskSourceForTests: VolumeDiskSource | null = null;
+
+/** Tests say which disk each mount is on; null restores asking the system. */
+export function setVolumeDiskSourceForTests(source: VolumeDiskSource | null): void {
+  volumeDiskSourceForTests = source;
+}
+
+type MountSource = () => Promise<MountedVolume[]>;
+let mountSourceForTests: MountSource | null = null;
+
+/** Tests say what is mounted anywhere on the computer, beyond the drives listed; null restores the mount table. */
+export function setMountSourceForTests(source: MountSource | null): void {
+  mountSourceForTests = source;
+}
+
+/** Everything mounted, listed as a drive or not. Tests' drives stand in for it unless they name mounts of their own. */
+async function everyMount(): Promise<MountedVolume[]> {
+  if (mountSourceForTests) return mountSourceForTests();
+  if (volumeSourceForTests) return volumeSourceForTests();
+  const table = await readMacMountTable(ejectRunnerForTests ?? runTool);
+  return parseMacMountTable(table).map((mount) => ({ name: basename(mount.mountPoint) || mount.mountPoint, mountPath: mount.mountPoint, device: mount.device, fileSystem: mount.fileSystem }));
+}
+
+/** The kernel's file systems that are a server's or its own, never a disk's. The kernel names the type; no device name is trusted for it. */
+const fileSystemsOnNoDisk = new Set(["smbfs", "nfs", "afpfs", "webdav", "ftp", "autofs", "devfs"]);
+
+/** The running system's own mounts: they cannot leave while it runs, and `/` would hold every folder by its path. */
+function isSystemMount(mountPath: string): boolean {
+  return mountPath === "/" || mountPath === "/dev" || mountPath.startsWith("/dev/") || mountPath === "/System" || mountPath.startsWith("/System/");
+}
+
+export interface EjectCompanion {
+  volume: MountedVolume;
+  /** False when the system could not say which disk this mount or the ejected one is on. */
+  certain: boolean;
+}
+
+/**
+ * The other mounts that leave with a volume when it is ejected. On macOS
+ * `diskutil eject` takes the volume's whole physical disk: every volume of its
+ * APFS container, and every other partition of the disk that container is
+ * stored on, wherever each is mounted. So the candidates are the whole mount
+ * table, not the drives listed: a partition mounted outside `/Volumes`, under
+ * a hidden name, or inside another volume leaves just the same. Each is asked
+ * which physical disks it is on (`diskutil info -plist`), and one that shares
+ * a disk with the ejected volume goes with it.
+ *
+ * Whether a mount is on a disk at all is diskutil's to say, whatever its
+ * device is called: a FUSE driver or a snapshot gives a name that is no device
+ * node. Two things are left unasked. A mount whose file system the kernel
+ * names as a server's (SMB, NFS) is on no disk, and asking about a share whose
+ * server has gone would hold up the very eject that gets rid of it. And the
+ * running system's own mounts (`/`, `/System`, `/dev`) cannot leave.
+ *
+ * When the system cannot say which disk a mount is on (diskutil missing,
+ * failing, slow, or answering something unreadable), that mount is returned as
+ * uncertain, and the caller treats it as leaving too; when it is the ejected
+ * volume that cannot be placed, every mount that is on some disk, or cannot be
+ * placed either, is uncertain. Refusing an eject that would have been fine
+ * costs a second try; taking a disk from under running work cannot be taken
+ * back. When diskutil knows no disk under the ejected volume, it leaves alone.
+ *
+ * On Linux a drive is still checked alone. `gio mount -e` can take a drive's
+ * other partitions too, but the mount table names a partition (for btrfs or an
+ * unlocked LUKS volume, not even that) rather than its disk, and which
+ * partitions leave depends on whether udisks can eject or power off the drive.
+ */
+export async function volumesEjectedWith(volume: MountedVolume, platform: NodeJS.Platform = process.platform): Promise<EjectCompanion[]> {
+  const disksOf = volumeDiskSourceForTests ?? (platform === "darwin" ? macVolumeDisks : null);
+  if (!disksOf || fileSystemsOnNoDisk.has(volume.fileSystem ?? "")) return [];
+  const others = (await everyMount()).filter((other) => other.mountPath !== volume.mountPath
+    && !isSystemMount(other.mountPath)
+    && !fileSystemsOnNoDisk.has(other.fileSystem ?? ""));
+  if (!others.length) return [];
+  const place = (asked: MountedVolume) => disksOf(asked).catch(() => null);
+  const own = await place(volume);
+  if (own && !own.length) return [];
+  const theirs = await mapLimited(others.slice(0, maxMountsAsked), disksAskedAtOnce, place);
+  return others.flatMap((other, index): EjectCompanion[] => {
+    const disks = index < theirs.length ? theirs[index]! : null;
+    if (disks && !disks.length) return [];
+    if (!own || !disks) return [{ volume: other, certain: false }];
+    return disks.some((disk) => own.includes(disk)) ? [{ volume: other, certain: true }] : [];
+  });
 }
 
 export class VolumeEjectError extends Error {
@@ -466,17 +975,34 @@ function looksBusy(output: string): boolean {
   return /busy|in use|dissent|could not be unmounted|open files|EBUSY/i.test(output);
 }
 
+/** “Photos”, “Photos” and “Music”, or the first three and how many more. */
+function quotedNames(volumes: readonly { name: string }[]): string {
+  const names = volumes.slice(0, 3).map((volume) => `“${volume.name}”`);
+  if (volumes.length > 3) names.push(`${volumes.length - 3} more`);
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
 /**
  * Ejects one volume with the system's tools. A busy drive gets a plain
- * message; when no tool exists, so does that. The caller has checked that the
- * listing marks the volume ejectable and that no Connected Folder on it has
- * unfinished work.
+ * message; when no tool exists, so does that. `alongside` names the mounts
+ * that leave with it (`volumesEjectedWith`), so a disk that would not go says
+ * which drives it holds, and says "may" of one the system could not place. The
+ * caller has checked that the listing marks the volume ejectable and that no
+ * Connected Folder on it, or on a mount that leaves with it, has unfinished
+ * work.
  */
-export async function ejectVolume(volume: VolumeRecord, platform: NodeJS.Platform = process.platform): Promise<void> {
-  const run = ejectRunnerForTests ?? runEjectCommand;
+export async function ejectVolume(
+  volume: Pick<VolumeRecord, "name" | "mountPath" | "device">,
+  platform: NodeJS.Platform = process.platform,
+  alongside: readonly { name: string; certain: boolean }[] = [],
+): Promise<void> {
+  const run = ejectRunnerForTests ?? runTool;
   let missing = 0;
   let firstFailure = "";
+  let diskWouldNotGo = false;
   const commands = ejectCommands(volume, platform);
+  const sharing = alongside.some((other) => other.certain) ? quotedNames(alongside.filter((other) => other.certain)) : "";
+  const maybeSharing = !sharing && alongside.length ? quotedNames(alongside) : "";
   // Each tool in turn until one succeeds: an eject a drive cannot do falls back to an unmount.
   for (const command of commands) {
     const result = await run(command);
@@ -484,7 +1010,16 @@ export async function ejectVolume(volume: VolumeRecord, platform: NodeJS.Platfor
     if (result.code === 0) return;
     const output = `${result.stderr}\n${result.stdout}`;
     if (looksBusy(output)) {
-      throw new VolumeEjectError(409, `“${volume.name}” is in use. Close the files and apps using it, then try again.`);
+      throw new VolumeEjectError(409, sharing
+        ? `“${volume.name}” or another drive on its disk (${sharing}) is in use. Close the files and apps using them, then try again.`
+        : maybeSharing
+          ? `“${volume.name}” is in use, or a drive that may be on its disk (${maybeSharing}) is. Close the files and apps using them, then try again.`
+          : `“${volume.name}” is in use. Close the files and apps using it, then try again.`);
+    }
+    if (/failed to eject/i.test(output)) {
+      // diskutil unmounts the volume itself first, so this is the rest of its disk refusing to go.
+      if (sharing) throw new VolumeEjectError(409, `The disk holding “${volume.name}” and ${sharing} couldn’t be ejected. Close the files and apps using those drives, then try again.`);
+      diskWouldNotGo = true;
     }
     firstFailure ||= output.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 300) ?? "";
   }
@@ -492,6 +1027,10 @@ export async function ejectVolume(volume: VolumeRecord, platform: NodeJS.Platfor
     throw new VolumeEjectError(503, platform === "darwin"
       ? "AmpleFile can’t eject drives here because diskutil isn’t available."
       : "AmpleFile can’t eject drives here: neither gio nor udisksctl is installed. Eject it from your file manager instead.");
+  }
+  // The unmount that follows was tried too: a volume alone on a disk that cannot be ejected is unmounted instead.
+  if (diskWouldNotGo && maybeSharing) {
+    throw new VolumeEjectError(409, `The disk holding “${volume.name}” couldn’t be ejected. ${maybeSharing} may be on the same disk. Close the files and apps using those drives, then try again.`);
   }
   throw new VolumeEjectError(500, `“${volume.name}” couldn’t be ejected${firstFailure ? `: ${firstFailure}` : "."}`);
 }

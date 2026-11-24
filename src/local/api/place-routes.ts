@@ -27,7 +27,8 @@ import {
 import { goToFolder } from "../go-to-folder.js";
 import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
 import { compressInto, copyHoldsAll, isInside, measureCopy, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "../file-transfer.js";
-import { assertExtractable, extractFolderName, stageExtract, type StagedExtract } from "../archive-extract.js";
+import { assertExtractable, extractClash, stageExtract, type StagedExtract } from "../archive-extract.js";
+import { isMacPackageName } from "../../shared/mac-packages.js";
 import {
   commitUnit,
   findConflicts,
@@ -114,7 +115,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
     sendJson(res, result, "cancelled" in result ? 200 : 201);
     return true;
   }
-  // Extract: an archive becomes a new folder beside it, named after it.
+  // Extract: an archive's one item lands beside it, or its several items in a new folder named after it.
   if (method === "POST" && url.pathname === "/api/file-transfer/extract") {
     const body = await readJsonBody<{ place?: unknown; path?: unknown; operationId?: unknown; conflicts?: unknown }>(state, req);
     const result = await extractEntry(state, body);
@@ -1086,11 +1087,16 @@ async function compressEntries(body: { place?: unknown; paths?: unknown; operati
 
 /**
  * Extract (src/local/archive-extract.ts): a `.zip`, `.tar`, `.tar.gz`, or
- * `.tgz` in a Connected Folder or Standard Folder becomes a new folder beside
- * it, with a restore point in a Connected Folder. A cancelled or refused
- * Extract writes nothing. `conflicts` works as for a transfer, keyed by the
- * new folder's name: a skipped Extract reads nothing, and a replaced or
- * merged one is extracted first and placed last.
+ * `.tgz` in a Connected Folder or Standard Folder gives its one file or
+ * folder beside it, or a new folder beside it holding its several items, with
+ * a restore point in a Connected Folder. A cancelled or refused Extract
+ * writes nothing. `conflicts` works as for a transfer, keyed by the name what
+ * is made takes, which the check reads from the archive's entries: a skipped
+ * Extract writes nothing and reads only enough to know that name, and a
+ * replaced or merged one is extracted first and placed last. On a Mac a
+ * package (an app or a document stored as a folder) is one item, so it is
+ * never merged into: Merge is not offered for one, and a Merge chosen anyway
+ * keeps both.
  */
 async function extractEntry(state: LocalApiState, body: { place?: unknown; path?: unknown; operationId?: unknown; conflicts?: unknown }) {
   const operationId = parseFileOperationId(body.operationId);
@@ -1104,32 +1110,35 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
     await assertExtractable(item.abs);
     const folderRelative = item.relativePath.includes("/") ? item.relativePath.slice(0, item.relativePath.lastIndexOf("/")) : "";
     const target = await resolveTransferItem(place, folderRelative, "target");
-    const name = extractFolderName(basename(item.abs));
-    return { place, item, target, name, destination: join(dirname(item.abs), name) };
+    return { place, item, target };
   };
   if (conflicts.check) {
-    const { item, name, destination } = await resolveArchive();
+    const { item } = await resolveArchive();
+    const clash = await extractClash(item.abs);
+    const destination = clash ? join(dirname(item.abs), clash.name) : null;
+    const existing = destination ? await lstat(destination).catch(() => null) : null;
+    if (!clash || !destination || !existing) return { conflicts: [] as TransferConflict[] };
     const archive = await lstat(item.abs);
-    const existing = await lstat(destination).catch(() => null);
-    if (!existing) return { conflicts: [] as TransferConflict[] };
     return {
       conflicts: [{
-        key: name,
-        name,
-        source: { kind: "folder" as const, sizeBytes: null, modifiedAt: archive.mtime.toISOString() },
+        key: clash.name,
+        name: clash.name,
+        source: { kind: clash.kind, sizeBytes: null, modifiedAt: archive.mtime.toISOString() },
         existing: await summarize(destination, existing),
-        canMerge: existing.isDirectory(),
+        canMerge: clash.kind === "folder" && existing.isDirectory() && !extractsPackage(clash.name),
       }],
     };
   }
   return runFileOperation(operationId, "extract", async (operation) => {
-    const { place, item, target, name, destination } = await resolveArchive();
+    const { place, item, target } = await resolveArchive();
     const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
     const policy = conflicts.policy;
-    const choice = policy ? policy.items?.[name] ?? policy.apply ?? "keep-both" : "keep-both";
-    // A skipped Extract reads nothing.
-    if (choice === "skip" && await lstat(destination).catch(() => null)) {
-      return { path: null, restorePoints: [] as TransferRestorePoint[], replaced: [], merged: [], skippedClashes: [{ path: relativeTo(root, destination), reason: "chosen" as const }] };
+    // A skipped Extract writes nothing: the archive is read only far enough to name what it would make.
+    if (policy && (policy.apply === "skip" || Object.values(policy.items ?? {}).includes("skip"))) {
+      const clash = await extractClash(item.abs);
+      if (clash && (policy.items?.[clash.name] ?? policy.apply) === "skip") {
+        return { path: null, restorePoints: [] as TransferRestorePoint[], replaced: [], merged: [], skippedClashes: [{ path: relativeTo(root, join(dirname(item.abs), clash.name)), reason: "chosen" as const }] };
+      }
     }
     let staged: StagedExtract;
     try {
@@ -1139,7 +1148,12 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
       throw error;
     }
     try {
-      const plan = await planPlacements([{ source: staged.folder, key: name, name }], staged.parent, policy, {
+      const name = staged.name;
+      const choice = policy ? policy.items?.[name] ?? policy.apply : undefined;
+      const placing = policy && choice === "merge" && staged.kind === "folder" && extractsPackage(name)
+        ? { ...policy, items: { ...policy.items, [name]: "keep-both" as const } }
+        : policy;
+      const plan = await planPlacements([{ source: staged.path, key: name, name }], staged.parent, placing, {
         newItems: true,
         mayChange: target.connectedFolder ? connectedFolderMayChange(target.connectedFolder) : standardMayChange(place.id as StandardFolderId),
       });
@@ -1172,6 +1186,11 @@ async function extractEntry(state: LocalApiState, body: { place?: unknown; path?
       await staged.discard();
     }
   }, (result) => "cancelled" in result ? "cancelled" : "succeeded");
+}
+
+/** Whether what an Extract makes is a Mac package, which is one item and never merged into. */
+function extractsPackage(name: string): boolean {
+  return process.platform === "darwin" && isMacPackageName(name);
 }
 
 /**

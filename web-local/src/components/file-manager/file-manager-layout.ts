@@ -168,10 +168,11 @@ export function canDropInto(target: string, dragged: readonly string[]): boolean
 }
 
 /** The Kind column for a symbolic link: what it points to, or that it is broken. */
-export function linkKindLabel(link: NonNullable<TreeEntry["link"]>): string {
+export function linkKindLabel(link: NonNullable<TreeEntry["link"]>, packaged = false): string {
   if (link.target === "missing") return "Broken Link";
-  if (link.target === "folder") return "Link to Folder";
   const name = link.targetPath.slice(Math.max(link.targetPath.lastIndexOf("/"), link.targetPath.lastIndexOf("\\")) + 1);
+  // A link to a Mac package names what the package is: "Link to Application".
+  if (link.target === "folder") return packaged ? `Link to ${fileKindLabel({ kind: "folder", name, package: true })}` : "Link to Folder";
   return `Link to ${fileKindLabel({ kind: "file", name })}`;
 }
 
