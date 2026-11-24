@@ -657,11 +657,16 @@ other surface.
   Folder's own model from the names in the folder shown and its recent Chat
   titles, kept for 30 minutes or until those change; plain ones cover a
   selection and the wait.
-- **What the Worker changed:** after a Worker reply or an Automation run, the
-  files it added, moved, or changed carry a small dot in the list, and Info
-  opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
-  changed") listing the first few, with **Undo** (History's restore) and
-  **Done**.
+- **What the Worker changed:** after a Worker reply (an Automation's Chat
+  step included), the files it added, moved, or changed carry a small dot in
+  the list, and Info opens with a receipt ("The Worker changed 14 items · 3
+  added · 9 moved · 2 changed") listing the first few, with **Undo** and
+  **Done**. The receipt compares the turn's own "Before turn" and "After
+  turn" restore points, so nothing changed after the reply (a paste, a move
+  in, an edit) is counted as the Worker's. **Undo** puts back only those
+  files, each only while it is still as the turn left it; a file changed
+  again since stays as it is, and the notice says how many were kept. Undo
+  takes its own restore point first, so ⇧⌘Z redoes it.
 - **Set Up for Me:** right after a folder is connected, Info opens with a
   card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
   Thanks**. Either answer closes the card for good; the card is the only
