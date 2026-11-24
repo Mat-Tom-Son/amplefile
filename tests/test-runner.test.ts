@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,4 +122,50 @@ test("the real-Pi guard records changes beneath protected folders and nothing el
     ["mkdir", join("real-pi", "agent", "auth.json.lock")],
     ["renameSync", join("real-pi", "agent", "settings.json")],
   ]);
+});
+
+test("a test file's leftover temporary folders are removed when its process ends, and nothing else is", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-temp-folders-"));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  const guard = fileURLToPath(new URL("../scripts/test-temp-folders.mjs", import.meta.url));
+  const script = `
+    import fs from "node:fs";
+    import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+    import { tmpdir } from "node:os";
+    import { join } from "node:path";
+    const sandbox = process.argv[2];
+    const prefix = join(tmpdir(), "amplefile-temp-folders-left-");
+    const left = await mkdtemp(prefix);
+    await writeFile(join(left, "note.txt"), "left behind");
+    const leftSync = fs.mkdtempSync(prefix);
+    const leftCallback = await new Promise((done, fail) => fs.mkdtemp(prefix, (error, path) => error ? fail(error) : done(path)));
+    // Removed, then written back: what a service closing after the cleanup hook does.
+    const rewritten = await mkdtemp(prefix);
+    await rm(rewritten, { recursive: true });
+    await mkdir(join(rewritten, "state"), { recursive: true });
+    // Kept: a folder made by name, and one made outside the temporary folder.
+    const named = join(tmpdir(), "named");
+    await mkdir(named);
+    const elsewhere = await mkdtemp(join(sandbox, "elsewhere-"));
+    console.log(JSON.stringify({ removed: [left, leftSync, leftCallback, rewritten], kept: [named, elsewhere] }));
+  `;
+  // The script's temporary folder is one inside the sandbox, so the sandbox itself is "elsewhere".
+  const temporary = join(sandbox, "tmp");
+  const run = async (name: string) => {
+    await rm(temporary, { recursive: true, force: true });
+    await mkdir(temporary);
+    const file = join(sandbox, name);
+    await writeFile(file, script);
+    const result = spawnSync(process.execPath, ["--import", guard, file, sandbox], { encoding: "utf8", timeout: 10_000, env: { ...process.env, TMPDIR: temporary } });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout) as { removed: string[]; kept: string[] };
+  };
+
+  const asTest = await run("leaves-folders.test.mjs");
+  assert.deepEqual(asTest.removed.map((path) => existsSync(path)), [false, false, false, false]);
+  assert.deepEqual(asTest.kept.map((path) => existsSync(path)), [true, true]);
+
+  // A helper process a test starts keeps its folders for the test to read.
+  const asHelper = await run("helper.mjs");
+  assert.deepEqual(asHelper.removed.map((path) => existsSync(path)), [true, true, true, true]);
 });

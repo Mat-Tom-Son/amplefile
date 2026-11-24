@@ -128,7 +128,8 @@ test("after a real mid-turn compaction the next request carries the current turn
     resolveRuntime: async () => ({ agentDir: join(root, "..", `${root.split("/").pop()}-pi`), credentials, modelRuntime,
       preferredModel: { provider: "fixture-identity", id: "chat" }, settingsManager: settings }),
   });
-  t.after(() => client.stop());
+  // The Pi folder sits beside the root, and is removed once the Worker has stopped writing to it.
+  t.after(async () => { await client.stop(); await rm(`${root}-pi`, { recursive: true, force: true }); });
 
   const requests: string[] = [];
   let summaries = 0;

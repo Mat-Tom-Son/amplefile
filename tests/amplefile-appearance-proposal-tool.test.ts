@@ -30,8 +30,9 @@ test("the inert appearance tool creates bounded built-in banner framing without 
   await assert.rejects(run(process.execPath, [tsxCli, script, "create", "--color", "#0e7490", "--zoom", "3", "--out", path]));
 });
 
-test("the appearance proposal tool emits the new kind, target fields, and default suffix", async () => {
+test("the appearance proposal tool emits the new kind, target fields, and default suffix", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-appearance-proposal-"));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
   const created = await run(process.execPath, [
     tsxCli, script, "create",
     "--name", "Client work",
