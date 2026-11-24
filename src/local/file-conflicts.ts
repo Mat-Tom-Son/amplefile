@@ -11,7 +11,9 @@ import {
   isInside,
   removeOwnedItem,
   renameInto,
+  transferFileStillAt,
   type CopiedSource,
+  type TransferFileIdentity,
 } from "./file-transfer.js";
 
 /**
@@ -396,6 +398,7 @@ export interface StagedUnit {
   /** A move renamed it out of its source (it can be put back); a copy, or a move across disks, wrote it. */
   renamed: boolean;
   committed: boolean;
+  copyIdentity?: TransferFileIdentity;
   release?: () => void;
 }
 
@@ -425,25 +428,35 @@ export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise
       return { unit, at, renamed: true, committed: true };
     }
     const destination = await freeDestination(folder, name, { duplicate: unit.duplicate });
-    await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation, read: run.read });
-    return { unit, at: destination, renamed: false, committed: true };
+    const copyIdentity = await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation, read: run.read });
+    return { unit, at: destination, renamed: false, committed: true, copyIdentity };
   }
   const working = claimWorkingPath(folder, replaceWorkingPrefix);
   try {
-    const renamed = run.mode === "move";
-    if (renamed) await rename(unit.source, working.path);
-    else await copyItemTo(unit.source, working.path, { withIdentity: run.withIdentity, operation, read: run.read });
-    return { unit, at: working.path, renamed, committed: false, release: working.release };
+    if (run.mode === "move") {
+      await rename(unit.source, working.path);
+      return { unit, at: working.path, renamed: true, committed: false, release: working.release };
+    }
+    const copyIdentity = await copyItemTo(unit.source, working.path, { withIdentity: run.withIdentity, operation, read: run.read });
+    return { unit, at: working.path, renamed: false, committed: false, copyIdentity, release: working.release };
   } catch (error) {
     working.release();
     throw error;
   }
 }
 
+/** Whether a copy still owns the pathname it wrote or was renamed to. */
+export function stagedCopyStillAt(staged: StagedUnit): boolean {
+  return Boolean(staged.at && (!staged.copyIdentity || transferFileStillAt(staged.at, staged.copyIdentity)));
+}
+
 /** Disposes of the replaced item, then places the replacement without displacing a new arrival. */
 export async function commitUnit(staged: StagedUnit, dispose: DisposeReplaced): Promise<{ at: string; replaced: ReplacedItem | null }> {
   if (staged.committed || staged.unit.action !== "replace" || !staged.at) return { at: staged.at ?? staged.unit.destination, replaced: null };
-  const replaced = await lstat(staged.unit.destination).catch(() => null) ? await dispose(staged.unit.destination) : null;
+  const taken = Boolean(await lstat(staged.unit.destination).catch(() => null));
+  if (!stagedCopyStillAt(staged)) throw Error("The staged copy is no longer where it was written.");
+  const replaced = taken ? await dispose(staged.unit.destination) : null;
+  if (!stagedCopyStillAt(staged)) throw Error("The staged copy is no longer where it was written.");
   const at = await renameInto(staged.at, dirname(staged.unit.destination), basename(staged.unit.destination));
   staged.release?.();
   staged.committed = true;
@@ -455,6 +468,7 @@ export async function commitUnit(staged: StagedUnit, dispose: DisposeReplaced): 
 export async function takeBackUnit(staged: StagedUnit): Promise<void> {
   if (!staged.at) return;
   try {
+    if (!stagedCopyStillAt(staged)) return;
     if (staged.renamed) {
       if (!await lstat(staged.unit.source).catch(() => null)) await rename(staged.at, staged.unit.source);
     } else {

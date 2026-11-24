@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 
 import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
 import { setAttributeCheckForTests } from "../src/local/extended-attributes.js";
-import { setFileOperationBoundaryHookForTests, type FileOperationBoundary } from "../src/local/file-operations.js";
+import { cancelFileOperation, setFileOperationBoundaryHookForTests, type FileOperationBoundary } from "../src/local/file-operations.js";
 import { setSystemTrashHandler } from "../src/local/move-to-system-trash.js";
 import { startLocalApi } from "../src/local/server.js";
 import { setCrossPlaceMoveRenameForTests } from "../src/local/api/place-routes.js";
@@ -448,6 +448,79 @@ test("a plain-to-plain cross-disk move keeps a changed original and reports the 
   assert.equal(await readFile(join(target, "notes.txt"), "utf8"), "before");
   assert.equal(await readFile(original, "utf8"), "updated");
   assert.deepEqual(await receipts(sandbox), []);
+});
+
+test("a plain cross-disk move keeps the original when the copy's bytes change", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const target = join(sandbox, "Target");
+  const original = join(sandbox, "notes.txt");
+  const copy = join(target, "notes.txt");
+  await mkdir(target);
+  await writeFile(original, "original");
+  const timestamp = new Date(Date.now() - 60_000);
+  await utimes(original, timestamp, timestamp);
+  atBoundary(t, "remove", async () => {
+    await writeFile(copy, "modified");
+    await utimes(copy, timestamp, timestamp);
+  });
+
+  const moved = await transfer(call, { mode: "move", operationId: "changed-copy", sources: [onDisk(original)], target: onDisk(target) });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual(moved.body!.moves, []);
+  assert.match(moved.body!.failed.error, /copy.*changed/i);
+  assert.equal(await readFile(original, "utf8"), "original");
+  assert.equal(await readFile(copy, "utf8"), "modified");
+});
+
+test("stopping a cross-disk move leaves an unrelated file that took the copy's place", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const target = join(sandbox, "Target");
+  const original = join(sandbox, "notes.txt");
+  const copy = join(target, "notes.txt");
+  await mkdir(target);
+  await writeFile(original, "original");
+  atBoundary(t, "remove", async () => {
+    await rename(copy, join(sandbox, "moved-copy.txt"));
+    await writeFile(copy, "unrelated");
+    cancelFileOperation("cancel-substituted-copy");
+  });
+
+  const moved = await transfer(call, { mode: "move", operationId: "cancel-substituted-copy", sources: [onDisk(original)], target: onDisk(target) });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.equal(moved.body!.cancelled, true);
+  assert.deepEqual(moved.body!.moves, []);
+  assert.equal(await readFile(original, "utf8"), "original");
+  assert.equal(await readFile(copy, "utf8"), "unrelated");
+});
+
+test("a cross-disk replacement refuses a staged copy that changes while disposal waits", async (t) => {
+  const { call, sandbox } = await sandboxApi(t);
+  const target = join(sandbox, "Target");
+  const original = join(sandbox, "notes.txt");
+  const copy = join(target, "notes.txt");
+  const parked = join(sandbox, "replaced.txt");
+  await mkdir(target);
+  await writeFile(original, "original");
+  await writeFile(copy, "old target");
+  let working = "";
+  setSystemTrashHandler(async (path) => {
+    assert.equal(path, copy);
+    const stage = (await readdir(target)).find((name) => name.startsWith(".AmpleFile-replace-"));
+    assert.ok(stage);
+    working = join(target, stage);
+    await rename(working, join(sandbox, "staged-original"));
+    await writeFile(working, "unrelated");
+    await rename(path, parked);
+  });
+  t.after(() => setSystemTrashHandler(null));
+
+  const moved = await transfer(call, { mode: "move", sources: [onDisk(original)], target: onDisk(target), conflicts: { apply: "replace" } });
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual(moved.body!.moves, []);
+  assert.match(moved.body!.failed.error, /staged copy/i);
+  assert.equal(await readFile(original, "utf8"), "original");
+  assert.equal(await readFile(working, "utf8"), "unrelated");
+  assert.equal(await readFile(parked, "utf8"), "old target");
 });
 
 test("a plain-to-plain cross-disk move can finish after Finder updates its nested note", async (t) => {

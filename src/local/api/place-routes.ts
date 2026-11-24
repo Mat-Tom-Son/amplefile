@@ -29,7 +29,7 @@ import {
 import { goToFolder } from "../go-to-folder.js";
 import { comparableForms, comparablePath, formsContain } from "../path-comparison.js";
 import { resolveFolderLocation, scanComputerFolder } from "../folder-locations.js";
-import { compressInto, copyHoldsAll, filesTooFreshToTell, folderBlockingRemoval, freeDestination, isInside, moveReadPaths, measureCopy, onOneDisk, relativeTo, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, type CopiedSource } from "../file-transfer.js";
+import { checkedMoveCopyUnchanged, compressInto, copyHoldsAll, filesTooFreshToTell, folderBlockingRemoval, freeDestination, isInside, moveReadPaths, measureCopy, onOneDisk, relativeTo, removeIdentityFoldersKeptAt, renameInto, sameBytes, sourceLostPart, sourceUnchanged, treesMatch, verifyMoveCopyContents, type CopiedSource } from "../file-transfer.js";
 import { extraInWords, extrasCopyLacks } from "../extended-attributes.js";
 import { assertExtractable, extractClash, stageExtract, type StagedExtract } from "../archive-extract.js";
 import { isMacPackageName } from "../../shared/mac-packages.js";
@@ -41,6 +41,7 @@ import {
   planPlacements,
   removeEmptiedMergeSources,
   stageUnit,
+  stagedCopyStillAt,
   summarize,
   takeBackUnit,
   type ConflictPolicy,
@@ -1263,9 +1264,9 @@ async function moveRows(
           reason: "pre_move",
           label,
         })
-        : await checkpointAdditiveWritesOrUndo(toRoot, arrivals, { reason: "pre_move", label });
+        : await createConnectedFolderMutationCheckpoint(toRoot, { deleteOnRestore: arrivals, reason: "pre_move", label });
     } catch (error) {
-      if (replacing.length || renames.size) for (const row of rows) if (staged[row.index]) await takeBackUnit(staged[row.index]!).catch(() => undefined);
+      for (const row of rows) if (staged[row.index]) await takeBackUnit(staged[row.index]!).catch(() => undefined);
       await discardSourcePoint();
       throw error;
     }
@@ -1317,6 +1318,7 @@ async function moveRows(
     };
   };
   const changedWhileCopied = (source: string) => httpError(409, `“${basename(source)}” changed while it was being copied, so it stays where it was.`);
+  const unavailableCopy = (source: string) => Object.assign(httpError(409, `The copy of “${basename(source)}” changed or is no longer where it was written. The original stays where it was.`), { unavailableCopy: true });
   operation.stage(rows.some((row) => !renames.has(row.index)) ? "removing" : "moving");
   for (const [position, row] of rows.entries()) {
     try {
@@ -1356,8 +1358,11 @@ async function moveRows(
       const erased = there && (!from || !uncovered.length);
       if (erased) {
         if (!from && !to) await assertPlainOriginalUnowned(entries[row.unit.top]!, source);
-        const copyAt = stagedAt(row).at!;
-        if (!(await sourceUnchanged(source, read) && await copyHoldsAll(source, copyAt, { withIdentity: true }))) throw changedWhileCopied(source);
+        const copyOf = stagedAt(row);
+        if (!stagedCopyStillAt(copyOf)) throw unavailableCopy(source);
+        const copyAt = copyOf.at!;
+        if (!await sourceUnchanged(source, read)) throw changedWhileCopied(source);
+        if (!await copyHoldsAll(source, copyAt, { withIdentity: true })) throw unavailableCopy(source);
         // A file read within one tick of a coarse clock is compared byte for byte: its time could not show a rewrite.
         for (const file of filesTooFreshToTell(source, read)) {
           if (!await sameBytes(file, join(copyAt, relative(source, file)))) throw changedWhileCopied(source);
@@ -1370,13 +1375,19 @@ async function moveRows(
         const committed = await commitUnit(stagedAt(row), to ? (path) => disposeInConnectedFolder(state, to, targetSafety!, path) : disposeToSystemTrash);
         if (committed.replaced) executed.replaced.push(committed.replaced);
       }
+      if (!stagedCopyStillAt(stagedAt(row))) throw unavailableCopy(source);
       if (there && from) {
         // Each item leaving the source is that Connected Folder's delete,
         // with the delete's own receipt, as the delete routes record it.
         const movedTo = to ? to.id : "a plain folder";
         const { value: removed } = await runDesktopSettingsAct(state!, "files.delete", async (requestId) => {
           // Rechecked as it goes.
-          if (erased && !await sourceUnchanged(source, read)) throw changedWhileCopied(source);
+          if (erased) {
+            if (!await sourceUnchanged(source, read)) throw changedWhileCopied(source);
+            await verifyCopyForRemoval(source, stagedAt(row), read);
+          } else if (!stagedCopyStillAt(stagedAt(row))) {
+            throw unavailableCopy(source);
+          }
           removing = true;
           const value = await applyConnectedFolderDelete(state!, from, rowPath(row.unit), uncovered, safety!.checkpointId, { receiptId: requestId });
           return {
@@ -1388,7 +1399,8 @@ async function moveRows(
         });
         if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: rowPath(row.unit), entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
       } else if (there) {
-        const remove = () => removeMovedPlainSource(entries[row.unit.top]!, source, read, to?.name ?? "the destination folder", () => { removing = true; });
+        const remove = () => removeMovedPlainSource(entries[row.unit.top]!, source, read, to?.name ?? "the destination folder",
+          () => verifyCopyForRemoval(source, stagedAt(row), read), () => { removing = true; });
         if (to) {
           await runDesktopSettingsAct(state!, "files.move", async () => {
             await remove();
@@ -1421,6 +1433,11 @@ async function moveRows(
       // from the copy is named, not hidden.
       failures.push({ path: rowPath(row.unit), error: plainFileError(error, source) });
       const copyOf = stagedAt(row);
+      if (!stagedCopyStillAt(copyOf) || (error as { unavailableCopy?: boolean }).unavailableCopy) {
+        copyOf.release?.();
+        staged[row.index] = null;
+        continue;
+      }
       if (!copyOf.committed) { await takeBackUnit(copyOf).catch(() => undefined); staged[row.index] = null; continue; }
       inBoth.add(row.index);
       const left = await removeIdentityFoldersKeptAt(copyOf.at!, source).catch(() => [copyOf.at!]);
@@ -1437,6 +1454,20 @@ async function moveRows(
     await recordUnplannedArrivals();
   }
   return result({});
+
+  /** Checked only after any other preparation for removing the original is complete. */
+  async function verifyCopyForRemoval(source: string, copy: StagedUnit, sourceRead: CopiedSource): Promise<void> {
+    if (!stagedCopyStillAt(copy)) throw unavailableCopy(source);
+    const at = copy.at!;
+    const checked = await verifyMoveCopyContents(source, at);
+    if (!checked) {
+      if (!await sourceUnchanged(source, sourceRead)) throw changedWhileCopied(source);
+      throw unavailableCopy(source);
+    }
+    await assertCopyLacksNothing(source, at, sourceRead);
+    if (!await sourceUnchanged(source, sourceRead)) throw changedWhileCopied(source);
+    if (!await checkedMoveCopyUnchanged(checked) || !stagedCopyStillAt(copy)) throw unavailableCopy(source);
+  }
 
   /**
    * One item on the same disk as its target: the item there, if it is to be
@@ -1522,6 +1553,7 @@ async function moveRows(
         await takeBackUnit(copyOf);
         staged[rest.index] = null;
       } catch {
+        if (!stagedCopyStillAt(copyOf)) { staged[rest.index] = null; continue; }
         stranded.add(rest.index);
         leftInTarget.push(relativeTo(toRoot, copyOf.at!));
         const left = await removeIdentityFoldersKeptAt(copyOf.at!, rest.unit.source).catch(() => [copyOf.at!]);
@@ -1653,12 +1685,14 @@ async function removeMovedPlainSource(
   absolutePath: string,
   read: CopiedSource,
   destinationName: string,
+  verifyCopy: () => Promise<void>,
   began: () => void,
 ): Promise<void> {
   const name = basename(absolutePath);
   await assertPlainOriginalUnowned(entry, absolutePath);
   if (!await sourceUnchanged(absolutePath, read)) throw httpError(409, `“${name}” changed while it was being copied, so it stays where it was.`);
   await assertRemovableWhole(absolutePath);
+  await verifyCopy();
   began();
   try {
     await rm(absolutePath, { recursive: true, force: false });
