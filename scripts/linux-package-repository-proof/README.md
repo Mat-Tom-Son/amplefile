@@ -4,8 +4,8 @@ Runs the Fedora package repository lane ([Linux builds](../../docs/linux-build.m
 end to end in a throwaway Fedora 44 container, with a throwaway signing key
 and a local stand-in for GitHub's hosts. It needs podman, the local
 `localhost/amplefile-wlroots-acceptance` image (or another Fedora 44 image,
-`--image`), `gpg`, an unpacked Linux build (`npm run desktop:make:linux -- --dir`,
-or `--unpacked DIR`), the icons from `npm run desktop:icons`, and the
+`--image`), `gpg`, an unpacked Linux build of the same source (`npm run desktop:make:linux -- --dir`,
+or `--unpacked DIR`; the app check refuses one without the Linux package update code), the icons from `npm run desktop:icons`, and the
 packager's own prerequisites (on Fedora, `libxcrypt-compat` or a library path
 that provides `libcrypt.so.1`). The container downloads `createrepo_c`,
 `rpm-sign`, `git-core`, `openssl` and the RPM's dependencies from Fedora's
@@ -42,11 +42,31 @@ What it does:
    changed, its signature not), which dnf must reject and skip the repository
    for, and a tampered RPM (bytes changed after signing, with metadata
    regenerated and signed to match), which dnf must refuse to install; A stays
-   installed both times. Last, it upgrades to B through the
-   repository with `gpgcheck=1` and `repo_gpgcheck=1`, while `watch.mjs` runs
-   the app's own `desktop/src/system-package-updates.ts` against the installed
-   files and must see the restart offer appear, and checks that a person's
-   change to the entry, and `enabled=0`, survive.
+   installed both times.
+5. Last, it runs the installed app itself as a person would: as an ordinary
+   user, on a display and session bus that outlive any one AmpleFile process,
+   with a disposable profile (`AMPLEFILE_STATE_DIR`, `AMPLEFILE_DESKTOP_STATE_DIR`,
+   `AMPLEFILE_CLI_STATE_DIR`, `AMPLEFILE_AGENT_DIR`, `PI_CODING_AGENT_DIR`,
+   `AMPLEFILE_DISABLE_LOGIN_SHELL_ENV=1`) and `--remote-debugging-port`.
+   `app-driver.mjs` calls `window.ampleFileDesktop.updates` in its window, as
+   Settings → About and the sidebar do. Before the upgrade the status must
+   say updates arrive with the system's software updates. dnf then upgrades
+   A to B through the repository with `gpgcheck=1` and `repo_gpgcheck=1`
+   while it runs; the status check (which looks at the installed files, in
+   place of the minute-long timer) must leave it waiting on the first look
+   and offer the restart (`ready`, `updatesFrom: "system"`) on the second,
+   without restarting anything. `install`, the call the confirmed click
+   makes, must end the old process and start one new process from the
+   installed files, which says updates arrive with the system's again (no
+   second `ready`) and is still the only process 15 seconds later. Then the
+   person turns the repository off (`enabled=0`), dnf reinstalls B under the
+   running app, the restart is offered and not chosen, and an ordinary quit
+   (SIGTERM, as at logout) must run AmpleFile's own shutdown and open
+   nothing again. `enabled=0` and an earlier change to the entry must
+   survive.
+
+`watch.mjs` reads what Settings → About would say for the install without
+starting the app.
 
 `results.txt` lists every check. Without `--keep`, only the logs and results
 stay in `out/linux-package-repository-proof` afterwards. It cannot prove dnf

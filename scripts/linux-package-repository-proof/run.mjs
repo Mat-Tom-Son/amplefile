@@ -7,10 +7,12 @@
 //   node scripts/linux-package-repository-proof/run.mjs [--unpacked DIR] [--image NAME] [--keep]
 //
 // The proof uses the committed source (HEAD), so commit before running it.
-// Everything it makes lives in out/linux-package-repository-proof; without
+// The unpacked build must come from this source (it checks for the Linux
+// package update code). Everything it makes lives in
+// out/linux-package-repository-proof; without
 // --keep only the logs and results stay there afterwards.
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -32,6 +34,19 @@ function run(command, argv, options = {}) {
 }
 
 if (!existsSync(join(unpacked, "resources/app.asar"))) throw new Error(`${unpacked} is not an unpacked Linux build; make one with npm run desktop:make:linux -- --dir, or pass --unpacked.`);
+// The app check drives this branch's update code, so the unpacked build must carry it.
+{
+  const archive = await open(join(unpacked, "resources/app.asar"));
+  const prefix = Buffer.alloc(16);
+  await archive.read(prefix, 0, 16, 0);
+  const json = Buffer.alloc(prefix.readUInt32LE(12));
+  await archive.read(json, 0, json.length, 16);
+  await archive.close();
+  const header = JSON.parse(json.toString("utf8"));
+  if (!header.files?.dist?.files?.desktop?.files?.["system-package-updates.js"]) {
+    throw new Error(`${unpacked} was built from source without the Linux package updates; build this checkout with npm run desktop:make:linux -- --dir, or pass --unpacked.`);
+  }
+}
 const icons = join(root, "out/generated-assets/linux-icons");
 if (!existsSync(icons)) throw new Error("Run npm run desktop:icons first: the RPM takes its hicolor icons from out/generated-assets/linux-icons.");
 await rm(work, { recursive: true, force: true });
