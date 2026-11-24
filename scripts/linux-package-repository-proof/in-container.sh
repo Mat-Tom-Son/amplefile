@@ -129,8 +129,11 @@ grep -q "already lists $PACKAGE $VERSION-2; $VERSION-1 is not newer" "$P/last.lo
 step "Tampered metadata: repomd.xml changed, its signature not"
 tampered_commit refs/proof/tampered-metadata sed -i -E 's#<revision>([0-9]+)</revision>#<revision>1\1</revision>#' rpm/x86_64/repodata/repomd.xml
 serve refs/proof/tampered-metadata
-refused "upgrade from tampered metadata" upgrade
-[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'signature|gpg|pgp' "$P/last.log" && pass "dnf refuses repository metadata whose signature does not verify; A stays installed" || fail "dnf refuses repository metadata whose signature does not verify; A stays installed"
+# skip_if_unavailable=True: dnf reports the bad signature and skips the
+# repository rather than failing the rest of the upgrade.
+upgrade > "$P/last.log" 2>&1 || true
+sed 's/^/    /' "$P/last.log" | grep -Ei 'signature|amplefile' | tail -4
+[ "$(installed)" = "$VERSION-1" ] && grep -Eiq 'repomd.xml GPG signature verification error' "$P/last.log" && pass "dnf rejects repository metadata whose signature does not verify and skips the repository; A stays installed" || fail "dnf rejects repository metadata whose signature does not verify and skips the repository; A stays installed"
 
 step "Tampered RPM: bytes changed after signing, metadata regenerated and signed to match"
 mkdir -p "$P/tampered/x86_64" "$P/releases/tampered" "$P/build-tampered"

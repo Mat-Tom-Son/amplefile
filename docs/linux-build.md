@@ -558,7 +558,9 @@ metadata_expire=6h
 dnf checks both the RPM's own signature (`gpgcheck`) and the signature on the
 repository metadata (`repo_gpgcheck`) against that key, and asks the person to
 confirm the key's fingerprint the first time it uses it. An unreachable
-repository is skipped rather than failing the rest of a system upgrade. The
+repository, or one whose metadata signature does not verify (dnf prints
+`repomd.xml GPG signature verification error`), is skipped rather than failing
+the rest of a system upgrade. The
 address comes from `linuxPackageRepositoryUrl` in
 `src/shared/product-identity.json`; `scripts/linux-package-repository.cjs`
 derives the entry, the paths, the branch, and the release download folder from

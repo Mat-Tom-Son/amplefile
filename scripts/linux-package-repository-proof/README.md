@@ -39,9 +39,10 @@ What it does:
    and checks the enrolment, then signs and publishes build B, checking each
    refusal on the way (no upload, other bytes uploaded, a stale `SHA256SUMS`,
    a build that is not newer). It serves tampered metadata (`repomd.xml`
-   changed, its signature not) and a tampered RPM (bytes changed after
-   signing, with metadata regenerated and signed to match), and expects dnf to
-   refuse both with A still installed. Last, it upgrades to B through the
+   changed, its signature not), which dnf must reject and skip the repository
+   for, and a tampered RPM (bytes changed after signing, with metadata
+   regenerated and signed to match), which dnf must refuse to install; A stays
+   installed both times. Last, it upgrades to B through the
    repository with `gpgcheck=1` and `repo_gpgcheck=1`, while `watch.mjs` runs
    the app's own `desktop/src/system-package-updates.ts` against the installed
    files and must see the restart offer appear, and checks that a person's
