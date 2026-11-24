@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: November 8, 2026
+Last updated: November 24, 2026
 
 AmpleFile is a local-first desktop application. It does not use an AmpleFile account or a hosted AmpleFile service. The application does not include first-party analytics, advertising, or usage telemetry.
 
@@ -189,6 +189,8 @@ AmpleFile does not proxy these requests through an AmpleFile account service. Th
 ### Application updates
 
 Installed Mac builds check the public `Mat-Tom-Son/amplefile` feed, the source repository's GitHub Releases, shortly after startup, every four hours while running, and when the platform update command is selected. Versions through 0.1.4 check the public `Mat-Tom-Son/amplefile-mac-releases` repository instead. A check sends a normal network request to GitHub, which can receive standard request metadata such as an IP address and user agent.
+
+On Linux, AmpleFile itself makes no update request. On Fedora, an RPM signed for AmpleFile's package repository adds the dnf repository entry `/etc/yum.repos.d/amplefile.repo` when it is installed. From then on the system's package manager, and any automatic update tool that uses it, fetches that repository's metadata from `raw.githubusercontent.com` (the `linux-package-repository` branch of `Mat-Tom-Son/amplefile`) whenever it checks for updates and its copy is older than six hours, and downloads a new AmpleFile RPM from the source repository's GitHub Releases when it installs one. GitHub can receive standard request metadata such as an IP address and the package manager's user agent. Setting `enabled=0` in that file, or removing the package, stops it. The running app only looks at its own installed files to notice that an update was installed. The DEB and AppImage add no repository.
 
 Update checks do not download an installer. When an update is available, the user chooses **Download update**; AmpleFile downloads it, performs its update-specific shutdown, and asks the updater to relaunch the app. If an already-downloaded update becomes ready outside that immediate action, AmpleFile can offer **Restart now** or **Later**; a ready update deferred with Later installs on explicit application quit. The ad hoc Mac structural package retains updater metadata for verification but is named `AmpleFile Local Smoke`, has a separate bundle identity and application-data directory, and never starts the updater or contacts the production feed.
 

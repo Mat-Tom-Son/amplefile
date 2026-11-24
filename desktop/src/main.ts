@@ -101,7 +101,8 @@ import { ComputerHelperInstallation } from "./computer-helper-installation.js";
 import { leftoverChromeCleanupApplies, removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
-import { DesktopUpdater, hasPackagedDesktopUpdateFeed, type DesktopUpdateStatus } from "./updater.js";
+import { DesktopUpdater, hasPackagedDesktopUpdateFeed, type DesktopUpdateStatus, type DesktopUpdates } from "./updater.js";
+import { createSystemPackageUpdates } from "./system-package-updates.js";
 import { HeadlessQuitSequence } from "./headless-quit.js";
 import {
   ampleFileDesktopUserDataPath,
@@ -282,7 +283,7 @@ let activeAgentTurns = 0;
 let trayPulseTimer: NodeJS.Timeout | null = null;
 let trayPulseFrames: Electron.NativeImage[] | null = null;
 let powerBlockerId: number | null = null;
-let desktopUpdater: DesktopUpdater | null = null;
+let desktopUpdater: DesktopUpdates | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let rendererProtocolRegistered = false;
 let ipcRegistered = false;
@@ -608,6 +609,12 @@ async function startInteractiveApp(): Promise<void> {
     if (process.platform === "linux") void updateRecentConnectedFolders((ids) => ids);
     registerRendererProtocol();
     registerIpc();
+    // On Linux the update source makes no network call, so it starts before
+    // the first window: that window's first status read is then the real one,
+    // never the "not available" stand-in (an RPM from the package repository
+    // would otherwise say so until its status event arrives, if it arrives
+    // after the window subscribes).
+    if (process.platform === "linux") configureUpdater();
     await ensureWindow();
     configureUpdater();
     createTrayIfSupported();
@@ -1891,6 +1898,18 @@ function configureUpdater(): void {
   // Ad hoc verification builds use a separate identity and must never touch
   // the production update feed or production AmpleFile Safe Storage key.
   if (desktopUpdater || localMacSmokeBuild) return;
+  // An RPM from the Fedora package repository updates with the system's
+  // software; AmpleFile only offers the restart once dnf replaced its files.
+  desktopUpdater = createSystemPackageUpdates({
+    productName,
+    repositoryId: productIdentity.linuxPackageRepositoryId,
+    getWindows: () => fileManagerWindows.windows(),
+    prepareToRestart: shutdownForUpdateInstall,
+  });
+  if (desktopUpdater) {
+    desktopUpdater.start();
+    return;
+  }
   desktopUpdater = new DesktopUpdater({
     // Its questions go over the front window; its status and progress reach every window.
     getWindow: frontWindow,
@@ -1909,7 +1928,8 @@ function configureUpdater(): void {
 
 /**
  * Whether this build has an update feed to check: the updater's own answer,
- * or before it starts the same feed test it uses. Linux previews, unpackaged
+ * or before it starts the same feed test it uses. Linux previews (including
+ * an RPM whose updates the system's package manager installs), unpackaged
  * runs, and the Mac local smoke build have none.
  */
 function updatesSupportedHere(): boolean {

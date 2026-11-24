@@ -65,7 +65,8 @@
     "desktop:verify:release:mac": "node scripts/verify-mac-release.mjs",
     "desktop:computer-helper": "node scripts/build-computer-helper.mjs",
     "desktop:linux-native-hosts": "node scripts/build-linux-native-hosts.mjs",
-    "desktop:make:linux": "node scripts/build-linux-desktop.mjs"
+    "desktop:make:linux": "node scripts/build-linux-desktop.mjs",
+    "desktop:linux:repository": "node scripts/publish-linux-package-repository.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.6.0",

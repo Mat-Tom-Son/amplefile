@@ -2,11 +2,12 @@
 // extracts the DEB, RPM and AppImage into a temporary directory (no root, no
 // installation) and checks what each one would put on a computer.
 //
-//   node scripts/verify-linux-packages.mjs [out/linux] [--version X.Y.Z]
+//   node scripts/verify-linux-packages.mjs [out/linux] [--version X.Y.Z] [--rpm-release N]
 //
 // A format is skipped, with a printed notice, only when the tools needed to
 // extract it are missing. docs/linux-build.md describes the checks.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
+const { linuxRpmEnrolment, linuxRpmRelease, repositoryEntry, rpmArtifactName } = require("./linux-package-repository.cjs");
 
 /** The hicolor sizes every package installs (scripts/generate-desktop-icons.mjs). */
 export const linuxIconSizes = [16, 24, 32, 48, 64, 128, 256, 512];
@@ -95,6 +97,70 @@ export function maintainerScriptProblems(name, text) {
   const problems = [];
   if (!text.trim()) return [`${name} is empty`];
   if (/xdg-mime\s+default|mimeapps\.list/.test(text)) problems.push(`${name} changes default applications`);
+  return problems;
+}
+
+/**
+ * Problems with a dnf repository entry an RPM installs: it must check both
+ * package and metadata signatures against a local key, for every repository.
+ */
+export function repositoryEntryProblems(text) {
+  const problems = [];
+  const sections = parseDesktopEntry(text);
+  const names = Object.keys(sections);
+  if (!names.length) problems.push("has no repository section");
+  for (const name of names) {
+    const entry = sections[name];
+    for (const key of ["gpgcheck", "repo_gpgcheck"]) {
+      if (entry[key] !== "1") problems.push(`[${name}] ${key} is ${JSON.stringify(entry[key] ?? null)}, expected "1"`);
+    }
+    if (!/^file:\/\/\/etc\/pki\/rpm-gpg\/\S+$/.test(entry.gpgkey ?? "")) problems.push(`[${name}] gpgkey is not a local key under /etc/pki/rpm-gpg`);
+    if (!/^https:\/\//.test(entry.baseurl ?? "")) problems.push(`[${name}] baseurl is not an https address`);
+  }
+  return problems;
+}
+
+/** The files an RPM lists with their flags (`rpm -qp --qf '[%{FILENAMES}\t%{FILEFLAGS:fflags}\n]'`). */
+export function parseRpmFileFlags(output) {
+  const files = new Map();
+  for (const line of output.split("\n")) {
+    const separator = line.lastIndexOf("\t");
+    if (separator > 0) files.set(line.slice(0, separator), line.slice(separator + 1));
+  }
+  return files;
+}
+
+/**
+ * Problems with an RPM's package repository enrolment. An enrolling RPM
+ * carries the exact entry as a config file an upgrade keeps (%config
+ * noreplace) and the committed key; an RPM built without the key carries
+ * neither.
+ */
+export function rpmEnrolmentProblems({ enrolled, repository, fileFlags, readInstalled, expectedEntry, expectedKey }) {
+  const problems = [];
+  const entryFlags = fileFlags.get(repository.repositoryFile);
+  const keyFlags = fileFlags.get(repository.publicKeyFile);
+  if (!enrolled) {
+    if (entryFlags !== undefined) problems.push(`carries ${repository.repositoryFile} although no public key is committed`);
+    if (keyFlags !== undefined) problems.push(`carries ${repository.publicKeyFile} although no public key is committed`);
+    return problems;
+  }
+  if (entryFlags === undefined) problems.push(`does not carry the repository entry ${repository.repositoryFile}`);
+  else {
+    if (!entryFlags.includes("c") || !entryFlags.includes("n")) problems.push(`${repository.repositoryFile} is not %config(noreplace) (flags ${JSON.stringify(entryFlags)})`);
+    const entry = readInstalled(repository.repositoryFile);
+    if (entry === null) problems.push(`${repository.repositoryFile} is missing from the payload`);
+    else {
+      problems.push(...repositoryEntryProblems(entry).map(problem => `${repository.repositoryFile} ${problem}`));
+      if (entry !== expectedEntry) problems.push(`${repository.repositoryFile} differs from the generated entry`);
+    }
+  }
+  if (keyFlags === undefined) problems.push(`does not carry the public key ${repository.publicKeyFile}`);
+  else {
+    if (keyFlags.includes("c")) problems.push(`${repository.publicKeyFile} is a config file; a later build must be able to replace the key`);
+    const key = readInstalled(repository.publicKeyFile);
+    if (key !== expectedKey) problems.push(`${repository.publicKeyFile} is not the committed public key`);
+  }
   return problems;
 }
 
@@ -188,12 +254,24 @@ async function verifyDeb(file, work, config, identity) {
   return problems;
 }
 
-async function verifyRpm(file, work, config, identity) {
+async function verifyRpm(file, work, config, identity, { release, sourceRoot }) {
   const extract = join(work, "rpm");
   await mkdir(extract, { recursive: true });
   const cpio = spawnSync("sh", ["-c", 'rpm2cpio "$1" | cpio -idm --quiet --no-absolute-filenames', "sh", file], { cwd: extract, encoding: "utf8" });
   if (cpio.status !== 0) return [`could not be extracted: ${cpio.stderr}`];
   const problems = [];
+  const actualRelease = run("rpm", ["-qp", "--qf", "%{RELEASE}", file]).trim();
+  if (actualRelease !== release) problems.push(`release is ${JSON.stringify(actualRelease)}, expected ${JSON.stringify(release)}`);
+  const enrolment = linuxRpmEnrolment(sourceRoot, identity);
+  const readInstalled = (path) => { try { return readFileSync(join(extract, `.${path}`), "utf8"); } catch { return null; } };
+  problems.push(...rpmEnrolmentProblems({
+    enrolled: enrolment.enrolled,
+    repository: enrolment.repository,
+    fileFlags: parseRpmFileFlags(run("rpm", ["-qp", "--qf", "[%{FILENAMES}\t%{FILEFLAGS:fflags}\n]", file])),
+    readInstalled,
+    expectedEntry: repositoryEntry(identity),
+    expectedKey: enrolment.enrolled ? readFileSync(enrolment.keyPath, "utf8") : null,
+  }));
   for (const [query, declared] of [["--requires", config.rpm.depends], ["--recommends", ["gnome-keyring"]]]) {
     const missing = missingRelations(declared, parseRpmRelations(run("rpm", ["-qp", query, file])));
     if (missing.length) problems.push(`${query.slice(2)} lacks ${missing.join(", ")}`);
@@ -228,27 +306,33 @@ async function verifyAppImage(file, work, _config, identity) {
   }, identity);
 }
 
-export async function verifyLinuxPackages(directory, version) {
-  const identity = JSON.parse(await readFile(join(root, "src/shared/product-identity.json"), "utf8"));
-  const config = require(join(root, "electron-builder.desktop.cjs"));
+/**
+ * `sourceRoot` is the checkout the packages were built from (its committed
+ * key decides whether the RPM must enrol); `formats` limits the check to some
+ * of DEB, RPM and AppImage.
+ */
+export async function verifyLinuxPackages(directory, version, { rpmRelease, sourceRoot = root, formats: only } = {}) {
+  const release = linuxRpmRelease(rpmRelease);
+  const identity = JSON.parse(await readFile(join(sourceRoot, "src/shared/product-identity.json"), "utf8"));
+  const config = require(join(sourceRoot, "electron-builder.desktop.cjs"));
   const formats = [
     { name: "DEB", suffix: "linux-amd64.deb", tools: [["dpkg-deb"], ["ar", "tar"]], verify: verifyDeb },
-    { name: "RPM", suffix: "linux-x86_64.rpm", tools: [["rpm", "rpm2cpio", "cpio"]], verify: verifyRpm },
+    { name: "RPM", file: rpmArtifactName(identity, version, release), tools: [["rpm", "rpm2cpio", "cpio"]], verify: verifyRpm },
     { name: "AppImage", suffix: "linux-x86_64.AppImage", tools: [[]], verify: verifyAppImage },
   ];
   const failures = [];
   const work = await mkdtemp(join(tmpdir(), "amplefile-package-verify-"));
   try {
-    for (const format of formats) {
-      const file = join(directory, `${identity.productName}-${version}-${format.suffix}`);
+    for (const format of formats.filter(item => !only || only.includes(item.name))) {
+      const file = join(directory, format.file ?? `${identity.productName}-${version}-${format.suffix}`);
       try { await stat(file); } catch { failures.push(`${format.name}: ${file} does not exist`); continue; }
       if (!format.tools.some(set => set.every(have))) {
         console.log(`NOTICE ${format.name} contents not verified: none of ${format.tools.map(set => set.join("+")).join(" or ")} is available on this host.`);
         continue;
       }
-      const problems = await format.verify(file, work, config, identity);
+      const problems = await format.verify(file, work, config, identity, { release, sourceRoot });
       if (problems.length) failures.push(...problems.map(problem => `${format.name}: ${problem}`));
-      else console.log(`PASS ${format.name} ${file}: executable, CLI, helpers, desktop entry, hicolor icons${format.name === "AppImage" ? "" : ", declared dependencies and maintainer scripts"}`);
+      else console.log(`PASS ${format.name} ${file}: executable, CLI, helpers, desktop entry, hicolor icons${format.name === "AppImage" ? "" : ", declared dependencies and maintainer scripts"}${format.name === "RPM" ? `, release ${release}, ${linuxRpmEnrolment(sourceRoot, identity).enrolled ? "package repository entry and public key" : "no package repository entry (no public key committed)"}` : ""}`);
     }
   } finally {
     await rm(work, { recursive: true, force: true });
@@ -258,12 +342,14 @@ export async function verifyLinuxPackages(directory, version) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
-  const versionIndex = args.indexOf("--version");
-  const version = versionIndex === -1 ? JSON.parse(await readFile(join(root, "package.json"), "utf8")).version : args[versionIndex + 1];
-  const positional = args.filter((arg, index) => !arg.startsWith("--") && (versionIndex === -1 || index !== versionIndex + 1));
-  if (!version || positional.length > 1) throw new Error("Usage: node scripts/verify-linux-packages.mjs [directory] [--version X.Y.Z]");
+  const valueOf = (name) => { const index = args.indexOf(name); return index === -1 ? undefined : args[index + 1]; };
+  const valueIndexes = new Set(["--version", "--rpm-release"].map(name => args.indexOf(name)).filter(index => index !== -1).map(index => index + 1));
+  const version = valueOf("--version") ?? JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
+  const positional = args.filter((arg, index) => !arg.startsWith("--") && !valueIndexes.has(index));
+  const unknown = args.filter(arg => arg.startsWith("--") && arg !== "--version" && arg !== "--rpm-release");
+  if (!version || positional.length > 1 || unknown.length) throw new Error("Usage: node scripts/verify-linux-packages.mjs [directory] [--version X.Y.Z] [--rpm-release N]");
   try {
-    await verifyLinuxPackages(resolve(positional[0] ?? join(root, "out/linux")), version);
+    await verifyLinuxPackages(resolve(positional[0] ?? join(root, "out/linux")), version, { rpmRelease: valueOf("--rpm-release") });
   } catch (error) {
     console.error(error.message);
     process.exit(1);

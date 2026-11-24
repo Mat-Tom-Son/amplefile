@@ -1,6 +1,6 @@
 import type { ConfirmDialogOptions } from "../ui/feedback";
 import type { ConnectedFolderSummary, DesktopUpdateStatus } from "../types";
-import { updateCallFor, type UpdateCall } from "./update-status";
+import { installedBySystem, updateCallFor, type UpdateCall } from "./update-status";
 
 /**
  * Downloading or installing an update ends in AmpleFile quitting and opening
@@ -36,9 +36,12 @@ function countedChats(count: number) {
 /** The question asked before an updater call that ends in a restart. */
 export function updateRestartConfirm(call: Exclude<UpdateCall, "check">, status: DesktopUpdateStatus | null, work: RunningWork | null, connectedFolders: readonly Pick<ConnectedFolderSummary, "id" | "name">[]): ConfirmDialogOptions {
   const version = status?.availableVersion ? `version ${status.availableVersion}` : "the update";
-  const sentences = [call === "install"
-    ? `AmpleFile quits and opens again on its own to install ${version}.`
-    : `AmpleFile downloads ${version}, then quits and opens again on its own to install it.`];
+  const system = installedBySystem(status);
+  const sentences = [system
+    ? `Your system's software updates already installed ${version}. AmpleFile quits and opens again on its own to use it.`
+    : call === "install"
+      ? `AmpleFile quits and opens again on its own to install ${version}.`
+      : `AmpleFile downloads ${version}, then quits and opens again on its own to install it.`];
   let running: boolean;
   if (!work) {
     running = true;
@@ -52,9 +55,9 @@ export function updateRestartConfirm(call: Exclude<UpdateCall, "check">, status:
     if (work.ampleFileAgentWorking) parts.push(parts.length ? "the AmpleFile Agent is working" : "The AmpleFile Agent is working");
     running = parts.length > 0;
     if (running) sentences.push(`${parts.join(", and ")}. Restarting stops this work, and it is not run again. Queued messages are dropped.`);
-    else if (call === "updateNow") sentences.push("Anything still running when it restarts is stopped and not run again.");
+    else if (call === "updateNow" && !system) sentences.push("Anything still running when it restarts is stopped and not run again.");
   }
-  return { title: "Restart AmpleFile to Update?", body: sentences.join(" "), confirmLabel: "Update and Restart", tone: running ? "danger" : "default" };
+  return { title: "Restart AmpleFile to Update?", body: sentences.join(" "), confirmLabel: system ? "Restart" : "Update and Restart", tone: running ? "danger" : "default" };
 }
 
 /** The desktop bridge's updater calls; the preview's stand-ins resolve to null. */

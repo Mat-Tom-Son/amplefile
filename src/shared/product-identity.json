@@ -13,5 +13,7 @@
   "sourceRepositoryOwner": "Mat-Tom-Son",
   "sourceRepositoryName": "amplefile",
   "macReleaseRepositoryName": "amplefile-mac-releases",
-  "macUpdateFeedStage": "source-repository"
+  "macUpdateFeedStage": "source-repository",
+  "linuxPackageRepositoryId": "amplefile",
+  "linuxPackageRepositoryUrl": "https://raw.githubusercontent.com/Mat-Tom-Son/amplefile/linux-package-repository/rpm/$basearch"
 }
