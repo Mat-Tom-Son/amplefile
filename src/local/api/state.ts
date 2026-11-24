@@ -160,6 +160,8 @@ export interface LocalApiState {
    * continuation" hold without a second durable marker. Bounded.
    */
   turnsSettledThisRun: Set<string>;
+  /** Answers recorded or explicitly retried while their Chat was busy in this app run. */
+  queuedAsyncAnswers: Set<string>;
   /** Serializes request-graph settle evaluations so two settles never race one continuation. */
   requestSettleChain: Promise<void>;
   /**

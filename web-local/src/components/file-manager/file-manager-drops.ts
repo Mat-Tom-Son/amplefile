@@ -26,11 +26,11 @@ export function droppedInternalPaths(current: InternalDrag | null, now: number, 
 
 /**
  * Where a drop on the list lands: a folder row takes it, unless it is a link,
- * a Connected Folder nested here, or one of the items dragged; anywhere else
- * is the folder shown.
+ * a Connected Folder nested here, a Mac package (one item, as in Finder), or
+ * one of the items dragged; anywhere else is the folder shown.
  */
 export function listDropTarget(entry: TreeEntry | undefined, draggedHere: readonly string[], folderPath: string): string {
-  return entry && entry.kind === "folder" && !entry.nestedFolder && !entry.link && canDropInto(entry.path, draggedHere) ? entry.path : folderPath;
+  return entry && entry.kind === "folder" && !entry.nestedFolder && !entry.link && !entry.package && canDropInto(entry.path, draggedHere) ? entry.path : folderPath;
 }
 
 /** Dropping items back where they already are does nothing. */

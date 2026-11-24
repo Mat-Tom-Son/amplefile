@@ -24,7 +24,7 @@ handling, and continuation remain authoritative.
 
 ## Reuse before adding
 
-The installed Pi 1.1.0 provides these mechanisms:
+The installed Pi 1.6.0 provides these mechanisms:
 
 | Need | Existing mechanism | AmpleFile responsibility |
 |---|---|---|
@@ -301,7 +301,7 @@ refused.
 - [Pi Extensions](https://pi.dev/docs/latest/extensions): native tool results,
   result hooks, guidance, Skills integration and terminal rendering.
 - [Pi SDK](https://pi.dev/docs/latest/sdk): embedded sessions and native tools.
-- The installed Pi 1.1.0 `createReadTool`, `convertToLlm` and `ToolDefinition`
+- The installed Pi 1.6.0 `createReadTool`, `convertToLlm` and `ToolDefinition`
   exports; AmpleFile's [Pi client](../src/local/agent/pi-client.ts) constructs
   native sessions and projects their events into bounded UI activity.
 
@@ -396,7 +396,7 @@ Model output-length exhaustion preserves partial work and ends with an explicit
 incomplete failure, rather than recording a successful final answer or replaying work.
 Pi's existing compact-and-retry remains responsible for input overflow. A successful
 native retry clears the discarded attempt's error and text in the host projection.
-Pi 1.1 persists recovery omissions as canonical context edits and retains the
+Pi persists recovery omissions as canonical context edits and retains the
 one-retry guard. The reviewed patch uses session order to distinguish fresh
 retries from pre-compaction context when timestamps are equal. It changes no
 retry count or ordinary output-length behavior.

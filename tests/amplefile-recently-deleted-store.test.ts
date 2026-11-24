@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, link, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -502,9 +502,9 @@ test("a failing restore leaves the entry intact", async (t) => {
   let failRestores = false;
   const store = await openStore(root, {
     io: {
-      async rename(from, to) {
+      async link(from, to) {
         if (failRestores) throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
-        await rename(from, to);
+        await link(from, to);
       },
     },
   });
@@ -520,6 +520,67 @@ test("a failing restore leaves the entry intact", async (t) => {
   failRestores = false;
   await store.restoreTree(entry.id, { absolutePath: join(connectedFolder, "keep.txt") });
   assert.equal(await readFile(join(connectedFolder, "keep.txt"), "utf8"), "kept");
+});
+
+test("a same-volume restore preserves a file created just before placement", async (t) => {
+  const root = await sandbox(t);
+  const desired = join(root, "notes.txt");
+  await writeFile(desired, "recoverable");
+  const store = await openStore(root, {
+    io: {
+      async link(from, to) {
+        await writeFile(to, "new file at the destination", { flag: "wx" });
+        await link(from, to);
+      },
+    },
+  });
+  const entry = await store.moveTreeToRecentlyDeleted({
+    kind: "file", reason: "files.delete", sourcePath: desired, connectedFolderId: "connected-folder-1", originalPath: "notes.txt", receiptId: null,
+  });
+
+  await rejectsRecentlyDeletedError(store.restoreTree(entry.id, { absolutePath: desired }), "MOVE_FAILED");
+  assert.equal(await readFile(desired, "utf8"), "new file at the destination");
+  assert.equal(await readFile(entry.payloadPath, "utf8"), "recoverable");
+});
+
+test("a cross-device restore keeps a destination occupied while it was copying", async (t) => {
+  const root = await sandbox(t);
+  const desired = join(root, "notes.txt");
+  await writeFile(desired, "recoverable");
+  let restoring = false;
+  let occupy = true;
+  const store = await openStore(root, {
+    io: {
+      async link(from, to) {
+        if (restoring && from === entry.payloadPath) throw exdevError();
+        await link(from, to);
+      },
+      async cp(from, to, options) {
+        await cp(from, to, options);
+        if (occupy) await writeFile(desired, "kept at destination", { flag: "wx" });
+      },
+    },
+  });
+  const entry = await store.moveTreeToRecentlyDeleted({
+    kind: "file", reason: "files.delete", sourcePath: desired, connectedFolderId: "connected-folder-1", originalPath: "notes.txt", receiptId: null,
+  });
+
+  restoring = true;
+  await rejectsRecentlyDeletedError(store.restoreTree(entry.id, { absolutePath: desired }), "MOVE_FAILED");
+  assert.equal(await readFile(desired, "utf8"), "kept at destination");
+  assert.equal(await readFile(entry.payloadPath, "utf8"), "recoverable");
+  assert.deepEqual((await readdir(root)).sort(), ["notes.txt", "recently-deleted"]);
+
+  await rm(desired);
+  await symlink("missing.txt", desired);
+  await rejectsRecentlyDeletedError(store.restoreTree(entry.id, { absolutePath: desired, onConflict: "error" }), "MOVE_FAILED", /already exists/);
+  assert.equal(await readlink(desired), "missing.txt");
+
+  await rm(desired);
+  occupy = false;
+  await store.restoreTree(entry.id, { absolutePath: desired });
+  assert.equal(await readFile(desired, "utf8"), "recoverable");
+  assert.deepEqual((await store.list()).entries, []);
 });
 
 test("entries older builds kept for Connected Folder apps still list, expire, and delete now, but never restore", async (t) => {

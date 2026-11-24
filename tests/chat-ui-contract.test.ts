@@ -194,7 +194,7 @@ test("provider interruptions stay visible and the configured model is disclosed 
 });
 
 test("a new turn clears the prior idle stream snapshot before running becomes visible", () => {
-  const sendMessage = chatPanel.match(/async function sendMessage\(contentOverride\?: string[^)]*\) \{[\s\S]*?\n  async function steerMessage/)?.[0] ?? "";
+  const sendMessage = chatPanel.match(/async function sendMessage\([\s\S]*?\n  async function steerMessage/)?.[0] ?? "";
   assert.match(sendMessage, /cancelStreamingFlush\(\);\s*\n\s*setStreamingAssistant\(""\);/);
   assert.ok(sendMessage.indexOf('setStreamingAssistant("");') < sendMessage.indexOf("setRunning(true);"));
   assert.match(chatPanel, /typeof data\.text === "string" && data\.running === true/);

@@ -1,13 +1,13 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, readFile, readlink, realpath, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { copyInto, freeDestination, placeFolderWithoutReplacing, removeOwnedItem } from "./file-transfer.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { isFileOperationCancelled, untrackedFileOperation, type FileOperationControl } from "./file-operations.js";
-import { parseMountInfo } from "./volumes.js";
+import { listMacTrashTops, mountCalls, parseMountInfo, type MountCalls } from "./volumes.js";
 
 /**
  * The system Trash, read and put back (docs/architecture.md, "Drives and the
@@ -27,7 +27,10 @@ import { parseMountInfo } from "./volumes.js";
  *
  * macOS keeps no original location AmpleFile can read (Finder records it in
  * its own private metadata), and listing `~/.Trash` needs the person's
- * permission, so there Put Back stays in Finder.
+ * permission, so there Put Back stays in Finder. A drive's Trash is looked
+ * for only on a disk's volume, never on a share, and through the guard the
+ * drives list uses, so a drive that has stopped answering is left out instead
+ * of holding the host's file threads (`readMacVolumeTrash`).
  *
  * Items are named by ids this process mints from where they sit; a caller
  * never supplies a path.
@@ -62,6 +65,8 @@ export interface TrashListing {
   truncated: boolean;
   /** Whether this computer's Trash supports Put Back at all (false on macOS). */
   putBackAvailable: boolean;
+  /** Mounted drives whose Trash could not be checked. */
+  unavailableVolumes?: string[];
 }
 
 /** One trash folder: where its `files/` and `info/` are, and where its relative paths start. */
@@ -82,8 +87,10 @@ export interface TrashOptions {
   uid?: number;
   /** Volume tops to look in (Linux); by default every real mount in the mount table. */
   volumeTops?: readonly string[];
-  /** macOS: volume tops whose `.Trashes/<uid>` to list (default the entries of `/Volumes`). */
+  /** macOS: volume tops whose `.Trashes/<uid>` to list (default the disk volumes mounted directly inside `/Volumes`). */
   macVolumeTops?: readonly string[];
+  /** macOS: the guard on calls to drives (default the one the drives list uses). */
+  mountCalls?: MountCalls;
 }
 
 let trashOptionsForTests: TrashOptions | null = null;
@@ -95,6 +102,11 @@ export function setTrashOptionsForTests(options: TrashOptions | null): void {
 
 function withTestOptions(options: TrashOptions): TrashOptions {
   return trashOptionsForTests ? { ...trashOptionsForTests, ...options } : options;
+}
+
+/** Whose Trash rules apply: this computer's platform, or the sandbox's a test chose. */
+export function systemTrashPlatform(): NodeJS.Platform {
+  return withTestOptions({}).platform ?? process.platform;
 }
 
 export const trashLimits = {
@@ -141,16 +153,17 @@ export interface ParsedTrashInfo {
 /** Strict percent-decoding to UTF-8 text; null for a stray `%`, bytes that are not text, or a NUL. */
 export function percentDecodePath(value: string): string | null {
   const bytes: number[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index]!;
+  for (let index = 0; index < value.length;) {
+    const char = String.fromCodePoint(value.codePointAt(index)!);
     if (char === "%") {
       const hex = value.slice(index + 1, index + 3);
       if (!/^[0-9a-fA-F]{2}$/.test(hex)) return null;
       bytes.push(Number.parseInt(hex, 16));
-      index += 2;
+      index += 3;
       continue;
     }
     bytes.push(...Buffer.from(char, "utf8"));
+    index += char.length;
   }
   const buffer = Buffer.from(bytes);
   const text = buffer.toString("utf8");
@@ -437,33 +450,91 @@ async function describeEntry(entry: TrashEntry, sizes: Map<string, { size: numbe
 const macPutBackNote = "Put this back from the Trash in Finder. AmpleFile can’t read where macOS recorded it came from.";
 
 /**
- * macOS: `~/.Trash` and each volume's `.Trashes/<uid>`, listed only. Reading
+ * macOS: a drive's own Trash folder, `.Trashes/<uid>` at its top, or null.
+ * Both folders must be real folders on that drive, never links: a disk
+ * whose `.Trashes` pointed elsewhere would otherwise list, and let Empty
+ * Trash delete, what is in that other folder.
+ */
+async function macVolumeTrashRoot(top: string, uid: number): Promise<string | null> {
+  const drive = await lstat(top);
+  if (!drive.isDirectory() || drive.isSymbolicLink()) return null;
+  let folder = top;
+  for (const name of [".Trashes", String(uid)]) {
+    folder = join(folder, name);
+    const info = await lstat(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" || error.code === "ENOTDIR") return null;
+      throw error;
+    });
+    if (!info?.isDirectory() || info.isSymbolicLink() || info.dev !== drive.dev) return null;
+  }
+  return folder;
+}
+
+/**
+ * How long a drive may take to show its Trash folder before it is left out.
+ * Longer than the drives list waits for a drive's space: the person asked for
+ * the Trash, and a disk that was asleep needs seconds to spin up.
+ */
+const macVolumeTrashTimeoutMs = 8_000;
+
+interface MacVolumeTrash {
+  root: string;
+  holderReal: string;
+  names: import("node:fs").Dirent[];
+}
+
+/**
+ * macOS: what one drive's Trash folder holds, or null when the drive has
+ * none, has not answered, or may not be asked now. These are the first calls
+ * the Trash makes on a drive, and they go through the guard the drives list
+ * uses (`MountCalls` in volumes.ts): a drive already marked stalled is left
+ * out without a call, one that stalls here is marked for every other reader,
+ * and with two file calls to drives already out no third is made. What comes
+ * after a drive has answered (sizing its items, removing them) is not bounded.
+ */
+async function readMacVolumeTrash(top: string, uid: number, calls: MountCalls): Promise<{ value: MacVolumeTrash | null } | null> {
+  return calls.call(top, { kind: "file", limitMs: macVolumeTrashTimeoutMs, share: `trash:${uid}` }, async () => {
+    const root = await macVolumeTrashRoot(top, uid);
+    if (!root) return null;
+    const names = await readdir(root, { withFileTypes: true });
+    return { root, holderReal: await realpath(root), names };
+  });
+}
+
+/**
+ * macOS: `~/.Trash` and each drive's `.Trashes/<uid>`, listed only. Reading
  * `~/.Trash` needs the person's permission (Full Disk Access); without it the
- * listing is refused with a plain message.
+ * listing is refused with a plain message. The drives are the disk volumes
+ * mounted directly inside `/Volumes`, from the mount table; a share's Trash
+ * folder is not read.
  */
 async function listMacTrash(options: TrashOptions): Promise<TrashListing> {
   const home = resolve(options.home ?? homedir());
   const uid = currentUid(options);
-  const roots: Array<{ root: string; trash: "home" | "volume"; topdir: string | null }> = [{ root: join(home, ".Trash"), trash: "home", topdir: null }];
-  const tops = options.macVolumeTops ?? await readdir("/Volumes").then((names) => names.filter((name) => !name.startsWith(".")).map((name) => join("/Volumes", name)), () => []);
-  for (const top of tops) roots.push({ root: join(top, ".Trashes", String(uid)), trash: "volume", topdir: top });
+  const sources: Array<{ root: string; trash: "home" | "volume"; topdir: string | null; names: import("node:fs").Dirent[] }> = [];
+  const homeRoot = join(home, ".Trash");
+  const homeInfo = await lstat(homeRoot).catch(() => null);
+  if (homeInfo?.isDirectory() && !homeInfo.isSymbolicLink()) {
+    try {
+      sources.push({ root: homeRoot, trash: "home", topdir: null, names: await readdir(homeRoot, { withFileTypes: true }) });
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "EPERM" || code === "EACCES") {
+        throw new TrashError(403, "AmpleFile isn’t allowed to see the Trash. Allow Full Disk Access for AmpleFile in System Settings → Privacy & Security, or open the Trash in Finder.");
+      }
+    }
+  }
+  const unavailableVolumes: string[] = [];
+  for (const top of options.macVolumeTops ?? await listMacTrashTops()) {
+    const read = await readMacVolumeTrash(top, uid, options.mountCalls ?? mountCalls);
+    if (!read) unavailableVolumes.push(basename(top));
+    else if (read.value) sources.push({ root: read.value.root, trash: "volume", topdir: top, names: read.value.names });
+  }
   const items: TrashItem[] = [];
   let truncated = false;
   const budget = { entries: trashLimits.measureEntries };
-  for (const [index, source] of roots.entries()) {
-    const info = await lstat(source.root).catch(() => null);
-    if (!info?.isDirectory() || info.isSymbolicLink()) continue;
-    let names: import("node:fs").Dirent[];
-    try {
-      names = await readdir(source.root, { withFileTypes: true });
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (index === 0 && (code === "EPERM" || code === "EACCES")) {
-        throw new TrashError(403, "AmpleFile isn’t allowed to see the Trash. Allow Full Disk Access for AmpleFile in System Settings → Privacy & Security, or open the Trash in Finder.");
-      }
-      continue;
-    }
-    for (const name of names) {
+  for (const source of sources) {
+    for (const name of source.names) {
       if (name.name === ".DS_Store" || name.name.includes("�")) continue;
       if (items.length >= trashLimits.maxItems) { truncated = true; break; }
       const itemPath = join(source.root, name.name);
@@ -484,7 +555,7 @@ async function listMacTrash(options: TrashOptions): Promise<TrashListing> {
     }
   }
   items.sort((left, right) => left.name.localeCompare(right.name));
-  return { items, truncated, putBackAvailable: false };
+  return { items, truncated, putBackAvailable: false, ...(unavailableVolumes.length ? { unavailableVolumes } : {}) };
 }
 
 // Put Back ---------------------------------------------------------------------
@@ -529,7 +600,7 @@ export interface PutBackPlan {
   /** Folders to create first, outermost first. */
   missingFolders: string[];
   /** The registered Connected Folder that holds the destination, deepest first; History records the Put Back there. */
-  connectedFolder: { id: string; connectedFolderRoot: string; name: string } | null;
+  connectedFolder: { id: string; connectedFolderRoot: string; canonicalRoot: string; name: string } | null;
 }
 
 /** At most this many missing folders are recreated for one item. */
@@ -557,9 +628,11 @@ export async function planPutBack(
     throw new TrashError(409, `AmpleFile can’t put “${name}” back: its Trash record names a place outside the drive it was trashed on.`);
   }
   const recordedParent = dirname(item.info.originalPath);
+  const canonical = (path: string) => realpath(path).catch(() => resolve(path));
+  const top = item.directory.topdir ? await canonical(item.directory.topdir) : null;
   const parts = recordedParent.split("/").filter(Boolean);
   let real = "/";
-  const missingFolders: string[] = [];
+  let missingFrom = parts.length;
   for (const [index, part] of parts.entries()) {
     const candidate = join(real, part);
     let info: import("node:fs").Stats | null;
@@ -570,7 +643,7 @@ export async function planPutBack(
       info = null;
     }
     if (!info) {
-      missingFolders.push(...parts.slice(index).map((_, offset) => join(real, ...parts.slice(index, index + offset + 1))));
+      missingFrom = index;
       break;
     }
     if (info.isSymbolicLink()) {
@@ -588,16 +661,23 @@ export async function planPutBack(
     }
     real = candidate;
   }
-  const parent = missingFolders.length ? join(real, ...parts.slice(parts.length - missingFolders.length)) : real;
-  const holder = connectedFolders
-    .filter((connectedFolder) => pathInside(resolve(connectedFolder.connectedFolderRoot), parent))
-    .sort((left, right) => right.connectedFolderRoot.length - left.connectedFolderRoot.length)[0] ?? null;
+  real = await canonical(real);
+  const missingFolders = parts.slice(missingFrom).map((_, offset) => join(real, ...parts.slice(missingFrom, missingFrom + offset + 1)));
+  const parent = missingFolders.at(-1) ?? real;
+  if (top && !pathInside(top, parent)) {
+    throw new TrashError(409, `AmpleFile can’t put “${name}” back: its Trash record names a place outside the drive it was trashed on.`);
+  }
+  const canonicalFolders = await Promise.all(connectedFolders.map(async ({ id, name, connectedFolderRoot }) => ({
+    id, name, connectedFolderRoot: resolve(connectedFolderRoot), canonicalRoot: await canonical(connectedFolderRoot),
+  })));
+  const holder = canonicalFolders
+    .filter((connectedFolder) => pathInside(connectedFolder.canonicalRoot, parent))
+    .sort((left, right) => right.canonicalRoot.length - left.canonicalRoot.length)[0] ?? null;
   if (missingFolders.length) {
-    const existing = real;
-    const home = resolve(options.home ?? trashOptionsForTests?.home ?? homedir());
+    const home = await canonical(options.home ?? trashOptionsForTests?.home ?? homedir());
     // Inside a Connected Folder its History records the new folders with the item.
-    const inside = item.directory.topdir ? pathInside(item.directory.topdir, existing)
-      : pathInside(home, existing) || Boolean(holder && pathInside(resolve(holder.connectedFolderRoot), existing));
+    const inside = top ? pathInside(top, real)
+      : pathInside(home, real) || Boolean(holder && pathInside(holder.canonicalRoot, real));
     const reserved = missingFolders.some((folder) => isAlwaysHiddenConnectedFolderEntry(basename(folder)));
     if (!inside || reserved || missingFolders.length > maxRecreatedFolders) {
       throw new TrashError(409, `AmpleFile can’t put “${name}” back: the folder it came from, ${recordedParent}, is gone. Move it out of the Trash by hand instead.`);
@@ -606,7 +686,7 @@ export async function planPutBack(
   if (isAlwaysHiddenConnectedFolderEntry(name) || parent.split("/").some((part) => isAlwaysHiddenConnectedFolderEntry(part))) {
     throw new TrashError(409, `AmpleFile can’t put “${name}” back into hidden AmpleFile or Pi data.`);
   }
-  return { parent, name, missingFolders, connectedFolder: holder ? { id: holder.id, connectedFolderRoot: resolve(holder.connectedFolderRoot), name: holder.name } : null };
+  return { parent, name, missingFolders, connectedFolder: holder };
 }
 
 export interface PutBackResult {
@@ -650,6 +730,7 @@ export async function performPutBack(item: FoundTrashItem, plan: PutBackPlan): P
 
 async function placeWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): Promise<string> {
   const current = await lstat(item.itemPath);
+  if (current.isSymbolicLink()) return placeLinkWithoutReplacing(item, plan);
   if (current.isDirectory()) {
     try {
       return await placeFolderWithoutReplacing(item.itemPath, plan.parent, plan.name);
@@ -674,6 +755,32 @@ async function placeWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): P
     }
     await unlink(item.itemPath).catch(async (error) => {
       // The item is in both places; take back the new name so it stays one item in the Trash.
+      await unlink(destination).catch(() => undefined);
+      throw error;
+    });
+    return destination;
+  }
+  throw new TrashError(409, `There are too many copies of “${plan.name}” there already.`);
+}
+
+/**
+ * A link is made again where it goes, pointing where it did, then leaves the
+ * Trash. Making a link claims its name as a hard link does (a taken name fails
+ * with EEXIST), and it never follows the link: a Mac's link() would, and give
+ * back a second name for whatever the link points to.
+ */
+async function placeLinkWithoutReplacing(item: FoundTrashItem, plan: PutBackPlan): Promise<string> {
+  const target = await readlink(item.itemPath);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = await freeDestination(plan.parent, plan.name);
+    try {
+      await symlink(target, destination);
+    } catch (error) {
+      if ((error as { code?: string }).code === "EEXIST") continue;
+      throw error;
+    }
+    await unlink(item.itemPath).catch(async (error) => {
+      // The link is in both places; take back the new one so it stays one item in the Trash.
       await unlink(destination).catch(() => undefined);
       throw error;
     });
@@ -773,6 +880,8 @@ export interface TrashDeletionResult {
   notFound: string[];
   /** Leftover records (an info file without its item) Empty Trash removed. */
   strayRecordsRemoved: number;
+  /** Mounted drives whose Trash could not be checked for Empty Trash. */
+  unavailableVolumes?: string[];
   /** Stopped before every item was handled; `notDone` lists the ids left in the Trash. */
   cancelled?: true;
   notDone?: string[];
@@ -833,33 +942,38 @@ async function linuxSlots(options: TrashOptions, includeUnrecorded: boolean): Pr
   return { slots, strayRecords };
 }
 
-async function macSlots(options: TrashOptions): Promise<TrashSlot[]> {
+/** macOS: every item deletion may take: `~/.Trash`, and the Trash folder of each drive that answers (`readMacVolumeTrash`). */
+async function macSlots(options: TrashOptions): Promise<{ slots: TrashSlot[]; unavailableVolumes: string[] }> {
   const home = resolve(options.home ?? homedir());
   const uid = currentUid(options);
-  const roots = [join(home, ".Trash")];
-  const tops = options.macVolumeTops ?? await readdir("/Volumes").then((names) => names.filter((name) => !name.startsWith(".")).map((name) => join("/Volumes", name)), () => []);
-  for (const top of tops) roots.push(join(top, ".Trashes", String(uid)));
   const slots: TrashSlot[] = [];
-  for (const [index, root] of roots.entries()) {
-    if (!await realDirectory(root)) continue;
-    let names: string[];
-    try {
-      names = await readdir(root);
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (index === 0 && (code === "EPERM" || code === "EACCES")) {
-        throw new TrashError(403, "AmpleFile isn’t allowed to change the Trash. Allow Full Disk Access for AmpleFile in System Settings → Privacy & Security, or empty the Trash in Finder.");
-      }
-      continue;
-    }
-    const holderReal = await realpath(root).catch(() => null);
-    if (!holderReal) continue;
+  const add = (root: string, holderReal: string, names: readonly string[]) => {
     for (const name of names) {
       if (name === ".DS_Store" || name.includes("�")) continue;
       slots.push({ id: trashItemId(root, name), name, originalPath: null, root, holder: root, holderReal, itemName: name, infoPath: null });
     }
+  };
+  const homeRoot = join(home, ".Trash");
+  if (await realDirectory(homeRoot)) {
+    let names: string[] | null = null;
+    try {
+      names = await readdir(homeRoot);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "EPERM" || code === "EACCES") {
+        throw new TrashError(403, "AmpleFile isn’t allowed to change the Trash. Allow Full Disk Access for AmpleFile in System Settings → Privacy & Security, or empty the Trash in Finder.");
+      }
+    }
+    const holderReal = names && await realpath(homeRoot).catch(() => null);
+    if (names && holderReal) add(homeRoot, holderReal, names);
   }
-  return slots;
+  const unavailableVolumes: string[] = [];
+  for (const top of options.macVolumeTops ?? await listMacTrashTops()) {
+    const read = await readMacVolumeTrash(top, uid, options.mountCalls ?? mountCalls);
+    if (!read) unavailableVolumes.push(basename(top));
+    else if (read.value) add(read.value.root, read.value.holderReal, read.value.names.map((entry) => entry.name));
+  }
+  return { slots, unavailableVolumes };
 }
 
 /**
@@ -928,7 +1042,7 @@ export async function deleteTrashItemsImmediately(
   const platform = options.platform ?? process.platform;
   const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
   const wanted = [...new Set(ids)];
-  const slots = platform === "linux" ? (await linuxSlots(options, false)).slots : platform === "darwin" ? await macSlots(options) : [];
+  const slots = platform === "linux" ? (await linuxSlots(options, false)).slots : platform === "darwin" ? (await macSlots(options)).slots : [];
   const byId = new Map(slots.map((slot) => [slot.id, slot]));
   const chosen: TrashSlot[] = [];
   for (const id of wanted) {
@@ -944,14 +1058,17 @@ export async function deleteTrashItemsImmediately(
  * Empty Trash: removes everything in the system Trash for good. On Linux that
  * is every item in the home trash and each volume's trash, recorded or not,
  * with its record, then any leftover records and the folder-size cache. On
- * macOS it is every item in `~/.Trash` and each volume's `.Trashes/<uid>`.
+ * macOS it is every item in `~/.Trash` and in the `.Trashes/<uid>` of each
+ * disk volume that answers; a drive that is not answering keeps its Trash.
  */
 export async function emptySystemTrash(givenOptions: TrashOptions = {}, operation: FileOperationControl = untrackedFileOperation): Promise<TrashDeletionResult> {
   const options = withTestOptions(givenOptions);
   const platform = options.platform ?? process.platform;
   const result: TrashDeletionResult = { removed: [], failed: [], notFound: [], strayRecordsRemoved: 0 };
   if (platform === "darwin") {
-    await deleteSlots(await macSlots(options), operation, result);
+    const { slots, unavailableVolumes } = await macSlots(options);
+    if (unavailableVolumes.length) result.unavailableVolumes = unavailableVolumes;
+    await deleteSlots(slots, operation, result);
     return result;
   }
   if (platform !== "linux") return result;

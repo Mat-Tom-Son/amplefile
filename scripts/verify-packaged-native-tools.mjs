@@ -48,7 +48,7 @@ export async function verifyPackagedPiRecovery(archivePath) {
 
 export async function verifyPackagedPiIdentity(archivePath) {
   const entry = await verifyPackagedPatch(archivePath, "@earendil-works/pi-ai", "Pi identity");
-  return `PASS packaged Pi identity ${entry.version}: reviewed ID-token validation and retention`;
+  return `PASS packaged Pi identity ${entry.version}: reviewed ID-token validation and Codex reasoning`;
 }
 
 /** Exercise the complete built bytes, with no model, accounts or production app launch. */

@@ -1414,6 +1414,24 @@
   --tint: #a98bd8;
 }
 
+/* A Mac app: Finder's rounded square. */
+.fm-ic-app {
+  width: 0.94em;
+  height: 0.94em;
+  margin-top: 0.03em;
+  border-radius: 0.22em;
+  background: linear-gradient(180deg, #8cc0fa, #3f82e4);
+  box-shadow: inset 0 0 0 0.04em rgba(0, 0, 0, 0.14);
+}
+
+.fm-ic-app::before {
+  content: "";
+  position: absolute;
+  inset: 0.22em;
+  border: 0.07em solid rgba(255, 255, 255, 0.92);
+  border-radius: 0.12em;
+}
+
 .fm-ic-box {
   width: 0.98em;
   height: 0.78em;

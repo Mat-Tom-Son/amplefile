@@ -128,10 +128,25 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => ipcRenderer.invoke("amplefile:place:open-link", { place, path, action }),
   },
   fileClipboard: {
-    // A Copy, or with "cut" a Cut, which a Linux file manager pastes as a move.
-    write: (paths: string[], operation: "copy" | "cut" = "copy") => ipcRenderer.invoke("amplefile:file-clipboard:write", operation === "cut" ? { paths, operation } : paths),
-    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[]; cut?: boolean } | null; operationId?: string; conflicts?: unknown }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
-    holds: (nativePaths: string[]) => ipcRenderer.invoke("amplefile:file-clipboard:holds", nativePaths),
+    // A Copy, or with "cut" a Cut, which the host remembers for every window by the place the items are in.
+    write: (paths: string[], operation: "copy" | "cut" = "copy", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => (
+      ipcRenderer.invoke("amplefile:file-clipboard:write", operation === "cut" ? { paths, operation, from } : paths)
+    ),
+    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null; operationId?: string; conflicts?: unknown; plan?: string }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
+    // What is cut in any window, while the pasteboard still holds it; and each change, as it happens.
+    cut: () => ipcRenderer.invoke("amplefile:file-clipboard:cut"),
+    cancelCut: () => ipcRenderer.invoke("amplefile:file-clipboard:cancel-cut"),
+    onCutChanged: (callback: (cut: { nativePaths: string[] } | null) => void) => {
+      const listener = (_event: unknown, value: unknown) => {
+        if (value === null) { callback(null); return; }
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        const nativePaths = (value as { nativePaths?: unknown }).nativePaths;
+        if (!Array.isArray(nativePaths) || nativePaths.length > 5_000 || nativePaths.some((path) => typeof path !== "string")) return;
+        callback({ nativePaths: nativePaths as string[] });
+      };
+      ipcRenderer.on("amplefile:file-clipboard:cut-changed", listener);
+      return () => ipcRenderer.removeListener("amplefile:file-clipboard:cut-changed", listener);
+    },
   },
   agent: {
     // A file dropped on the AmpleFile Agent panel becomes a path reference, as in the popover.

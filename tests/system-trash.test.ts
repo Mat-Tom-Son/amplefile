@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { FileOperationCancelledError, untrackedFileOperation, type FileOperationControl } from "../src/local/file-operations.js";
+import { MountCalls } from "../src/local/volumes.js";
 import {
   deleteTrashItemsImmediately,
   emptySystemTrash,
@@ -32,7 +33,8 @@ const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
 interface Sandbox { root: string; home: string; dataHome: string; trash: string; volume: string; options: TrashOptions }
 
 async function sandbox(t: test.TestContext): Promise<Sandbox> {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-system-trash-"));
+  // The real path: a Mac's temporary folder is under /var, a link to /private/var.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "amplefile-system-trash-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   const home = join(root, "home", "ana");
   const dataHome = join(home, ".local", "share");
@@ -68,6 +70,7 @@ async function putBack(options: TrashOptions, id: string, connectedFolders: Arra
 
 test("trash records are decoded strictly and refused when they name . or .., a stray %, or bytes that are not text", () => {
   assert.equal(percentDecodePath("/home/ana/My%20Notes/caf%C3%A9.txt"), "/home/ana/My Notes/café.txt");
+  assert.equal(percentDecodePath("/home/ana/📁%20notes"), "/home/ana/📁 notes");
   assert.equal(percentDecodePath("/bad%zz"), null);
   assert.equal(percentDecodePath("/trailing%"), null);
   assert.equal(percentDecodePath("/nul%00name"), null);
@@ -267,8 +270,12 @@ test("Put Back recreates a missing folder only where that is clearly safe", asyn
   const connectedFolderRoot = join(box.root, "srv");
   await mkdir(connectedFolderRoot);
   const found = await findTrashItem(item.id, box.options);
-  const plan = await planPutBack(found!, [{ id: "space-0000000000000000", connectedFolderRoot, name: "Shared" }], { home: box.home });
+  const connectedFolderAlias = join(box.root, "shared-alias");
+  await symlink(connectedFolderRoot, connectedFolderAlias);
+  const plan = await planPutBack(found!, [{ id: "space-0000000000000000", connectedFolderRoot: connectedFolderAlias, name: "Shared" }], { home: box.home });
   assert.equal(plan.connectedFolder?.id, "space-0000000000000000");
+  assert.equal(plan.connectedFolder?.connectedFolderRoot, connectedFolderAlias);
+  assert.equal(plan.connectedFolder?.canonicalRoot, await realpath(connectedFolderRoot));
   assert.deepEqual(plan.missingFolders, [join(connectedFolderRoot, "shared")]);
 
   // Never into hidden AmpleFile or Pi data.
@@ -445,4 +452,71 @@ test("macOS deletes listed Trash items and empties the Trash, and says plainly w
       await chmod(macTrash, 0o700);
     }
   }
+});
+
+test("macOS takes a drive's Trash only from real folders on that drive, never through a link", async (t) => {
+  const box = await sandbox(t);
+  await mkdir(join(box.home, ".Trash"), { recursive: true });
+  // A drive with its own Trash, holding one item.
+  const camera = join(box.root, "Volumes", "Camera");
+  await mkdir(join(camera, ".Trashes", String(uid)), { recursive: true });
+  await writeFile(join(camera, ".Trashes", String(uid), "clip.mov"), "1");
+  // A crafted disk whose .Trashes points at a folder elsewhere.
+  const elsewhere = join(box.root, "elsewhere");
+  await mkdir(join(elsewhere, String(uid)), { recursive: true });
+  await writeFile(join(elsewhere, String(uid), "precious.txt"), "keep me");
+  const crafted = join(box.root, "Volumes", "Crafted");
+  await mkdir(crafted, { recursive: true });
+  await symlink(elsewhere, join(crafted, ".Trashes"));
+  // And one whose own uid folder is the link.
+  const linkedUid = join(box.root, "Volumes", "LinkedUid");
+  await mkdir(join(linkedUid, ".Trashes"), { recursive: true });
+  await symlink(join(elsewhere, String(uid)), join(linkedUid, ".Trashes", String(uid)));
+
+  const options: TrashOptions = { platform: "darwin", home: box.home, uid, macVolumeTops: [camera, crafted, linkedUid] };
+  const listing = await listSystemTrash(options);
+  assert.deepEqual(listing.items.map((item) => [item.name, item.volumePath]), [["clip.mov", camera]]);
+  const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.removed.map((item) => item.name), ["clip.mov"]);
+  assert.equal(await readFile(join(elsewhere, String(uid), "precious.txt"), "utf8"), "keep me", "nothing behind a link is touched");
+});
+
+test("macOS leaves out the Trash of a drive that is not answering, without asking it again, and of any more drives while two calls are out", async (t) => {
+  const box = await sandbox(t);
+  await mkdir(join(box.home, ".Trash"), { recursive: true });
+  await writeFile(join(box.home, ".Trash", "note.txt"), "1");
+  const drives = ["Backup", "Camera", "Spare"].map((name) => join(box.root, "Volumes", name));
+  for (const drive of drives) {
+    await mkdir(join(drive, ".Trashes", String(uid)), { recursive: true });
+    await writeFile(join(drive, ".Trashes", String(uid), `${drive.split("/").at(-1)!.toLowerCase()}.mov`), "1");
+  }
+  const [backup, camera, spare] = drives as [string, string, string];
+  const calls = new MountCalls({ limitMs: 40 });
+  const options: TrashOptions = { platform: "darwin", home: box.home, uid, macVolumeTops: drives, mountCalls: calls };
+  const names = async () => (await listSystemTrash(options)).items.map((item) => item.name);
+  assert.deepEqual(await names(), ["backup.mov", "camera.mov", "note.txt", "spare.mov"]);
+
+  // The drives list's call to Camera never returns: the guard marks the drive stalled.
+  let answer: (value: null) => void = () => undefined;
+  assert.equal(await calls.measure(camera, "file", () => new Promise((done) => { answer = done; })), null);
+  const began = Date.now();
+  assert.deepEqual(await names(), ["backup.mov", "note.txt", "spare.mov"], "the other drives and the home Trash are still read");
+  assert.ok(Date.now() - began < 4_000, "the Trash did not wait for the stalled drive");
+  assert.deepEqual((await listSystemTrash(options)).unavailableVolumes, ["Camera"]);
+  const emptied = await emptySystemTrash(options);
+  assert.deepEqual(emptied.unavailableVolumes, ["Camera"]);
+  assert.deepEqual(emptied.removed.map((item) => item.name).sort(), ["backup.mov", "note.txt", "spare.mov"]);
+  assert.ok(existsSync(join(camera, ".Trashes", String(uid), "camera.mov")), "a drive that is not answering keeps its Trash");
+
+  // A second drive stalls: with two file calls out, no third drive is asked.
+  await writeFile(join(spare, ".Trashes", String(uid), "spare.mov"), "1");
+  let secondAnswer: (value: null) => void = () => undefined;
+  assert.equal(await calls.measure(backup, "file", () => new Promise((done) => { secondAnswer = done; })), null);
+  assert.deepEqual(await names(), []);
+  // They answer at last, and the Trash reads every drive again.
+  answer(null);
+  secondAnswer(null);
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(await names(), ["camera.mov", "spare.mov"]);
+  assert.equal((await listSystemTrash(options)).unavailableVolumes, undefined);
 });

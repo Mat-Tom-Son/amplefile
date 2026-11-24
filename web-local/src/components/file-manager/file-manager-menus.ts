@@ -13,21 +13,25 @@ export interface QuickMenuState { x: number; y: number; items: QuickMenuItem[]; 
 export function itemMenuCapabilities(target: TreeEntry, isItem: boolean, where: { place: FileManagerPlace; fixtureMode: boolean; canPaste: boolean; newWindow?: boolean }): FileMenuCapabilities {
   if (target.link) {
     const there = target.link.target !== "missing";
-    return { open: there, original: there, attach: false, history: false, upload: false, rename: true, delete: true, organize: true, link: true };
+    return { open: there, original: there, attach: false, history: false, upload: false, rename: true, delete: true, organize: true, link: true, ...(isItem && target.package ? { package: true } : {}) };
   }
+  // A Mac package (an app, a Pages document) is one item: it opens in its app, and Show Package Contents goes inside.
+  const packaged = isItem && target.kind === "folder" && Boolean(target.package);
+  const folder = target.kind === "folder" && !packaged;
   return {
     open: target.kind === "folder" || canOpenDirectly(target.path),
-    newTab: isItem && target.kind === "folder",
-    newWindow: isItem && target.kind === "folder" && Boolean(where.newWindow),
+    newTab: isItem && folder,
+    newWindow: isItem && folder && Boolean(where.newWindow),
     attach: false,
     history: where.place.kind === "connected-folder" && target.kind === "file",
     upload: false,
     rename: Boolean(target.path) && !target.nestedFolder,
     delete: isItem && !target.nestedFolder,
-    worker: !where.fixtureMode && target.kind === "folder" && !target.nestedFolder && (where.place.kind === "standard" || Boolean(target.path)),
+    worker: !where.fixtureMode && folder && !target.nestedFolder && (where.place.kind === "standard" || Boolean(target.path)),
     organize: isItem && !target.nestedFolder,
-    paste: target.kind === "folder" && !target.nestedFolder && where.canPaste,
+    paste: folder && !target.nestedFolder && where.canPaste,
     extract: isItem && target.kind === "file" && isExtractableArchive(target.name),
+    ...(packaged ? { package: true } : {}),
   };
 }
 

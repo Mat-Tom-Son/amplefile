@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -19,6 +19,7 @@ import {
   standardFolderRegistrationTarget,
 } from "../src/local/standard-folders.js";
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
+import { comparableForms, comparablePath, comparableRealPath, formsContain } from "../src/local/path-comparison.js";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
 
 async function home(t: test.TestContext): Promise<string> {
@@ -65,6 +66,57 @@ test("a standard folder lists one level without the files Finder hides, and stay
   assert.equal(info.hashSha256, null, "a standard folder's Info never waits on hashing a large download");
 });
 
+test("a Connected Folder is found however its path is written: another case, an accent spelled the other way, or a linked folder on the way", async (t) => {
+  const root = await home(t);
+  const downloads = join(root, "Downloads");
+
+  // Registered under the composed spelling; asked about under the decomposed one, and in capitals.
+  await mkdir(join(downloads, "Caf\u00e9", "Menus"), { recursive: true });
+  await registerLinkedConnectedFolder(join(downloads, "Caf\u00e9"));
+  if (existsSync(join(downloads, "Cafe\u0301"))) {
+    for (const spelling of ["Cafe\u0301", "Cafe\u0301/Menus", ...(existsSync(join(downloads, "CAFE\u0301")) ? ["CAFE\u0301", "CAFE\u0301/menus"] : [])]) {
+      await assert.rejects(assertStandardFolderPathUnowned("downloads", spelling, root, { finalLink: true }), /is a Connected Folder/, JSON.stringify(spelling));
+    }
+  }
+
+  // Registered through a linked folder; asked about by the real path, which no part of the registered path spells.
+  await mkdir(join(downloads, "Real", "Proj", "Notes"), { recursive: true });
+  await mkdir(join(downloads, "Real", "Beside"));
+  await symlink(join(downloads, "Real"), join(root, "Desktop", "Shortcut"));
+  await registerLinkedConnectedFolder(join(root, "Desktop", "Shortcut", "Proj"));
+  for (const path of ["Real/Proj", "Real/Proj/Notes", "Real"]) {
+    await assert.rejects(assertStandardFolderPathUnowned("downloads", path, root, { finalLink: true }), /is a Connected Folder/, path);
+  }
+  await assert.doesNotReject(assertStandardFolderPathUnowned("downloads", "Real/Beside", root, { finalLink: true }));
+  await assert.doesNotReject(assertStandardFolderPathUnowned("downloads", "Real", root, { allowContaining: true }), "adding beside it is still fine");
+  await assert.rejects(assertStandardFolderPathUnowned("downloads", "Real/Proj", root, { allowContaining: true }), /is a Connected Folder/);
+
+  // A link to a Connected Folder is an item of its own: it is renamed or removed as the link it is.
+  await symlink(join(downloads, "Real", "Proj"), join(downloads, "To Proj"));
+  await assert.doesNotReject(assertStandardFolderPathUnowned("downloads", "To Proj", root, { finalLink: true }));
+});
+
+test("paths are compared as written and as the disk resolves them", async (t) => {
+  const root = await realpath(await home(t));
+  await mkdir(join(root, "Real", "Inner"), { recursive: true });
+  await symlink(join(root, "Real"), join(root, "Link"));
+  const real = comparablePath(join(root, "Real", "Inner"));
+  assert.equal(await comparableRealPath(join(root, "Link", "Inner")), real);
+  assert.equal(await comparableRealPath(join(root, "Link", "Inner", "not", "there")), comparablePath(join(root, "Real", "Inner", "not", "there")), "what is not there yet keeps its own spelling");
+  assert.equal(await comparableRealPath(join(root, "Link"), { finalLink: true }), comparablePath(join(root, "Link")), "a final link is the item itself");
+  assert.equal(await comparableRealPath(join(root, "Link")), comparablePath(join(root, "Real")));
+  assert.deepEqual(await comparableForms(join(root, "Link", "Inner")), [comparablePath(join(root, "Link", "Inner")), real]);
+  assert.deepEqual(await comparableForms(join(root, "Real")), [comparablePath(join(root, "Real"))], "one way to write it is listed once");
+  assert.equal(formsContain([comparablePath("/a/b")], [comparablePath("/a/b/c")]), true);
+  assert.equal(formsContain([comparablePath("/a/b")], [comparablePath("/a/bc")]), false);
+  assert.equal(formsContain([comparablePath("/x"), comparablePath("/a")], [comparablePath("/y"), comparablePath("/a")]), true, "any way of writing either");
+  if (process.platform !== "linux") {
+    assert.equal(comparablePath("/Volumes/Work/Cafe\u0301/"), comparablePath("/volumes/work/Caf\u00e9"));
+  } else {
+    assert.notEqual(comparablePath("/srv/Cafe\u0301"), comparablePath("/srv/Caf\u00e9"));
+  }
+});
+
 test("rename and New Folder refuse names that would collide or hide, and change only the named item", async (t) => {
   const root = await home(t);
   const downloads = join(root, "Downloads");
@@ -80,6 +132,12 @@ test("rename and New Folder refuse names that would collide or hide, and change 
   assert.equal(existsSync(join(downloads, "a.txt")), false);
   // A case-only rename finds the item itself on a case-insensitive disk and still goes ahead.
   assert.deepEqual(await renameStandardFolderEntry("downloads", "notes.txt", "Notes.txt", root), { path: "Notes.txt" });
+  // On a case-sensitive disk two spellings can be two separate entries.
+  if (!existsSync(join(downloads, "notes.txt"))) {
+    await writeFile(join(downloads, "notes.txt"), "separate contents", { flag: "wx" });
+    await assert.rejects(renameStandardFolderEntry("downloads", "notes.txt", "Notes.txt", root), /already exists/);
+    assert.equal(await readFile(join(downloads, "notes.txt"), "utf8"), "separate contents");
+  }
 
   assert.deepEqual(await createStandardFolderFolder("downloads", "", "Receipts", root), { path: "Receipts" });
   await assert.rejects(createStandardFolderFolder("downloads", "", "Receipts", root), /already exists/);

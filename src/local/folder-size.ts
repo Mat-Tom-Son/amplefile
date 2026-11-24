@@ -23,6 +23,7 @@ import type { Dirent } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
+import { isInsideMacDataVolume } from "./mac-data-volume.js";
 
 export interface FolderSize {
   /** Sum of the files' sizes, in bytes; each name of a hard-linked file counts. */
@@ -125,7 +126,8 @@ export async function measureFolderSize(folder: string, options: { signal?: Abor
     if (info.isSymbolicLink()) { totals.links += 1; return; }
     if (info.isDirectory()) {
       totals.folders += 1;
-      if (info.dev !== volume) { totals.otherVolumes += 1; return; }
+      // Another volume, or the Mac data volume's second names, which can share the disk top's device.
+      if (info.dev !== volume || isInsideMacDataVolume(path)) { totals.otherVolumes += 1; return; }
       pending.push(path);
       wake();
       return;

@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import { constants, type Dirent, type Stats } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, resolve, sep } from "node:path";
+import { extname, join, resolve } from "node:path";
 
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { listConnectedFolders, resolveConnectedFolderPath } from "./connected-folder.js";
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
+import { isInsideMacDataVolume } from "./mac-data-volume.js";
 import { directoryLooksGenerated, isHistoryAlwaysSkippedSegment } from "./history-capture-policy.js";
 import { isOfficeLockFileName } from "./office-lock-files.js";
+import { comparableContains, comparablePath } from "./path-comparison.js";
 import { decodeRetrievalCursor, encodeRetrievalCursor, retrievalError } from "./retrieval-cursor.js";
 import { accessError, standardFolderPathBase, standardFolderRoot, type StandardFolderId } from "./standard-folders.js";
 import { ampleFileStateRoot } from "./state-paths.js";
@@ -178,9 +180,9 @@ export async function searchStandardFolder(id: StandardFolderId, rawQuery: strin
   const connectedFolderRoots = new Map<string, string>();
   for (const connectedFolder of await listConnectedFolders()) {
     const real = await realpath(connectedFolder.connectedFolderRoot).catch(() => null);
-    if (real) connectedFolderRoots.set(comparable(real, platform), connectedFolder.id);
+    if (real) connectedFolderRoots.set(comparablePath(real), connectedFolder.id);
   }
-  const stateRoot = await realpath(ampleFileStateRoot()).catch(() => resolve(ampleFileStateRoot()));
+  const stateRoot = comparablePath(await realpath(ampleFileStateRoot()).catch(() => resolve(ampleFileStateRoot())));
   const realStart = await realpath(start).catch(() => start);
 
   const coverage: FolderSearchCoverage = {
@@ -190,8 +192,17 @@ export async function searchStandardFolder(id: StandardFolderId, rawQuery: strin
   const result: FolderSearchResult = { query, names: [], files: [], chats: [], connectedFolders: [], truncated: false, scannedFiles: 0, nextCursor: null, coverage };
   const toPlace = (relativePath: string) => [placePath, relativePath].filter(Boolean).join("/");
 
+  const startPath = comparablePath(realStart);
+  if (comparableContains(stateRoot, startPath)) {
+    coverage.internal++;
+    coverage.complete = true;
+    return result;
+  }
+
   // The searched folder belongs to a Connected Folder: that Connected Folder's search covers it.
-  const owner = [...connectedFolderRoots].find(([root]) => contains(root, comparable(realStart, platform)));
+  const owner = [...connectedFolderRoots]
+    .filter(([root]) => comparableContains(root, startPath))
+    .sort(([left], [right]) => right.length - left.length)[0];
   if (owner) {
     result.connectedFolders.push({ connectedFolderId: owner[1], path: placePath });
     coverage.complete = true;
@@ -275,13 +286,16 @@ export async function searchStandardFolder(id: StandardFolderId, rawQuery: strin
       if (!info) { coverage.unreadable++; continue; }
       if (!info.isDirectory()) { coverage.changed++; continue; }
       if (info.dev !== startDev) { coverage.otherFilesystem++; continue; }
-      if (comparable(childPath, platform) === comparable(stateRoot, platform)) { coverage.internal++; continue; }
+      // A Mac's data volume can share the disk top's device; its second names are never walked (mac-data-volume.ts).
+      if (isInsideMacDataVolume(childPath, platform)) { coverage.otherFilesystem++; continue; }
+      const comparableChild = comparablePath(join(realStart, relativePath));
+      if (comparableChild === stateRoot) { coverage.internal++; continue; }
       if (entry.name.toLocaleLowerCase().includes(needle)) {
         const match: FolderSearchNameMatch = { path: toPlace(relativePath), name: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), ...(hidden ? { hidden: true as const } : {}) };
         if (!admit(match)) { listing.index--; frame.after = previousKey(entries, listing.index); coverage.visitedEntries--; coverage.stoppedBy = "results"; break walk; }
         result.names.push(match);
       }
-      const connectedFolderId = connectedFolderRoots.get(comparable(childPath, platform));
+      const connectedFolderId = connectedFolderRoots.get(comparableChild);
       if (connectedFolderId) { result.connectedFolders.push({ connectedFolderId, path: toPlace(relativePath) }); continue; }
       if (isHistoryAlwaysSkippedSegment(entry.name) || await directoryLooksGenerated(childPath)) { coverage.generated++; continue; }
       stack.push({ path: relativePath, after: null, identity: identityOf(info) });
@@ -428,15 +442,6 @@ function compareEntries(left: Dirent, right: Dirent): number {
 
 function identityOf(info: Stats): string {
   return `${info.dev}:${info.ino}`;
-}
-
-function comparable(value: string, platform: NodeJS.Platform): string {
-  const resolved = resolve(value).replace(/[\\/]+$/, "") || sep;
-  return platform === "linux" ? resolved : resolved.toLocaleLowerCase();
-}
-
-function contains(parent: string, child: string): boolean {
-  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
 }
 
 function digest(value: string): string {

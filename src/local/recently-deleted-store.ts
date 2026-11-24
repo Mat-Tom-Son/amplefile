@@ -64,10 +64,12 @@
  *   `held`; the person can still restore it or handle the folder outside the
  *   product.
  */
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, type CopyOptions, type Stats } from "node:fs";
-import { cp, lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
+import { existsSync, lstatSync, type CopyOptions, type Stats } from "node:fs";
+import { cp, link, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { getSystemErrorName, promisify } from "node:util";
 
 import {
   ampleFileRecentlyDeletedDefaultRetentionDays,
@@ -247,6 +249,7 @@ export class AmpleFileRecentlyDeletedError extends Error {
 /** Filesystem seams for tests (cross-device fallback, failing moves). Production uses node:fs. */
 export interface AmpleFileRecentlyDeletedStoreIo {
   rename?(from: string, to: string): Promise<void>;
+  link?(from: string, to: string): Promise<void>;
   cp?(from: string, to: string, options: CopyOptions): Promise<void>;
 }
 
@@ -359,6 +362,7 @@ export class AmpleFileRecentlyDeletedStore {
     this.#now = options.now ?? (() => new Date());
     this.#io = {
       rename: options.io?.rename ?? ((from, to) => rename(from, to)),
+      link: options.io?.link ?? ((from, to) => link(from, to)),
       cp: options.io?.cp ?? ((from, to, copyOptions) => cp(from, to, copyOptions)),
     };
     this.#settings = settings;
@@ -597,14 +601,14 @@ export class AmpleFileRecentlyDeletedStore {
       if (entry.payload.kind !== "tree" && entry.payload.kind !== "skill") {
         throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} holds data a Connected Folder app kept before apps were removed from AmpleFile; it cannot be restored. It is deleted when it expires, or delete it now.`);
       }
-      if (destination.onConflict === "error" && existsSync(desired)) {
+      if (destination.onConflict === "error" && pathOccupied(desired)) {
         throw new AmpleFileRecentlyDeletedError(
           "MOVE_FAILED",
           `AmpleFile could not restore ${basename(desired)}: that identity already exists. It is still in ${RECENTLY_DELETED}.`,
           { entryId: id },
         );
       }
-      const finalPath = existsSync(desired)
+      const finalPath = pathOccupied(desired)
         ? (entry.kind === "file" ? nextAvailableFile(desired) : nextAvailableDirectory(dirname(desired), basename(desired)))
         : desired;
       let stateTarget: string | undefined;
@@ -614,7 +618,7 @@ export class AmpleFileRecentlyDeletedStore {
           throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} carries the Connected Folder's History state; say where that state goes back.`);
         }
         stateTarget = requireAbsolutePath(chosen, "The History state destination");
-        if (existsSync(stateTarget)) {
+        if (pathOccupied(stateTarget)) {
           throw new AmpleFileRecentlyDeletedError(
             "MOVE_FAILED",
             `AmpleFile could not restore ${basename(finalPath)}: History state already exists at ${stateTarget}. It is still in ${RECENTLY_DELETED}.`,
@@ -760,37 +764,105 @@ export class AmpleFileRecentlyDeletedStore {
   }
 
   /**
-   * Moves `source` to `destination`: `rename` first; when the devices differ,
+   * Moves `source` to `destination` on one disk when possible. When the devices differ,
    * a verbatim copy (symbolic links copied as links, never followed) into
-   * `stagingDir` (or straight to the destination), fsync, rename into place,
-   * then release of the source. Throws `MoveError` with `landed: true` only
-   * once the destination holds a complete copy.
+   * a private working directory on the destination volume, fsync, place the
+   * copy, then release the source. Throws `MoveError` with `landed: true`
+   * only once the destination holds a complete copy.
    */
   async #move(source: string, destination: string, options: { stagingDir?: string } = {}): Promise<void> {
     try {
-      await this.#io.rename(source, destination);
+      if (options.stagingDir) {
+        if (pathOccupied(destination)) throw destinationTaken(destination);
+        await this.#io.rename(source, destination);
+      } else {
+        await this.#installAtRestoreName(source, destination, true);
+      }
       return;
     } catch (error) {
+      if (error instanceof MoveError) throw error;
       if (!isNodeError(error, "EXDEV")) throw new MoveError(false, error);
     }
-    const stagingDir = options.stagingDir;
-    const copyTarget = stagingDir === undefined ? destination : join(stagingDir, basename(destination));
+    let working: string | undefined;
+    let placed: Stats | undefined;
     try {
-      if (stagingDir !== undefined) await mkdir(stagingDir, { recursive: true, mode: 0o700 });
+      if (options.stagingDir) {
+        await mkdir(options.stagingDir, { mode: 0o700 });
+        working = options.stagingDir;
+      } else {
+        working = await mkdtemp(join(dirname(destination), ".AmpleFile-restore-"));
+      }
+      const copyTarget = join(working, "payload");
       await this.#io.cp(source, copyTarget, {
         recursive: true, force: false, errorOnExist: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true,
       });
       await syncTree(copyTarget);
-      if (stagingDir !== undefined) await this.#io.rename(copyTarget, destination);
+      if (options.stagingDir) {
+        // The entry directory is owned by the store.
+        await this.#io.rename(copyTarget, destination);
+      } else {
+        placed = await this.#installAtRestoreName(copyTarget, destination);
+      }
     } catch (error) {
-      await rm(stagingDir ?? copyTarget, { recursive: true, force: true }).catch(() => undefined);
       throw new MoveError(false, error);
+    } finally {
+      if (working) await rm(working, { recursive: true, force: true }).catch(() => undefined);
     }
-    if (stagingDir !== undefined) await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    if (placed && !sameFileAt(destination, placed)) throw new MoveError(false, destinationTaken(destination));
     try {
       await rm(source, { recursive: true, force: true });
     } catch (error) {
       throw new MoveError(true, error);
+    }
+  }
+
+  /** Claims the restore name without replacing another item at that path. */
+  async #installAtRestoreName(source: string, destination: string, releaseSource = false): Promise<Stats> {
+    const sourceInfo = await lstat(source);
+    // Darwin link() follows a symbolic link's target. Restore links by renaming them.
+    if (sourceInfo.isFile()) {
+      const linked = await this.#io.link(source, destination).then(() => true, (error: NodeJS.ErrnoException) => {
+        // A volume without hard links still supports an exclusive empty-file claim.
+        if (["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EMLINK"].includes(error.code ?? "")) return false;
+        throw error;
+      });
+      if (linked) {
+        if (!releaseSource) return sourceInfo;
+        // A link is installed atomically, and the store's old name goes last.
+        if (!sameFileAt(destination, sourceInfo)) throw destinationTaken(destination);
+        await unlink(source).catch((error) => { throw new MoveError(true, error); });
+        return sourceInfo;
+      }
+    }
+
+    if (process.platform === "darwin") {
+      const moved = await macRenameWithoutReplacing(source, destination).then(() => true, (error: NodeJS.ErrnoException) => {
+        // If the helper stopped after the syscall, the item may already be there.
+        if (!pathOccupied(source) && sameFileAt(destination, sourceInfo)) return true;
+        // Volumes without RENAME_EXCL (ExFAT, FAT32, SMB, NFS, FUSE) fall through to the exclusive claim below.
+        if (["ENOTSUP", "EOPNOTSUPP", "ENOSYS"].includes(error.code ?? "")) return false;
+        throw error;
+      });
+      if (moved) return sourceInfo;
+    }
+
+    // Reserve an empty directory or file when the volume cannot rename exclusively.
+    const folder = sourceInfo.isDirectory();
+    let claim: Stats;
+    if (folder) {
+      await mkdir(destination, { mode: 0o700 });
+      claim = await lstat(destination);
+    } else {
+      const handle = await open(destination, "wx", 0o600);
+      try { claim = await handle.stat(); } finally { await handle.close(); }
+    }
+    try {
+      if (!sameFileAt(destination, claim)) throw destinationTaken(destination);
+      await this.#io.rename(source, destination);
+      return sourceInfo;
+    } catch (error) {
+      if (sameFileAt(destination, claim)) await (folder ? rmdir(destination) : unlink(destination)).catch(() => undefined);
+      throw error;
     }
   }
 
@@ -1295,9 +1367,43 @@ async function holdReasonFor(entryPath: string): Promise<AmpleFileRecentlyDelete
   return null;
 }
 
+const runRestoreTool = promisify(execFile);
+// Node has no atomic no-replace rename for directories. Ask macOS, passing
+// the paths separately from this fixed script. RENAME_EXCL is 0x00000004.
+const macExclusiveRenameScript = `
+ObjC.bindFunction("renamex_np", ["int", ["char *", "char *", "unsigned int"]]);
+ObjC.bindFunction("__error", ["int *", []]);
+function run(paths) {
+  return $.renamex_np(paths[0], paths[1], 4) === 0 ? 0 : $.__error()[0];
+}
+`;
+
+async function macRenameWithoutReplacing(source: string, destination: string): Promise<void> {
+  const result = await runRestoreTool("/usr/bin/osascript", ["-l", "JavaScript", "-e", macExclusiveRenameScript, source, destination],
+    { timeout: 5_000, maxBuffer: 4_096 });
+  const resultText = result.stdout.trim();
+  if (resultText === "0") return;
+  if (!/^[1-9]\d*$/.test(resultText)) throw Error("macOS could not claim the restore destination.");
+  const code = getSystemErrorName(-Number(resultText));
+  throw Object.assign(new Error(code === "EEXIST" ? `An item already exists at ${destination}` : `macOS could not move the item (${code}).`), { code });
+}
+
+function pathOccupied(path: string): boolean {
+  return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+}
+
+function sameFileAt(path: string, expected: Stats): boolean {
+  const current = lstatSync(path, { throwIfNoEntry: false });
+  return current?.dev === expected.dev && current.ino === expected.ino;
+}
+
+function destinationTaken(path: string): Error {
+  return Object.assign(new Error(`An item already exists at ${path}`), { code: "EEXIST" });
+}
+
 function nextAvailableDirectory(parent: string, segment: string): string {
   let candidate = join(parent, segment);
-  for (let index = 2; existsSync(candidate); index += 1) candidate = join(parent, `${segment}-${index}`);
+  for (let index = 2; pathOccupied(candidate); index += 1) candidate = join(parent, `${segment}-${index}`);
   return candidate;
 }
 
@@ -1306,7 +1412,7 @@ function nextAvailableFile(desired: string): string {
   const stem = basename(desired, extension);
   let index = 2;
   let candidate = join(dirname(desired), `${stem} (${index})${extension}`);
-  while (existsSync(candidate)) candidate = join(dirname(desired), `${stem} (${index += 1})${extension}`);
+  while (pathOccupied(candidate)) candidate = join(dirname(desired), `${stem} (${index += 1})${extension}`);
   return candidate;
 }
 

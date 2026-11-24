@@ -31,6 +31,7 @@ test("native validation enforces each document operation before engine execution
   for (const operation of ["render", "recalculate", "ocr", "preview"]) {
     assert.throws(() => validate(tool, { operation, output: "out.txt" }), /source/);
     assert.throws(() => validate(tool, { operation, source: "input.png" }), /output/);
+    assert.throws(() => validate(tool, { operation }), /input\.source[\s\S]*input\.output/);
     assert.throws(() => validate(tool, { operation, source: "", output: "out.txt" }), /Validation failed/);
     assert.equal(validate(tool, { operation, source: "input.png", output: "out.txt" }).source, "input.png");
   }

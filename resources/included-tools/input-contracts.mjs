@@ -11,7 +11,11 @@ export function withInputContract(tool, { variants, examples }) {
       // (for example, clearing an input) retains its native meaning.
       if (required.includes(field) && properties[field].type === "string") properties[field].minLength = Math.max(1, properties[field].minLength ?? 0);
     }
-    for (const [field, value] of Object.entries(when)) properties[field] = { ...properties[field], enum: [value] };
+    for (const [field, value] of Object.entries(when)) {
+      // Pi uses const tags to explain the selected branch's missing fields.
+      const { enum: _choices, ...property } = properties[field];
+      properties[field] = { ...property, const: value };
+    }
     return { ...branch, required: [...new Set([...(branch.required ?? []), ...Object.keys(when), ...required])] };
   });
   const requirements = variants.map(({ when = {}, required = [] }) => {

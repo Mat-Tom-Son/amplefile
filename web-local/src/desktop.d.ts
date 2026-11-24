@@ -37,7 +37,7 @@ type AmpleFileDesktopMenuCommand =
   | "new-connected-folder"
   | "open-local-folder"
   | "new-chat"
-  | "reload-connected-folder-state"
+  | "refresh"
   | "check-for-updates"
   | "open-settings"
   | "open-about"
@@ -47,8 +47,6 @@ type AmpleFileDesktopMenuCommand =
   | "open-command-palette"
   | "open-keyboard-shortcuts"
   | "close-tab"
-  | "toggle-sidebar"
-  | "toggle-agent-panel"
   | "toggle-hidden-files"
   | "new-tab"
   | "next-tab"
@@ -59,7 +57,7 @@ type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
 type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
 /** Where a folder or file handed to AmpleFile opens: a place, the folder shown in it, and an item to select. */
 type AmpleFileDesktopOpenLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null };
-type AmpleFileDesktopFileMenuCommand = "open" | "open-in-new-tab" | "open-in-new-window" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
+type AmpleFileDesktopFileMenuCommand = "open" | "open-in-new-tab" | "open-in-new-window" | "open-with" | "show-package-contents" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
   | "copy" | "paste" | "duplicate" | "compress" | "new-folder-with-selection";
 
 type AmpleFileDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
@@ -108,6 +106,8 @@ interface AmpleFileDesktopFileMenuRequest {
     paste?: boolean;
     /** A symbolic link: only Open, Show in Finder, and Copy Path. */
     link?: boolean;
+    /** A Mac package (an app, a Pages document): Open opens it in its app, and Show Package Contents goes inside. */
+    package?: boolean;
     /** A folder: Open in New Tab, and Open in New Window where the desktop has windows. */
     newTab?: boolean;
     newWindow?: boolean;
@@ -191,17 +191,28 @@ declare global {
        * in the desktop process, which answers with what landed.
        */
       fileClipboard?: {
-        /** A Copy, or with "cut" a Cut, which Linux file managers paste as a move. */
-        write: (paths: string[], operation?: "copy" | "cut") => Promise<boolean>;
+        /**
+         * A Copy, or with "cut" a Cut: the host remembers a Cut for every
+         * window, by `from` (the same items by place), so a paste in any
+         * window moves them. Linux file managers paste a Cut as a move too.
+         */
+        write: (paths: string[], operation?: "copy" | "cut", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => Promise<boolean>;
         paste: (request: {
           target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string };
           mode: "copy" | "move";
-          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[]; cut?: boolean } | null;
+          /** What this window copied; a Cut is the host's. */
+          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
           operationId?: string;
           conflicts?: { check: true } | import("./components/file-manager/file-operations-model").ConflictPolicy;
+          /** The check's `plan`: the run is refused when the pasteboard has changed since. */
+          plan?: string;
         }) => Promise<import("./components/file-manager/file-operations-model").TransferAnswer>;
-        /** Whether the pasteboard still holds exactly these files (what this window cut). */
-        holds?: (nativePaths: string[]) => Promise<boolean>;
+        /** What is cut in any window while the pasteboard still holds it, as absolute paths; null for nothing (absent in older desktop builds). */
+        cut?: () => Promise<{ nativePaths: string[] } | null>;
+        /** Esc: cancels the Cut in every window. */
+        cancelCut?: () => Promise<void>;
+        /** Every change of what is cut, from any window. */
+        onCutChanged?: (callback: (cut: { nativePaths: string[] } | null) => void) => () => void;
       };
       agent: {
         /** The local path of a file dropped on the AmpleFile Agent panel. */

@@ -19,6 +19,8 @@ export interface FileManagerMenuActions {
   /** Open in New Tab: a folder row, or a sidebar place's top. */
   openEntryInNewTab: (entry: TreeEntry) => void;
   openEntryInNewWindow: (entry: TreeEntry) => void;
+  /** Show Package Contents: the window goes inside a Mac package. */
+  showPackageContents: (entry: TreeEntry) => Promise<void>;
   openPlaceInNewTab: (place: FileManagerPlace) => void;
   /** Open in New Window, where the desktop can open another window (null elsewhere). */
   openInNewWindow: ((where: FileManagerLocation) => void) | null;
@@ -223,6 +225,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     else if (command === "open-in-new-tab") actions.openEntryInNewTab(target);
     else if (command === "open-in-new-window") actions.openEntryInNewWindow(target);
     else if (command === "open-with") await actions.openLocal(target.path, "open-with");
+    else if (command === "show-package-contents") await actions.showPackageContents(target);
     else if (command === "reveal") await actions.openLocal(target.path, "reveal");
     else if (command === "show-original") await actions.showOriginal(target);
     else if (command === "copy-path") await actions.copyPaths([target.path]);
@@ -234,7 +237,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     else if (command === "delete") await actions.deletePaths([target.path]);
     else if (command === "copy") await actions.copySelection([target]);
     else if (command === "cut") await actions.cutSelection([target]);
-    else if (command === "paste") await actions.pasteInto(target.kind === "folder" && !target.link ? target.path : parentPath(target.path));
+    else if (command === "paste") await actions.pasteInto(target.kind === "folder" && !target.link && !target.package ? target.path : parentPath(target.path));
     else if (command === "duplicate") await actions.duplicateSelection([target]);
     else if (command === "compress") await actions.compressSelection([target]);
     else if (command === "extract") await actions.extractArchive(target);

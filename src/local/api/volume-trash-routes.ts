@@ -10,6 +10,7 @@
  * gave; the host finds it again and decides everything else.
  */
 
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, relative, sep } from "node:path";
 
@@ -17,6 +18,7 @@ import { createLocalEventSink } from "../local-event-stream.js";
 import {
   getConnectedFolder,
   listConnectedFolders,
+  registeredConnectedFolderOutline,
   resolveConnectedFolderPath,
   withConnectedFolderHistoryOperation,
   withConnectedFolderHistoryOperations,
@@ -29,6 +31,7 @@ import {
   emptySystemTrash,
   findTrashItem,
   listSystemTrash,
+  systemTrashPlatform,
   performPutBack,
   planPutBack,
   readTrashRecord,
@@ -40,10 +43,13 @@ import {
   ejectVolume,
   listVolumeRecords,
   listVolumes,
+  mountCalls,
   noteVolumesMayHaveChanged,
   subscribeVolumes,
   volumeHolds,
+  volumesEjectedWith,
   volumeSpaceForPath,
+  type EjectCompanion,
   type VolumeRecord,
 } from "../volumes.js";
 import { parseFileOperationId, runFileOperation } from "../file-operations.js";
@@ -132,54 +138,106 @@ async function placePath(kind: string | null, id: string | null, path: string): 
 }
 
 /**
- * Ejects a drive the listing marks ejectable. A drive holding a registered
- * Connected Folder is ejected only when that Connected Folder's work is
- * settled, as a deletion requires (AGENTS.md, "Settled deletion"): no running
- * turn or compaction, no request still running, waiting on an answer, or
- * draining after Stop, and no background job or Automation run writing
- * there. Each such Connected Folder's History is held and the folder reserved
- * through the eject, so no turn starts meanwhile.
+ * Ejects a drive the listing marks ejectable. Ejecting takes the drive's whole
+ * disk, so the check covers every mount that leaves with it
+ * (`volumesEjectedWith`), listed as a drive or not: the other volumes of its
+ * APFS container, the other partitions of its physical disk, and any mount the
+ * system cannot place on a disk. A registered Connected Folder on any of them
+ * must have settled work, as a deletion requires (AGENTS.md, "Settled
+ * deletion"): no running turn or compaction, no request still running, waiting
+ * on an answer, or draining after Stop, and no background job or Automation
+ * run writing there. Each such Connected Folder's History is held and the
+ * folder reserved through the eject, so no turn starts meanwhile. A refusal
+ * names the drive being ejected, the Connected Folder, and the drive that
+ * Connected Folder is on when it is another one.
  */
 async function ejectListedVolume(state: LocalApiState, volumeId: string): Promise<{ volumeId: string; ejected: true }> {
-  const volume = (await listVolumeRecords()).find((candidate) => candidate.id === volumeId);
+  const listed = await listVolumeRecords();
+  const volume = listed.find((candidate) => candidate.id === volumeId);
   if (!volume) throw notFound("That drive isn’t connected anymore.");
   if (!volume.ejectable) throw httpError(409, `“${volume.name}” can’t be ejected from AmpleFile.`);
-  const held = (await listConnectedFolders()).filter((connectedFolder) => volumeHolds(volume, connectedFolder.connectedFolderRoot));
-  await withConnectedFolderHistoryOperations(held.map((connectedFolder) => connectedFolder.connectedFolderRoot), async () => {
-    const reserved: string[] = [];
-    try {
-      for (const connectedFolder of held) {
-        reserveForEject(state, connectedFolder, volume);
-        reserved.push(connectedFolder.id);
-      }
-      for (const connectedFolder of held) await assertSettledForEject(state, connectedFolder, volume);
-      await ejectVolume(volume);
-    } finally {
-      for (const id of reserved) state.capabilityMutations.delete(id);
+  const leaving: EjectCompanion[] = [{ volume, certain: true }, ...await volumesEjectedWith(volume)];
+  const held: Array<{ connectedFolder: { id: string; name: string; connectedFolderRoot: string }; drive: EjectCompanion }> = [];
+  for (const connectedFolder of await registeredConnectedFolderOutline()) {
+    const root = connectedFolder.connectedFolderRoot;
+    let drive = driveHolding(leaving, root);
+    if (!drive) {
+      // A registered path can have a linked ancestor. Use a bounded disk call
+      // before deciding that its work is on a different volume.
+      const resolved = await mountCalls.call(root, { kind: "file", share: "eject-root" }, async () => {
+        try {
+          return await realpath(root);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "ENOENT" || code === "ENOTDIR") return null;
+          throw error;
+        }
+      });
+      if (!resolved) throw httpError(409, `AmpleFile couldn’t check where “${connectedFolder.name}” is before ejecting “${volume.name}”. Try again once its drive answers.`);
+      if (resolved.value) drive = driveHolding(leaving, resolved.value);
     }
-  });
-  noteVolumesMayHaveChanged();
+    if (drive) held.push({ connectedFolder, drive });
+  }
+  let toolRan = false;
+  try {
+    await withConnectedFolderHistoryOperations(held.map(({ connectedFolder }) => connectedFolder.connectedFolderRoot), async () => {
+      const reserved: string[] = [];
+      try {
+        for (const { connectedFolder, drive } of held) {
+          reserveForEject(state, connectedFolder, volume, drive);
+          reserved.push(connectedFolder.id);
+        }
+        for (const { connectedFolder, drive } of held) await assertSettledForEject(state, connectedFolder, volume, drive);
+        toolRan = true;
+        await ejectVolume(volume, process.platform, leaving.slice(1).map((drive) => ({ name: drive.volume.name, certain: drive.certain })));
+      } finally {
+        for (const id of reserved) state.capabilityMutations.delete(id);
+      }
+    });
+  } finally {
+    // A disk that would not go may still have lost the volume that was asked for.
+    if (toolRan) noteVolumesMayHaveChanged();
+  }
   return { volumeId, ejected: true };
 }
 
+/** The leaving drive a folder is on: the one mounted deepest, for a drive mounted inside another. */
+function driveHolding(leaving: readonly EjectCompanion[], path: string): EjectCompanion | null {
+  let found: EjectCompanion | null = null;
+  for (const drive of leaving) {
+    if (volumeHolds(drive.volume, path) && (!found || drive.volume.mountPath.length > found.volume.mountPath.length)) found = drive;
+  }
+  return found;
+}
+
+/** Why a Connected Folder on another drive holds this eject up; nothing for one on the drive being ejected. */
+function onAnotherDrive(connectedFolder: { name: string }, volume: VolumeRecord, drive: EjectCompanion): string {
+  if (drive.volume.mountPath === volume.mountPath) return "";
+  return drive.certain
+    ? ` ${connectedFolder.name} is on “${drive.volume.name}”, which is on the same disk and is ejected with it.`
+    : ` ${connectedFolder.name} is on “${drive.volume.name}”, and AmpleFile couldn’t check whether that drive is on the same disk.`;
+}
+
 /** The shared Connected Folder reservation (src/local/api/reservations.ts), refused in eject's words. */
-function reserveForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord): void {
+function reserveForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord, drive: EjectCompanion): void {
+  const where = onAnotherDrive(connectedFolder, volume, drive);
   if (state.capabilityMutations.has("*") || state.capabilityMutations.has(connectedFolder.id)) {
-    throw httpError(409, `Wait for the current change to ${connectedFolder.name} to finish before ejecting “${volume.name}”.`);
+    throw httpError(409, `Wait for the current change to ${connectedFolder.name} to finish before ejecting “${volume.name}”.${where}`);
   }
   const prefix = `${connectedFolder.id}:`;
   if ([...state.runningTurns, ...state.compactingConversations].some((key) => key.startsWith(prefix))) {
-    throw httpError(409, `${connectedFolder.name}’s Worker is working. Wait for it to finish, or stop it, before ejecting “${volume.name}”.`);
+    throw httpError(409, `${connectedFolder.name}’s Worker is working. Wait for it to finish, or stop it, before ejecting “${volume.name}”.${where}`);
   }
   state.capabilityMutations.add(connectedFolder.id);
 }
 
-async function assertSettledForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord): Promise<void> {
+async function assertSettledForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord, drive: EjectCompanion): Promise<void> {
+  const where = onAnotherDrive(connectedFolder, volume, drive);
   if (state.requests.list({ connectedFolderId: connectedFolder.id }).some((request) => requestHasUnsettledWork(state, request))) {
-    throw httpError(409, `Finish or stop ${connectedFolder.name}’s outstanding work before ejecting “${volume.name}”.`);
+    throw httpError(409, `Finish or stop ${connectedFolder.name}’s outstanding work before ejecting “${volume.name}”.${where}`);
   }
   const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolder.id);
-  if (blockers.length) throw httpError(409, blockers[0]!);
+  if (blockers.length) throw httpError(409, `“${volume.name}” can’t be ejected while ${connectedFolder.name} has running work. ${blockers[0]!}${where}`);
 }
 
 export interface PutBackResponse extends PutBackResult {
@@ -200,7 +258,7 @@ export interface PutBackResponse extends PutBackResult {
 async function putBackTrashItem(itemId: string): Promise<PutBackResponse> {
   const item = await findTrashItem(itemId);
   if (!item) {
-    if (process.platform === "darwin") throw httpError(409, "Put items back from the Trash in Finder. AmpleFile can’t read where macOS recorded they came from.");
+    if (systemTrashPlatform() === "darwin") throw httpError(409, "Put items back from the Trash in Finder. AmpleFile can’t read where macOS recorded they came from.");
     throw notFound("That item isn’t in the Trash anymore.");
   }
   const plan = await planPutBack(item, await listConnectedFolders());
@@ -212,13 +270,16 @@ async function putBackTrashItem(itemId: string): Promise<PutBackResponse> {
     const connectedFolder = plan.connectedFolder;
     result = await withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
       const registered = await getConnectedFolder(connectedFolder.id);
-      if (registered.connectedFolderRoot !== connectedFolder.connectedFolderRoot) throw httpError(409, "That Connected Folder moved. Try again.");
+      if (registered.connectedFolderRoot !== connectedFolder.connectedFolderRoot
+        || await realpath(registered.connectedFolderRoot).catch(() => null) !== connectedFolder.canonicalRoot) {
+        throw httpError(409, "That Connected Folder moved. Try again.");
+      }
       // The Connected Folder's path policy, for the folder that exists: no links, no hidden AmpleFile or Pi data.
       const existingParent = plan.missingFolders[0] ? dirname(plan.missingFolders[0]) : plan.parent;
-      resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, insideConnectedFolder(connectedFolder.connectedFolderRoot, existingParent));
+      resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, insideConnectedFolder(connectedFolder.canonicalRoot, existingParent));
       const record = await readTrashRecord(item);
       const placed = await performPutBack(item, plan);
-      const written = insideConnectedFolder(connectedFolder.connectedFolderRoot, plan.missingFolders[0] ?? placed.path);
+      const written = insideConnectedFolder(connectedFolder.canonicalRoot, plan.missingFolders[0] ?? placed.path);
       try {
         const checkpoint = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           deleteOnRestore: [written],

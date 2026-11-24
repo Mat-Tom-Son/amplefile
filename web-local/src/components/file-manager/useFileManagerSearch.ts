@@ -58,7 +58,7 @@ export function useFileManagerSearch(input: {
       void Promise.all(targets.map(async ({ connectedFolder, path }) => {
         const base = `/api/connected-folders/${encodeURIComponent(connectedFolder.id)}`;
         const treeKey = `${connectedFolder.id}\0${path}`;
-        let tree = treeCache.current.get(treeKey);
+        let tree: TreeEntry[] | null | undefined = treeCache.current.get(treeKey);
         if (!tree && fixture) {
           const all = fixture.trees[connectedFolder.id] ?? [];
           tree = path ? flattenTree(all).find((entry) => entry.path === path)?.children ?? [] : all;
@@ -67,13 +67,14 @@ export function useFileManagerSearch(input: {
         if (!tree) {
           const query = new URLSearchParams({ maxDepth: "20", includeIgnored: "0" });
           if (path) query.set("path", path);
-          tree = await api<{ tree: TreeEntry[] }>(`${base}/tree?${query}`, { signal: controller.signal }).then((body) => body.tree).catch(() => []);
-          treeCache.current.set(treeKey, tree);
+          tree = await api<{ tree: TreeEntry[] }>(`${base}/tree?${query}`, { signal: controller.signal }).then((body) => body.tree).catch(() => null);
+          if (controller.signal.aborted) return null;
+          if (tree) treeCache.current.set(treeKey, tree);
         }
         const lower = needle.toLocaleLowerCase();
         const byPath = new Map<string, TreeEntry>();
         const names: FileManagerSearchResult[] = [];
-        for (const entry of flattenTree(tree)) {
+        for (const entry of flattenTree(tree ?? [])) {
           byPath.set(entry.path, entry);
           if (entry.nestedFolder || !entry.name.toLocaleLowerCase().includes(lower)) continue;
           names.push(resultFor(connectedFolder.id, entry, { kind: "name" }));
@@ -88,11 +89,12 @@ export function useFileManagerSearch(input: {
               return line ? [{ path: filePath, line: 1, preview: line }] : [];
             })
           : await api<{ files: Array<{ path: string; line: number; preview: string }> }>(`${base}/search?${contentQuery}`, { signal: controller.signal })
-            .then((body) => body.files).catch(() => []);
+            .then((body) => body.files).catch(() => null);
+        if (controller.signal.aborted) return null;
         const named = new Set(names.map((result) => result.path));
         const seen = new Set<string>();
         const texts: FileManagerSearchResult[] = [];
-        for (const match of content) {
+        for (const match of content ?? []) {
           if (named.has(match.path) || seen.has(match.path)) continue;
           seen.add(match.path);
           const entry = byPath.get(match.path) ?? { name: match.path.split("/").pop() ?? match.path, path: match.path, kind: "file" as const };
@@ -102,7 +104,7 @@ export function useFileManagerSearch(input: {
       })).then((perConnectedFolder) => {
         if (controller.signal.aborted) return;
         // Every name match first, then every text match, as the design lists them.
-        setResults([...perConnectedFolder.flatMap((item) => item.names), ...perConnectedFolder.flatMap((item) => item.texts)]);
+        setResults([...perConnectedFolder.flatMap((item) => item?.names ?? []), ...perConnectedFolder.flatMap((item) => item?.texts ?? [])]);
         setStatus("done");
       });
     }, debounceMs);

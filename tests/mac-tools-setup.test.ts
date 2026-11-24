@@ -99,6 +99,7 @@ test(`first run offers Computer Control on ${platform}`, async (t) => {
   stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
     { id: "computer", state: "unknown", detail: "", checkedAt: "" },
   ]);
+  // The desktop app: the welcome names the Mac there, and the computer on Linux and in a plain browser.
   Object.defineProperty(window, "ampleFileDesktop", { value: { app: { platform }, api: {} }, configurable: true });
   await dom.render(createElement(FileManagerWelcome, { agentConfigured: true, fixtureMode: false, onAiConnected: () => {}, onPutToWork: async () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
