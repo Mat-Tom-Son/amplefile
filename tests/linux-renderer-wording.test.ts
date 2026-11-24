@@ -50,7 +50,7 @@ test("Shortcut Keys keeps the Mac rows and speaks Linux on Linux", () => {
   assert.deepEqual(action(mac, "Space"), ["Quick Look the selected item."]);
   assert.deepEqual(action(mac, "C"), ["Copy the selected items (Finder can paste them too)."]);
   assert.deepEqual(action(mac, "V"), ["Paste items copied or cut here or in Finder.", "Move the items copied into this folder."]);
-  assert.deepEqual(action(mac, "X"), ["Cut the selected items; Paste moves them."], "Finder has no Cut marker, so a Mac's Cut is the window's own");
+  assert.deepEqual(action(mac, "X"), ["Cut the selected items; Paste in any window moves them."], "Finder has no Cut marker, so a Mac's Cut is the desktop app's own");
   assert.deepEqual(action(mac, "Backspace"), ["Delete. Undo it from History, or from the Trash in a Standard Folder."]);
   assert.deepEqual(mac.find((row) => row.keys.at(-1) === "V" && row.keys.length === 3)?.keys, ["Option", "Command", "V"]);
 

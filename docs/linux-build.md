@@ -198,8 +198,8 @@ and the theme is read again after five minutes. An icon not ready within
 shows it. No `rsvg-convert`, gdk-pixbuf helper or other new dependency is
 needed. XPM icons are not shown.
 
-The AmpleFile Agent is available from **View → AmpleFile Agent**, including
-desktops that do not display tray icons. Opened from the window, it appears
+The AmpleFile Agent is available from **View → Toggle AmpleFile Agent**
+(Ctrl+J), including desktops that do not display tray icons. Opened from the window, it appears
 inside the window's top-right corner, under the title bar, on that window's
 display. Opened from the tray menu, it appears next to the pointer in an X11
 session; in a Wayland session, XWayland included, the pointer position is
@@ -251,10 +251,15 @@ and copies them in. A file manager's Cut (either marker) is pasted as a move:
 each file is named by the Connected Folder that holds it, or else by its
 path on the computer, and moves under the same rules as a move made in the
 window, so a file inside a Connected Folder leaves it through that Connected
-Folder's delete, and one going from a plain folder into a Connected Folder is
-copied and stays where it was, which the notice says. A finished paste of a
-Cut empties the clipboard, as GNOME Files does. Items cut in the window are
-drawn dimmed until they are pasted or another app copies something. Under
+Folder's delete, and one going between a plain folder and a Connected Folder
+moves as the [product model](product-model.md#the-file-manager-window)
+describes for a move by paste. A finished paste of a Cut empties the
+clipboard, as GNOME Files does. The desktop app remembers a Cut made in any
+window by the files it put on the clipboard: they are drawn dimmed in every
+window and paste as a move in any of them, until they are pasted, Esc
+cancels the Cut, one of them is no longer where it was cut, or the clipboard
+holds something else. A file manager's marked Copy of the same files is a
+Copy, never the Cut. Under
 X11 the helper reads the clipboard in its own
 process, so a large copy never holds the window; elsewhere Electron reads it,
 and another Chromium-based app's files are then not read.
