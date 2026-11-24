@@ -58,6 +58,7 @@ import { syncDirectory, writeFileAtomic, type AmpleFileDurableTurnRecord, type A
 import { maxAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
 import {
   computeAmpleFileRequestState,
+  isAmpleFileRequestSettled,
   isAmpleFileRequestTerminalState,
   parseAmpleFileChecklistItems,
   parseAmpleFileQuestionRecord,
@@ -887,7 +888,7 @@ export class AmpleFileRequestStore {
       const now = input.now ?? this.#now();
       const journal = new Map(input.turns.map((turn) => [turn.turnId, turn]));
       const targets = [...this.#records.values()]
-        .filter((record) => !isAmpleFileRequestTerminalState(record.state))
+        .filter((record) => !isAmpleFileRequestSettled(record))
         .sort((left, right) => right.depth - left.depth || left.createdAt.localeCompare(right.createdAt));
       let settled = 0;
       let expired = 0;
@@ -952,8 +953,12 @@ export class AmpleFileRequestStore {
       }
       const doomed: TrimmedRequestRef[] = [];
       for (const members of family.values()) {
-        const settledOut = members.every((member) =>
-          isAmpleFileRequestTerminalState(member.state) && !(this.#records.get(member.requestId)?.jobs ?? []).some(job => job.state === "running" || (job.settledAt !== null && Date.parse(job.settledAt) > cutoff)) && member.settledAt !== null && Date.parse(member.settledAt) <= cutoff);
+        const settledOut = members.every((member) => {
+          const record = this.#records.get(member.requestId);
+          return (record ? isAmpleFileRequestSettled(record) : isAmpleFileRequestTerminalState(member.state))
+            && !record?.jobs?.some((job) => job.settledAt !== null && Date.parse(job.settledAt) > cutoff)
+            && member.settledAt !== null && Date.parse(member.settledAt) <= cutoff;
+        });
         if (settledOut) doomed.push(...members);
       }
       // The ids retention removes are the only ids a rewrite may drop; the
@@ -1360,12 +1365,10 @@ export class AmpleFileRequestStore {
     // A family leaves memory only once all of it has settled: an open
     // parent still reads its children's states, results, and questions, and
     // a child missing from memory would read as lost.
-    const settled = (record: AmpleFileRequestRecord) =>
-      isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running");
     const openRoots = new Set<string>();
-    for (const record of this.#records.values()) if (!settled(record)) openRoots.add(record.rootId);
+    for (const record of this.#records.values()) if (!isAmpleFileRequestSettled(record)) openRoots.add(record.rootId);
     const records = [...this.#records.values()]
-      .filter((record) => settled(record) && !openRoots.has(record.rootId))
+      .filter((record) => !openRoots.has(record.rootId))
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     for (const record of records.slice(0, Math.max(0, this.#records.size - this.#maxRecords))) {
       for (const turn of record.turns) this.#byTask.delete(turn.taskId);

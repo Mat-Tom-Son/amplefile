@@ -18,6 +18,8 @@ import {
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { isSystemHiddenEntry } from "./hidden-entries.js";
+import { comparableForms, comparablePath, formsContain } from "./path-comparison.js";
+import { entersMacDataVolume, macDataVolumeRefusal, usualMacPath, withoutMacDataVolumeName, isInsideMacDataVolume } from "./mac-data-volume.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 import { linuxUserDirectories } from "./standard-folder-locations.js";
 
@@ -212,13 +214,19 @@ export function resolveStandardFolderPath(id: StandardFolderId, relativePath: st
  * as the prefix that puts it back). Null for the computer place's top, the
  * disk itself, which only its listing and the watcher read.
  */
-export function standardFolderPathBase(id: StandardFolderId, relativePath: string, home = homedir()): { root: string; path: string; prefix: string } | null {
+export function standardFolderPathBase(
+  id: StandardFolderId,
+  relativePath: string,
+  home = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): { root: string; path: string; prefix: string } | null {
   if (id !== computerFolderId) return { root: standardFolderRoot(id, home), path: relativePath, prefix: "" };
   if (relativePath.includes("\0") || relativePath.startsWith("/") || relativePath.startsWith("\\")) throw badRequest("Path escapes the selected folder.");
   const parts = relativePath.split("/").filter((part) => part && part !== ".");
   if (parts.includes("..")) throw badRequest("Path escapes the selected folder.");
   const first = parts[0];
   if (!first) return null;
+  if (entersMacDataVolume(parts, platform)) throw badRequest(macDataVolumeRefusal);
   if (isAlwaysHiddenConnectedFolderEntry(first)) throw badRequest("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
   const root = join(standardFolderRoot(id, home), first);
   // The first folder is the policy's root, which it checks only for being a link; say so the way a deeper link is refused.
@@ -234,6 +242,12 @@ export function standardFolderPathBase(id: StandardFolderId, relativePath: strin
  * History for them. Renaming or trashing a folder that holds a Connected Folder
  * would carry it along, so that is refused too; adding a folder next to one
  * (`allowContaining`) is not.
+ *
+ * The path and each registered folder are compared both as written and as
+ * the disk resolves them (src/local/path-comparison.ts), so a Connected
+ * Folder is found whatever way it is named: in another letter case, with an
+ * accent spelled the other way, or through a linked folder, whether the link
+ * is in the path asked about or in the path it was registered by.
  */
 export async function assertStandardFolderPathUnowned(
   id: StandardFolderId,
@@ -242,8 +256,10 @@ export async function assertStandardFolderPathUnowned(
   options: { allowContaining?: boolean; finalLink?: boolean } = {},
 ): Promise<string> {
   const target = resolveStandardFolderPath(id, relativePath, home, { finalLink: options.finalLink === true });
+  const asked = await comparableForms(target, { finalLink: options.finalLink === true });
   for (const connectedFolder of await listConnectedFolders()) {
-    if (pathContains(connectedFolder.connectedFolderRoot, target) || (!options.allowContaining && pathContains(target, connectedFolder.connectedFolderRoot))) {
+    const registered = await comparableForms(connectedFolder.connectedFolderRoot);
+    if (formsContain(registered, asked) || (!options.allowContaining && formsContain(asked, registered))) {
       throw Object.assign(
         new Error(`${connectedFolder.name} is a Connected Folder. Open it from the Connected Folders section to change it, so History keeps the change.`),
         { status: 409, statusCode: 409 },
@@ -261,11 +277,18 @@ export async function renameStandardFolderEntry(id: StandardFolderId, relativePa
   if (name === basename(source)) return { path: toRelative(id, source, home) };
   const destination = join(dirname(source), name);
   await assertStandardFolderPathUnowned(id, toRelative(id, destination, home), home, { allowContaining: true, finalLink: true });
-  const existing = await lstat(destination).catch(() => null);
-  // A case-only rename on a case-insensitive disk finds the source itself.
-  const sameItem = existing && name.toLocaleLowerCase() === basename(source).toLocaleLowerCase();
-  if (existing && !sameItem) throw conflict(`An item named “${name}” already exists here.`);
   try {
+    const [sourceInfo, existing] = await Promise.all([
+      lstat(source),
+      lstat(destination).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }),
+    ]);
+    // A spelling-only rename on a case-insensitive disk finds the source itself.
+    if (existing && (existing.dev !== sourceInfo.dev || existing.ino !== sourceInfo.ino)) {
+      throw conflict(`An item named “${name}” already exists here.`);
+    }
     await rename(source, destination);
   } catch (error) {
     throw accessError(error, id);
@@ -348,7 +371,10 @@ function addedFolders(): AddedFolder[] {
       folders = parsed.folders.filter((item): item is AddedFolder => typeof item === "object" && item !== null
         && typeof (item as AddedFolder).id === "string" && /^added-[0-9a-f]{16}$/.test((item as AddedFolder).id)
         && typeof (item as AddedFolder).root === "string" && (item as AddedFolder).root.startsWith(sep)
-        && typeof (item as AddedFolder).name === "string");
+        && typeof (item as AddedFolder).name === "string")
+        // One kept by the Mac data volume's second name is used under its usual one, or left out when it has none.
+        .map((item) => ({ ...item, root: withoutMacDataVolumeName(item.root) }))
+        .filter((item) => !isInsideMacDataVolume(item.root));
     }
   } catch { folders = []; }
   addedFoldersCache = { mtimeMs, folders };
@@ -366,7 +392,8 @@ function writeAddedFolders(folders: AddedFolder[]): void {
 
 /** Adds a folder the person chose in the folder picker; a folder already in the sidebar is returned as it is. */
 export function addSidebarFolder(folderPath: string, home = homedir()): { id: StandardFolderId; name: string } {
-  const root = resolve(folderPath);
+  // A folder chosen by the Mac data volume's second name is kept under its usual one (mac-data-volume.ts).
+  const root = usualMacPath(resolve(folderPath));
   const info = statSync(root, { throwIfNoEntry: false });
   if (!info?.isDirectory()) throw badRequest("Choose a folder.");
   for (const id of builtInStandardFolderIds) {
@@ -375,7 +402,7 @@ export function addSidebarFolder(folderPath: string, home = homedir()): { id: St
   const existing = addedFolders().find((folder) => samePath(folder.root, root));
   if (existing) return { id: existing.id, name: existing.name };
   const folder: AddedFolder = {
-    id: `added-${createHash("sha256").update(comparisonPath(root)).digest("hex").slice(0, 16)}`,
+    id: `added-${createHash("sha256").update(addedFolderIdPath(root)).digest("hex").slice(0, 16)}`,
     root,
     name: basename(root) || root,
   };
@@ -405,18 +432,13 @@ function toRelative(id: StandardFolderId, path: string, home: string): string {
   return relative(standardFolderRoot(id, home), path).split(sep).join("/");
 }
 
+/** macOS and Windows disks ignore case and how an accent is spelled by default; a path written the other way names the same folder. */
 function samePath(left: string, right: string): boolean {
-  return comparisonPath(left) === comparisonPath(right);
+  return comparablePath(left) === comparablePath(right);
 }
 
-function pathContains(parentPath: string, childPath: string): boolean {
-  const parent = comparisonPath(parentPath);
-  const child = comparisonPath(childPath);
-  return child === parent || child.startsWith(`${parent}${sep}`);
-}
-
-/** macOS and Windows disks ignore case by default; a wrongly cased path names the same folder. */
-function comparisonPath(value: string): string {
+/** The spelling of a folder's path its sidebar id is made from: derived as it always has been, so a folder added again gets the id it had. */
+function addedFolderIdPath(value: string): string {
   const resolved = resolve(value).replace(/[\\/]+$/, "");
   return process.platform === "linux" ? resolved : resolved.toLocaleLowerCase();
 }

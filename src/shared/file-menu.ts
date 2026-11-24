@@ -12,6 +12,7 @@ export type FileMenuCommand =
   | "open-in-new-tab"
   | "open-in-new-window"
   | "open-with"
+  | "show-package-contents"
   | "reveal"
   | "show-original"
   | "copy-path"
@@ -54,6 +55,12 @@ export interface FileMenuCapabilities {
   link?: boolean;
   /** Show Original, for a link whose target is there. */
   original?: boolean;
+  /**
+   * A Mac package, an app or a document such as a Keynote presentation, or
+   * a link to one: Open opens it in its app, as a file opens, and Show
+   * Package Contents goes inside (src/shared/mac-packages.ts).
+   */
+  package?: boolean;
   /** Open in New Tab, for a folder in a window with folder tabs. */
   newTab?: boolean;
   /** Open in New Window, for a folder where the desktop can open another window. */
@@ -86,10 +93,15 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   const items: FileMenuItem[] = [];
   const reveal: FileMenuItem = { type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" };
   const name = request.path.slice(request.path.lastIndexOf("/") + 1);
-  const deleteLabel = request.standardFolderId ? "Move to Trash" : `Delete ${request.capabilities.link ? "Link" : request.kind === "folder" ? "Folder" : "File"}`;
+  const packaged = Boolean(request.capabilities.package) && request.kind === "folder";
+  // A package reads as one item, an app or a document, not as a folder.
+  const itemWord = request.capabilities.link ? "Link" : packaged ? "Item" : request.kind === "folder" ? "Folder" : "File";
+  const deleteLabel = request.standardFolderId ? "Move to Trash" : `Delete ${itemWord}`;
+  const showContents: FileMenuItem = { type: "item", label: "Show Package Contents", command: "show-package-contents" };
   if (request.capabilities.link) {
     // Open and Show Original reach what the link points to; the rest act on the link itself.
-    if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" ? "Open Folder" : "Open", command: "open" });
+    if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" && !packaged ? "Open Folder" : "Open", command: "open" });
+    if (request.capabilities.open && packaged) items.push(showContents);
     if (request.capabilities.original) items.push({ type: "item", label: "Show Original", command: "show-original" });
     items.push(reveal, { type: "item", label: "Copy Link Path", command: "copy-path" });
     if (request.capabilities.organize && request.path) items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
@@ -103,16 +115,17 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (request.capabilities.open) {
     items.push({
       type: "item",
-      label: request.kind === "folder" ? "Open Folder" : fileOpenLabel(request.path),
+      label: packaged ? "Open" : request.kind === "folder" ? "Open Folder" : fileOpenLabel(request.path),
       command: "open",
     });
   }
+  if (packaged) items.push(showContents);
   if (request.kind === "folder" && request.capabilities.newTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
   if (request.kind === "folder" && request.capabilities.newWindow) items.push({ type: "item", label: "Open in New Window", command: "open-in-new-window" });
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
   items.push(
     reveal,
-    { type: "item", label: `Copy ${request.kind === "folder" ? "Folder" : "File"} Path`, command: "copy-path" },
+    { type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" },
   );
   if (request.capabilities.organize && request.path) {
     items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
@@ -124,7 +137,8 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (request.kind === "file" && request.capabilities.history) {
     items.push({ type: "item", label: "Version History", command: "version-history" });
   }
-  if (request.kind === "folder") {
+  // A package's insides are reached by Show Package Contents, never added to from here.
+  if (request.kind === "folder" && !packaged) {
     items.push(
       { type: "separator" },
       { type: "item", label: "New Folder Here…", command: "new-folder" },

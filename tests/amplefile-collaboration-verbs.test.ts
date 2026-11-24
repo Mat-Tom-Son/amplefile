@@ -964,6 +964,76 @@ test("an answer whose continuation could not start is recorded once and resumes 
   }
 });
 
+test("only answers queued in this app run continue when a Chat settles", async (t) => {
+  const h = await collaborationHarness(t);
+  let api = await h.open();
+  try {
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Answer queue" });
+    h.held.add(connectedFolder.id);
+    const first = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold" });
+    const historical = await api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: first.taskId, question: "First format?", respondent: "person", asynchronous: true });
+    // Model a previous run that recorded an answer and quit before dispatch.
+    await api.requests.answer({ questionId: historical.question.questionId, answer: "/hold Original", answeredByConnectedFolderId: connectedFolder.id });
+    await h.release(first.taskId);
+    await settled(api, connectedFolder.id, first.taskId);
+    await api.close();
+    api = await h.open();
+
+    const later = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: first.conversationId, content: "/hold" });
+    const fresh = await api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: later.taskId, question: "New format?", respondent: "person", asynchronous: true });
+    const queued = await api.actFacade.chatAnswer({ connectedFolder: connectedFolder.id, questionId: fresh.question.questionId, answer: "/hold New" });
+    assert.equal(queued.queued, true);
+    assert.equal(queued.continuation, null);
+    await h.release(later.taskId);
+    await waitFor(async () => Boolean(api.requests.question(fresh.question.questionId)?.continuationTaskId));
+    const continuation = api.requests.question(fresh.question.questionId)!.continuationTaskId!;
+    await h.release(continuation);
+    await settled(api, connectedFolder.id, continuation);
+    assert.equal(api.requests.question(historical.question.questionId)?.continuationTaskId, null);
+    assert.equal(api.requests.get(fresh.request.id)?.turns.length, 2);
+
+    const resumed = await api.actFacade.chatAnswer({ connectedFolder: connectedFolder.id, questionId: historical.question.questionId, answer: "/hold Original" });
+    await h.release(resumed.continuation.taskId);
+    await settled(api, connectedFolder.id, resumed.continuation.taskId);
+    assert.equal(api.requests.question(historical.question.questionId)?.continuationTaskId, resumed.continuation.taskId);
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
+test("a failed queued answer leaves the next answer eligible in the same settle", async (t) => {
+  const h = await collaborationHarness(t);
+  const turnStore = await AmpleFileTurnStore.create({ stateRoot: h.stateBase });
+  const accept = turnStore.accept.bind(turnStore);
+  let failedRequestId: string | undefined;
+  t.mock.method(turnStore, "accept", async (input: Parameters<typeof accept>[0]) => {
+    if (input.requestId === failedRequestId) throw new Error("Fixture refusal for the first queued answer");
+    return accept(input);
+  });
+  const api = await h.open({ turnStore });
+  try {
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Two queued answers" });
+    h.held.add(connectedFolder.id);
+    const active = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold" });
+    const ask = (question: string) => api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: active.taskId, question, respondent: "person", asynchronous: true });
+    const first = await ask("First format?");
+    const next = await ask("Second format?");
+    failedRequestId = `answer-${first.question.questionId}`;
+    for (const asked of [first, next]) {
+      const answer = await api.actFacade.chatAnswer({ connectedFolder: connectedFolder.id, questionId: asked.question.questionId, answer: "/hold Answer" });
+      assert.equal(answer.queued, true);
+    }
+    await h.release(active.taskId);
+    await waitFor(async () => Boolean(api.requests.question(next.question.questionId)?.continuationTaskId));
+    await h.release(api.requests.question(next.question.questionId)!.continuationTaskId!);
+    assert.equal(api.requests.question(first.question.questionId)?.continuationTaskId, null);
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
 test("the request graph is a management-scope read and is refused from inside a Connected Folder", async (t) => {
   const h = await collaborationHarness(t);
   const api = await h.open();

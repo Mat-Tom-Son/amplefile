@@ -44,15 +44,16 @@ test("full built-ASAR smoke rejects missing packaged dependencies without borrow
   await assert.rejects(() => verifyPackagedNativeTools(archive), error => error instanceof Error && /Packaged native tool smoke failed/.test(error.message) && /Cannot find module 'jiti'|Jiti must come from the built archive/.test(error.message));
 });
 
-test("packaged Pi identity rejects missing or replaced OAuth implementation bytes", async t => {
+test("packaged Pi AI rejects missing or replaced OAuth and reasoning runtime bytes", async t => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-packaged-pi-identity-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const state of ["reviewed", "missing", "replaced"]) {
+  for (const state of ["reviewed", "missing", "replaced", "missing-reasoning"]) {
     const source = join(root, state), archive = join(root, `${state}.asar`);
     await mkdir(source); await copyReviewedParser(source, "@earendil-works/pi-ai");
     const path = join(source, "node_modules/@earendil-works/pi-ai/dist/auth/oauth/openai-chatgpt.js");
     if (state === "missing") await rm(path);
     if (state === "replaced") await writeFile(path, "export {};\n");
+    if (state === "missing-reasoning") await rm(join(source, "node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js"));
     await createPackage(source, archive);
     if (state === "reviewed") assert.match(await verifyPackagedPiIdentity(archive), /PASS packaged Pi identity/);
     else await assert.rejects(() => verifyPackagedPiIdentity(archive), /Packaged Pi identity verification failed/);
@@ -76,7 +77,7 @@ test("packaged Pi recovery accepts pruned declarations and refuses unpatched or 
     if (state === "missing-exports") await rm(join(source, "node_modules/@earendil-works/pi-coding-agent/dist/index.js"));
     if (state === "replaced-exports") await writeFile(join(source, "node_modules/@earendil-works/pi-coding-agent/dist/index.js"), "export {};\n");
     await createPackage(source, archive);
-    if (state === "reviewed") assert.match(await verifyPackagedPiRecovery(archive), /PASS packaged Pi 1\.1\.0/);
+    if (state === "reviewed") assert.match(await verifyPackagedPiRecovery(archive), /PASS packaged Pi 1\.6\.0/);
     else await assert.rejects(() => verifyPackagedPiRecovery(archive), /Packaged Pi recovery verification failed/);
   }
 });

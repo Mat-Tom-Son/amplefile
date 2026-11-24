@@ -1,4 +1,5 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
+import { finderOpenPaths } from "./finder-open-paths.js";
 import { FileManagerWindows, parseWindowLocation, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
 import {
   cascadeBounds,
@@ -57,7 +58,8 @@ import {
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { setSystemTrashHandler } from "../../src/local/move-to-system-trash.js";
-import { parseFileClipboardPasteRequest, pasteboardHolds, planFileClipboardPaste, type PasteboardFiles } from "./file-clipboard-paste.js";
+import { existsOnDisk, FileClipboard, parseCutItems } from "./file-clipboard.js";
+import { parseFileClipboardPasteRequest, pasteboardFileList, pasteboardFileText, readPasteboardFileList, type PasteboardFiles } from "./file-clipboard-paste.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, type FolderLocation } from "../../src/local/folder-locations.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
@@ -137,6 +139,7 @@ import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
 import { isBrowserPageId } from "../../src/shared/browser.js";
 import { productIdentity } from "../../src/shared/product-identity.js";
+import { isMacPackageName } from "../../src/shared/mac-packages.js";
 import {
   commandLineStatus,
   defaultCommandLineEnvironment,
@@ -255,6 +258,8 @@ let windowPlacements: WindowPlacement[] | null = null;
 let builtInBrowser: BuiltInBrowser | null = null;
 let tray: Tray | null = null;
 let ampleFileAgentPopover: AmpleFileAgentPopover | null = null;
+let ampleFileAgentPopoverPromise: Promise<AmpleFileAgentPopover | null> | null = null;
+let trayWarmupTimer: NodeJS.Timeout | null = null;
 let modelContextWindow: ModelContextWindow | null = null;
 const localApiLifetime = new AppLifetimeResource<Awaited<ReturnType<typeof startLocalApi>>>();
 let piRuntime: PackagedPiRuntimeProvider | null = null;
@@ -389,15 +394,24 @@ if (ownsInstance && process.platform === "darwin") {
   // macOS can deliver this before `ready`. Queue the path so Finder and Dock
   // launches can be resolved against the registered Connected Folder catalog once the
   // app host is available. Unknown folders are never registered implicitly.
+  // One Finder request arrives as one open-file event per item, all in the
+  // same turn; they are gathered and opened together (finder-open-paths.ts).
+  let finderRequest: string[] | null = null;
   app.on("open-file", (event, path) => {
     event.preventDefault();
-    pendingOpenPaths.push(path);
     interactiveRequested = true;
-    if (app.isReady()) {
-      void startInteractiveApp()
-        .then(drainPendingOpenPaths)
-        .catch(reportStartupError);
-    }
+    if (finderRequest) { finderRequest.push(path); return; }
+    finderRequest = [path];
+    setImmediate(() => {
+      const paths = finderRequest ?? [];
+      finderRequest = null;
+      pendingOpenPaths.push(...finderOpenPaths(paths, (item) => lstatSync(item, { throwIfNoEntry: false })?.isDirectory() === true));
+      if (app.isReady()) {
+        void startInteractiveApp()
+          .then(drainPendingOpenPaths)
+          .catch(reportStartupError);
+      }
+    });
   });
 }
 
@@ -460,13 +474,9 @@ app.on("before-quit", (event) => {
 
 async function prepareForApplicationQuit(): Promise<QuitPreparationOutcome> {
   destroyTray();
-  if (desktopUpdater?.shouldInstallOnQuit()) {
-    // The updater stages and validates the payload first, then runs the
-    // update shutdown, then hands off. If staging fails nothing has shut down
-    // yet and the ordinary quit below continues; `shutdown()` is idempotent.
-    const status = await desktopUpdater.installDownloadedUpdateOnQuit();
-    if (status.phase === "installing") return "handoff";
-  }
+  // An explicit restart may already be staging the update. Let that install
+  // finish preparing and hand off before deciding whether to quit normally.
+  if (await desktopUpdater?.prepareForApplicationQuit()) return "handoff";
   await shutdown();
   desktopUpdater?.dispose();
   desktopUpdater = null;
@@ -518,7 +528,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     extensionUi.on("event", (event: PiExtensionUiEvent) => {
     if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
-    else if (event.method === "copyText") clipboard.writeText(event.text);
+    else if (event.method === "copyText") copyTextToClipboard(event.text);
     else if (event.method === "openSettings") frontWindow()?.webContents.send("amplefile:agent:open-settings");
     else if (event.method === "quit") app.quit();
     });
@@ -673,7 +683,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       piOAuthHooks: createDesktopPiOAuthHooks({
         openExternal,
         readClipboard: () => clipboard.readText(),
-        writeClipboard: (value) => clipboard.writeText(value),
+        writeClipboard: (value) => copyTextToClipboard(value),
         showMessageBox: (options) => {
           const parent = BrowserWindow.getFocusedWindow() ?? frontWindow();
           return parent && !parent.isDestroyed() ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
@@ -878,7 +888,7 @@ async function createFileManagerWindow(options: FileManagerWindowOptions = {}): 
     const endingApp = quitting || quittingForUpdate;
     // One of several windows closed: it is forgotten. The last one keeps its place, and Quit keeps them all.
     storeWindowPlacements(placementsAfterClose(currentWindowPlacements(), slot, { quitting: endingApp, othersOpen }));
-    if (!endingApp) builtInBrowser?.windowClosed(window);
+    if (!endingApp) builtInBrowser?.windowClosed(window, windowId);
     refreshApplicationMenuState();
     if (othersOpen > 0) return;
     if (process.platform === "win32" && !endingApp) app.quit();
@@ -962,9 +972,7 @@ function registerIpc(): void {
     if (modelContextWindow?.owns(event.sender)) modelContextWindow.assertSender(event);
     else {
       assertTrustedRenderer(event);
-      const frame = event.senderFrame;
-      const mainFrame = event.sender.mainFrame;
-      if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+      if (!senderIsMainFrame(event)) {
         throw new Error("Clipboard requests require a trusted main frame.");
       }
     }
@@ -972,6 +980,8 @@ function registerIpc(): void {
     writeDesktopClipboard(value, (content) => clipboard.write(content.image !== undefined
       ? { image: nativeImage.createFromDataURL(content.image) }
       : { text: content.text, ...(content.html !== undefined ? { html: content.html } : {}) }));
+    // The pasteboard holds something else now, so nothing is cut.
+    fileClipboard.replaced();
   });
   ipcMain.handle("amplefile:diagnostics:request", (event, input: unknown) => {
     if (!modelContextWindow) throw new Error("The developer inspector is not open.");
@@ -1162,7 +1172,8 @@ function registerIpc(): void {
     return startItemDrag(event.sender, items);
   });
   // A symbolic link a listing showed: open what it points to, or show the link itself in the system file manager.
-  // A linked folder is never opened here; the window goes to where it really is instead.
+  // A linked folder is never opened here; the window goes to where it really is instead. A linked Mac package
+  // (/Applications/Safari.app is one) is one item, as in Finder: it opens in its app like a file.
   ipcMain.handle("amplefile:place:open-link", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isRecord(value) || !isRecord(value.place) || typeof value.path !== "string" || !value.path || value.path.includes("\0") || isAbsolute(value.path)) throw new Error("Choose a link inside the folder.");
@@ -1175,7 +1186,8 @@ function registerIpc(): void {
       shell.showItemInFolder(link.linkPath);
       return;
     }
-    if (link.target !== "file") throw new Error("This link points to a folder. Open it in the window.");
+    const linkedPackage = process.platform === "darwin" && link.target === "folder" && isMacPackageName(basename(link.targetPath));
+    if (link.target !== "file" && !linkedPackage) throw new Error("This link points to a folder. Open it in the window.");
     const result = await shell.openPath(link.targetPath);
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
@@ -1192,47 +1204,50 @@ function registerIpc(): void {
   });
   // Copy, Cut, and paste with Finder and Linux file managers: files copied or cut there paste into the file
   // manager, and files copied or cut here paste there, through the system's file pasteboard. Paste reads the
-  // pasteboard here, never in the window (the window can't read the clipboard): what was copied or cut in this
-  // window pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
+  // pasteboard here, never in the window (the window can't read the clipboard). A Cut made in any window is the
+  // host's (desktop/src/file-clipboard.ts) and pastes by its place as a move in every window; what this window
+  // copied pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
   // that app cut them or the person chose ⌥⌘V. The window's `operationId` shows the paste's progress, and
   // `conflicts` asks about taken names first, then carries the person's choices.
   ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const request = parseFileClipboardPasteRequest(value);
-    const pasteboard = await readPasteboardFiles();
-    const plan = planFileClipboardPaste(request, pasteboard, await listConnectedFolders());
-    if (!plan.sources.length) return { mode: "copy", written: [], restorePoints: [], nothing: true };
-    const result = await transferFileEntries({
-      mode: plan.mode,
-      sources: plan.sources,
-      target: request.target,
-      ...(request.operationId ? { operationId: request.operationId } : {}),
-      ...(request.conflicts !== undefined ? { conflicts: request.conflicts } : {}),
-    });
-    const answer = { ...result, fromHere: plan.fromHere, count: plan.sources.length, moved: plan.mode === "move", cut: plan.cut };
-    // A finished paste of a Cut empties the pasteboard, as the system file managers do, so it is not moved twice.
-    if (plan.cut && !("conflicts" in result) && !("cancelled" in result && result.cancelled)) await clearPasteboardFiles(pasteboard.paths);
-    return answer;
+    return fileClipboard.paste(request, await listConnectedFolders(), (body) => transferFileEntries(body));
   });
   ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
-    // A list of paths is a Copy; { paths, operation: "cut" } is a Cut.
+    // A list of paths is a Copy; { paths, operation: "cut", from: { place, paths } } is a Cut, which the host
+    // remembers for every window: the items by place, and the files it put on the pasteboard.
+    if (isRecord(value) && !Array.isArray(value) && value.operation === "cut") {
+      const items = parseCutItems(value);
+      const kept = items.nativePaths.flatMap((path, index) => lstatSync(path, { throwIfNoEntry: false }) ? [index] : []);
+      if (!kept.length) return false;
+      await fileClipboard.cut({ place: items.place, paths: kept.map((index) => items.paths[index]!), nativePaths: kept.map((index) => items.nativePaths[index]!) });
+      return true;
+    }
     const list = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.paths) ? value.paths : null;
-    const operation = isRecord(value) && !Array.isArray(value) && value.operation === "cut" ? "cut" : "copy";
     if (!list || !list.length || list.length > 5_000) throw new Error("Choose items to copy.");
     const paths = list.map((item) => {
       if (typeof item !== "string" || !isAbsolute(item) || item.includes("\0")) throw new Error("Choose items to copy.");
       return item;
     }).filter((path) => Boolean(lstatSync(path, { throwIfNoEntry: false })));
     if (!paths.length) return false;
-    await writePasteboardFilePaths(paths, operation);
+    await writePasteboardFilePaths(paths);
+    // A Copy replaces whatever was cut.
+    fileClipboard.replaced();
     return true;
   });
-  // Whether the pasteboard still holds what this window cut, so those items stay drawn as cut.
-  ipcMain.handle("amplefile:file-clipboard:holds", async (event, value: unknown): Promise<boolean> => {
+  // What is cut now, in any window, while the pasteboard still holds it; a window asks when it opens and when it
+  // comes to the front (another app may have copied meanwhile), and hears every change.
+  ipcMain.handle("amplefile:file-clipboard:cut", async (event): Promise<{ nativePaths: string[] } | null> => {
     assertTrustedMainRenderer(event);
-    if (!Array.isArray(value) || !value.length || value.length > 5_000 || value.some((item) => typeof item !== "string")) return false;
-    return pasteboardHolds(await readPasteboardFiles(), value as string[]);
+    const cut = await fileClipboard.current();
+    return cut ? { nativePaths: [...cut.nativePaths] } : null;
+  });
+  // Esc in the folder list: the Cut is cancelled in every window, and its files leave the pasteboard.
+  ipcMain.handle("amplefile:file-clipboard:cancel-cut", async (event): Promise<void> => {
+    assertTrustedMainRenderer(event);
+    await fileClipboard.cancel();
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
   ipcMain.handle("amplefile:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
@@ -1297,14 +1312,12 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return fileManagerWindows.takeOpenLocation(senderWindow(event));
   });
-  ipcMain.on("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
     fileManagerWindows.acknowledgeOpenLocation(senderWindow(event), value);
   });
   // Windows (docs/product-model.md, "Windows"): where this window is, so New Window opens there; and a new window, at a
   // folder the renderer names (Open in New Window in its menus) or where this one is.
-  ipcMain.on("amplefile:window:set-location", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:set-location", (event, value: unknown) => {
     const entry = fileManagerWindows.entry(senderWindow(event));
     if (entry) entry.location = parseWindowLocation(value);
   });
@@ -1337,10 +1350,9 @@ function registerIpc(): void {
     await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }], windowPopoverAnchor(BrowserWindow.fromWebContents(event.sender)));
     return true;
   });
-  ipcMain.on("amplefile:agent:hide", (event) => {
-    assertMainOrAgentPopoverRenderer(event);
+  onRendererMessage("amplefile:agent:hide", () => {
     ampleFileAgentPopover?.hide();
-  });
+  }, assertMainOrAgentPopoverRenderer);
   ipcMain.handle("amplefile:agent:open-main", (event) => {
     assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
@@ -1368,8 +1380,7 @@ function registerIpc(): void {
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
-  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:set-theme", (_event, value: unknown, source: unknown) => {
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
@@ -1396,8 +1407,7 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return linuxWindowChromeState(senderWindow(event));
   });
-  ipcMain.on("amplefile:window:control", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:control", (event, value: unknown) => {
     const window = senderWindow(event);
     if (!window || window.isDestroyed()) return;
     // Closing the last folder tab closes that window on every platform, through the window's own close rules.
@@ -1410,8 +1420,7 @@ function registerIpc(): void {
       else window.maximize();
     }
   });
-  ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:menu:set-state", (event, value: unknown) => {
     // Each window keeps its own; the application menu shows the front window's.
     const updated = senderWindow(event);
     if (updated) fileManagerWindows.updateMenuState(updated, value);
@@ -1454,34 +1463,23 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
   });
-  ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.show(value);
-    } catch (error) {
-      console.warn(`${productName} could not show a rail tooltip: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
+    railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.show(value);
   });
-  ipcMain.on("amplefile:window:rail-tooltip-hide", (event) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:rail-tooltip-hide", (event) => {
     railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.hide();
   });
   ipcMain.handle("amplefile:browser:mount", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().mount(parseBrowserViewRequest(value), requireSenderWindow(event));
   });
-  ipcMain.on("amplefile:browser:layout", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      ensureBuiltInBrowser().layout(parseBrowserViewRequest(value), requireSenderWindow(event));
-    } catch (error) {
-      console.warn(`${productName} could not lay out a browser tab: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:browser:layout", (event, value: unknown) => {
+    ensureBuiltInBrowser().layout(parseBrowserViewRequest(value), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:unmount", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().detach(pageId);
+    ensureBuiltInBrowser().detach(pageId, requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:navigate", (event, pageId: unknown, address: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1492,7 +1490,7 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:browser:command", (event, pageId: unknown, command: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().command(pageId, parseBrowserCommand(command));
+    ensureBuiltInBrowser().command(pageId, parseBrowserCommand(command), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:respond-permission", (event, pageId: unknown, requestId: unknown, decision: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1504,15 +1502,10 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:browser:close", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().close(pageId);
+    ensureBuiltInBrowser().close(pageId, requireSenderWindow(event));
   });
-  ipcMain.on("amplefile:browser:sync", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      ensureBuiltInBrowser().sync(parseBrowserTabsSync(value), requireSenderWindow(event));
-    } catch (error) {
-      console.warn(`${productName} could not read the browser tab list: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:browser:sync", (event, value: unknown) => {
+    ensureBuiltInBrowser().sync(parseBrowserTabsSync(value), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:states", (event) => {
     assertTrustedMainRenderer(event);
@@ -1567,7 +1560,7 @@ type RendererMenuCommand =
   | "open-local-folder"
   | "new-chat"
   | "close-tab"
-  | "reload-connected-folder-state"
+  | "refresh"
   | "check-for-updates"
   | "open-settings"
   | "open-about"
@@ -1576,8 +1569,6 @@ type RendererMenuCommand =
   | "open-extensions"
   | "open-command-palette"
   | "open-keyboard-shortcuts"
-  | "toggle-sidebar"
-  | "toggle-agent-panel"
   | "toggle-hidden-files"
   | "new-tab"
   | "next-tab"
@@ -1636,7 +1627,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
-      { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: state.connectedFolderOpen, click: menuCommand("reload-connected-folder-state") },
+      // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.
+      { id: "refresh", label: "Refresh", accelerator: "CommandOrControl+R", enabled: state.folderTabsOpen, click: menuCommand("refresh") },
     ];
     if (process.platform !== "darwin") {
       items.push(
@@ -1688,7 +1680,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
   if (menuId === "view") {
     return [
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: menuCommand("open-command-palette") },
-      ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: (_item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => { void toggleAmpleFileAgentPopover(windowPopoverAnchor(window)); } }] : []),
+      // Linux places the popover in the window that asked, so its item (and Ctrl+J) is here rather than with the Mac's below.
+      ...(process.platform === "linux" ? [{ label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", click: (_item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => { void toggleAmpleFileAgentPopover(windowPopoverAnchor(window)); } }] : []),
       { type: "separator" },
       // The window owns the key (Shift-Command-Period, Ctrl+H) so it works while the folder list has the keyboard
       // and in the browser preview; the menu shows the key and the check without registering it twice.
@@ -1699,7 +1692,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         checked: state.showHiddenFiles,
         accelerator: process.platform === "darwin" ? "Shift+Command+." : "Control+H",
         registerAccelerator: false,
-        enabled: state.connectedFolderOpen,
+        // Every folder the window shows has hidden files, with or without a Connected Folder.
+        enabled: state.folderTabsOpen,
         click: menuCommand("toggle-hidden-files"),
       },
       // Folder tabs: the strip shows with more than one tab, or always with Show Tab Bar on. The window owns the next and
@@ -1715,9 +1709,12 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       { id: "previous-tab", label: "Show Previous Tab", accelerator: process.platform === "darwin" ? "Shift+Command+[" : "Control+PageUp", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("previous-tab") },
       { id: "next-tab", label: "Show Next Tab", accelerator: process.platform === "darwin" ? "Shift+Command+]" : "Control+PageDown", registerAccelerator: false, enabled: state.folderTabsOpen, click: menuCommand("next-tab") },
       { type: "separator" },
-      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: state.connectedFolderOpen, click: menuCommand("toggle-sidebar") },
-      { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: state.connectedFolderOpen, click: menuCommand("toggle-agent-panel") },
-      { type: "separator" },
+      // The AmpleFile Agent is above every Connected Folder and lives in the menu-bar popover, so this shows or hides
+      // the popover from any window, with or without a Connected Folder. It goes to the host, not to a window.
+      ...(ampleFileAgentPopoverHosted() ? [
+        { id: "toggle-amplefile-agent", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", click: () => { void toggleAmpleFileAgentPopover(); } },
+        { type: "separator" },
+      ] as MenuItemConstructorOptions[] : []),
       { role: "resetZoom" },
       { role: "zoomIn" },
       { role: "zoomOut" },
@@ -1738,6 +1735,11 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
     );
   }
   return items;
+}
+
+/** The AmpleFile Agent popover hangs from the menu-bar (or tray) icon, which only the Mac and Windows have. */
+function ampleFileAgentPopoverHosted(): boolean {
+  return process.platform === "darwin" || process.platform === "win32";
 }
 
 function macApplicationMenu(): MenuItemConstructorOptions[] {
@@ -1841,16 +1843,14 @@ function refreshApplicationMenuState(): void {
   const menu = Menu.getApplicationMenu();
   const showHidden = menu?.getMenuItemById("show-hidden-files");
   if (showHidden) showHidden.checked = state.showHiddenFiles;
-  setMenuItemEnabled(menu, "show-hidden-files", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "show-hidden-files", state.folderTabsOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "refresh-connected-folder", state.connectedFolderOpen);
+  setMenuItemEnabled(menu, "refresh", state.folderTabsOpen);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
   const showTabBar = menu?.getMenuItemById("show-tab-bar");
   if (showTabBar) showTabBar.checked = state.showTabBar;
   for (const id of ["new-tab", "show-tab-bar", "previous-tab", "next-tab"]) setMenuItemEnabled(menu, id, state.folderTabsOpen);
   setMenuItemEnabled(menu, "open-capabilities", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-sidebar", state.connectedFolderOpen);
-  setMenuItemEnabled(menu, "toggle-agent-panel", state.connectedFolderOpen);
 }
 
 function setMenuItemEnabled(menu: Menu | null, id: string, enabled: boolean): void {
@@ -2222,8 +2222,11 @@ function linuxClipboardOwner(): Promise<LinuxClipboardOwner | null> {
 }
 
 /**
- * The files on the system pasteboard (Finder's or a Linux file manager's Copy or Cut), newest format first,
- * with the Linux Cut marker; empty when it holds no files. A Mac's pasteboard has no Cut marker.
+ * The files on the system pasteboard (Finder's or a Linux file manager's Copy or Cut), newest format first.
+ * A Mac's pasteboard has no Cut marker, but carries the token an AmpleFile Cut wrote beside the files; on
+ * Linux the reading says whether the files were cut (the GNOME and KDE markers). Empty when it holds no
+ * files. Elsewhere the desktop reads no files from it, only its text, where AmpleFile writes files as
+ * their paths.
  */
 async function readPasteboardFiles(): Promise<PasteboardFiles> {
   if (process.platform === "linux") {
@@ -2231,10 +2234,9 @@ async function readPasteboardFiles(): Promise<PasteboardFiles> {
     const files = await (await linuxClipboardOwner())?.readFiles();
     return files ?? readLinuxClipboardFiles(clipboard);
   }
-  if (process.platform !== "darwin") return { paths: [], operation: null };
-  const plist = clipboard.read("NSFilenamesPboardType");
-  const listed = [...plist.matchAll(/<string>([^<]*)<\/string>/g)].map((match) => decodeXmlText(match[1] ?? "")).filter((path) => isAbsolute(path));
-  if (listed.length) return { paths: listed, operation: null };
+  if (process.platform !== "darwin") return { paths: [], operation: null, unreadable: true, text: clipboard.readText() };
+  const listed = readPasteboardFileList(clipboard.read("NSFilenamesPboardType"));
+  if (listed.paths.length) return { paths: listed.paths, operation: null, cutToken: listed.cutToken };
   const url = clipboard.read("public.file-url").trim();
   if (url.startsWith("file://")) {
     try { return { paths: [fileURLToPath(url)], operation: null }; } catch { return { paths: [], operation: null }; }
@@ -2242,18 +2244,19 @@ async function readPasteboardFiles(): Promise<PasteboardFiles> {
   return { paths: [], operation: null };
 }
 
-/** After a Cut is pasted: the pasteboard is emptied if it still holds those files. */
-async function clearPasteboardFiles(paths: readonly string[]): Promise<void> {
-  if (!pasteboardHolds(await readPasteboardFiles(), paths)) return;
-  if (process.platform === "linux") (await linuxClipboardOwner())?.release();
+/** Empties the pasteboard. On Linux the clipboard helper stops offering its files too. */
+function clearPasteboard(): void {
+  if (process.platform === "linux") void linuxClipboardOwner().then((owner) => owner?.release()).catch(() => undefined);
   clipboard.clear();
 }
 
 /**
- * Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy or Cut does, so it can
- * paste them. On Linux a Cut carries the GNOME and KDE cut markers; a Mac's pasteboard has none.
+ * Puts files on the system pasteboard the way Finder's (or a Linux file manager's) Copy or Cut does, so it
+ * can paste them. A Mac's pasteboard has no Cut marker: a Cut's `token` goes into the file list beside the
+ * paths. On Linux a Cut carries the GNOME and KDE cut markers instead. Either way the host remembers the
+ * Cut (fileClipboard).
  */
-async function writePasteboardFilePaths(paths: readonly string[], operation: "copy" | "cut" = "copy"): Promise<void> {
+async function writePasteboardFilePaths(paths: readonly string[], token: string | null = null, operation: "copy" | "cut" = "copy"): Promise<void> {
   if (process.platform === "linux") {
     // The helper offers GNOME's format, the URI list and text together; Electron alone offers only the URI list.
     const owner = await linuxClipboardOwner();
@@ -2261,17 +2264,30 @@ async function writePasteboardFilePaths(paths: readonly string[], operation: "co
     writeLinuxClipboardFiles(clipboard, paths);
     return;
   }
-  if (process.platform !== "darwin") { clipboard.writeText(paths.join("\n")); return; }
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><array>${paths.map((path) => `<string>${encodeXmlText(path)}</string>`).join("")}</array></plist>`;
-  clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
+  if (process.platform !== "darwin") { clipboard.writeText(pasteboardFileText(paths)); return; }
+  clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(pasteboardFileList(paths, token), "utf8"));
 }
 
-function encodeXmlText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/** The windows' clipboard: the Cut, kept for every window, and Paste. Each change of the Cut reaches every window. */
+const fileClipboard = new FileClipboard({
+  read: readPasteboardFiles,
+  // The windows' clipboard writes only a Cut: on Linux that is the cut markers, on a Mac the token.
+  write: (paths, token) => writePasteboardFilePaths(paths, token, "cut"),
+  clear: clearPasteboard,
+  exists: existsOnDisk,
+  token: () => process.platform === "darwin" ? randomBytes(16).toString("hex") : null,
+  changed: (nativePaths) => {
+    const cut = nativePaths ? { nativePaths: [...nativePaths] } : null;
+    for (const window of fileManagerWindows.windows()) {
+      if (!window.webContents.isDestroyed()) window.webContents.send("amplefile:file-clipboard:cut-changed", cut);
+    }
+  },
+});
 
-function decodeXmlText(value: string): string {
-  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+/** Text AmpleFile puts on the clipboard (a sign-in code, an address): the pasteboard holds it now, so nothing is cut. */
+function copyTextToClipboard(text: string): void {
+  clipboard.writeText(text);
+  fileClipboard.replaced();
 }
 
 /**
@@ -2388,9 +2404,10 @@ async function openRecentConnectedFolder(connectedFolderId: string): Promise<voi
 //
 // A folder opens in the most recently focused window, as it did when there was
 // one window, so an app that asks again and again to show a folder never piles
-// windows up. The further folders of one request (a launcher given several, a
-// FileManager1 call naming several folders) each open in a new window, as a
-// system file manager does (linux-file-manager-host.ts).
+// windows up. The further folders of one request (Finder handing over several
+// at once, a launcher given several, a FileManager1 call naming several
+// folders) each open in a new window, as a system file manager does
+// (finder-open-paths.ts, linux-file-manager-host.ts).
 async function drainPendingOpenPaths(): Promise<void> {
   if (process.platform !== "darwin" && process.platform !== "linux") return;
   if (openPathDrainPromise) {
@@ -2499,6 +2516,13 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: (window) => railTooltipOverlays.get(window.id)?.raise(),
+    // An address the person copied from a page replaces what was cut.
+    onCopied: () => fileClipboard.replaced(),
+    // A page puts a picture on the clipboard in its own time, or fails to: look again shortly, and forget the Cut
+    // only once the pasteboard no longer holds it.
+    onCopyingImage: () => {
+      for (const delay of [300, 2_000]) setTimeout(() => { void fileClipboard.current().catch(() => null); }, delay);
+    },
     declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
@@ -2573,6 +2597,7 @@ function frontWindow(): BrowserWindow | null {
 
 /** The file manager window an IPC request came from, or null for any other sender. */
 function senderWindow(event: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow | null {
+  if (event.sender.isDestroyed()) return null;
   const window = BrowserWindow.fromWebContents(event.sender);
   const entry = fileManagerWindows.entry(window);
   return entry && entry.window.webContents === event.sender ? entry.window : null;
@@ -2654,7 +2679,7 @@ function updateDesktopPreferences(update: Partial<DesktopPreferences>): void {
 }
 
 function createTrayIfSupported(): void {
-  if (tray || !["win32", "darwin", "linux"].includes(process.platform)) return;
+  if (tray || quitting || quittingForUpdate || !["win32", "darwin", "linux"].includes(process.platform)) return;
   const icon = resolveTrayIcon();
   if (!icon) {
     console.warn(`${productName} tray icon was not found; the ${process.platform === "darwin" ? "menu-bar" : "tray"} surface is unavailable.`);
@@ -2689,8 +2714,10 @@ function createTrayIfSupported(): void {
   updateTrayPulse();
   // Warm the hidden popover renderer off the startup critical path so the
   // first AmpleFile Agent summon paints the ready surface immediately.
-  setTimeout(() => {
-    void ensureAmpleFileAgentPopover().then((popover) => popover.warm()).catch(() => {});
+  trayWarmupTimer = setTimeout(() => {
+    trayWarmupTimer = null;
+    if (quitting || quittingForUpdate) return;
+    void ensureAmpleFileAgentPopover().then((popover) => popover?.warm()).catch(() => {});
   }, 2_500);
 }
 
@@ -2774,6 +2801,8 @@ function stopTrayPulse(): void {
 }
 
 function destroyTray(): void {
+  if (trayWarmupTimer) clearTimeout(trayWarmupTimer);
+  trayWarmupTimer = null;
   stopTrayPulse();
   tray?.destroy();
   tray = null;
@@ -2781,29 +2810,34 @@ function destroyTray(): void {
   ampleFileAgentPopover = null;
 }
 
-async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
+async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover | null> {
+  if (quitting || quittingForUpdate) return null;
   if (ampleFileAgentPopover) return ampleFileAgentPopover;
-  const api = await ensureInteractiveLocalApi();
-  ampleFileAgentPopover = new AmpleFileAgentPopover({
-    appProtocol,
-    preloadPath: resolveAmpleFileAgentPopoverPreloadPath(),
-    additionalArguments: [
-      ...productRendererArguments(),
-      rendererArgument("api-base-url", api.origin),
-      rendererArgument("app-version", applicationVersion),
-      rendererArgument("window-material", process.platform === "darwin" && macVibrancySupported ? "vibrancy" : "none"),
-    ],
-    backgroundColor: windowBackgroundColors[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
-    vibrancy: process.platform === "darwin" && macVibrancySupported,
-    devTools: !app.isPackaged,
-    configureNavigation: configureWindowNavigation,
-    onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
-    appWindowBounds: () => {
-      const window = fileManagerWindows.windows().find((candidate) => candidate.isVisible() && !candidate.isMinimized());
-      return window ? window.getBounds() : null;
-    },
-  });
-  return ampleFileAgentPopover;
+  ampleFileAgentPopoverPromise ??= (async () => {
+    const api = await ensureInteractiveLocalApi();
+    if (quitting || quittingForUpdate) return null;
+    ampleFileAgentPopover = new AmpleFileAgentPopover({
+      appProtocol,
+      preloadPath: resolveAmpleFileAgentPopoverPreloadPath(),
+      additionalArguments: [
+        ...productRendererArguments(),
+        rendererArgument("api-base-url", api.origin),
+        rendererArgument("app-version", applicationVersion),
+        rendererArgument("window-material", process.platform === "darwin" && macVibrancySupported ? "vibrancy" : "none"),
+      ],
+      backgroundColor: windowBackgroundColors[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
+      vibrancy: process.platform === "darwin" && macVibrancySupported,
+      devTools: !app.isPackaged,
+      configureNavigation: configureWindowNavigation,
+      onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
+      appWindowBounds: () => {
+        const window = fileManagerWindows.windows().find((candidate) => candidate.isVisible() && !candidate.isMinimized());
+        return window ? window.getBounds() : null;
+      },
+    });
+    return ampleFileAgentPopover;
+  })().finally(() => { ampleFileAgentPopoverPromise = null; });
+  return ampleFileAgentPopoverPromise;
 }
 
 /** The tray icon asked: its bounds, which Linux StatusNotifierItems leave empty. */
@@ -2819,10 +2853,10 @@ function windowPopoverAnchor(window: Electron.BaseWindow | null | undefined): Po
   return { kind: "window", windowBounds: usable ? asking.getBounds() : null };
 }
 
-async function toggleAmpleFileAgentPopover(anchor: PopoverAnchor): Promise<void> {
+async function toggleAmpleFileAgentPopover(anchor: PopoverAnchor = trayPopoverAnchor()): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.toggle(anchor);
+    if (!quitting && !quittingForUpdate) await popover?.toggle(anchor);
   } catch (error) {
     console.warn(`${productName} could not open the AmpleFile Agent popover: ${errorMessage(error)}`);
   }
@@ -2831,7 +2865,7 @@ async function toggleAmpleFileAgentPopover(anchor: PopoverAnchor): Promise<void>
 async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[], anchor: PopoverAnchor): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.stage(items, anchor);
+    if (!quitting && !quittingForUpdate) await popover?.stage(items, anchor);
   } catch (error) {
     console.warn(`${productName} could not stage dropped material: ${errorMessage(error)}`);
   }
@@ -3135,13 +3169,41 @@ function buildEditableContextMenuTemplate(window: BrowserWindow, params: Context
 function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemConstructorOptions[] {
   const template: MenuItemConstructorOptions[] = [];
   if (params.selectionText.length > 0) template.push({ role: "copy", enabled: params.editFlags.canCopy });
-  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => clipboard.writeText(params.linkURL) });
+  if (params.linkURL.length > 0) template.push({ label: "Copy Link Address", click: () => copyTextToClipboard(params.linkURL) });
   return template;
 }
 
+/** Asynchronous IPC has no rejection channel. A stale or untrusted sender must not throw into Electron. */
+function onRendererMessage<Args extends unknown[]>(
+  channel: string,
+  handle: (event: IpcMainEvent, ...args: Args) => void,
+  assertSender: (event: IpcMainEvent) => void = assertTrustedMainRenderer,
+): void {
+  ipcMain.on(channel, (event, ...args: Args) => {
+    try {
+      assertSender(event);
+      handle(event, ...args);
+    } catch (error) {
+      console.warn(`${productName} ignored ${channel}: ${errorMessage(error)}`);
+    }
+  });
+}
+
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  if (event.sender.isDestroyed()) throw new Error("The renderer is no longer available.");
   if (modelContextWindow?.owns(event.sender)) throw new Error("The developer inspector has diagnostics-only access.");
-  if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) throw new Error("Untrusted renderer IPC request.");
+  const frame = event.senderFrame;
+  if (!frame || frame.isDestroyed() || frame.detached || !isTrustedRendererUrl(frame.url)) {
+    throw new Error("Untrusted renderer IPC request.");
+  }
+}
+
+function senderIsMainFrame(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
+  if (event.sender.isDestroyed()) return false;
+  const frame = event.senderFrame;
+  const mainFrame = event.sender.mainFrame;
+  return Boolean(frame && mainFrame && !frame.isDestroyed() && !mainFrame.isDestroyed() && !frame.detached
+    && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
 }
 
 /**
@@ -3152,9 +3214,7 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
 function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   if (ampleFileAgentPopover?.owns(event.sender)) {
     assertTrustedRenderer(event);
-    const frame = event.senderFrame;
-    const mainFrame = event.sender.mainFrame;
-    if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+    if (!senderIsMainFrame(event)) {
       throw new Error("This request requires the AmpleFile Agent popover's main frame.");
     }
     return;
@@ -3164,9 +3224,7 @@ function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEve
 
 function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   assertTrustedRenderer(event);
-  const frame = event.senderFrame;
-  const mainFrame = event.sender.mainFrame;
-  const mainFrameMatches = Boolean(frame && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
+  const mainFrameMatches = senderIsMainFrame(event);
   // Any file manager window's own renderer, in its top frame; never the popover, a browser page, or a pop-up.
   if (!senderWindow(event) || !mainFrameMatches) {
     throw new Error("This request requires the main AmpleFile renderer.");

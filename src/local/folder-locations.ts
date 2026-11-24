@@ -1,6 +1,6 @@
 import { lstat, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 
 import {
   getConnectedFolder,
@@ -12,6 +12,9 @@ import {
   type TreeEntry,
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { isHiddenAtMacDiskTop } from "./hidden-entries.js";
+import { usualMacPath } from "./mac-data-volume.js";
+import { isMacPackageName } from "../shared/mac-packages.js";
 import {
   accessError,
   computerFolderId,
@@ -56,9 +59,11 @@ export async function resolveFolderLocation(
   home = homedir(),
   options: { reveal?: boolean } = {},
 ): Promise<FolderLocation | null> {
-  // The real location, so a link anywhere in the path is never traversed by a place's routes.
-  const real = await realpath(resolve(path)).catch(() => null);
-  if (!real) return null;
+  // The real location, so a link anywhere in the path is never traversed by a place's routes,
+  // under its usual name when it came by the Mac's data volume.
+  const resolved = await realpath(resolve(path)).catch(() => null);
+  if (!resolved) return null;
+  const real = usualMacPath(resolved);
   const info = await stat(real).catch(() => null);
   if (!info || (!info.isDirectory() && !info.isFile())) return null;
   const diskRoot = parse(real).root;
@@ -141,20 +146,22 @@ export async function scanComputerFolder(relativePath: string, home = homedir(),
  * The disk's top, under the same rules as any other listing in the computer
  * place: dotfiles only when `includeHidden` asks (marked `hidden`), symbolic
  * links only when `includeLinks` asks (Linux keeps `/bin` and `/lib` as
- * links), each with what it points to and never followed, and nothing of
- * AmpleFile's or Pi's ever.
+ * links), each with what it points to and never followed, Mac packages
+ * marked as any listing marks them, and nothing of AmpleFile's or Pi's ever.
  */
-async function scanDiskTop(top: string, options: StandardFolderScanOptions = {}): Promise<TreeEntry[]> {
+export async function scanDiskTop(top: string, options: StandardFolderScanOptions = {}, platform: NodeJS.Platform = process.platform): Promise<TreeEntry[]> {
   const registered = new Set((await listConnectedFolders()).map((connectedFolder) => comparison(connectedFolder.connectedFolderRoot)));
+  // Finder also hides the Mac's system folders here (/usr, /private, /Volumes, …).
+  const hiddenHere = (name: string) => !isShownStandardEntry(name) || isHiddenAtMacDiskTop(name, platform);
   const entries = (await readdir(top, { withFileTypes: true })).filter((entry) => {
     if (!entry.name || isAlwaysHiddenConnectedFolderEntry(entry.name)) return false;
-    if (!options.includeHidden && !isShownStandardEntry(entry.name)) return false;
+    if (!options.includeHidden && hiddenHere(entry.name)) return false;
     return entry.isSymbolicLink() ? Boolean(options.includeLinks) : entry.isDirectory() || entry.isFile();
   });
   const listed = await Promise.all(entries.map(async (entry): Promise<TreeEntry | null> => {
     const path = join(top, entry.name);
-    const hidden = !isShownStandardEntry(entry.name) ? { hidden: true as const } : {};
-    if (entry.isSymbolicLink()) return diskTopLink(entry.name, path, hidden);
+    const hidden = hiddenHere(entry.name) ? { hidden: true as const } : {};
+    if (entry.isSymbolicLink()) return diskTopLink(entry.name, path, hidden, platform);
     // An entry that disappears between the read and its stat is skipped, as the tree scan skips one.
     const info = await stat(path).catch(() => null);
     if (!info) return null;
@@ -162,7 +169,8 @@ async function scanDiskTop(top: string, options: StandardFolderScanOptions = {})
     if (registered.has(comparison(path))) return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: false, nestedFolder: true, ...hidden };
     const children = await readdir(path).catch(() => []);
     const shown = (name: string) => options.includeHidden ? Boolean(name) && !isAlwaysHiddenConnectedFolderEntry(name) : isShownStandardEntry(name);
-    return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: children.some(shown), ...hidden };
+    const marked = platform === "darwin" && isMacPackageName(entry.name) ? { package: true as const } : {};
+    return { name: entry.name, path: entry.name, kind: "folder", updatedAt: info.mtime.toISOString(), hasChildren: children.some(shown), ...hidden, ...marked };
   }));
   return listed
     .filter((entry): entry is TreeEntry => Boolean(entry))
@@ -170,7 +178,7 @@ async function scanDiskTop(top: string, options: StandardFolderScanOptions = {})
 }
 
 /** A link at the disk's top, as the tree scan lists one: by what it points to now, a broken one or a loop as missing. */
-async function diskTopLink(name: string, path: string, hidden: { hidden?: true }): Promise<TreeEntry | null> {
+async function diskTopLink(name: string, path: string, hidden: { hidden?: true }, platform: NodeJS.Platform): Promise<TreeEntry | null> {
   const linkInfo = await lstat(path).catch(() => null);
   if (!linkInfo?.isSymbolicLink()) return null;
   const targetInfo = await stat(path).catch(() => null);
@@ -190,6 +198,7 @@ async function diskTopLink(name: string, path: string, hidden: { hidden?: true }
     ...(target === "folder" ? { hasChildren: false } : {}),
     link: { target, targetPath },
     ...hidden,
+    ...(platform === "darwin" && target === "folder" && isMacPackageName(basename(targetPath)) ? { package: true as const } : {}),
   };
 }
 

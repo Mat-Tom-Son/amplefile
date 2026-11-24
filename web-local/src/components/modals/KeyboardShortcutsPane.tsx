@@ -5,8 +5,9 @@ import type { ShortcutGroup } from "../../types";
 /**
  * The file manager layout's keys (docs/product-model.md, the file
  * manager window): Finder's keys for the list and search, and the menu bar's
- * AmpleFile commands, folder tabs, and the Browser pane's keys in the desktop app. It has
- * no command palette or agent panel, so their keys are not listed.
+ * AmpleFile commands, folder tabs, and the Browser pane's keys in the desktop app.
+ * ⌘J shows the AmpleFile Agent's popover where the menu bar (or tray) holds it.
+ * The window has no command palette, so its key is not listed.
  * Space previews with Quick Look on the Mac (the plain browser points to the
  * Mac app for it); on another desktop it opens the window's own Preview, which
  * Space or Esc closes.
@@ -16,6 +17,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
   const modifier = desktopShortcutModifierKey(platform);
   const fileManager = systemFileManagerName(platform);
   const quickLook = macOS || !platform;
+  const agentPopover = desktop && (macOS || platform === "win32");
   const space = quickLook ? "Quick Look the selected item." : "Preview the selected item. Space or Esc closes it.";
   return [
     {
@@ -32,7 +34,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: [modifier, "]"], action: "Go forward." },
         { keys: [modifier, "Shift", "G"], action: "Go to a folder by its path." },
         { keys: [modifier, "C"], action: `Copy the selected items (${fileManager} can paste them too).` },
-        { keys: [modifier, "X"], action: macOS ? "Cut the selected items; Paste moves them." : `Cut the selected items; Paste moves them, here or in ${fileManager}.` },
+        { keys: [modifier, "X"], action: macOS ? "Cut the selected items; Paste in any window moves them." : `Cut the selected items; Paste moves them, here or in ${fileManager}.` },
         { keys: [modifier, "V"], action: `Paste items copied or cut here or in ${fileManager}.` },
         { keys: [macOS ? "Option" : "Alt", modifier, "V"], action: "Move the items copied into this folder." },
         { keys: [modifier, "D"], action: "Duplicate the selected items." },
@@ -40,7 +42,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: [modifier, "Shift", "Z"], action: "Redo it." },
         { keys: ["Enter"], action: "Rename the selected item." },
         { keys: [modifier, "Backspace"], action: macOS || platform === "linux" ? "Delete. Undo it from History, or from the Trash in a Standard Folder." : "Delete. Undo it from History." },
-        { keys: ["Esc"], action: "Clear the selection." },
+        { keys: ["Esc"], action: "Clear the selection; with nothing selected, cancel a Cut." },
         { keys: macOS ? ["Shift", modifier, "."] : [modifier, "H"], action: "Show or hide hidden files." },
       ],
     },
@@ -94,6 +96,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: macOS ? ["Option", modifier, "N"] : [modifier, "Alt", "N"], action: "Create a new Connected Folder." },
         { keys: [modifier, "O"], action: "Use an existing folder." },
         { keys: [modifier, "R"], action: "Refresh the folder." },
+        ...(agentPopover ? [{ keys: [modifier, "J"], action: "Show or hide the AmpleFile Agent." }] : []),
         { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },
         { keys: [modifier, ","], action: "Open Settings." },
         { keys: [modifier, "/"], action: "Open Shortcut Keys." },

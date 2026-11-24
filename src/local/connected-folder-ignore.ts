@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import { writeFileAtomic } from "./agent/turn-store.js";
 import { connectedFolderStateDir } from "./state-paths.js";
+import { isReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 import { ensureSafeConnectedFolderRoot, resolveConnectedFolderPath } from "./connected-folder.js";
 
 export interface ConnectedFolderIgnoreState {
@@ -85,8 +86,9 @@ const ignoreStateUpdates = new Map<string, Promise<string[]>>();
 export function isConnectedFolderIgnored(relativePath: string, configuredPatterns: string[]): boolean {
   const path = normalizeConnectedFolderPath(relativePath);
   if (!path) return false;
-  let ignored = false;
   const segments = path.split("/");
+  if (segments.some(isReservedConnectedFolderPathSegment)) return true;
+  let ignored = false;
   for (const rule of compiledIgnoreRules(configuredPatterns)) {
     if (ruleMatches(path, rule, segments)) ignored = !rule.negated;
   }
@@ -96,7 +98,7 @@ export function isConnectedFolderIgnored(relativePath: string, configuredPattern
 export function isAlwaysHiddenConnectedFolderEntry(name: string): boolean {
   const path = normalizeConnectedFolderPath(name);
   const segments = path.split("/");
-  return builtInRules.some((rule) => ruleMatches(path, rule, segments));
+  return segments.some(isReservedConnectedFolderPathSegment) || builtInRules.some((rule) => ruleMatches(path, rule, segments));
 }
 
 interface CompiledIgnoreRule {

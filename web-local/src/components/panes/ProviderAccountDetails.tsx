@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Open16Regular } from "@fluentui/react-icons";
 import type { ProviderAccountDetails as AccountDetails, ProviderUsageWindow } from "../../../../src/shared/provider-account";
 import { api } from "../../lib/api";
 import { subscribeControlEvents } from "../../lib/control-events";
 
 /** Account metadata stays in Settings and is never part of the model catalog or a Chat. */
-export function ProviderAccountDetails({ provider, scope, connectedFolderId, revision, active, fixtureMode, onSelectCodex, onReconnect, busy = false }: {
+export function ProviderAccountDetails({ provider, scope, connectedFolderId, revision, active, fixtureMode, onSelectCodex, onReconnect, busy = false, actions }: {
   provider: string; scope: "connected-folder" | "agent"; connectedFolderId?: string; revision: unknown; active: boolean; fixtureMode: boolean;
-  onSelectCodex?: () => void; onReconnect?: () => void; busy?: boolean;
+  onSelectCodex?: () => void; onReconnect?: () => void; busy?: boolean; actions?: ReactNode;
 }) {
   const [account, setAccount] = useState<AccountDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +23,7 @@ export function ProviderAccountDetails({ provider, scope, connectedFolderId, rev
   useEffect(() => {
     if (!active || fixtureMode) return;
     // Credential changes must refresh identity even while the parent keeps
-    // unsaved model/instruction drafts instead of applying new settings.
+    // unsaved instruction drafts instead of applying new settings.
     return subscribeControlEvents(hint => {
       if (hint === "models" || hint === "reset") setAttempt(value => value + 1);
     });
@@ -41,40 +42,49 @@ export function ProviderAccountDetails({ provider, scope, connectedFolderId, rev
         setAccount(result.account);
         setError(result.account.error);
       }, () => {
-        if (!controller.signal.aborted) setError("OpenAI account details are unavailable. Your connection has been kept.");
+        if (!controller.signal.aborted) setError("Account details are unavailable.");
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [provider, scope, connectedFolderId, revision, active, fixtureMode, attempt]);
 
+  const workspace = account?.workspaceName ?? account?.workspaceId ?? null;
+  const plan = account?.plan ? account.plan.replace(/_/g, " ") : null;
+  const hasFacts = Boolean(account?.email || workspace || plan);
+
   return <div className="ai-models-account-details" aria-label="OpenAI account details">
-    {loading ? <p className="professional-field-hint" role="status">Loading account details…</p> : <>
-      <dl>
-        <div><dt>Email</dt><dd>{account?.email ?? (account?.identityNeedsReconnect ? "Reconnect to load email" : error ? "Unavailable" : "Not returned by this sign-in")}</dd></div>
-        <div><dt>Workspace</dt><dd>{account?.workspaceName ?? account?.workspaceId ?? (error ? "Unavailable" : "Not returned by this sign-in")}</dd></div>
-        {account?.plan ? <div><dt>Plan</dt><dd>{account.plan.replace(/_/g, " ")}</dd></div> : null}
-      </dl>
-      {account?.source === "saved_sign_in" ? <p className="professional-field-hint">Details from the saved sign-in.</p> : null}
-      {account?.identityNeedsReconnect ? <p className="professional-field-hint">This connection was saved without your account identity. Reconnect once to load your email.</p> : null}
-      {account?.identityNeedsReconnect && onReconnect ? <button className="ui-control" type="button" disabled={busy} onClick={onReconnect}>Reconnect to Load Email</button> : null}
-      {account?.limits?.length ? <section className="ai-models-account-usage" aria-label="Codex subscription usage">
-        <h4>Codex Usage</h4>
+    {loading ? <p className="ai-models-quiet-note" role="status">Loading account…</p> : <>
+      {hasFacts ? <dl>
+        {account?.email ? <div><dt>Email</dt><dd>{account.email}</dd></div> : null}
+        {workspace ? <div><dt>Workspace</dt><dd>{workspace}</dd></div> : null}
+        {plan ? <div><dt>Plan</dt><dd className="ai-models-plan-value">{plan}</dd></div> : null}
+      </dl> : null}
+      {account?.identityNeedsReconnect ? <div className="ai-models-inline-banner">
+        <span>Reconnect once to load your email.</span>
+        {onReconnect ? <button className="ui-control" type="button" disabled={busy} onClick={onReconnect}>Reconnect to Load Email</button> : null}
+      </div> : null}
+      {account?.limits?.length ? <div className="ai-models-account-usage" role="region" aria-label="Codex subscription usage">
+        <div className="ai-models-usage-header">
+          <h4>Codex Usage</h4>
+          {account.checkedAt ? <span className="ai-models-quiet-note">Updated {new Date(account.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
+        </div>
         {account.limits.map(limit => <div className="ai-models-account-limit" key={limit.id}>
-          <strong>{limit.name}</strong>
+          {account.limits!.length > 1 ? <strong>{limit.name}</strong> : null}
           {[limit.primary, limit.secondary].map((window, index) => window ? <UsageWindow key={index} window={window} /> : null)}
         </div>)}
-        {account.applicableResets != null ? <p className="professional-field-hint">Rate-limit resets for this workspace: {account.applicableResets}{account.availableResets != null ? ` (${account.availableResets} on account)` : ""}</p>
-          : account.availableResets != null ? <p className="professional-field-hint">Rate-limit resets on account: {account.availableResets}</p> : null}
-        {account.checkedAt ? <p className="professional-field-hint">Updated {new Date(account.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Refreshes every minute while open.</p> : null}
-      </section> : null}
-      {account?.connected === false ? <p className="professional-field-hint" role="status">This connection has no signed-in OpenAI account.</p> : null}
-      {error ? <p className="professional-field-hint" role="status">{error}</p> : null}
+        {account.applicableResets != null ? <p className="ai-models-quiet-note">Resets: {account.applicableResets}{account.availableResets != null ? ` (${account.availableResets} on account)` : ""}</p>
+          : account.availableResets != null ? <p className="ai-models-quiet-note">Resets on account: {account.availableResets}</p> : null}
+      </div> : null}
+      {account?.connected === false ? <p className="ai-models-quiet-note" role="status">No signed-in OpenAI account.</p> : null}
+      {error ? <p className="ai-models-quiet-note" role="status">{error}</p> : null}
+      {provider === "openai-codex" && account?.limitsAvailability !== "available" && !error ? <p className="ai-models-quiet-note">Usage limits unavailable.</p> : null}
     </>}
-    {provider === "openai" ? <p className="professional-field-hint">This sign-in provides identity and direct ChatGPT plan access. Workspace, plan usage limits and reset times are available through a separate Codex subscription connection.</p>
-      : account?.limitsAvailability !== "available" && !loading ? <p className="professional-field-hint">Usage limits are currently unavailable. Choose Refresh Account Details to try again.</p> : null}
-    <div className="ai-models-connection-controls">
-      <a href={provider === "openai-codex" ? "https://chatgpt.com/codex/settings/usage" : "https://chatgpt.com/settings/usage"} target="_blank" rel="noreferrer">Manage Usage in ChatGPT</a>
-      {provider === "openai" && onSelectCodex ? <button className="ui-control" type="button" disabled={busy} onClick={onSelectCodex}>View Codex Connection</button> : null}
-      <button className="ui-control" type="button" disabled={loading || busy || !active || fixtureMode} onClick={() => setAttempt(value => value + 1)}>Refresh Account Details</button>
+    <div className="ai-models-drawer-bar">
+      <div className="ai-models-drawer-links">
+        <a className="ai-models-text-link" href={provider === "openai-codex" ? "https://chatgpt.com/codex/settings/usage" : "https://chatgpt.com/settings/usage"} target="_blank" rel="noreferrer">Usage<Open16Regular aria-hidden="true" /></a>
+        {provider === "openai" && onSelectCodex ? <button className="ai-models-text-action" type="button" disabled={busy} onClick={onSelectCodex}>Codex Connection</button> : null}
+        <button className="ai-models-text-action" type="button" disabled={loading || busy || !active || fixtureMode} onClick={() => setAttempt(value => value + 1)}>Refresh</button>
+      </div>
+      {actions ? <div className="ai-models-drawer-actions">{actions}</div> : null}
     </div>
   </div>;
 }
@@ -84,8 +94,8 @@ function UsageWindow({ window }: { window: ProviderUsageWindow }) {
   const duration = !minutes ? "Usage window" : minutes % 1440 === 0 ? `${minutes / 1440}-day window`
     : minutes % 60 === 0 ? `${minutes / 60}-hour window` : `${minutes}-minute window`;
   return <div className="ai-models-account-window">
-    <div><span>{duration}</span><span>{window.usedPercent}% used</span></div>
+    <div><span>{duration}</span><span className="ai-models-usage-percent">{window.usedPercent}% used</span></div>
     <progress max={100} value={Math.min(100, window.usedPercent)} aria-label={`${duration} usage`} />
-    {window.resetsAt ? <p className="professional-field-hint">Resets <time dateTime={new Date(window.resetsAt * 1000).toISOString()}>{new Date(window.resetsAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}</time></p> : null}
+    {window.resetsAt ? <p className="ai-models-quiet-note">Resets <time dateTime={new Date(window.resetsAt * 1000).toISOString()}>{new Date(window.resetsAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}</time></p> : null}
   </div>;
 }

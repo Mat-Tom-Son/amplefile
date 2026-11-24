@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
-import { createFileManagerHarness } from "./support/file-manager.js";
+import { createFileManagerHarness, type ApiAnswer } from "./support/file-manager.js";
 import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 
 // The Action menu, a Connected Folder's right-click menu, and the Set Up for
@@ -21,8 +21,8 @@ const answer = (path: string) => {
   return undefined;
 };
 
-async function mountWindow(t: Parameters<typeof createFileManagerHarness>[0], extra: Record<string, unknown> = {}, desktop?: unknown, storage?: Record<string, string>) {
-  const harness = await createFileManagerHarness(t, answer);
+async function mountWindow(t: Parameters<typeof createFileManagerHarness>[0], extra: Record<string, unknown> = {}, desktop?: unknown, storage?: Record<string, string>, reply: ApiAnswer = answer) {
+  const harness = await createFileManagerHarness(t, reply);
   if (storage) {
     // What the window remembers between launches: here, that the panel was hidden or left on History.
     const kept = new Map(Object.entries(storage));
@@ -64,6 +64,75 @@ test("the Action menu reads Customize, Organize, Skills & Extensions, then Disco
   assert.equal(view.container.querySelector(".fm-menu"), null);
   await view.dom.waitFor(() => view.chatTitle() === "Organize this folder.");
   assert.deepEqual(view.switched, [], "the folder shown is already the one asked about");
+});
+
+test("reopening the panel does not replay the Organize send request", async (t) => {
+  const view = await mountWindow(t);
+  const starts = () => view.requests.filter(request => request.method === "POST" && request.path === "/api/connected-folders/lab/conversations").length;
+  const panelToggle = view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!;
+  await view.dom.act(() => view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Action"]')!.click());
+  await view.dom.act(() => view.menuItem("Organize").click());
+  await view.dom.waitFor(() => starts() === 1);
+
+  await view.dom.act(() => panelToggle.click());
+  assert.equal(view.container.querySelector("aside.fm-panel"), null);
+  await view.dom.act(() => panelToggle.click());
+  assert.ok(view.container.querySelector(".fm-panel.is-chat"));
+  await view.dom.act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.equal(starts(), 1);
+});
+
+test("a one-shot send that cannot create its Chat comes back as a draft after reopening", async (t) => {
+  const create = Promise.withResolvers<never>();
+  const path = "/api/connected-folders/lab/conversations";
+  const view = await mountWindow(t, {}, undefined, {}, (url, options) => url === path && options.method === "POST" ? create.promise : answer(url));
+  const starts = () => view.requests.filter((request) => request.path === path && request.method === "POST").length;
+  const toggle = view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!;
+  await view.dom.act(() => view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Action"]')!.click());
+  await view.dom.act(() => view.menuItem("Organize").click());
+  await view.dom.waitFor(() => starts() === 1);
+  await view.dom.act(() => toggle.click());
+  assert.equal(view.container.querySelector("aside.fm-panel"), null);
+  await view.dom.act(() => { create.reject(new Error("Could not create the Chat")); });
+  await view.dom.act(() => toggle.click());
+  const composer = () => view.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Worker"]');
+  await view.dom.waitFor(() => composer()?.value === "Organize this folder.");
+  assert.match(view.container.textContent ?? "", /Could not create the Chat/);
+  assert.equal(starts(), 1);
+});
+
+test("a one-shot attachment failure from the old panel preserves a newer draft", async (t) => {
+  const attach = Promise.withResolvers<never>();
+  const path = "/api/connected-folders/lab/context-attachments";
+  const view = await mountWindow(t, {}, undefined, {}, (url, options) => {
+    if (url === path && options.method === "POST") return attach.promise;
+    if (url.includes("/tree")) return { tree: [{ name: "notes.txt", path: "notes.txt", kind: "file" }] };
+    return answer(url);
+  });
+  const attempted = () => view.requests.filter((request) => request.path === path && request.method === "POST").length;
+  const entry = () => [...view.container.querySelectorAll<HTMLElement>(".fm-tile, .fm-row")].find((item) => item.textContent?.includes("notes.txt"));
+  await view.dom.waitFor(() => Boolean(entry()));
+  await view.dom.act(() => entry()!.click());
+  await view.dom.act(() => {
+    const field = view.container.querySelector<HTMLInputElement>('[aria-label="Message the Worker"]')!;
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, "Review the notes");
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await view.dom.act(() => view.container.querySelector<HTMLButtonElement>('button.fm-send')!.click());
+  await view.dom.waitFor(() => attempted() === 1);
+  const toggle = view.toolbar().querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!;
+  await view.dom.act(() => toggle.click());
+  await view.dom.act(() => toggle.click());
+  const composer = () => view.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Worker"]');
+  await view.dom.waitFor(() => Boolean(composer()));
+  await view.dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(composer(), "Newer draft");
+    composer()!.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await view.dom.act(() => { attach.reject(new Error("Could not stage the notes")); });
+  await view.dom.waitFor(() => /Could not stage the notes/.test(view.container.textContent ?? ""));
+  assert.equal(composer()!.value, "Newer draft");
+  assert.equal(attempted(), 1);
 });
 
 test("a Connected Folder's right-click menu offers the same, names a managed one's deletion, and Organize goes to that Connected Folder first", async (t) => {

@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
 import { resolveFolderLocation, resolvePlaceSymbolicLink, scanComputerFolder } from "../src/local/folder-locations.js";
+import { isHiddenAtMacDiskTop } from "../src/local/hidden-entries.js";
 import { startLocalApi } from "../src/local/server.js";
 import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 import {
@@ -132,11 +133,18 @@ test("a folder in the computer place lists one level, as a Standard Folder does"
   // A folder a saved tab still names, deleted since, is said to be gone in plain words.
   await assert.rejects(scanComputerFolder(`${onDisk(projects)}/Gone`), (error: Error & { statusCode?: number }) => error.message === "This folder is no longer here." && error.statusCode === 404);
   await assert.rejects(scanComputerFolder(`${onDisk(projects)}/notes.md`), /not a folder/);
-  // The disk's own top is listed too, without dotfiles or links.
+  // The disk's own top is listed too, without dotfiles or links, and on a Mac without the system folders Finder hides there.
   const top = await scanComputerFolder("");
   assert.ok(top.tree.length > 0);
   assert.ok(top.tree.every((entry) => !entry.name.startsWith(".") && entry.path === entry.name));
-  assert.ok(top.tree.some((entry) => entry.name === onDisk(root).split("/")[0] && entry.kind === "folder"));
+  const first = onDisk(root).split("/")[0];
+  const hiddenOnMac = process.platform === "darwin" && first === "private";
+  assert.equal(top.tree.some((entry) => entry.name === first && entry.kind === "folder"), !hiddenOnMac);
+  if (hiddenOnMac) {
+    assert.ok(!top.tree.some((entry) => ["usr", "Volumes", "bin"].includes(entry.name)), "Finder's hidden system folders stay hidden");
+    const shown = await scanComputerFolder("", undefined, { includeHidden: true });
+    assert.equal(shown.tree.find((entry) => entry.name === "private")?.hidden, true, "shown dimmed with Show Hidden Files");
+  }
 });
 
 test("a folder in the computer place lists links and hidden entries on request, as a Standard Folder does", async (t) => {
@@ -258,7 +266,7 @@ test("the disk's top lists its links and hidden entries on request, as every oth
   assert.ok(top.tree.every((entry) => entry.path === entry.name));
   assert.ok(!top.tree.some((entry) => entry.name === ".amplefile" || entry.name === ".pi"));
   for (const entry of top.tree) {
-    assert.equal(Boolean(entry.hidden), entry.name.startsWith("."), entry.name);
+    assert.equal(Boolean(entry.hidden), entry.name.startsWith(".") || isHiddenAtMacDiskTop(entry.name, process.platform), entry.name);
     if (entry.link) assert.ok(!plain.tree.some((item) => item.name === entry.name), `${entry.name} is a link, left out unless asked for`);
   }
   // Linux keeps /bin and the like as links into /usr; where the disk does, the window shows them.

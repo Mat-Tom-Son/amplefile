@@ -20,10 +20,10 @@ for (const dependency of [
   { name: "protobufjs", fixedVersion: "7.6.5", replaceVersions: new Set(["7.6.4"]) },
   {
     name: "undici",
-    fixedVersion: "8.12.3",
+    fixedVersion: "8.12.4",
     replaceVersions: new Set(["8.5.0", "8.8.0", "8.10.0", "8.10.2"]),
     sourceName: "undici-pi-reviewed",
-    sourceDeclaration: "npm:undici@8.12.3",
+    sourceDeclaration: "npm:undici@8.12.4",
   },
 ]) {
   await normalizeDependency(dependency);
@@ -53,7 +53,7 @@ async function normalizeDependency({
   const nestedDir = join(piDir, "node_modules", name);
   const nestedPackagePath = join(nestedDir, "package.json");
   const nestedPackage = await readJsonIfPresent(nestedPackagePath);
-  // Pi 1.1 hoists reviewed dependencies. Do not invent nested packages absent
+  // Pi can hoist reviewed dependencies. Do not invent nested packages absent
   // from the lockfile; normalize only a published, reviewed nested exception.
   const piRequire = createRequire(join(piDir, "package.json"));
   const currentPackage = await readJson(piRequire.resolve(`${name}/package.json`));

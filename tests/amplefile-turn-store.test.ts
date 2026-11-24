@@ -52,6 +52,7 @@ test("durable turn records make acceptance idempotent and survive restart", asyn
     store.accept({ ...input, requestDigest: digest("b") }),
     (error: unknown) => error instanceof AmpleFileTurnReplayConflictError,
   );
+  await store.flush();
 
   await store.markRunning(accepted.record.turnId);
   await store.checkpoint(accepted.record.turnId, "A durable partial response.");

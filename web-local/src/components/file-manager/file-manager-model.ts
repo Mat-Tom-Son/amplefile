@@ -1,5 +1,6 @@
 import { desktopPlatform } from "../../lib/platform";
 import type { TreeEntry } from "../../types";
+import { macPackageKind } from "../../../../src/shared/mac-packages";
 import { descendantFolders, folderAncestors, folderTreeRows, type NestableFolder } from "../../../../src/shared/folder-nesting";
 
 /**
@@ -80,8 +81,9 @@ const kindByExtension: Record<string, string> = {
   sqlite: "SQLite database", db: "Database",
 };
 
-export function fileKindLabel(entry: Pick<TreeEntry, "kind" | "name">): string {
-  if (entry.kind === "folder") return "Folder";
+/** The Kind column's word: "Folder", a Mac package's kind ("Application", "Pages document"), or the file's type. */
+export function fileKindLabel(entry: Pick<TreeEntry, "kind" | "name" | "package">): string {
+  if (entry.kind === "folder") return entry.package ? macPackageKind(entry.name) : "Folder";
   const dot = entry.name.lastIndexOf(".");
   if (dot <= 0 || dot === entry.name.length - 1) return "Document";
   const extension = entry.name.slice(dot + 1).toLowerCase();
@@ -105,14 +107,25 @@ const iconByExtension: Record<string, { kind: "doc" | "img" | "media" | "box"; t
   png: { kind: "img" }, jpg: { kind: "img" }, jpeg: { kind: "img" }, gif: { kind: "img" }, heic: { kind: "img" }, webp: { kind: "img" }, svg: { kind: "img" }, tiff: { kind: "img" }, bmp: { kind: "img" },
   mp4: { kind: "media" }, mov: { kind: "media" }, m4v: { kind: "media" }, mp3: { kind: "media" }, m4a: { kind: "media" }, wav: { kind: "media" }, aiff: { kind: "media" },
   zip: { kind: "box" }, gz: { kind: "box" }, tar: { kind: "box" }, dmg: { kind: "box" }, pkg: { kind: "box" },
+  // Mac packages that are documents or libraries (src/shared/mac-packages.ts).
+  rtfd: { kind: "doc", tag: "word", label: "RTFD" },
+  photoslibrary: { kind: "img" }, photolibrary: { kind: "img" },
+  musiclibrary: { kind: "media" }, tvlibrary: { kind: "media" }, imovielibrary: { kind: "media" }, fcpbundle: { kind: "media" }, logicx: { kind: "media" }, band: { kind: "media" },
+  xcodeproj: { kind: "doc", tag: "code", label: "XCODE" }, xcworkspace: { kind: "doc", tag: "code", label: "XCODE" }, playground: { kind: "doc", tag: "code", label: "SWIFT" },
 };
 
-/** The mockup's Finder-shaped icon for a row: a folder, a page with a type band, a picture, or a package. */
-export function fileManagerIcon(entry: Pick<TreeEntry, "kind" | "name">): FileManagerIcon {
-  if (entry.kind === "folder") return { className: "fm-ic fm-ic-folder", label: "" };
+/**
+ * The mockup's Finder-shaped icon for a row: a folder, a page with a type
+ * band, a picture, or a package. A Mac package is drawn as what it is: an
+ * app, its document's page, or else a package.
+ */
+export function fileManagerIcon(entry: Pick<TreeEntry, "kind" | "name" | "package">): FileManagerIcon {
+  if (entry.kind === "folder" && !entry.package) return { className: "fm-ic fm-ic-folder", label: "" };
   const dot = entry.name.lastIndexOf(".");
   const extension = dot > 0 ? entry.name.slice(dot + 1).toLowerCase() : "";
-  const known = iconByExtension[extension];
+  if (entry.package && extension === "app") return { className: "fm-ic fm-ic-app", label: "" };
+  const known = Object.hasOwn(iconByExtension, extension) ? iconByExtension[extension] : undefined;
+  if (entry.package && !known) return { className: "fm-ic fm-ic-box", label: "" };
   if (known?.kind === "img") return { className: "fm-ic fm-ic-img", label: "" };
   if (known?.kind === "media") return { className: "fm-ic fm-ic-img fm-ic-media", label: "" };
   if (known?.kind === "box") return { className: "fm-ic fm-ic-box", label: "" };

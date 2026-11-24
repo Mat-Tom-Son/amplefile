@@ -461,6 +461,28 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
     `Signed with Apple Team ID ${teamId}, notarized by Apple, and published for ${arch}.`,
     "Use the DMG for a first install. Existing updater-capable Mac installs consume the ZIP and latest-mac.yml assets.",
   ];
+  if (version === "0.2.0") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Cut across windows.** Cut files in one AmpleFile window and paste them as a move in another. Refresh and the AmpleFile Agent shortcut work without a Connected Folder.",
+      "- **Moves and Merge.** Moves between Connected Folders and plain folders preserve the item on the same disk. Across disks, AmpleFile keeps the original when the copy would lose access rules or other checked metadata. Each merged folder follows its own conflict choice, and Undo checks retained copies before removing them.",
+      "- **Extract and Mac packages.** Extract places an archive’s single visible item beside the archive. Mac packages open as one item and keep their contents together. Extract carries a downloaded archive’s quarantine mark to its contents.",
+      "- **Drives and Trash.** Eject checks unfinished work on all volumes that leave with the disk. Drives that stop answering stay listed without a space estimate, and Trash identifies drives it couldn’t check.",
+    );
+  }
+  if (version === "0.2.1") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **GPT‑6.2 Sol and Astra.** Pi 1.6.0 adds both models to the ChatGPT sign-in catalog. The Codex connection uses the selected reasoning effort when a new context starts.",
+      "- **AI Models settings.** Pick a model for This Worker or the AmpleFile Agent and it saves immediately. Manage shared provider connections and see the account details your connection returns.",
+      "- **File manager fixes.** Moves verify copies before removing originals. Restoring from Recently Deleted, merging extracted archives, dragging files back from Finder, and undoing file changes are more reliable.",
+      "- **Chat and window fixes.** Reopening the Chat panel keeps failed drafts without sending them again. Browser tabs keep their window ownership, and quitting waits for an update that is already being prepared.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",

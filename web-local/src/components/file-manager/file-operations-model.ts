@@ -49,7 +49,10 @@ export interface TransferConflict {
 export interface ConflictPolicy {
   apply?: ConflictChoice;
   items?: Record<string, ConflictChoice>;
+  /** Same-named items inside every merged folder without an answer of its own. */
   inside?: InsideChoice;
+  /** Same-named items inside one merged folder, by that folder's key: the answer given when Merge was chosen for it. */
+  insideItems?: Record<string, InsideChoice>;
 }
 
 export type TransferRestorePoint = { connectedFolderId: string; checkpointId: string };
@@ -59,28 +62,45 @@ export interface ReplacedItem { path: string; recovery: "history" | "recently-de
 /** The transfer engine's answer to a copy, move, Duplicate, paste, Compress, or Extract, every optional part included. */
 export interface TransferAnswer {
   mode?: string;
-  /** Compress and Extract: the new archive or folder, or null when nothing was made. */
+  /** Compress and Extract: the new archive, or what Extract made (the archive's one item or a new folder), or null when nothing was made. */
   path?: string | null;
   written: string[];
   restorePoints: TransferRestorePoint[];
   copiedInstead?: boolean;
+  /** Each item a move took out of its folder, for Undo to move back: every move between places, and between plain folders. */
   moves?: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>;
+  /** Each item in both places (`notRemoved`), with where its copy is. */
+  copies?: Array<{ from: string; to: string; fromPlace?: FileManagerPlace }>;
+  /** Sources that were no longer there, when the request asked to go on without them. */
+  missing?: Array<{ place: FileManagerPlace; path: string }>;
   cancelled?: boolean;
   notDone?: string[];
   leftInTarget?: string[];
+  /** Items a move copied that could not leave their source, where they are still whole: they are in both places. */
+  notRemoved?: string[];
+  /** Items a move took out of their source except for a part it could not remove, which is still there. */
+  partlyRemoved?: Array<{ path: string; error: string }>;
   replaced?: ReplacedItem[];
   skipped?: Array<{ path: string; reason: string }>;
   skippedClashes?: Array<{ path: string; reason: string }>;
   merged?: string[];
+  /** The first item that did not go as asked, and why. */
   failed?: { path: string; error: string };
+  /** Every item a move could not take out of its source, and why. */
+  failures?: Array<{ path: string; error: string }>;
   recentlyDeleted?: Array<{ path: string; entryId: string; restoreBy: string }>;
   conflicts?: TransferConflict[];
   // Paste through the desktop.
   nothing?: boolean;
+  /** The items were cut in a window of this app or copied in this one, and pasted by place. */
   fromHere?: boolean;
   count?: number;
   moved?: boolean;
   cut?: boolean;
+  /** Where the items pasted by place came from (a Cut in any window, or this window's Copy). */
+  from?: { place: FileManagerPlace; paths: string[] } | null;
+  /** What the paste carries, as the desktop planned it; the run after the conflicts check sends it back. */
+  plan?: string;
 }
 
 /** One operation the window started, as its operations area shows it. */
@@ -225,6 +245,19 @@ export function undoCovers(answer: TransferAnswer): { covered: boolean; why: str
   return { covered: true, why: null };
 }
 
+/**
+ * After a move that copied items into a plain folder but could take none of
+ * them out of where they were: why Undo has nothing to put back. Null when
+ * the move left no such copies, or moved at least one item (Undo moves those
+ * back).
+ */
+export function copiesLeftMessage(answer: TransferAnswer, where: string): string | null {
+  if (answer.moves?.length) return null;
+  const left = [...new Set([...(answer.notRemoved ?? []), ...(answer.leftInTarget ?? [])])];
+  if (!left.length) return null;
+  return `Undo has nothing to put back: ${names(left)} ${left.length === 1 ? "is" : "are"} still where ${left.length === 1 ? "it was" : "they were"}. The ${left.length === 1 ? "copy" : "copies"} in ${where} stay${left.length === 1 ? "s" : ""}.`;
+}
+
 /** The person's answer to one clash in the dialog. */
 export interface ConflictDecision {
   key: string;
@@ -242,18 +275,28 @@ export interface ConflictDecision {
  * both for a clash it does not fit (Merge on a file, Replace between a file
  * and a folder), so a folder is never replaced by a file, or a file by a
  * folder, without being asked about by name.
+ *
+ * Each folder merged keeps its own answer about same-named items inside
+ * (`insideItems`), so two folders merged with different answers each follow
+ * theirs. A Merge applied to all gives its answer to every folder it then
+ * merges (`inside`).
  */
 export function conflictPolicy(conflicts: readonly TransferConflict[], decisions: readonly ConflictDecision[]): ConflictPolicy {
   const items: Record<string, ConflictChoice> = {};
+  const insideItems: Record<string, InsideChoice> = {};
   let apply: ConflictChoice | undefined;
   let inside: InsideChoice | undefined;
   for (const decision of decisions) {
     if (!conflicts.some((conflict) => conflict.key === decision.key)) continue;
     items[decision.key] = decision.choice;
-    if (decision.inside && decision.choice === "merge") inside ??= decision.inside;
-    if (decision.applyToAll) { apply = decision.choice; break; }
+    if (decision.choice === "merge" && decision.inside) insideItems[decision.key] = decision.inside;
+    if (decision.applyToAll) {
+      apply = decision.choice;
+      if (decision.choice === "merge") inside = decision.inside;
+      break;
+    }
   }
-  return { ...(apply ? { apply } : {}), items, ...(inside ? { inside } : {}) };
+  return { ...(apply ? { apply } : {}), items, ...(inside ? { inside } : {}), ...(Object.keys(insideItems).length ? { insideItems } : {}) };
 }
 
 /** Which clashes the dialog still asks about after these answers. */

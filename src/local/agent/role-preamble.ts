@@ -14,7 +14,9 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  * text is identical on every request, so prompt caching is unaffected. A
  * person's own SYSTEM.md replaces the default preamble and is left alone.
  */
-export const piDefaultPreamble = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+export const piDefaultPreamble = "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";
+// Existing sessions can replay the default they recorded with Pi 1.1.
+const previousPiDefaultPreamble = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
 export type AmpleFileSessionRole = "worker" | "amplefile-agent";
 
@@ -30,7 +32,9 @@ export function ampleFileRolePreambleExtension(role: AmpleFileSessionRole): Exte
     pi.on("context_with_system", (event) => {
       let replaced = false;
       const messages = event.messages.map((message) => {
-        if (message.role !== "system" || message.sections?.preamble !== piDefaultPreamble) return message;
+        if (message.role !== "system") return message;
+        const recorded = message.sections?.preamble;
+        if (recorded !== piDefaultPreamble && recorded !== previousPiDefaultPreamble) return message;
         replaced = true;
         // Overwriting an existing key keeps its position, so the preamble still leads.
         return { ...message, sections: { ...message.sections, preamble } };

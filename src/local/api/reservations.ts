@@ -9,12 +9,12 @@
 
 import { rm } from "node:fs/promises";
 import { isPiProjectMutationTrusted } from "../agent/pi-runtime-config.js";
-import { isAmpleFileRequestTerminalState, type AmpleFileRequestRecord } from "../requests/request-records.js";
+import { isAmpleFileRequestSettled, type AmpleFileRequestRecord } from "../requests/request-records.js";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint, type ConnectedFolderCheckpoint } from "../history.js";
 import { getConnectedFolder, resolveConnectedFolderPath, withConnectedFolderHistoryOperation } from "../connected-folder.js";
 import { invalidateAllClients, invalidateAmpleFileClients } from "./conversation-clients.js";
 import { publishControlHint } from "./event-streams.js";
-import { badRequest, errorMessage, forbidden, httpError } from "./http.js";
+import { badRequest, busyRefusal, errorMessage, forbidden, httpError } from "./http.js";
 import type { LocalApiState } from "./state.js";
 
 export type CapabilityScope = "global" | "project";
@@ -36,7 +36,7 @@ export async function runHistoryRestore<T>(
     reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
     try {
       const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-      if (blockers.length) throw httpError(409, blockers[0]!);
+      if (blockers.length) throw busyRefusal(blockers[0]!);
       await getConnectedFolder(connectedFolderId);
       return await operation();
     } finally { state.capabilityMutations.delete(connectedFolderId); }
@@ -45,24 +45,19 @@ export async function runHistoryRestore<T>(
 
 /** Stop is not settled until its accepted turns have actually drained. */
 export function requestHasUnsettledWork(state: LocalApiState, request: AmpleFileRequestRecord): boolean {
-  return [request, ...state.requests.subtree(request.requestId)].some((record) =>
-    !isAmpleFileRequestTerminalState(record.state)
-    || record.continuationState === "pending"
-    || record.turns.some((turn) => turn.state === "accepted" || turn.state === "running")
-    // A job a Stop is still ending keeps its request unsettled until it has.
-    || (record.jobs ?? []).some((job) => job.state === "running"));
+  return [request, ...state.requests.subtree(request.requestId)].some((record) => !isAmpleFileRequestSettled(record));
 }
 
 /** Called with the Connected Folder's mutation fence held; deletion refuses instead of interrupting work. */
 export async function runSettledConnectedFolderDeletion<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
   const assertSettled = () => {
     if (state.requests.list({ connectedFolderId }).some((request) => requestHasUnsettledWork(state, request))) {
-      throw httpError(409, "Finish or stop this Connected Folder's outstanding work before deleting.");
+      throw busyRefusal("Finish or stop this Connected Folder's outstanding work before deleting.");
     }
   };
   assertSettled();
   const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-  if (blockers.length) throw httpError(409, blockers[0]!);
+  if (blockers.length) throw busyRefusal(blockers[0]!);
   await getConnectedFolder(connectedFolderId);
   assertSettled();
   return operation();
@@ -127,7 +122,7 @@ export async function runConnectedFolderMutations<T>(
   }
   if (state.capabilityMutations.has(globalCapabilityMutationKey)
     || ids.some((connectedFolderId) => state.capabilityMutations.has(connectedFolderId))) {
-    throw httpError(409, "Wait for the current capability change to finish.");
+    throw busyRefusal("Wait for the current capability change to finish.");
   }
   if (ids.some((connectedFolderId) => hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId))) {
     throw httpError(409, "Wait for affected work to finish before changing capabilities.");
@@ -159,13 +154,13 @@ export function reserveCapabilityMutation(
   const mutationConflict = scope === "global"
     ? state.capabilityMutations.size > 0
     : state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId);
-  if (mutationConflict) throw httpError(409, "Wait for the current capability change to finish.");
+  if (mutationConflict) throw busyRefusal("Wait for the current capability change to finish.");
 
   const runningConflict = scope === "global"
     ? state.runningTurns.size > 0 || state.compactingConversations.size > 0
     : hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId);
   if (runningConflict) {
-    throw httpError(409, "Wait for affected agent work to finish before changing capabilities.");
+    throw busyRefusal("Wait for affected agent work to finish before changing capabilities.");
   }
   state.capabilityMutations.add(key);
 }

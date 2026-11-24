@@ -243,8 +243,8 @@ export class AmpleFileTurnStore {
   }
 
   #run<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#queue.catch(() => undefined).then(operation);
-    this.#queue = result;
+    const result = this.#queue.then(operation);
+    this.#queue = result.then(() => undefined, () => undefined);
     return result;
   }
 

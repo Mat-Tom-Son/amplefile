@@ -29,7 +29,7 @@ import {
   registeredConnectedFolderOutline,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { getClient, refreshClientIfMarked } from "./conversation-clients.js";
+import { detachCachedClient, getClient, refreshClientIfMarked } from "./conversation-clients.js";
 import { broadcast, openChatStream, publishControlHint } from "./event-streams.js";
 import { normalizeConnectedFolderRelativePath } from "./file-changes.js";
 import { badRequest, errorMessage, httpError, match, notFound, readJsonBody, sendJson } from "./http.js";
@@ -40,7 +40,6 @@ import { clientKey, type LocalApiRequest, type LocalApiState, rememberConnectedF
 import {
   acceptConversationTurn,
   cancelQueuedMessage,
-  changeQueuedMessage,
   optionalTurnIdentity,
   queueChatMessage,
   steerConversationTurn,
@@ -261,8 +260,8 @@ export async function handleChatRoutes({ state, req, res, url, method }: LocalAp
       await client.compact(body.customInstructions?.trim() || undefined);
       broadcast(state, streamKey(connectedFolder.id, compactMatch[2]), { type: "done", conversationId: compactMatch[2] });
     } finally {
-      state.compactingConversations.delete(key);
       await refreshClientIfMarked(state, key);
+      state.compactingConversations.delete(key);
       state.kernel.finishTask(task.id);
       queueConversationRequestEvaluation(state, connectedFolder.id, compactMatch[2]);
     }
@@ -299,7 +298,6 @@ async function deleteConnectedFolderConversation(
 ): Promise<{ conversationId: string; recentlyDeleted: { entryId: string; restoreBy: string } }> {
   const key = clientKey(connectedFolder.id, conversationId);
   await yieldBackgroundCompaction(state, key);
-  changeQueuedMessage(state, key, null);
   if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
   if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
   // The same conflict fence compaction uses: a transcript move must not race
@@ -317,7 +315,7 @@ async function deleteConnectedFolderConversation(
       throw httpError(409, "Finish or stop this Chat's outstanding work before deleting it.");
     }
     await stopComputerSharingForScope(state, connectedFolder.connectedFolderRoot, connectedFolder.id, conversationId);
-    await state.clients.get(key)?.stop();
+    await detachCachedClient(state, key)?.stop();
     // `readConversationSummary` validated the id before this join.
     const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
     const sourcePath = join(conversationsDir(connectedFolder.connectedFolderRoot), `${conversationId}.jsonl`);
@@ -340,7 +338,7 @@ async function deleteConnectedFolderConversation(
         { cause: error },
       );
     }
-    state.clients.delete(key);
+    cancelQueuedMessage(state, connectedFolder.id, conversationId);
     return { conversationId, recentlyDeleted: { entryId: entry.id, restoreBy: entry.restoreBy } };
   } finally {
     state.compactingConversations.delete(key);
@@ -355,6 +353,7 @@ export async function runConversationMutation<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   const key = clientKey(connectedFolderId, conversationId);
+  await yieldBackgroundCompaction(state, key);
   if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
   if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
   state.compactingConversations.add(key);

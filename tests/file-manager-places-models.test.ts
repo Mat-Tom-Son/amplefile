@@ -133,6 +133,11 @@ test("results say what went and plainly what did not; Put Back says why not, as 
   // Stop during Empty Trash or Delete Immediately says what was deleted and what is still there.
   assert.deepEqual(permanentResultMessage({ removed: [{ id: "1", name: "a", originalPath: null }], failed: [], notFound: [], cancelled: true, notDone: ["2", "3"] }, true), { text: "Stopped. “a” was deleted for good; 2 items are still in the Trash.", tone: "success" });
   assert.deepEqual(permanentResultMessage({ removed: [], failed: [], notFound: [], cancelled: true, notDone: ["2"] }, false), { text: "Stopped. Nothing was deleted; everything is still in the Trash.", tone: "success" });
+  assert.match(emptyTrashConfirm({ items: [item({})], truncated: false, unavailableVolumes: ["Camera"] }).body, /couldn’t check the Trash on “Camera”/);
+  assert.deepEqual(permanentResultMessage({ removed: [], failed: [], notFound: [], unavailableVolumes: ["Camera"] }, true), {
+    text: "AmpleFile couldn’t check the Trash on “Camera”.",
+    tone: "error",
+  });
   const failed = permanentResultMessage({ removed: [], failed: [{ id: "1", name: "locked", error: "Permission denied." }, { id: "2", name: "x", error: "y" }], notFound: [] }, true);
   assert.equal(failed.tone, "error");
   assert.equal(failed.text, "“locked” couldn’t be deleted: Permission denied. 1 other item couldn’t be deleted either.");

@@ -599,8 +599,8 @@ export async function setPiDefaultModel(
  * listed, or whose listed models are gone, starts on its first model.
  */
 const recommendedModels: Record<string, string[]> = {
-  openai: ["gpt-6.1-sol", "gpt-5.5"],
-  "openai-codex": ["gpt-6.1-sol", "gpt-5.5"],
+  openai: ["gpt-6.2-sol", "gpt-6.1-sol", "gpt-5.5"],
+  "openai-codex": ["gpt-6.2-sol", "gpt-6.1-sol", "gpt-5.5"],
   anthropic: ["claude-opus-4-8"],
   openrouter: ["openai/gpt-6-luna", "moonshotai/kimi-k2.6"],
   google: ["gemini-3.1-pro-preview"],

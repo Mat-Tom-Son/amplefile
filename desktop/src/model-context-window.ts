@@ -82,7 +82,7 @@ export class ModelContextWindow {
     const window = this.#window;
     if (!window || window.isDestroyed() || !window.isFocused()) return false;
     if (command === "close-tab") { window.close(); return true; }
-    if (command === "reload-connected-folder-state") { window.webContents.reload(); return true; }
+    if (command === "refresh") { window.webContents.reload(); return true; }
     return false;
   }
 
@@ -115,9 +115,9 @@ export class ModelContextWindow {
     window.webContents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown" || input.alt || !(input.meta || (process.platform !== "darwin" && input.control))) return;
       const key = input.key.toLowerCase();
-      // The app menu normally directs these shortcuts to the main Connected Folder.
-      // They must also work here when no Connected Folder is open and its menu is disabled.
-      if ((key === "w" || key === "r") && this.handleMenuCommand(key === "w" ? "close-tab" : "reload-connected-folder-state")) {
+      // The app menu normally directs these shortcuts to a file manager window.
+      // They must also work here when no file manager window is open and its menu items are disabled.
+      if ((key === "w" || key === "r") && this.handleMenuCommand(key === "w" ? "close-tab" : "refresh")) {
         event.preventDefault();
       }
     });

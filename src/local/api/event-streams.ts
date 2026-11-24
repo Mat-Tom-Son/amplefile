@@ -478,7 +478,9 @@ export function publishControlHint(state: LocalApiState, type: "connected-folder
   for (const response of state.controlStreams) {
     if (response.closed) continue;
     // A slow renderer must reconnect and requery instead of accumulating a queue.
-    try { if (!response.send({ type })) response.close(); }
+    try {
+      if (response.queuedBytes > localEventStreamLimits.queuedBytes || !response.send({ type })) response.close();
+    }
     catch { response.close(); }
   }
 }

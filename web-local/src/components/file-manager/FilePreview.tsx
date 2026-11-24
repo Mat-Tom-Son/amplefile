@@ -64,7 +64,7 @@ export function FilePreview({ apiBase, entry, fixtureText, fixtureMode, onOpen, 
   const notice = filePreviewNotice(entry, preview, failed);
   const icon = fileManagerIcon(entry);
   const size = preview?.sizeBytes ?? entry.sizeBytes;
-  const meta = entry.kind === "folder" ? "Folder" : `${fileKindLabel(entry)}${typeof size === "number" ? ` · ${formatBytes(size)}` : ""}`;
+  const meta = entry.kind === "folder" ? fileKindLabel(entry) : `${fileKindLabel(entry)}${typeof size === "number" ? ` · ${formatBytes(size)}` : ""}`;
   const text = !failed && preview?.kind === "text" && preview.content ? preview : null;
   const media = !failed && objectUrl && (preview?.kind === "image" || preview?.kind === "pdf") ? preview.kind : null;
   const waiting = entry.kind === "file" && !failed && !notice && !text && !media;

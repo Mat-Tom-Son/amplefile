@@ -30,6 +30,7 @@ import { getFoundrySettings, saveFoundryConnection } from "../agent/foundry-conn
 import { AZURE_OPENAI_PROVIDER, foundryProvider, normalizeFoundryConnection, type FoundryConnection } from "../../shared/foundry.js";
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../state-paths.js";
 import { getConnectedFolder } from "../connected-folder.js";
+import { detachCachedClient } from "./conversation-clients.js";
 import { publishControlHint } from "./event-streams.js";
 import { badRequest, errorMessage, httpError, match, notFound, readJsonBody, sendJson, unavailable } from "./http.js";
 import { globalCapabilityMutationKey, runCapabilityMutation } from "./reservations.js";
@@ -314,8 +315,7 @@ export async function saveWorkerInstructions(
       state.clientsToRefresh.add(key);
       continue;
     }
-    await client.stop().catch(() => undefined);
-    state.clients.delete(key);
+    await detachCachedClient(state, key, client)?.stop().catch(() => undefined);
   }
   publishControlHint(state, "models");
 }

@@ -245,6 +245,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     beforeConnectedFolderMutationRevalidation: options.beforeConnectedFolderMutationRevalidation,
     requests: requestStore,
     turnsSettledThisRun: new Set(),
+    queuedAsyncAnswers: new Set(),
     requestSettleChain: Promise.resolve(),
     jobs: undefined as unknown as AmpleFileJobService,
     jobsSettledThisRun: new Set(),

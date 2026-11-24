@@ -234,6 +234,12 @@ test("a Connected Folder inside the searched folder is left to its own search", 
   assert.deepEqual(paths(within), { names: [], files: [] });
   assert.deepEqual(within.connectedFolders, [{ connectedFolderId: connectedFolder.id, path: "Documents/Client" }]);
   assert.equal(within.coverage.complete, true);
+
+  const childPath = "Documents/Client/Café";
+  await put(join(home, childPath, "note.txt"), "ledger");
+  const child = await registerLinkedConnectedFolder(join(home, childPath));
+  const nested = await searchStandardFolder("home", "ledger", { home, path: childPath });
+  assert.deepEqual(nested.connectedFolders, [{ connectedFolderId: child.id, path: childPath }]);
 });
 
 test("the computer place searches a folder by its path from the disk's top", async (t) => {

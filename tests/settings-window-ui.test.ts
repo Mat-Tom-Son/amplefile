@@ -115,7 +115,7 @@ test("an accepted Settings save retains its owner across page navigation", async
   assert.equal(reads, 1, "returning keeps the pending owner's form instead of starting a stale read");
   assert.equal(document.querySelector("textarea")?.value, "Saved guidance");
   await dom.act(() => finishSave(Response.json({ instructions: "Saved guidance" })));
-  await dom.waitFor(() => Boolean(document.querySelector('[aria-labelledby="worker-instructions-heading"]')?.textContent?.includes("Instructions saved")));
+  await dom.waitFor(() => Boolean(document.querySelector('[aria-labelledby="worker-instructions-heading"]')?.querySelector("[role=status]")?.textContent === "Saved"));
 });
 
 test("opening Settings from a model label focuses the loaded selector only once", async (t) => {
