@@ -7,6 +7,7 @@ import {
   conflictChoices,
   conflictItemLine,
   conflictPolicy,
+  copiesLeftMessage,
   nextOperationReveal,
   operationDetail,
   operationFraction,
@@ -124,7 +125,7 @@ test("each answer names its item; Apply to All sets the default for the rest and
   assert.deepEqual(remainingConflicts(all, oneByOne).map((item) => item.key), ["Plan"]);
   assert.deepEqual(conflictPolicy(all, [...oneByOne, { key: "Plan", choice: "skip", applyToAll: false }]), {
     items: { "notes.txt": "replace", Projects: "merge", Plan: "skip" },
-    inside: "skip",
+    insideItems: { Projects: "skip" },
   });
   // Replace for all: the file↔folder clash is left to the engine's default, which keeps both rather than replacing a folder with a file unasked.
   const replaceAll = [{ key: "notes.txt", choice: "replace" as const, applyToAll: true }];
@@ -132,6 +133,16 @@ test("each answer names its item; Apply to All sets the default for the rest and
   assert.deepEqual(conflictPolicy(all, replaceAll), { apply: "replace", items: { "notes.txt": "replace" } });
   // Keep Both for all, from the first question.
   assert.deepEqual(conflictPolicy(all, [{ key: "notes.txt", choice: "keep-both", applyToAll: true }]), { apply: "keep-both", items: { "notes.txt": "keep-both" } });
+  // Each folder merged keeps its own answer about same-named items inside; the first answer is not the others'.
+  const otherFolder: TransferConflict = { ...folderClash, key: "Photos", name: "Photos" };
+  assert.deepEqual(conflictPolicy([folderClash, otherFolder], [
+    { key: "Projects", choice: "merge", applyToAll: false, inside: "keep-both" },
+    { key: "Photos", choice: "merge", applyToAll: false, inside: "replace" },
+  ]), { items: { Projects: "merge", Photos: "merge" }, insideItems: { Projects: "keep-both", Photos: "replace" } });
+  // Merge for all: the answer given with it is every later merged folder's.
+  assert.deepEqual(conflictPolicy([folderClash, otherFolder], [{ key: "Projects", choice: "merge", applyToAll: true, inside: "skip" }]), {
+    apply: "merge", items: { Projects: "merge" }, inside: "skip", insideItems: { Projects: "skip" },
+  });
   // An inside choice counts only for a Merge.
   assert.deepEqual(conflictPolicy([fileClash], [{ key: "notes.txt", choice: "skip", applyToAll: false, inside: "replace" }]), { items: { "notes.txt": "skip" } });
   // Answers for clashes that are not in this question are ignored.
@@ -156,4 +167,17 @@ test("after a Replace the notice says where the old item went, and Undo is hones
   assert.deepEqual(undoCovers({ written: [], restorePoints: [], replaced: [{ path: "a", recovery: "history" }] }), { covered: true, why: null });
   assert.deepEqual(undoCovers({ written: [], restorePoints: [], replaced: [{ path: "a", recovery: "trash" }] }), { covered: false, why: "Undo can’t bring back “a” from the Trash. Put it back from the Trash." });
   assert.equal(undoCovers({ written: [], restorePoints: [], replaced: [{ path: "a", recovery: "gone" }, { path: "b", recovery: "trash" }] }).why, "Undo can’t bring back “a”: no Trash could take it.");
+});
+
+test("a move that left only copies in a plain folder says Undo has nothing to put back", () => {
+  assert.equal(copiesLeftMessage({ written: [], restorePoints: [] }, "Documents"), null);
+  assert.equal(copiesLeftMessage({ written: ["a"], restorePoints: [], moves: [{ from: "a", to: "a" }], notRemoved: ["b"] }, "Documents"), null, "what moved is moved back");
+  assert.equal(
+    copiesLeftMessage({ written: ["Docs/a.txt"], restorePoints: [], moves: [], notRemoved: ["Docs/a.txt"] }, "Documents"),
+    "Undo has nothing to put back: “a.txt” is still where it was. The copy in Documents stays.",
+  );
+  assert.equal(
+    copiesLeftMessage({ written: [], restorePoints: [], notRemoved: ["a", "b"], leftInTarget: ["b", "c"] }, "Desktop"),
+    "Undo has nothing to put back: “a”, “b”, “c” are still where they were. The copies in Desktop stay.",
+  );
 });

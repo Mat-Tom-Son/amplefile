@@ -108,6 +108,7 @@ import { useFolderTabs, type PanelChat } from "./useFolderTabs";
 import { FolderTabStrip, type FolderTabItem } from "./FolderTabStrip";
 import { useFileManagerNavigation } from "./useFileManagerNavigation";
 import { useFileSelection } from "./useFileSelection";
+import { isPartialUndo } from "./file-manager-undo";
 import { useFileChanges } from "./useFileChanges";
 import { useFileClipboard } from "./useFileClipboard";
 import { useFileDrops } from "./useFileDrops";
@@ -1281,7 +1282,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     const entry = changes.restorePointsUndo("the Worker’s changes", [{ connectedFolderId: connectedFolder.id, checkpointId: workerChanges.checkpointId }]);
     try {
       const redo = await entry.run();
-      if (redo) changes.recordRedo(redo);
+      if (redo && !isPartialUndo(redo)) changes.recordRedo(redo);
       worker.done();
       await listing.refresh();
       showToast({ text: "Undid the Worker’s changes", tone: "success" });

@@ -18,6 +18,7 @@ import {
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { isSystemHiddenEntry } from "./hidden-entries.js";
+import { comparableForms, comparablePath, formsContain } from "./path-comparison.js";
 import { entersMacDataVolume, macDataVolumeRefusal, usualMacPath, withoutMacDataVolumeName, isInsideMacDataVolume } from "./mac-data-volume.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 import { linuxUserDirectories } from "./standard-folder-locations.js";
@@ -241,6 +242,12 @@ export function standardFolderPathBase(
  * History for them. Renaming or trashing a folder that holds a Connected Folder
  * would carry it along, so that is refused too; adding a folder next to one
  * (`allowContaining`) is not.
+ *
+ * The path and each registered folder are compared both as written and as
+ * the disk resolves them (src/local/path-comparison.ts), so a Connected
+ * Folder is found whatever way it is named: in another letter case, with an
+ * accent spelled the other way, or through a linked folder, whether the link
+ * is in the path asked about or in the path it was registered by.
  */
 export async function assertStandardFolderPathUnowned(
   id: StandardFolderId,
@@ -249,8 +256,10 @@ export async function assertStandardFolderPathUnowned(
   options: { allowContaining?: boolean; finalLink?: boolean } = {},
 ): Promise<string> {
   const target = resolveStandardFolderPath(id, relativePath, home, { finalLink: options.finalLink === true });
+  const asked = await comparableForms(target, { finalLink: options.finalLink === true });
   for (const connectedFolder of await listConnectedFolders()) {
-    if (pathContains(connectedFolder.connectedFolderRoot, target) || (!options.allowContaining && pathContains(target, connectedFolder.connectedFolderRoot))) {
+    const registered = await comparableForms(connectedFolder.connectedFolderRoot);
+    if (formsContain(registered, asked) || (!options.allowContaining && formsContain(asked, registered))) {
       throw Object.assign(
         new Error(`${connectedFolder.name} is a Connected Folder. Open it from the Connected Folders section to change it, so History keeps the change.`),
         { status: 409, statusCode: 409 },
@@ -386,7 +395,7 @@ export function addSidebarFolder(folderPath: string, home = homedir()): { id: St
   const existing = addedFolders().find((folder) => samePath(folder.root, root));
   if (existing) return { id: existing.id, name: existing.name };
   const folder: AddedFolder = {
-    id: `added-${createHash("sha256").update(comparisonPath(root)).digest("hex").slice(0, 16)}`,
+    id: `added-${createHash("sha256").update(addedFolderIdPath(root)).digest("hex").slice(0, 16)}`,
     root,
     name: basename(root) || root,
   };
@@ -416,18 +425,13 @@ function toRelative(id: StandardFolderId, path: string, home: string): string {
   return relative(standardFolderRoot(id, home), path).split(sep).join("/");
 }
 
+/** macOS and Windows disks ignore case and how an accent is spelled by default; a path written the other way names the same folder. */
 function samePath(left: string, right: string): boolean {
-  return comparisonPath(left) === comparisonPath(right);
+  return comparablePath(left) === comparablePath(right);
 }
 
-function pathContains(parentPath: string, childPath: string): boolean {
-  const parent = comparisonPath(parentPath);
-  const child = comparisonPath(childPath);
-  return child === parent || child.startsWith(`${parent}${sep}`);
-}
-
-/** macOS and Windows disks ignore case by default; a wrongly cased path names the same folder. */
-function comparisonPath(value: string): string {
+/** The spelling of a folder's path its sidebar id is made from: derived as it always has been, so a folder added again gets the id it had. */
+function addedFolderIdPath(value: string): string {
   const resolved = resolve(value).replace(/[\\/]+$/, "");
   return process.platform === "linux" ? resolved : resolved.toLocaleLowerCase();
 }

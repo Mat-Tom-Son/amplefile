@@ -11,6 +11,7 @@ import {
   placeFolderWithoutReplacing,
   placeWithoutReplacing,
   removeOwnedItem,
+  type CopiedSource,
 } from "./file-transfer.js";
 
 /**
@@ -26,7 +27,9 @@ import {
  *   place can recover it (a Connected Folder's restore point, else the
  *   system Trash; the result says when neither could keep it).
  * - **merge** (a folder onto a folder): the contents are combined, and each
- *   clash inside takes the `inside` choice, or the choice for all.
+ *   same-named item inside takes the choice the person gave for that folder
+ *   (`insideItems`), else the one for every merge (`inside`), else the choice
+ *   for all.
  *
  * A folder is never replaced by a file, or a file by a folder, unless that
  * item's own choice says replace; a choice for all keeps both instead.
@@ -46,11 +49,19 @@ export interface ConflictPolicy {
   apply?: ConflictChoice;
   /** Choices for single clashes, by the `key` the check answered. */
   items?: Record<string, ConflictChoice>;
-  /** Clashes inside a merged folder. Default: `apply` when it is keep-both, skip, or replace; else keep-both. */
+  /** Clashes inside a merged folder without a choice of its own. Default: `apply` when it is keep-both, skip, or replace; else keep-both. */
   inside?: InsideConflictChoice;
+  /** Clashes inside one merged folder, by that folder's `key`: what the person answered when they chose Merge for it. */
+  insideItems?: Record<string, InsideConflictChoice>;
 }
 
 const choices = new Set<ConflictChoice>(["keep-both", "skip", "replace", "merge"]);
+const insideChoices = new Set<InsideConflictChoice>(["keep-both", "skip", "replace"]);
+
+/** A choice made for one item by its key. An item may be named anything ("constructor", "toString"), so only the policy's own keys count. */
+function chosenFor<T>(choices: Record<string, T> | undefined, key: string): T | undefined {
+  return choices && Object.hasOwn(choices, key) ? choices[key] : undefined;
+}
 
 /** Reads a request's `conflicts`: absent, `{ check: true }`, or a policy. */
 export function parseConflictRequest(value: unknown): { check: boolean; policy: ConflictPolicy | null } {
@@ -64,17 +75,26 @@ export function parseConflictRequest(value: unknown): { check: boolean; policy: 
     policy.apply = record.apply as ConflictChoice;
   }
   if (record.inside !== undefined) {
-    if (record.inside !== "keep-both" && record.inside !== "skip" && record.inside !== "replace") throw badRequest("Choose Keep Both, Skip, or Replace for what clashes inside a merged folder.");
-    policy.inside = record.inside;
+    if (!insideChoices.has(record.inside as InsideConflictChoice)) throw badRequest("Choose Keep Both, Skip, or Replace for what clashes inside a merged folder.");
+    policy.inside = record.inside as InsideConflictChoice;
   }
   if (record.items !== undefined) {
     if (!record.items || typeof record.items !== "object" || Array.isArray(record.items)) throw badRequest("Choose what happens to each item.");
-    const items: Record<string, ConflictChoice> = {};
+    const items: Record<string, ConflictChoice> = Object.create(null);
     for (const [key, choice] of Object.entries(record.items as Record<string, unknown>)) {
       if (!choices.has(choice as ConflictChoice)) throw badRequest("Choose Keep Both, Skip, Replace, or Merge.");
       items[key] = choice as ConflictChoice;
     }
     policy.items = items;
+  }
+  if (record.insideItems !== undefined) {
+    if (!record.insideItems || typeof record.insideItems !== "object" || Array.isArray(record.insideItems)) throw badRequest("Choose what happens to same-named items inside each merged folder.");
+    const insideItems: Record<string, InsideConflictChoice> = Object.create(null);
+    for (const [key, choice] of Object.entries(record.insideItems as Record<string, unknown>)) {
+      if (!insideChoices.has(choice as InsideConflictChoice)) throw badRequest("Choose Keep Both, Skip, or Replace for what clashes inside a merged folder.");
+      insideItems[key] = choice as InsideConflictChoice;
+    }
+    policy.insideItems = insideItems;
   }
   return { check: false, policy };
 }
@@ -182,12 +202,12 @@ export async function planPlacements(
       plan.tops.push({ action: "place", destination });
       continue;
     }
-    const explicit = policy.items?.[item.key];
+    const explicit = chosenFor(policy.items, item.key);
     const choice = await resolveChoice(item.source, destination, explicit ?? policy.apply ?? "keep-both", explicit !== undefined, options);
     plan.tops.push({ action: choice === "keep-both" || choice === "free" ? "place" : choice, destination });
     if (choice === "merge") {
       plan.merged.push({ source: item.source, destination, top });
-      await planMerge(item.source, destination, insideChoice(policy), top, plan, options);
+      await planMerge(item.source, destination, insideChoice(policy, item.key), top, plan, options);
     } else {
       plan.units.push(unitFor(item.source, destination, choice, top));
     }
@@ -195,9 +215,17 @@ export async function planPlacements(
   return plan;
 }
 
-function insideChoice(policy: ConflictPolicy): InsideConflictChoice {
+/** What happens to same-named items inside one merged folder: the answer given for that folder, else the one for every merge, else the choice for all. */
+function insideChoice(policy: ConflictPolicy, key: string): InsideConflictChoice {
+  const own = chosenFor(policy.insideItems, key);
+  if (own) return own;
   if (policy.inside) return policy.inside;
   return policy.apply === "skip" || policy.apply === "replace" ? policy.apply : "keep-both";
+}
+
+/** The choice a policy holds for one top-level item, by its key; undefined when the choice for all applies. */
+export function chosenForItem(policy: ConflictPolicy, key: string): ConflictChoice | undefined {
+  return chosenFor(policy.items, key);
 }
 
 function unitFor(source: string, destination: string, choice: "free" | "keep-both" | "skip" | "replace", top: number): PlacementUnit {
@@ -369,6 +397,8 @@ export interface PlacementRun {
   mode: "copy" | "move";
   withIdentity?: boolean;
   operation?: FileOperationControl;
+  /** A copy records here each entry of its source as it reads it (src/local/file-transfer.ts, `sourceUnchanged`). */
+  read?: CopiedSource;
 }
 
 const replaceWorkingPrefix = ".AmpleFile-replace-";
@@ -399,7 +429,7 @@ export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise
       return { unit, at: destination, renamed: false, committed: true };
     }
     const destination = await freeDestination(folder, basename(unit.destination), { duplicate: unit.duplicate });
-    await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation });
+    await copyItemTo(unit.source, destination, { withIdentity: run.withIdentity, operation, read: run.read });
     return { unit, at: destination, renamed: false, committed: true };
   }
   const working = claimWorkingPath(folder, replaceWorkingPrefix);
@@ -412,7 +442,7 @@ export async function stageUnit(unit: PlacementUnit, run: PlacementRun): Promise
         if ((error as { code?: string }).code !== "EXDEV") throw error;
       }
     }
-    await copyItemTo(unit.source, working.path, { withIdentity: run.mode === "move" || run.withIdentity, operation });
+    await copyItemTo(unit.source, working.path, { withIdentity: run.mode === "move" || run.withIdentity, operation, read: run.read });
     return { unit, at: working.path, renamed: false, committed: false, release: working.release };
   } catch (error) {
     working.release();
