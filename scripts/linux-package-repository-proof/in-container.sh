@@ -187,8 +187,8 @@ upgrade 2>&1 | tee "$P/upgrade.log"
 pass "dnf upgraded A to B from the repository with gpgcheck=1 and repo_gpgcheck=1, while AmpleFile ran"
 grep -qx metadata_expire=1m "$ENTRY" && pass "the upgrade kept the person's change to $ENTRY" || fail "the upgrade kept the person's change to $ENTRY"
 echo "    old process's archive: $(ls -l "/proc/$OLD_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)" | tee -a "$P/results.txt"
-FIRST=$(drive check)
-READY=$(drive check)
+FIRST=$(drive check) || fail "the status check after the upgrade did not answer"
+READY=$(drive check) || fail "the second status check after the upgrade did not answer"
 echo "    first look: $FIRST" | tee -a "$P/results.txt"
 echo "    second look: $READY" | tee -a "$P/results.txt"
 [ "$(field "$FIRST" phase)" = unsupported ] || fail "the first look after the upgrade already offered the restart"
@@ -199,7 +199,7 @@ echo "    second look: $READY" | tee -a "$P/results.txt"
 [ "$(main_pids)" = "$OLD_PID" ] && pass "offering the restart restarted nothing on its own" || fail "AmpleFile restarted without being asked"
 
 step "Restart into B, as the person's confirmed click does"
-drive install
+drive install || fail "the install call did not reach the app"
 for _ in $(seq 120); do kill -0 "$OLD_PID" 2> /dev/null || break; sleep 0.5; done
 kill -0 "$OLD_PID" 2> /dev/null && { tail -40 "$P/app.log"; fail "the old AmpleFile process did not exit"; }
 pass "the old AmpleFile process ($OLD_PID) exited"
@@ -207,13 +207,16 @@ NEW_PID=
 for _ in $(seq 120); do NEW_PID=$(main_pids); [ -n "$NEW_PID" ] && break; sleep 0.5; done
 [ "$(echo "$NEW_PID" | wc -w)" = 1 ] || { tail -40 "$P/app.log"; fail "expected one relaunched AmpleFile process, found: '$NEW_PID'"; }
 AFTER=$(drive status 120) || { tail -40 "$P/app.log"; fail "the relaunched app did not open a window"; }
-EXE=$(readlink "/proc/$NEW_PID/exe")
-ARCHIVE=$(ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1)
+EXE=$(readlink "/proc/$NEW_PID/exe" || true)
+ARCHIVE=$(ls -l "/proc/$NEW_PID/fd" 2> /dev/null | grep -o '/opt/AmpleFile/resources/app.asar.*' | sort -u | head -1 || true)
 echo "    relaunched pid $NEW_PID: exe $EXE, archive $ARCHIVE" | tee -a "$P/results.txt"
 echo "    after: $AFTER" | tee -a "$P/results.txt"
 [ "$EXE" = /opt/AmpleFile/amplefile-desktop ] && { [ -z "$ARCHIVE" ] || [ "$ARCHIVE" = /opt/AmpleFile/resources/app.asar ]; } \
   && pass "a new AmpleFile process ($NEW_PID) started from the installed B files" || fail "the relaunched process does not run the installed files"
-[ "$(field "$AFTER" phase)" = unsupported ] && [ "$(field "$(drive check)" phase)" = unsupported ] && [ "$(field "$(drive check)" phase)" = unsupported ] \
+LOOK1=$(drive check) || fail "the relaunched app's status check did not answer"
+LOOK2=$(drive check) || fail "the relaunched app's second status check did not answer"
+echo "    relaunched, two looks later: $LOOK2" | tee -a "$P/results.txt"
+[ "$(field "$AFTER" phase)" = unsupported ] && [ "$(field "$LOOK1" phase)" = unsupported ] && [ "$(field "$LOOK2" phase)" = unsupported ] \
   && pass "the relaunched app says updates arrive with the system's again: no second ready status" || fail "the relaunched app offers a restart again"
 sleep 15
 [ "$(main_pids)" = "$NEW_PID" ] && pass "no restart loop: the same single process 15 seconds later" || fail "AmpleFile restarted again: $(main_pids)"
@@ -223,8 +226,10 @@ step "An ordinary quit, with a restart offered but not chosen"
 sed -i 's/^enabled=1$/enabled=0/' "$ENTRY"
 dnf -y -q reinstall "$RPM_B"
 grep -qx enabled=0 "$ENTRY" && ! dnf repolist --enabled | grep -q "^$REPOSITORY_ID " && pass "a reinstall keeps enabled=0, and dnf no longer checks the repository" || fail "a reinstall keeps enabled=0, and dnf no longer checks the repository"
-drive check > /dev/null
-[ "$(field "$(drive check)" phase)" = ready ] || fail "the reinstall did not offer the restart"
+drive check > /dev/null || fail "the status check after the reinstall did not answer"
+OFFERED=$(drive check) || fail "the second status check after the reinstall did not answer"
+echo "    after the reinstall: $OFFERED" | tee -a "$P/results.txt"
+[ "$(field "$OFFERED" phase)" = ready ] || fail "the reinstall did not offer the restart"
 [ -e "$TOKEN" ] && echo "    act token present before the quit" | tee -a "$P/results.txt"
 kill -TERM "$NEW_PID"
 for _ in $(seq 120); do kill -0 "$NEW_PID" 2> /dev/null || break; sleep 0.5; done
