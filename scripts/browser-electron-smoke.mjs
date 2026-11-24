@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, webContents } from "electron";
+import { app, BrowserWindow, Menu, webContents } from "electron";
 
 import { BrowserStatusBubble } from "../dist/desktop/desktop/src/browser-status-bubble.js";
 import { BuiltInBrowser } from "../dist/desktop/desktop/src/built-in-browser.js";
@@ -423,18 +423,54 @@ async function run() {
     browser.mount(request, otherWindow);
     const movedView = otherWindow.contentView.children[0];
     assert.ok(movedView);
-    browser.mount({ ...request, sequence: 1 }, window);
+    const nativeTabMenu = Menu.buildFromTemplate;
+    let shownMenu;
+    try {
+      Menu.buildFromTemplate = (items) => ({ popup: (options) => { shownMenu = { items, options }; } });
+      const flags = { canReopen: false, hasOthers: false };
+      const point = { x: 10, y: 10 };
+      const pendingMenu = browser.popupTabMenu("persons1", request.url, point, flags, otherWindow);
+      assert.ok(shownMenu);
+      const openedMenu = shownMenu;
+      const mute = openedMenu.items.find((item) => item.label === "Mute Tab");
+      assert.ok(mute?.enabled);
+      mute.click();
+      assert.equal(movedView.webContents.isAudioMuted(), true, "the current window's tab menu controls its page");
+      browser.command("persons1", { type: "mute", muted: false }, otherWindow);
+
+      browser.mount({ ...request, sequence: 1 }, window);
+      shownMenu = undefined;
+      assert.equal(await browser.popupTabMenu("persons1", request.url, point, flags, otherWindow), null);
+      assert.equal(shownMenu, undefined, "the old window cannot open the tab's menu anymore");
+      const dispatch = browser.command;
+      const dispatched = [];
+      try {
+        browser.command = (...args) => { dispatched.push(args); };
+        for (const label of ["Reload", "Mute Tab", "Print…", "Save as PDF…", "Close Tab"]) {
+          openedMenu.items.find((item) => item.label === label).click();
+        }
+      } finally {
+        browser.command = dispatch;
+      }
+      openedMenu.options.callback();
+      assert.equal(await pendingMenu, null, "a menu left open in the old window cannot act on the page");
+      assert.deepEqual(dispatched, []);
+    } finally {
+      Menu.buildFromTemplate = nativeTabMenu;
+    }
     assert.equal(otherWindow.contentView.children.length, 0);
     assert.equal(window.contentView.children[0], movedView, "the new window lays it out with its own sequence");
     browser.detach("persons1", otherWindow);
     browser.command("persons1", { type: "mute", muted: true }, otherWindow);
     browser.close("persons1", otherWindow);
+    assert.throws(() => browser.navigate("persons1", `${base}/`, otherWindow), /no longer in this window/);
     assert.equal(window.contentView.children[0], movedView, "the old window cannot detach the new window's view");
     assert.equal(movedView.webContents.isAudioMuted(), false);
     browser.command("persons1", { type: "mute", muted: true }, window);
     assert.equal(movedView.webContents.isAudioMuted(), true, "the new window controls its page");
 
     const movedContents = movedView.webContents;
+    await until(() => movedContents.getURL() === request.url && !movedContents.isLoading(), "the moved page finishes loading");
     const icon = "DATA:image/png;base64,AA==";
     const favicon = () => browser.states(window).find((state) => state.pageId === "persons1")?.favicon;
     movedContents.emit("page-favicon-updated", {}, [icon]);
@@ -461,15 +497,15 @@ async function run() {
     }
 
     // A page closed by Electron detaches its native view and stops a Worker's polling.
-    const poll = Promise.withResolvers();
+    let polled = false;
     const execute = movedContents.executeJavaScriptInIsolatedWorld.bind(movedContents);
     movedContents.executeJavaScriptInIsolatedWorld = (...args) => {
       const result = execute(...args);
-      poll.resolve();
+      polled = true;
       return result;
     };
     const waitingOnClosedPage = assert.rejects(host.wait({ tab: "persons1", text: "Never arrives", seconds: 30 }), /That browser tab closed/);
-    await poll.promise;
+    await until(() => polled, "the Worker starts polling the moved page");
     const focused = BrowserWindow.getFocusedWindow;
     const rendererFocused = window.webContents.isFocused;
     try {

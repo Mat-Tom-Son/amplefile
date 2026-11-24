@@ -254,6 +254,7 @@ export class BuiltInBrowser {
     if (!url) throw new Error("Type an address or something to search for.");
     const existing = this.#pages.get(pageId);
     if (!existing) return this.#state(this.#createPage(pageId, url, "person", undefined, null, window));
+    if (this.#home(existing) !== window) throw new Error("That browser tab is no longer in this window.");
     this.#leave(existing, "person", () => { void this.#load(existing, url); });
     return this.#state(existing);
   }
@@ -333,11 +334,18 @@ export class BuiltInBrowser {
    * tab strip's (duplicate, close, reopen) are handed back to the renderer.
    */
   popupTabMenu(pageId: string, url: string, point: { x: number; y: number }, options: { canReopen: boolean; hasOthers: boolean }, window: BrowserWindow): Promise<BrowserTabMenuCommand | null> {
-    if (window.isDestroyed()) return Promise.resolve(null);
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return Promise.resolve(null);
     const page = this.#pages.get(pageId);
+    if (page && this.#home(page) !== window) return Promise.resolve(null);
     const contents = page && !page.view.webContents.isDestroyed() ? page.view.webContents : null;
     const address = contents?.getURL() || url;
     const web = /^https?:/i.test(address);
+    // A native menu can outlive the tab or be clicked after it moves.
+    const whileCurrent = (action: () => void) => () => {
+      const current = this.#pages.get(pageId);
+      if (window.isDestroyed() || (page && current !== page) || (current && this.#home(current) !== window)) return;
+      action();
+    };
     return new Promise((resolve) => {
       let settled = false;
       const finish = (command: BrowserTabMenuCommand | null) => {
@@ -346,21 +354,21 @@ export class BuiltInBrowser {
         resolve(command);
       };
       const template: MenuItemConstructorOptions[] = [
-        { label: "Reload", enabled: Boolean(page), click: () => this.command(pageId, { type: "reload" }) },
-        { label: "Duplicate", enabled: Boolean(address), click: () => finish("duplicate") },
+        { label: "Reload", enabled: Boolean(page), click: whileCurrent(() => this.command(pageId, { type: "reload" }, window)) },
+        { label: "Duplicate", enabled: Boolean(address), click: whileCurrent(() => finish("duplicate")) },
         { type: "separator" },
-        { label: "Copy Address", enabled: Boolean(address), click: () => this.#copyText(address) },
-        { label: "Open in Your Web Browser", enabled: web, click: () => { void this.#options.openExternal(address).catch(() => undefined); } },
+        { label: "Copy Address", enabled: Boolean(address), click: whileCurrent(() => this.#copyText(address)) },
+        { label: "Open in Your Web Browser", enabled: web, click: whileCurrent(() => { void this.#options.openExternal(address).catch(() => undefined); }) },
         { type: "separator" },
         contents?.isAudioMuted()
-          ? { label: "Unmute Tab", click: () => this.command(pageId, { type: "mute", muted: false }) }
-          : { label: "Mute Tab", enabled: Boolean(page), click: () => this.command(pageId, { type: "mute", muted: true }) },
-        { label: "Print…", enabled: Boolean(page), click: () => this.command(pageId, { type: "print" }) },
-        { label: "Save as PDF…", enabled: Boolean(page), click: () => this.command(pageId, { type: "save-pdf" }) },
+          ? { label: "Unmute Tab", click: whileCurrent(() => this.command(pageId, { type: "mute", muted: false }, window)) }
+          : { label: "Mute Tab", enabled: Boolean(page), click: whileCurrent(() => this.command(pageId, { type: "mute", muted: true }, window)) },
+        { label: "Print…", enabled: Boolean(page), click: whileCurrent(() => this.command(pageId, { type: "print" }, window)) },
+        { label: "Save as PDF…", enabled: Boolean(page), click: whileCurrent(() => this.command(pageId, { type: "save-pdf" }, window)) },
         { type: "separator" },
-        { label: "Close Tab", click: () => finish("close") },
-        { label: "Close Other Browser Tabs", enabled: options.hasOthers, click: () => finish("close-others") },
-        { label: "Reopen Closed Tab", enabled: options.canReopen, click: () => finish("reopen-closed") },
+        { label: "Close Tab", click: whileCurrent(() => finish("close")) },
+        { label: "Close Other Browser Tabs", enabled: options.hasOthers, click: whileCurrent(() => finish("close-others")) },
+        { label: "Reopen Closed Tab", enabled: options.canReopen, click: whileCurrent(() => finish("reopen-closed")) },
       ];
       // The point is in the app's CSS pixels; the menu goes where the pointer is in the zoomed window.
       const zoom = window.webContents.getZoomFactor() || 1;
