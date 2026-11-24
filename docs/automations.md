@@ -270,8 +270,9 @@ Steps execute strictly in declaration order. Three kinds:
   interactive thread. The hop waits for exactly its own turn's task-scoped
   terminal outcome; `failed` or `aborted` fails the hop.
 - **`files`** — copy from one Connected Folder's folder into another's through
-  the same additive internals as `files add`: collision-rename on existing
-  names, and a targeted restore point that succeeds or fails together with the
+  the same additive internals as `files add`, which copy as the window's
+  Copy does: a taken name gets Finder's " copy" name, links inside a copied
+  folder stay links, `.amplefile/` is left behind, and a targeted restore point that succeeds or fails together with the
   placement. Copy only — an automation never moves, renames, or deletes
   anything in the source Connected Folder. The source is an explicit list of
   exact Connected Folder–relative paths, one bounded tree selector resolved by
