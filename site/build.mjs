@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import feedModule from "../scripts/mac-release-feed.cjs";
+import { newestLinuxPreview } from "./linux-preview.mjs";
 import { MN_CSS, mnMarkup } from "./manila.mjs";
 import * as VIEWS from "./views.mjs";
 import { MENUBAR_ICON, WINDOW_CSS } from "./views.mjs";
@@ -367,8 +368,10 @@ const SCRIPT = `
     if (asset) point("mac", asset.browser_download_url, true);
   });
   // Linux links open the newest Linux preview's page, which lists its packages; without an answer they open the list of releases.
+  // The newest is chosen by publish time (site/linux-preview.mjs): GitHub's list is not newest first within a day.
+  ${newestLinuxPreview.toString().split("\n").join("\n  ")}
   ask("https://api.github.com/repos/${SOURCE}/releases?per_page=30").then((list) => {
-    const rel = (Array.isArray(list) ? list : []).find((x) => x.prerelease && !x.draft && /^linux-/.test(x.tag_name));
+    const rel = newestLinuxPreview(list);
     if (rel) point("linux", rel.html_url, false);
   });
 })();
