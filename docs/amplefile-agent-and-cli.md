@@ -289,6 +289,12 @@ amplefile help capabilities
 `connected-folders list --json` adds `parentConnectedFolderId` to a Connected
 Folder registered inside another Connected Folder's folder.
 
+`context --json` reports `cwd` and the resolved `connectedFolder`, plus
+`selectedPath` and `activeSurface`, which are always `null`. They stay in the
+v1 shape for compatibility. The kernel knows nothing of the windows, their
+tabs, or their selection, so no command reports what a person is looking at;
+context comes only from `--connected-folder` or the working directory.
+
 `--connected-folder <id-or-exact-name>` selects a Connected Folder
 explicitly. Without it, Connected Folder–aware read commands resolve the
 terminal's current working directory. Duplicate exact names are refused as

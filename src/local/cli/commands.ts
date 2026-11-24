@@ -145,7 +145,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
   const executable = "amplefile";
   const normalizedTopic = topic?.trim().toLocaleLowerCase();
   const header = `${terminalText(productName)} CLI`;
-  if (normalizedTopic === "context") return `${header}\n\nUsage: ${executable} context [--connected-folder <id-or-name>] [--json]\n\nShow the resolved Connected Folder and host context for this working directory.\n`;
+  if (normalizedTopic === "context") return `${header}\n\nUsage: ${executable} context [--connected-folder <id-or-name>] [--json]\n\nShow the resolved Connected Folder and host context for this working directory.\nselectedPath and activeSurface are always null: no command reports what a\nperson is looking at in AmpleFile's windows.\n`;
   if (normalizedTopic === "tasks" || normalizedTopic === "tasks list") return `${header}\n\nUsage: ${executable} tasks list [--connected-folder <id-or-name>] [--json]\n\nList host-managed tasks, optionally for one Connected Folder.\n`;
   if (normalizedTopic === "capabilities" || normalizedTopic === "capabilities list") return `${header}\n\nUsage: ${executable} capabilities list [--connected-folder <id-or-name>] [--json]\n\nList Skills & Extensions, everywhere and for one Connected Folder.\n`;
   if (normalizedTopic === "chat" || normalizedTopic?.startsWith("chat ")) {

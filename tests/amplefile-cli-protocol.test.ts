@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import test from "node:test";
+import { AmpleFileCliKernelAdapter } from "../src/local/amplefile-cli-adapter.js";
+import type { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import {
   normalizeAmpleFileAutomationProposal,
   ampleFileAutomationMessagePlaceholders,
@@ -564,3 +566,15 @@ function fixtureKernel(calls: Array<{ method: string; actor: AmpleFileCliActor; 
     },
   };
 }
+
+test("context's selectedPath and activeSurface are always null, and help says so", async () => {
+  const folder = { id: "space-aaaaaaaaaaaaaaaa", name: "Home", connectedFolderRoot: resolve("home"), location: { storage: "linked" }, createdAt: "", updatedAt: "" };
+  const kernel = {
+    async getContext() { return { kind: "amplefile.context", version: 1, actor: { kind: "cli" }, resolution: "cwd", connectedFolder: folder }; },
+    async getConnectedFolders() { return { kind: "amplefile.connected-folders", version: 1, actor: { kind: "cli" }, connectedFolders: [folder] }; },
+  } as unknown as AmpleFileKernel;
+  const context = await new AmpleFileCliKernelAdapter(kernel).getContext({ kind: "cli", cwd: resolve("home") }, {});
+  assert.equal(context.selectedPath, null);
+  assert.equal(context.activeSurface, null);
+  assert.match(ampleFileCliHelp("AmpleFile", "context"), /selectedPath and activeSurface are always null/);
+});
