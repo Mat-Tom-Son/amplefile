@@ -17,6 +17,8 @@ export interface FileManagerWindowLike {
   isDestroyed(): boolean;
 }
 
+type WindowReference = Pick<FileManagerWindowLike, "id"> & Partial<Pick<FileManagerWindowLike, "isDestroyed">>;
+
 /** What the window's menus show while it is the one in front. */
 export interface WindowMenuState {
   connectedFolderOpen: boolean;
@@ -96,7 +98,10 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
 
   /** Forgets a window that closed; answers its entry, or null when it was not registered. */
   remove(window: W | number): FileManagerWindowEntry<W, Location> | null {
-    const id = typeof window === "number" ? window : window.id;
+    const id = typeof window === "number" ? window : window.isDestroyed()
+      ? [...this.#entries].find(([, entry]) => entry.window === window)?.[0]
+      : window.id;
+    if (id === undefined) return null;
     const entry = this.#entries.get(id) ?? null;
     this.#entries.delete(id);
     this.#recent = this.#recent.filter((recent) => recent !== id);
@@ -104,20 +109,22 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
   }
 
   /** The entry of a registered, live window; null for anything else (the popover, a browser pop-up, a closed window). */
-  entry(window: { readonly id: number } | null | undefined): FileManagerWindowEntry<W, Location> | null {
-    if (!window) return null;
+  entry(window: WindowReference | null | undefined): FileManagerWindowEntry<W, Location> | null {
+    if (!window || window.isDestroyed?.()) return null;
     const entry = this.#entries.get(window.id);
     return entry && !entry.window.isDestroyed() ? entry : null;
   }
 
-  has(window: { readonly id: number } | null | undefined): boolean {
+  has(window: WindowReference | null | undefined): boolean {
     return this.entry(window) !== null;
   }
 
   /** The window was focused: it is now the most recent. */
-  focus(window: { readonly id: number }): void {
-    if (!this.#entries.has(window.id)) return;
-    this.#recent = [window.id, ...this.#recent.filter((id) => id !== window.id)];
+  focus(window: WindowReference): void {
+    const entry = this.entry(window);
+    if (!entry) return;
+    const windowId = entry.window.id;
+    this.#recent = [windowId, ...this.#recent.filter((id) => id !== windowId)];
   }
 
   /** Live windows, most recently focused first. */
@@ -144,7 +151,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
    * window, the window that sent a request) when that is a file manager
    * window, else the most recent one.
    */
-  target(window?: { readonly id: number } | null): FileManagerWindowEntry<W, Location> | null {
+  target(window?: WindowReference | null): FileManagerWindowEntry<W, Location> | null {
     return this.entry(window) ?? this.mostRecent();
   }
 
@@ -177,7 +184,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
   }
 
   /** A renderer sends only what changed; a key it leaves out keeps its value. */
-  updateMenuState(window: { readonly id: number } | null | undefined, value: unknown): WindowMenuState | null {
+  updateMenuState(window: WindowReference | null | undefined, value: unknown): WindowMenuState | null {
     const entry = this.entry(window);
     if (!entry) return null;
     const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
@@ -191,7 +198,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
   }
 
   /** Hands a location to a window; its renderer takes it when it is ready (or now, when it already is). */
-  handOpenLocation(window: { readonly id: number } | null | undefined, request: OpenLocationRequest<Location>): boolean {
+  handOpenLocation(window: WindowReference | null | undefined, request: OpenLocationRequest<Location>): boolean {
     const entry = this.entry(window);
     if (!entry) return false;
     entry.pendingOpenLocation = request;
@@ -199,7 +206,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
   }
 
   /** The window's renderer takes the location handed to it, once. */
-  takeOpenLocation(window: { readonly id: number } | null | undefined): OpenLocationRequest<Location> | null {
+  takeOpenLocation(window: WindowReference | null | undefined): OpenLocationRequest<Location> | null {
     const entry = this.entry(window);
     if (!entry) return null;
     const request = entry.pendingOpenLocation;
@@ -208,7 +215,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
   }
 
   /** The renderer showed the location sent to it; nothing is left to take. */
-  acknowledgeOpenLocation(window: { readonly id: number } | null | undefined, token: unknown): void {
+  acknowledgeOpenLocation(window: WindowReference | null | undefined, token: unknown): void {
     const entry = this.entry(window);
     if (entry && typeof token === "string" && entry.pendingOpenLocation?.token === token) entry.pendingOpenLocation = null;
   }

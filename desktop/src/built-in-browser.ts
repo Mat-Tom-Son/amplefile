@@ -242,9 +242,9 @@ export class BuiltInBrowser {
   }
 
   /** The placeholder went away (its tab closed or the window reloaded); the page keeps running. */
-  detach(pageId: string): void {
+  detach(pageId: string, window: BrowserWindow): void {
     const page = this.#pages.get(pageId);
-    if (!page) return;
+    if (!page || this.#home(page) !== window) return;
     page.layout = null;
     this.#hide(page);
   }
@@ -258,10 +258,11 @@ export class BuiltInBrowser {
     return this.#state(existing);
   }
 
-  command(pageId: string, command: BrowserCommand): void {
+  command(pageId: string, command: BrowserCommand, window?: BrowserWindow): void {
     const page = this.#pages.get(pageId);
-    if (!page) return;
+    if (!page || page.closed || (window && this.#home(page) !== window)) return;
     const contents = page.view.webContents;
+    if (contents.isDestroyed()) return;
     switch (command.type) {
       case "back": if (contents.navigationHistory.canGoBack()) this.#leave(page, "person", () => contents.navigationHistory.goBack()); break;
       case "forward": if (contents.navigationHistory.canGoForward()) this.#leave(page, "person", () => contents.navigationHistory.goForward()); break;
@@ -379,9 +380,10 @@ export class BuiltInBrowser {
   }
 
   /** The person closed the tab. A page that asks to be confirmed first gets to ask; any other closes at once. */
-  close(pageId: string): void {
+  close(pageId: string, window?: BrowserWindow): void {
     const page = this.#pages.get(pageId);
-    this.#forgetListedTab(pageId);
+    if (page && window && this.#home(page) !== window) return;
+    this.#forgetListedTab(pageId, window);
     if (!page || page.closed) return;
     const contents = page.view.webContents;
     if (contents.isDestroyed() || page.crashed) { this.#destroy(page); return; }
@@ -471,8 +473,7 @@ export class BuiltInBrowser {
   detachWindow(window: BrowserWindow): void {
     for (const page of this.#pages.values()) {
       if (page.attachedTo !== window) continue;
-      if (!window.isDestroyed()) window.contentView.removeChildView(page.view);
-      page.attachedTo = null;
+      this.#hide(page);
       page.layout = null;
     }
   }
@@ -484,12 +485,15 @@ export class BuiltInBrowser {
    * the window; with none open, every page keeps running unseen and joins the
    * next window.
    */
-  windowClosed(window: BrowserWindow): void {
-    this.#synced.delete(window.id);
+  windowClosed(window: BrowserWindow, windowId?: number): void {
+    if (windowId !== undefined) this.#synced.delete(windowId);
+    else {
+      for (const [id, entry] of this.#synced) if (entry.window === window) this.#synced.delete(id);
+    }
     const others = this.#options.windows().filter((other) => other !== window && !other.isDestroyed());
     for (const page of [...this.#pages.values()]) {
       if (page.closed || page.home !== window) continue;
-      if (page.attachedTo === window) page.attachedTo = null;
+      if (page.attachedTo === window) this.#hide(page);
       page.layout = null;
       const fate = pageFateOnWindowClose({ openedBy: page.openedBy, workerUsing: page.worker !== null || page.agentActs > 0 }, others.length);
       if (fate === "close") {
@@ -663,19 +667,8 @@ export class BuiltInBrowser {
     contents.setWindowOpenHandler((details) => this.#windowOpen(page, details));
     contents.on("did-create-window", (window) => this.#configurePopup(window, page));
     contents.on("destroyed", () => {
-      this.#dropPermissions(page);
-      if (this.#pages.get(page.pageId) !== page) return;
-      this.#pages.delete(page.pageId);
-      if (!page.closed) {
-        // The page closed on its own or was let go by the person's Close Tab: what #destroy tidies is tidied here.
-        if (page.debuggerIdle) clearTimeout(page.debuggerIdle);
-        if (page.workerLinger) clearTimeout(page.workerLinger);
-        const window = this.#home(page);
-        if (page.fullscreen?.restoreWindowFullScreen && window && window.isFullScreen()) window.setFullScreen(false);
-        page.fullscreen = null;
-        page.closed = true;
-        this.#send(page, browserChannels.closeTab, { pageId: page.pageId });
-      }
+      // The page itself, the Worker, and Electron can all close a view.
+      if (this.#pages.get(page.pageId) === page) this.#destroy(page);
     });
   }
 
@@ -812,13 +805,13 @@ export class BuiltInBrowser {
     if (page.workerLinger) clearTimeout(page.workerLinger);
     this.#pages.delete(page.pageId);
     if (page.fullscreen) this.#leaveFullScreen(page);
-    // During quit Electron may already have torn the view down.
+    this.#hide(page);
     const contents = page.view.webContents as WebContents | undefined;
-    if (contents && !contents.isDestroyed()) {
-      this.#hide(page);
-      contents.close({ waitForBeforeUnload: false });
+    if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
+    if (options.announce !== false) {
+      this.#forgetListedTab(page.pageId);
+      this.#send(page, browserChannels.closeTab, { pageId: page.pageId });
     }
-    if (options.announce !== false) this.#send(page, browserChannels.closeTab, { pageId: page.pageId });
   }
 
   // ── Layout ────────────────────────────────────────────────────────────────
@@ -831,10 +824,7 @@ export class BuiltInBrowser {
 
   #applyLayout(page: BrowserPage): void {
     const window = this.#home(page);
-    if (page.attachedTo && page.attachedTo !== window) {
-      if (!page.attachedTo.isDestroyed()) page.attachedTo.contentView.removeChildView(page.view);
-      page.attachedTo = null;
-    }
+    if (page.attachedTo && page.attachedTo !== window) this.#hide(page);
     const layout = page.layout;
     if (!window || window.isDestroyed() || !layout || page.view.webContents.isDestroyed()) {
       this.#hide(page);
@@ -859,16 +849,20 @@ export class BuiltInBrowser {
   }
 
   #hide(page: BrowserPage): void {
+    const window = this.#live(page.attachedTo);
     if (page.attachedTo) this.#bubble.hide();
-    // A page that leaves the window while it has the keyboard would take the keyboard with it. The window is told,
-    // so it puts the keyboard on the tab in front and never in a field the person was typing in before.
-    if (page.attachedTo && !page.view.webContents.isDestroyed() && page.view.webContents.isFocused()) {
+    const contents = page.view.webContents as WebContents | undefined;
+    const liveContents = contents && !contents.isDestroyed() ? contents : null;
+    // Once Electron destroys the page, the containing window may still be
+    // key with no focused renderer. Return the keyboard when that happens.
+    if (window && (liveContents ? liveContents.isFocused() : BrowserWindow.getFocusedWindow() === window
+      && !window.webContents.isDestroyed() && !window.webContents.isFocused())) {
       const returned: BrowserShortcut = { pageId: page.pageId, key: "KeyboardReturned", code: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false };
-      this.#send(page, browserChannels.shortcut, returned);
+      this.#options.send(window, browserChannels.shortcut, returned);
       this.#focusWindow(page);
     }
-    page.view.setVisible(false);
-    if (page.attachedTo && !page.attachedTo.isDestroyed()) page.attachedTo.contentView.removeChildView(page.view);
+    if (liveContents) page.view.setVisible(false);
+    window?.contentView.removeChildView(page.view);
     page.attachedTo = null;
   }
 
@@ -980,19 +974,21 @@ export class BuiltInBrowser {
 
   /** A window shows the page now; the window that had it drops its tab. */
   #rehome(page: BrowserPage, window: BrowserWindow): void {
+    if (page.home === window) return;
     const previous = this.#home(page);
+    this.#hide(page);
     page.home = window;
-    if (!previous || previous === window) return;
-    if (page.attachedTo === previous) this.#hide(page);
-    this.#options.send(previous, browserChannels.closeTab, { pageId: page.pageId });
+    page.layout = null;
+    if (previous) this.#options.send(previous, browserChannels.closeTab, { pageId: page.pageId });
   }
 
   #listedIn(window: BrowserWindow | null, pageId: string): boolean {
     return Boolean(window && this.#synced.get(window.id)?.tabs.tabs.some((tab) => tab.pageId === pageId));
   }
 
-  #forgetListedTab(pageId: string): void {
+  #forgetListedTab(pageId: string, window?: BrowserWindow): void {
     for (const entry of this.#synced.values()) {
+      if (window && entry.window !== window) continue;
       entry.tabs = { ...entry.tabs, tabs: entry.tabs.tabs.filter((tab) => tab.pageId !== pageId) };
     }
   }
@@ -1001,8 +997,9 @@ export class BuiltInBrowser {
   #listedTabs(): Array<{ window: BrowserWindow; tab: BrowserTabsSync["tabs"][number] }> {
     const result: Array<{ window: BrowserWindow; tab: BrowserTabsSync["tabs"][number] }> = [];
     for (const window of this.#options.windows()) {
+      if (window.isDestroyed()) continue;
       const entry = this.#synced.get(window.id);
-      if (!entry || window.isDestroyed()) continue;
+      if (!entry) continue;
       for (const tab of entry.tabs.tabs) result.push({ window, tab });
     }
     return result;
@@ -1022,12 +1019,12 @@ export class BuiltInBrowser {
     let favicon: string | null = null;
     if (url && /^(https?|data):/i.test(url)) {
       try {
-        favicon = url.startsWith("data:") ? (url.length <= 200_000 && /^data:image\//i.test(url) ? url : null) : await this.#fetchImage(url);
+        favicon = /^data:/i.test(url) ? (url.length <= 200_000 && /^data:image\//i.test(url) ? url : null) : await this.#fetchImage(url);
       } catch {
         favicon = null;
       }
     }
-    if (page.faviconUrl !== url) return;
+    if (page.closed || page.faviconUrl !== url) return;
     page.favicon = favicon;
     this.#emit(page);
   }
@@ -1035,10 +1032,32 @@ export class BuiltInBrowser {
   async #fetchImage(url: string): Promise<string | null> {
     const response = await this.session.fetch(url, { signal: AbortSignal.timeout(8_000) });
     const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
-    if (!response.ok || !type.startsWith("image/")) return null;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > 150_000) return null;
-    return `data:${type};base64,${bytes.toString("base64")}`;
+    const maxBytes = 150_000;
+    const body = response.body;
+    if (!body) return null;
+    if (!response.ok || !type.startsWith("image/") || Number(response.headers.get("content-length")) > maxBytes) {
+      void body.cancel().catch(() => {});
+      return null;
+    }
+
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > maxBytes) {
+          void reader.cancel().catch(() => {});
+          return null;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return length ? `data:${type};base64,${Buffer.concat(chunks, length).toString("base64")}` : null;
   }
 
   // ── Session ───────────────────────────────────────────────────────────────
@@ -1714,6 +1733,7 @@ export class BuiltInBrowser {
         await this.#debugger(page);
         for (;;) {
           signal?.throwIfAborted();
+          if (page.closed || contents.isDestroyed()) throw new Error("That browser tab closed.");
           if (needle) {
             const body = await contents.executeJavaScriptInIsolatedWorld(isolatedWorldId, [{ code: "document.body ? document.body.innerText : ''" }]).catch(() => "");
             if (typeof body === "string" && body.toLowerCase().includes(needle)) return { tab: this.#summary(page), found: true };

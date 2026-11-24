@@ -302,12 +302,15 @@ export class DesktopUpdater {
   }
 
   shouldInstallOnQuit(): boolean {
-    return this.supported && this.installOnQuit && this.status.phase === "ready";
+    return this.supported && !this.disposed && this.installOnQuit && this.status.phase === "ready";
   }
 
-  installDownloadedUpdateOnQuit(): Promise<DesktopUpdateStatus> {
-    if (!this.shouldInstallOnQuit()) return Promise.resolve(this.getStatus());
-    return this.beginInstall({ forceRunAfter: false });
+  /** Wait for any install already underway, or start one the person deferred until quit. */
+  async prepareForApplicationQuit(): Promise<boolean> {
+    if (this.disposed) return false;
+    if (this.installPromise) await this.installPromise;
+    else if (this.shouldInstallOnQuit()) await this.beginInstall({ forceRunAfter: false });
+    return !this.disposed && this.installStage === "handed_off";
   }
 
   dispose(): void {
@@ -374,8 +377,9 @@ export class DesktopUpdater {
    * failure after it can only relaunch or quit, never report "ready".
    */
   private beginInstall(options: { forceRunAfter: boolean }): Promise<DesktopUpdateStatus> {
-    if (!this.supported || this.disposed || this.status.phase !== "ready") return Promise.resolve(this.getStatus());
+    if (!this.supported || this.disposed) return Promise.resolve(this.getStatus());
     if (this.installPromise) return this.installPromise;
+    if (this.status.phase !== "ready") return Promise.resolve(this.getStatus());
 
     const installerPath = this.downloadedInstallerPath();
     if (!hasDownloadedUpdatePayload({
@@ -398,33 +402,35 @@ export class DesktopUpdater {
 
     this.installOnQuit = false;
     this.installRelaunches = options.forceRunAfter;
+    this.installPromise = Promise.resolve().then(async () => {
+      if (this.disposed) return this.getStatus();
+      if (!this.downloadedUpdateStaged && this.host.stageDownloadedUpdate) {
+        this.installStage = "staging";
+        try {
+          await this.host.stageDownloadedUpdate(options.forceRunAfter ? this.stageTimeoutMs : this.quitStageTimeoutMs);
+          if (this.disposed) return this.getStatus();
+          this.downloadedUpdateStaged = true;
+        } catch (error) {
+          return this.disposed ? this.getStatus() : this.failBeforeShutdown(error);
+        }
+      }
+      this.installStage = "shutting_down";
+      try {
+        await this.prepareToInstall();
+        if (this.disposed || this.installStage !== "shutting_down") return this.getStatus();
+        this.installStage = "handed_off";
+        this.updater.quitAndInstall(true, options.forceRunAfter);
+      } catch (error) {
+        if (!this.disposed) this.failAfterShutdown(errorMessage(error));
+      }
+      return this.getStatus();
+    });
     this.setStatus({
       phase: "installing",
       progressPercent: 100,
       message: options.forceRunAfter ? "Restarting to install update..." : "Installing update...",
       error: null,
     });
-    this.installPromise = (async () => {
-      if (!this.downloadedUpdateStaged && this.host.stageDownloadedUpdate) {
-        this.installStage = "staging";
-        try {
-          await this.host.stageDownloadedUpdate(options.forceRunAfter ? this.stageTimeoutMs : this.quitStageTimeoutMs);
-          this.downloadedUpdateStaged = true;
-        } catch (error) {
-          return this.failBeforeShutdown(error);
-        }
-      }
-      this.installStage = "shutting_down";
-      try {
-        await this.prepareToInstall();
-        if (this.installStage !== "shutting_down") return this.getStatus();
-        this.installStage = "handed_off";
-        this.updater.quitAndInstall(true, options.forceRunAfter);
-      } catch (error) {
-        this.failAfterShutdown(errorMessage(error));
-      }
-      return this.getStatus();
-    })();
     return this.installPromise;
   }
 

@@ -211,6 +211,59 @@ test("macOS installs after update-downloaded without a Windows installer path", 
   updater.dispose();
 });
 
+test("ordinary quit waits for the install already staging before deciding who owns shutdown", async () => {
+  for (const stagingError of [null, new Error("Could not stage the update")]) {
+    const { adapter, host, updater, prepareCalls } = createHarness({ platform: "darwin" });
+    const stage = Promise.withResolvers<void>();
+    host.stageDownloadedUpdate = () => stage.promise;
+    adapter.emit("update-downloaded", { version: "1.1.0" });
+    await nextTurn();
+
+    const installing = updater.install();
+    let quitOutcome: boolean | undefined;
+    const quitting = updater.prepareForApplicationQuit().then((outcome) => { quitOutcome = outcome; });
+    await nextTurn();
+    assert.equal(quitOutcome, undefined, "Quit is still waiting for staging");
+    assert.equal(prepareCalls(), 0);
+    assert.equal(adapter.quitCalls.length, 0);
+
+    if (stagingError) stage.reject(stagingError);
+    else stage.resolve();
+    await Promise.all([installing, quitting]);
+    assert.equal(quitOutcome, !stagingError);
+    assert.equal(prepareCalls(), stagingError ? 0 : 1);
+    assert.deepEqual(adapter.quitCalls, stagingError ? [] : [{ silent: true, forceRunAfter: true }]);
+    updater.dispose();
+  }
+});
+
+test("disposing while staging or shutting down prevents the install from handing off", async () => {
+  for (const waitingOn of ["staging", "shutdown"]) {
+    const wait = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const pauseInstall = () => {
+      started.resolve();
+      return wait.promise;
+    };
+    const { adapter, host, updater, prepareCalls } = createHarness({
+      platform: "darwin",
+      ...(waitingOn === "shutdown" ? { prepare: pauseInstall } : {}),
+    });
+    if (waitingOn === "staging") host.stageDownloadedUpdate = pauseInstall;
+    adapter.emit("update-downloaded", { version: "1.1.0" });
+    await nextTurn();
+
+    const installing = updater.install();
+    await started.promise;
+    updater.dispose();
+    wait.resolve();
+    await installing;
+    assert.equal(await updater.prepareForApplicationQuit(), false);
+    assert.equal(prepareCalls(), 0);
+    assert.deepEqual(adapter.quitCalls, []);
+  }
+});
+
 test("a quitAndInstall failure after shutdown never reports ready and asks the host to relaunch", async () => {
   const { adapter, updater, prepareCalls, failures } = createHarness();
   adapter.quitError = new Error("installer launch failed");
@@ -303,9 +356,9 @@ test("install-on-quit stages, runs the update shutdown once, and does not force 
   adapter.emit("update-downloaded", { version: "1.1.0" });
   await nextTurn();
 
-  const status = await updater.installDownloadedUpdateOnQuit();
+  assert.equal(await updater.prepareForApplicationQuit(), true);
 
-  assert.equal(status.phase, "installing");
+  assert.equal(updater.getStatus().phase, "installing");
   assert.equal(prepareCalls(), 1);
   assert.deepEqual(host.events, ["stage", "shutdown"]);
   assert.deepEqual(adapter.quitCalls, [{ silent: true, forceRunAfter: false }]);
@@ -369,7 +422,7 @@ test("install on quit stages with a short timeout and Restart with the long one"
   const quit = createHarness({ platform: "darwin" });
   quit.adapter.emit("update-downloaded", { version: "1.1.0" });
   await nextTurn();
-  await quit.updater.installDownloadedUpdateOnQuit();
+  assert.equal(await quit.updater.prepareForApplicationQuit(), true);
   assert.deepEqual(quit.host.stageTimeouts, [60_000]);
   quit.updater.dispose();
 
@@ -387,9 +440,10 @@ test("a staging timeout says the update may still install on a later quit", asyn
   adapter.emit("update-downloaded", { version: "1.1.0" });
   await nextTurn();
 
-  const status = await updater.installDownloadedUpdateOnQuit();
+  assert.equal(await updater.prepareForApplicationQuit(), false);
 
   assert.equal(prepareCalls(), 0, "the ordinary quit continues instead");
+  const status = updater.getStatus();
   assert.equal(status.phase, "error");
   assert.match(status.message, /took too long/);
   assert.match(status.message, /may still .* install it the next time AmpleFile quits/);

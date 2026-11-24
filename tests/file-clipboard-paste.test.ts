@@ -126,6 +126,7 @@ test("the deepest Connected Folder names a file; its own folder is not inside it
   assert.deepEqual(placeSourceForPath("/home/ana/Notes/Ideas/one.md", [notes, nested]), { place: { kind: "connected-folder", id: nested.id }, path: "one.md" });
   assert.deepEqual(placeSourceForPath("/home/ana/Notes", [notes]), { place: { kind: "standard", id: "computer" }, path: "home/ana/Notes" });
   assert.deepEqual(placeSourceForPath("/home/ana/Notes-old/x", [notes]), { place: { kind: "standard", id: "computer" }, path: "home/ana/Notes-old/x" });
+  assert.deepEqual(placeSourceForPath("/home/ana/Notes/..drafts/one.md", [notes]), { place: { kind: "connected-folder", id: notes.id }, path: "..drafts/one.md" });
 });
 
 test("the pasteboard holds exactly these files, or exactly a Cut with its token", () => {

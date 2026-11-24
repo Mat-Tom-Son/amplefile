@@ -203,7 +203,7 @@ function decodeXmlText(value: string): string {
 
 function inside(root: string, path: string): boolean {
   const from = relative(root, path);
-  return Boolean(from) && !from.startsWith("..") && !isAbsolute(from);
+  return Boolean(from) && from !== ".." && !from.startsWith(`..${sep}`) && !isAbsolute(from);
 }
 
 function sameSet(first: readonly string[], second: readonly string[]): boolean {

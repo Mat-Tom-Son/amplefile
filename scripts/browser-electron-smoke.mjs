@@ -417,28 +417,102 @@ async function run() {
     assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "another window does not list it");
     browser.layout({ pageId: "persons1", url: `${base}/two`, sequence: 1, bounds: { x: 10, y: 10, width: 400, height: 300 }, active: true, occluded: false }, window);
     assert.equal(window.contentView.children.length, 0, "another window cannot lay it out");
+    // A tab moving to a new window uses that window's sequence and only it can operate the page.
+    const bounds = { x: 10, y: 10, width: 400, height: 300 };
+    const request = { pageId: "persons1", url: `${base}/two`, sequence: 100, bounds, active: true, occluded: false };
+    browser.mount(request, otherWindow);
+    const movedView = otherWindow.contentView.children[0];
+    assert.ok(movedView);
+    browser.mount({ ...request, sequence: 1 }, window);
+    assert.equal(otherWindow.contentView.children.length, 0);
+    assert.equal(window.contentView.children[0], movedView, "the new window lays it out with its own sequence");
+    browser.detach("persons1", otherWindow);
+    browser.command("persons1", { type: "mute", muted: true }, otherWindow);
+    browser.close("persons1", otherWindow);
+    assert.equal(window.contentView.children[0], movedView, "the old window cannot detach the new window's view");
+    assert.equal(movedView.webContents.isAudioMuted(), false);
+    browser.command("persons1", { type: "mute", muted: true }, window);
+    assert.equal(movedView.webContents.isAudioMuted(), true, "the new window controls its page");
+
+    const movedContents = movedView.webContents;
+    const icon = "DATA:image/png;base64,AA==";
+    const favicon = () => browser.states(window).find((state) => state.pageId === "persons1")?.favicon;
+    movedContents.emit("page-favicon-updated", {}, [icon]);
+    assert.equal(favicon(), icon, "an uppercase data scheme is handled as an inline favicon");
+    const fetchImage = browser.session.fetch;
+    try {
+      const cancelled = [];
+      for (const declaredLength of [150_001, null]) {
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(100_000));
+            controller.enqueue(new Uint8Array(50_001));
+          },
+          cancel() { cancelled.push(declaredLength); },
+        });
+        const headers = { "content-type": "image/png", ...(declaredLength ? { "content-length": String(declaredLength) } : {}) };
+        browser.session.fetch = async () => new Response(stream, { headers });
+        movedContents.emit("page-favicon-updated", {}, [`${base}/icon-${declaredLength}.png`]);
+        await until(() => cancelled.includes(declaredLength), "an oversized favicon stream is cancelled");
+        await until(() => favicon() === null, "an oversized favicon is dropped");
+      }
+    } finally {
+      browser.session.fetch = fetchImage;
+    }
+
+    // A page closed by Electron detaches its native view and stops a Worker's polling.
+    const poll = Promise.withResolvers();
+    const execute = movedContents.executeJavaScriptInIsolatedWorld.bind(movedContents);
+    movedContents.executeJavaScriptInIsolatedWorld = (...args) => {
+      const result = execute(...args);
+      poll.resolve();
+      return result;
+    };
+    const waitingOnClosedPage = assert.rejects(host.wait({ tab: "persons1", text: "Never arrives", seconds: 30 }), /That browser tab closed/);
+    await poll.promise;
+    const focused = BrowserWindow.getFocusedWindow;
+    const rendererFocused = window.webContents.isFocused;
+    try {
+      BrowserWindow.getFocusedWindow = () => window;
+      window.webContents.isFocused = () => false;
+      movedContents.close();
+      await until(() => !window.contentView.children.includes(movedView), "closing a page removes its attached view");
+      assert.ok(events.some((event) => event.window === window && event.payload.pageId === "persons1" && event.payload.key === "KeyboardReturned"));
+      assert.ok(events.some((event) => event.window === window && event.payload.pageId === "persons1" && event.channel === "amplefile:browser:close-tab"));
+    } finally {
+      BrowserWindow.getFocusedWindow = focused;
+      window.webContents.isFocused = rendererFocused;
+    }
+    await waitingOnClosedPage;
+    assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"));
+
+    browser.navigate("persons2", `${base}/two`, otherWindow);
+    browser.sync({ tabs: [{ pageId: "persons2", url: `${base}/two`, title: "Two" }], viewingPageId: null }, otherWindow);
     // A Worker's page appears in the window showing that Worker's Connected Folder.
     workerWindow = (owner) => owner?.startsWith("folder-b/") ? otherWindow : windows()[0] ?? null;
     const folderTab = await host.open({ url: `${base}/`, owner: "folder-b/chat-1" });
     assert.equal(events.find((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab)?.window, otherWindow);
     // One of several windows closes: the Worker's page moves to another window as a background tab and keeps
     // working; the person's own tab closes with its window.
-    windowList = [window];
-    browser.windowClosed(otherWindow);
+    const otherWindowId = otherWindow.id;
     otherWindow.destroy();
+    await host.tabs(); // The window list can still contain the destroyed native object.
+    windowList = [window];
+    browser.windowClosed(otherWindow, otherWindowId);
     const movedTab = events.filter((event) => event.channel === "amplefile:browser:open-tab" && event.payload.pageId === folderTab.tab).at(-1);
     assert.equal(movedTab?.window, window, "the Worker's page moves to the window still open");
     assert.equal(movedTab?.payload.show, false);
     assert.ok(browser.states(window).some((state) => state.pageId === folderTab.tab));
     assert.equal((await host.read({ tab: folderTab.tab, mode: "text" })).tab.title, "Smoke", "the Worker's page still works");
-    assert.ok(!browser.states(window).some((state) => state.pageId === "persons1"), "the person's tab closed with its window");
+    assert.ok(!browser.states(window).some((state) => state.pageId === "persons2"), "the person's tab closed with its window");
     // The last window closes: every page keeps running unseen, and the next window to start takes it.
     const third = new BrowserWindow({ show: true, x: -4000, y: -4000, width: 1000, height: 700, focusable: false, skipTaskbar: true });
     windowList = [third];
     browser.navigate("lastwin1", `${base}/two`, third);
+    browser.sync({ tabs: [{ pageId: "lastwin1", url: `${base}/two`, title: "Two" }], viewingPageId: null }, third);
     windowList = [];
-    browser.windowClosed(third);
     third.destroy();
+    browser.windowClosed(third);
     windowList = [window];
     assert.ok(browser.states(window).some((state) => state.pageId === "lastwin1"), "a page outlives the last window and joins the next one");
     browser.close("lastwin1");

@@ -217,6 +217,8 @@ let windowPlacements: WindowPlacement[] | null = null;
 let builtInBrowser: BuiltInBrowser | null = null;
 let tray: Tray | null = null;
 let ampleFileAgentPopover: AmpleFileAgentPopover | null = null;
+let ampleFileAgentPopoverPromise: Promise<AmpleFileAgentPopover | null> | null = null;
+let trayWarmupTimer: NodeJS.Timeout | null = null;
 let modelContextWindow: ModelContextWindow | null = null;
 const localApiLifetime = new AppLifetimeResource<Awaited<ReturnType<typeof startLocalApi>>>();
 let piRuntime: PackagedPiRuntimeProvider | null = null;
@@ -394,13 +396,9 @@ app.on("before-quit", (event) => {
 
 async function prepareForApplicationQuit(): Promise<QuitPreparationOutcome> {
   destroyTray();
-  if (desktopUpdater?.shouldInstallOnQuit()) {
-    // The updater stages and validates the payload first, then runs the
-    // update shutdown, then hands off. If staging fails nothing has shut down
-    // yet and the ordinary quit below continues; `shutdown()` is idempotent.
-    const status = await desktopUpdater.installDownloadedUpdateOnQuit();
-    if (status.phase === "installing") return "handoff";
-  }
+  // An explicit restart may already be staging the update. Let that install
+  // finish preparing and hand off before deciding whether to quit normally.
+  if (await desktopUpdater?.prepareForApplicationQuit()) return "handoff";
   await shutdown();
   desktopUpdater?.dispose();
   desktopUpdater = null;
@@ -764,7 +762,7 @@ async function createFileManagerWindow(options: FileManagerWindowOptions = {}): 
     const endingApp = quitting || quittingForUpdate;
     // One of several windows closed: it is forgotten. The last one keeps its place, and Quit keeps them all.
     storeWindowPlacements(placementsAfterClose(currentWindowPlacements(), slot, { quitting: endingApp, othersOpen }));
-    if (!endingApp) builtInBrowser?.windowClosed(window);
+    if (!endingApp) builtInBrowser?.windowClosed(window, windowId);
     refreshApplicationMenuState();
     if (othersOpen > 0) return;
     if (process.platform !== "darwin" && !endingApp) app.quit();
@@ -846,9 +844,7 @@ function registerIpc(): void {
     if (modelContextWindow?.owns(event.sender)) modelContextWindow.assertSender(event);
     else {
       assertTrustedRenderer(event);
-      const frame = event.senderFrame;
-      const mainFrame = event.sender.mainFrame;
-      if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+      if (!senderIsMainFrame(event)) {
         throw new Error("Clipboard requests require a trusted main frame.");
       }
     }
@@ -1186,14 +1182,12 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return fileManagerWindows.takeOpenLocation(senderWindow(event));
   });
-  ipcMain.on("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:file-manager:ack-open-location", (event, value: unknown) => {
     fileManagerWindows.acknowledgeOpenLocation(senderWindow(event), value);
   });
   // Windows (docs/product-model.md, "Windows"): where this window is, so New Window opens there; and a new window, at a
   // folder the renderer names (Open in New Window in its menus) or where this one is.
-  ipcMain.on("amplefile:window:set-location", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:set-location", (event, value: unknown) => {
     const entry = fileManagerWindows.entry(senderWindow(event));
     if (entry) entry.location = parseWindowLocation(value);
   });
@@ -1226,10 +1220,9 @@ function registerIpc(): void {
     await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }]);
     return true;
   });
-  ipcMain.on("amplefile:agent:hide", (event) => {
-    assertMainOrAgentPopoverRenderer(event);
+  onRendererMessage("amplefile:agent:hide", () => {
     ampleFileAgentPopover?.hide();
-  });
+  }, assertMainOrAgentPopoverRenderer);
   ipcMain.handle("amplefile:agent:open-main", (event) => {
     assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
@@ -1257,8 +1250,7 @@ function registerIpc(): void {
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
-  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:set-theme", (_event, value: unknown, source: unknown) => {
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
@@ -1273,15 +1265,13 @@ function registerIpc(): void {
       }
     }
   });
-  ipcMain.on("amplefile:window:control", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:control", (event, value: unknown) => {
     const window = senderWindow(event);
     if (!window || window.isDestroyed()) return;
     // Closing the last folder tab closes that window on every platform, through the window's own close rules.
     if (value === "close") window.close();
   });
-  ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:menu:set-state", (event, value: unknown) => {
     // Each window keeps its own; the application menu shows the front window's.
     const updated = senderWindow(event);
     if (updated) fileManagerWindows.updateMenuState(updated, value);
@@ -1324,34 +1314,23 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
   });
-  ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.show(value);
-    } catch (error) {
-      console.warn(`${productName} could not show a rail tooltip: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
+    railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.show(value);
   });
-  ipcMain.on("amplefile:window:rail-tooltip-hide", (event) => {
-    assertTrustedMainRenderer(event);
+  onRendererMessage("amplefile:window:rail-tooltip-hide", (event) => {
     railTooltipOverlays.get(senderWindow(event)?.id ?? -1)?.hide();
   });
   ipcMain.handle("amplefile:browser:mount", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().mount(parseBrowserViewRequest(value), requireSenderWindow(event));
   });
-  ipcMain.on("amplefile:browser:layout", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      ensureBuiltInBrowser().layout(parseBrowserViewRequest(value), requireSenderWindow(event));
-    } catch (error) {
-      console.warn(`${productName} could not lay out a browser tab: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:browser:layout", (event, value: unknown) => {
+    ensureBuiltInBrowser().layout(parseBrowserViewRequest(value), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:unmount", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().detach(pageId);
+    ensureBuiltInBrowser().detach(pageId, requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:navigate", (event, pageId: unknown, address: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1362,7 +1341,7 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:browser:command", (event, pageId: unknown, command: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().command(pageId, parseBrowserCommand(command));
+    ensureBuiltInBrowser().command(pageId, parseBrowserCommand(command), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:respond-permission", (event, pageId: unknown, requestId: unknown, decision: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1374,15 +1353,10 @@ function registerIpc(): void {
   ipcMain.handle("amplefile:browser:close", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
-    ensureBuiltInBrowser().close(pageId);
+    ensureBuiltInBrowser().close(pageId, requireSenderWindow(event));
   });
-  ipcMain.on("amplefile:browser:sync", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    try {
-      ensureBuiltInBrowser().sync(parseBrowserTabsSync(value), requireSenderWindow(event));
-    } catch (error) {
-      console.warn(`${productName} could not read the browser tab list: ${errorMessage(error)}`);
-    }
+  onRendererMessage("amplefile:browser:sync", (event, value: unknown) => {
+    ensureBuiltInBrowser().sync(parseBrowserTabsSync(value), requireSenderWindow(event));
   });
   ipcMain.handle("amplefile:browser:states", (event) => {
     assertTrustedMainRenderer(event);
@@ -2348,6 +2322,7 @@ function frontWindow(): BrowserWindow | null {
 
 /** The file manager window an IPC request came from, or null for any other sender. */
 function senderWindow(event: IpcMainInvokeEvent | IpcMainEvent): BrowserWindow | null {
+  if (event.sender.isDestroyed()) return null;
   const window = BrowserWindow.fromWebContents(event.sender);
   const entry = fileManagerWindows.entry(window);
   return entry && entry.window.webContents === event.sender ? entry.window : null;
@@ -2429,7 +2404,7 @@ function updateDesktopPreferences(update: Partial<DesktopPreferences>): void {
 }
 
 function createTrayIfSupported(): void {
-  if (tray || (process.platform !== "win32" && process.platform !== "darwin")) return;
+  if (tray || quitting || quittingForUpdate || (process.platform !== "win32" && process.platform !== "darwin")) return;
   const icon = resolveTrayIcon();
   if (!icon) {
     console.warn(`${productName} tray icon was not found; the ${process.platform === "darwin" ? "menu-bar" : "tray"} surface is unavailable.`);
@@ -2465,8 +2440,10 @@ function createTrayIfSupported(): void {
   updateTrayPulse();
   // Warm the hidden popover renderer off the startup critical path so the
   // first AmpleFile Agent summon paints the ready surface immediately.
-  setTimeout(() => {
-    void ensureAmpleFileAgentPopover().then((popover) => popover.warm()).catch(() => {});
+  trayWarmupTimer = setTimeout(() => {
+    trayWarmupTimer = null;
+    if (quitting || quittingForUpdate) return;
+    void ensureAmpleFileAgentPopover().then((popover) => popover?.warm()).catch(() => {});
   }, 2_500);
 }
 
@@ -2550,6 +2527,8 @@ function stopTrayPulse(): void {
 }
 
 function destroyTray(): void {
+  if (trayWarmupTimer) clearTimeout(trayWarmupTimer);
+  trayWarmupTimer = null;
   stopTrayPulse();
   tray?.destroy();
   tray = null;
@@ -2557,31 +2536,36 @@ function destroyTray(): void {
   ampleFileAgentPopover = null;
 }
 
-async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
+async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover | null> {
+  if (quitting || quittingForUpdate) return null;
   if (ampleFileAgentPopover) return ampleFileAgentPopover;
-  const api = await ensureInteractiveLocalApi();
-  ampleFileAgentPopover = new AmpleFileAgentPopover({
-    appProtocol,
-    preloadPath: resolveAmpleFileAgentPopoverPreloadPath(),
-    additionalArguments: [
-      ...productRendererArguments(),
-      rendererArgument("api-base-url", api.origin),
-      rendererArgument("app-version", applicationVersion),
-      rendererArgument("window-material", process.platform === "darwin" && macVibrancySupported ? "vibrancy" : "none"),
-    ],
-    backgroundColor: windowBackgroundColors[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
-    vibrancy: process.platform === "darwin" && macVibrancySupported,
-    devTools: !app.isPackaged,
-    configureNavigation: configureWindowNavigation,
-    onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
-  });
-  return ampleFileAgentPopover;
+  ampleFileAgentPopoverPromise ??= (async () => {
+    const api = await ensureInteractiveLocalApi();
+    if (quitting || quittingForUpdate) return null;
+    ampleFileAgentPopover = new AmpleFileAgentPopover({
+      appProtocol,
+      preloadPath: resolveAmpleFileAgentPopoverPreloadPath(),
+      additionalArguments: [
+        ...productRendererArguments(),
+        rendererArgument("api-base-url", api.origin),
+        rendererArgument("app-version", applicationVersion),
+        rendererArgument("window-material", process.platform === "darwin" && macVibrancySupported ? "vibrancy" : "none"),
+      ],
+      backgroundColor: windowBackgroundColors[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
+      vibrancy: process.platform === "darwin" && macVibrancySupported,
+      devTools: !app.isPackaged,
+      configureNavigation: configureWindowNavigation,
+      onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
+    });
+    return ampleFileAgentPopover;
+  })().finally(() => { ampleFileAgentPopoverPromise = null; });
+  return ampleFileAgentPopoverPromise;
 }
 
 async function toggleAmpleFileAgentPopover(): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.toggle(tray?.getBounds() ?? null);
+    if (!quitting && !quittingForUpdate) await popover?.toggle(tray?.getBounds() ?? null);
   } catch (error) {
     console.warn(`${productName} could not open the AmpleFile Agent popover: ${errorMessage(error)}`);
   }
@@ -2590,7 +2574,7 @@ async function toggleAmpleFileAgentPopover(): Promise<void> {
 async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[]): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
-    await popover.stage(items, tray?.getBounds() ?? null);
+    if (!quitting && !quittingForUpdate) await popover?.stage(items, tray?.getBounds() ?? null);
   } catch (error) {
     console.warn(`${productName} could not stage dropped material: ${errorMessage(error)}`);
   }
@@ -2848,9 +2832,37 @@ function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemC
   return template;
 }
 
+/** Asynchronous IPC has no rejection channel. A stale or untrusted sender must not throw into Electron. */
+function onRendererMessage<Args extends unknown[]>(
+  channel: string,
+  handle: (event: IpcMainEvent, ...args: Args) => void,
+  assertSender: (event: IpcMainEvent) => void = assertTrustedMainRenderer,
+): void {
+  ipcMain.on(channel, (event, ...args: Args) => {
+    try {
+      assertSender(event);
+      handle(event, ...args);
+    } catch (error) {
+      console.warn(`${productName} ignored ${channel}: ${errorMessage(error)}`);
+    }
+  });
+}
+
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  if (event.sender.isDestroyed()) throw new Error("The renderer is no longer available.");
   if (modelContextWindow?.owns(event.sender)) throw new Error("The developer inspector has diagnostics-only access.");
-  if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) throw new Error("Untrusted renderer IPC request.");
+  const frame = event.senderFrame;
+  if (!frame || frame.isDestroyed() || frame.detached || !isTrustedRendererUrl(frame.url)) {
+    throw new Error("Untrusted renderer IPC request.");
+  }
+}
+
+function senderIsMainFrame(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
+  if (event.sender.isDestroyed()) return false;
+  const frame = event.senderFrame;
+  const mainFrame = event.sender.mainFrame;
+  return Boolean(frame && mainFrame && !frame.isDestroyed() && !mainFrame.isDestroyed() && !frame.detached
+    && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
 }
 
 /**
@@ -2861,9 +2873,7 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
 function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   if (ampleFileAgentPopover?.owns(event.sender)) {
     assertTrustedRenderer(event);
-    const frame = event.senderFrame;
-    const mainFrame = event.sender.mainFrame;
-    if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+    if (!senderIsMainFrame(event)) {
       throw new Error("This request requires the AmpleFile Agent popover's main frame.");
     }
     return;
@@ -2873,9 +2883,7 @@ function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEve
 
 function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   assertTrustedRenderer(event);
-  const frame = event.senderFrame;
-  const mainFrame = event.sender.mainFrame;
-  const mainFrameMatches = Boolean(frame && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
+  const mainFrameMatches = senderIsMainFrame(event);
   // Any file manager window's own renderer, in its top frame; never the popover, a browser page, or a pop-up.
   if (!senderWindow(event) || !mainFrameMatches) {
     throw new Error("This request requires the main AmpleFile renderer.");
