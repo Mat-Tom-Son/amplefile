@@ -114,6 +114,7 @@ export function ChatPanel({
   targetConversationId = null,
   contextPathRequest,
   sendRequest = null,
+  onSendRequestConsumed,
   variant = "default",
   onAddPathToChatContext,
   onUploadDroppedFiles,
@@ -142,6 +143,7 @@ export function ChatPanel({
   contextPathRequest: ChatContextPathRequest | null;
   /** Sends at once with these references (the file manager's message box). */
   sendRequest?: ChatSendRequest | null;
+  onSendRequestConsumed?: (id: number) => void;
   /**
    * `panel`: the file manager's right panel (docs/product-model.md),
    * drawn as the design draws it. Its composer is Reply and Send
@@ -834,6 +836,7 @@ export function ChatPanel({
     const request = sendRequest;
     const timer = window.setTimeout(() => {
       handledSendRequestRef.current = request.id;
+      onSendRequestConsumed?.(request.id);
       void (async () => {
         const staged: ContextAttachment[] = [];
         for (const path of request.paths) {

@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { apiForm, errorText } from "../../lib/api";
 import { collectDroppedUploadFiles } from "../../lib/dropped-files";
@@ -9,7 +9,7 @@ import type { TreeEntry } from "../../types";
 import { canDropInto, dragPayload } from "./file-manager-layout";
 import { parentPath } from "./file-manager-model";
 import { placeKey, samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
-import { droppedInternalPaths, dropGoesNowhere, listDropTarget, type InternalDrag } from "./file-manager-drops";
+import { droppedInternalPaths, dropGoesNowhere, internalDragLifetimeMs, listDropTarget, type InternalDrag } from "./file-manager-drops";
 import { historyTurn, transferLabel } from "./file-manager-undo";
 import { desktopErrorText, internalDragType, type PlaceFileBridge } from "./file-manager-view-helpers";
 import { moveResultMessage } from "./move-result";
@@ -49,6 +49,26 @@ export function useFileDrops(context: FileDropsContext) {
   const [sidebarDrop, setSidebarDrop] = useState<string | null>(null);
   const [composerDrop, setComposerDrop] = useState(false);
 
+  // Electron's native drag can finish without a DOM dragend event.
+  useEffect(() => {
+    const clearInternalDrag = () => { internalDragRef.current = null; };
+    const clearOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") clearInternalDrag(); };
+    window.addEventListener("pointerdown", clearInternalDrag, true);
+    window.addEventListener("mousedown", clearInternalDrag, true);
+    window.addEventListener("keydown", clearOnEscape, true);
+    return () => {
+      window.removeEventListener("pointerdown", clearInternalDrag, true);
+      window.removeEventListener("mousedown", clearInternalDrag, true);
+      window.removeEventListener("keydown", clearOnEscape, true);
+    };
+  }, []);
+
+  function activeInternalDrag(now = Date.now()): InternalDrag | null {
+    const current = internalDragRef.current;
+    if (current && now - current.at > internalDragLifetimeMs) internalDragRef.current = null;
+    return internalDragRef.current;
+  }
+
   /**
    * A drag from the list: a selected item carries the whole selection, an
    * unselected one just itself, files and folders alike (never a link or a
@@ -62,17 +82,23 @@ export function useFileDrops(context: FileDropsContext) {
     if (!items.length) { event.preventDefault(); return; }
     if (!selected.has(entry.path)) select([entry.path]);
     const paths = items.map((item) => item.path);
-    internalDragRef.current = { place, paths, at: Date.now() };
+    const started = { place, paths, at: Date.now() };
+    internalDragRef.current = started;
+    const clearDrag = () => { if (internalDragRef.current === started) internalDragRef.current = null; };
     if (bridge && !fixtureMode) {
       event.preventDefault();
-      void bridge.drag(paths).catch((caught) => onError(desktopErrorText(errorText(caught))));
+      void bridge.drag(paths).then((didStart) => {
+        if (didStart === false) clearDrag();
+      }).catch((caught) => {
+        clearDrag();
+        onError(desktopErrorText(errorText(caught)));
+      });
       return;
     }
     event.dataTransfer.effectAllowed = "copyMove";
     event.dataTransfer.setData(internalDragType, JSON.stringify({ place, paths }));
     // A drag that ends anywhere else carries nothing into a later drop.
-    const started = internalDragRef.current;
-    window.addEventListener("dragend", () => window.setTimeout(() => { if (internalDragRef.current === started) internalDragRef.current = null; }, 0), { once: true });
+    window.addEventListener("dragend", () => window.setTimeout(clearDrag, 0), { once: true });
     event.dataTransfer.setData("text/plain", paths.map((path) => connectedFolderEntryNativePath(placeRoot, path)).join("\n"));
   }
 
@@ -89,33 +115,35 @@ export function useFileDrops(context: FileDropsContext) {
    * anything a Connected Folder owns inside a Standard Folder or an other
    * folder is refused there and changed through that Connected Folder.
    */
-  function dropTargetFor(event: DragEvent<HTMLElement>): string {
+  function dropTargetFor(event: DragEvent<HTMLElement>, internal = activeInternalDrag()): string {
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-fm-path]");
     const entry = row ? byPath.get(row.dataset.fmPath ?? "") : undefined;
-    const dragged = internalDragRef.current && samePlace(internalDragRef.current.place, place) ? internalDragRef.current.paths : [];
+    const dragged = internal && samePlace(internal.place, place) ? internal.paths : [];
     return listDropTarget(entry, dragged, location.path);
   }
 
   /** The items a drop carries when they were dragged out of this window: matched by name (the desktop's drag) or by the window's own drag. */
-  function internalDrag(event: DragEvent<HTMLElement>): string[] | null {
-    const current = internalDragRef.current;
+  function internalDrag(event: DragEvent<HTMLElement>): InternalDrag | null {
+    const now = Date.now();
+    const current = activeInternalDrag(now);
+    if (!current) return null;
     if (event.dataTransfer.types.includes(internalDragType)) {
-      let carried: unknown;
       try {
-        carried = JSON.parse(event.dataTransfer.getData(internalDragType));
+        const carried: unknown = JSON.parse(event.dataTransfer.getData(internalDragType));
+        return droppedInternalPaths(current, now, { carried }) ? current : null;
       } catch {
         return null;
       }
-      return droppedInternalPaths(current, Date.now(), { carried });
     }
-    return droppedInternalPaths(current, Date.now(), { names: Array.from(event.dataTransfer.files).map((file) => file.name) });
+    const names = Array.from(event.dataTransfer.files).map((file) => file.name);
+    return droppedInternalPaths(current, now, { names }) ? current : null;
   }
 
   function dragOverList(event: DragEvent<HTMLDivElement>) {
     if (listTakesNoDrop || !isItemDrag(event)) return;
     event.preventDefault();
-    const target = dropTargetFor(event);
-    const internal = internalDragRef.current;
+    const internal = activeInternalDrag();
+    const target = dropTargetFor(event, internal);
     const nowhere = dropGoesNowhere(internal, place, target);
     event.dataTransfer.dropEffect = nowhere ? "none" : internal ? "move" : "copy";
     const shown = nowhere ? null : target;
@@ -137,7 +165,7 @@ export function useFileDrops(context: FileDropsContext) {
    */
   async function dropInto(target: { place: FileManagerPlace; path: string }, event: DragEvent<HTMLElement>, targetName: string, options: { select?: boolean } = {}): Promise<string[]> {
     const moving = internalDrag(event);
-    const movingPlace = internalDragRef.current?.place ?? null;
+    const movingPlace = moving?.place ?? null;
     internalDragRef.current = null;
     const getPath = window.ampleFileDesktop?.agent?.getPathForFile;
     const nativePaths = moving || !getPath ? [] : Array.from(event.dataTransfer.files).map((file) => getPath(file)).filter(Boolean);
@@ -147,7 +175,7 @@ export function useFileDrops(context: FileDropsContext) {
     try {
       if (moving && movingPlace) {
         // Items already in the target stay; none goes into itself or a folder inside it.
-        const sources = moving.filter((path) => !(samePlace(movingPlace, target.place) && (parentPath(path) === target.path || !canDropInto(target.path, [path]))));
+        const sources = moving.paths.filter((path) => !(samePlace(movingPlace, target.place) && (parentPath(path) === target.path || !canDropInto(target.path, [path]))));
         if (!sources.length) return [];
         const result = await changes.startTransfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target }, targetName, transferLabel(sources));
         if (!result) return [];
@@ -189,7 +217,7 @@ export function useFileDrops(context: FileDropsContext) {
   function sidebarDragOver(target: FileManagerPlace, event: DragEvent<HTMLElement>) {
     if (!isItemDrag(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = internalDragRef.current && target.kind === "connected-folder" && internalDragRef.current.place.kind === "connected-folder" ? "move" : "copy";
+    event.dataTransfer.dropEffect = target.kind === "connected-folder" && activeInternalDrag()?.place.kind === "connected-folder" ? "move" : "copy";
     const key = placeKey(target);
     setSidebarDrop((current) => current === key ? current : key);
   }
@@ -207,9 +235,9 @@ export function useFileDrops(context: FileDropsContext) {
     event.preventDefault();
     setComposerDrop(false);
     const internal = internalDrag(event);
-    if (internal && internalDragRef.current && samePlace(internalDragRef.current.place, place)) {
+    if (internal && samePlace(internal.place, place)) {
       internalDragRef.current = null;
-      attach(internal);
+      attach(internal.paths);
       return;
     }
     const written = await dropInto({ place, path: location.path }, event, folderName, { select: false });
@@ -218,7 +246,7 @@ export function useFileDrops(context: FileDropsContext) {
 
   /** Items dragged out of this window are on the way, so a drop moves them. */
   function hasInternalDrag(): boolean {
-    return Boolean(internalDragRef.current);
+    return Boolean(activeInternalDrag());
   }
 
   return {

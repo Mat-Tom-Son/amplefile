@@ -252,8 +252,10 @@ amplefile requests list|show --request <id> --json                          # re
 A request owns the work; a turn is one execution within it. Status, waits,
 and automation hops follow the request across answer and synthesis turns. An
 unanswered question or an accepted answer without a linked turn remains
-outstanding, including after restart. Stop fences answer acceptance and
-continuation admission through every ancestor.
+outstanding, including after restart. An asynchronous answer queued behind a
+busy Chat can continue automatically during that app run. After restart,
+sending the same recorded answer explicitly resumes it. Stop fences answer
+acceptance and continuation admission through every ancestor.
 
 The original assignment is saved separately from the latest message. Every
 Connected Folder continuation rebuilds its assignment and delegated handle

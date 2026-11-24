@@ -146,6 +146,7 @@ import { queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from ".
 import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore, runWithHistorySafety } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./turn-acceptance.js";
+import { yieldBackgroundCompaction } from "./turn-run.js";
 
 /**
  * The act facade is the CLI act lane's in-process authority. Every method
@@ -268,8 +269,10 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // flips, so a refusal leaves it open and answerable later: a busy
       // Chat, a capability change in flight, an archived or snoozed Chat.
       const answerKey = clientKey(connectedFolder.id, record.owner.conversationId);
-      const queued = question.asynchronous === true && (state.runningTurns.has(answerKey) || state.compactingConversations.has(answerKey));
-      if (!queued) assertChatMutable(connectedFolder.id, record.owner.conversationId);
+      const queuesWhileBusy = () => question.asynchronous === true
+        && (state.runningTurns.has(answerKey) || state.compactingConversations.has(answerKey));
+      await yieldBackgroundCompaction(state, answerKey);
+      if (!queuesWhileBusy()) assertChatMutable(connectedFolder.id, record.owner.conversationId);
       assertNoCapabilityMutationForTurn(state, connectedFolder.id);
       const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, record.owner.conversationId);
       if (summary.archivedAt) throw new AmpleFileCliError("conflict", "Restore this Chat before answering its question.");
@@ -284,7 +287,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           throw collaborationRefusal(error);
         }
       }
-      if (queued) {
+      if (queuesWhileBusy()) {
+        state.queuedAsyncAnswers.add(questionId);
         await recordFacadeAction(state, input.parentTaskId, { command: "chat.answer", connectedFolder, conversationId: record.owner.conversationId });
         publishControlHint(state, "connected-folders");
         return { connectedFolder: toActConnectedFolderRef(connectedFolder), question: toActQuestionRef(answered), continuation: null, queued: true, request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record) };
@@ -297,6 +301,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // the text already on record, so the Chat and the record say the same
       // thing. Should acceptance still fail here, the answer stays recorded
       // and sending it again picks up exactly where this left off.
+      state.queuedAsyncAnswers.delete(questionId);
       const delivered = resuming ? answered.answer ?? answer : answer;
       let accepted: Awaited<ReturnType<typeof acceptConversationTurn>>;
       try {
@@ -958,6 +963,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           throw new AmpleFileCliError("notFound", "Conversation not found.");
         }
         const key = clientKey(connectedFolder.id, input.conversationId);
+        await yieldBackgroundCompaction(state, key);
         assertNoCapabilityMutationForTurn(state, connectedFolder.id);
         assertChatMutable(connectedFolder.id, input.conversationId);
         state.compactingConversations.add(key);
@@ -972,8 +978,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           await client.compact();
           broadcast(state, streamKey(connectedFolder.id, input.conversationId), { type: "done", conversationId: input.conversationId });
         } finally {
-          state.compactingConversations.delete(key);
           await refreshClientIfMarked(state, key);
+          state.compactingConversations.delete(key);
           state.kernel.finishTask(task.id);
           queueConversationRequestEvaluation(state, connectedFolder.id, input.conversationId);
         }

@@ -101,11 +101,12 @@ export async function stopAmpleFileAgentRequest(
   const openBelow = !isAmpleFileRequestTerminalState(record.state)
     || descendants.some((descendant) => !isAmpleFileRequestTerminalState(descendant.state));
   if (ampleFileAgentWasRunning || runningChildren.length || openBelow) {
-    await state.requests.markStopRequested(record.requestId);
-    await state.requests.cancelQuestions(record.requestId, "stopped");
-    for (const descendant of descendants) {
-      await state.requests.markStopRequested(descendant.requestId);
-      await state.requests.cancelQuestions(descendant.requestId, "stopped");
+    for (const item of [record, ...descendants]) {
+      await state.requests.markStopRequested(item.requestId);
+      await state.requests.cancelQuestions(item.requestId, "stopped");
+      for (const question of state.requests.questions(item.requestId)) {
+        state.queuedAsyncAnswers.delete(question.questionId);
+      }
     }
   }
   // Stop reaches every background job of this request and the graph below
@@ -203,12 +204,19 @@ export async function evaluateRequestGraphSettle(state: LocalApiState, taskId: s
   for (const candidate of [...candidates.values()].sort((a, b) => b.depth - a.depth)) {
     const key = clientKey(candidate.owner.connectedFolderId ?? ampleFileAgentScopeId, candidate.owner.conversationId);
     if (!state.runningTurns.has(key) && !state.compactingConversations.has(key)) {
-      const answered = state.requests.questions(candidate.requestId).find(question => question.asynchronous && question.state === "answered" && question.continuationTaskId === null);
+      const answered = state.requests.questions(candidate.requestId).find((question) =>
+        state.queuedAsyncAnswers.has(question.questionId) && question.asynchronous
+        && question.state === "answered" && question.continuationTaskId === null);
       if (answered && candidate.stopRequestedAt === null) {
-        const facade = createAmpleFileActFacade(state);
-        if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: answered.questionId, answer: answered.answer! });
-        else await facade.agentAnswer({ questionId: answered.questionId, answer: answered.answer! });
-        continue;
+        state.queuedAsyncAnswers.delete(answered.questionId);
+        try {
+          const facade = createAmpleFileActFacade(state);
+          if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: answered.questionId, answer: answered.answer! });
+          else await facade.agentAnswer({ questionId: answered.questionId, answer: answered.answer! });
+          continue;
+        } catch (error) {
+          console.error(`A queued answer could not continue its Chat: ${errorMessage(error)}`);
+        }
       }
     }
     await maybeStartRequestContinuation(state, candidate.requestId);

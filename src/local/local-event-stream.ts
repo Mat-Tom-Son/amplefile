@@ -28,9 +28,9 @@ export function createLocalEventSink(response: ServerResponse): LocalEventSink {
       if (sink.closed) return false;
       if (sink.queuedBytes > localEventStreamLimits.queuedBytes) { sink.close(); return false; }
       try {
-        const written = response.write(`${id === undefined ? "" : `id: ${id}\n`}data: ${JSON.stringify(data)}\n\n`);
+        response.write(`${id === undefined ? "" : `id: ${id}\n`}data: ${JSON.stringify(data)}\n\n`);
         if (sink.queuedBytes > localEventStreamLimits.queuedBytes) sink.close();
-        return written;
+        return !sink.closed;
       } catch { sink.close(); return false; }
     },
     heartbeat() {

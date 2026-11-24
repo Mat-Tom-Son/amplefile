@@ -133,6 +133,14 @@ export interface AmpleFileRequestTurnRef {
   error: string | null;
 }
 
+/** A terminal request still owns work until all of its accepted work has drained. */
+export function isAmpleFileRequestSettled(record: AmpleFileRequestRecord): boolean {
+  return isAmpleFileRequestTerminalState(record.state)
+    && record.continuationState !== "pending"
+    && !record.turns.some((turn) => turn.state === "accepted" || turn.state === "running")
+    && !record.jobs?.some((job) => job.state === "running");
+}
+
 /**
  * A background job one of this request's turns started (docs/background-jobs.md),
  * by reference. The job journal keeps the whole record and its output.

@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   computeAmpleFileRequestState,
+  isAmpleFileRequestSettled,
   AmpleFileRequestLimitError,
   ampleFileRequestLimitMessage,
   AmpleFileRequestLineageError,
@@ -959,6 +960,31 @@ test("an accepted answer stays outstanding through restart until its continuatio
   await assert.rejects(store.joinTurn({ requestId: child.requestId, taskId: "too-late" }), /stopp/i);
   await store.settleTurn("follow-up", { status: "succeeded" });
   assert.equal(store.get(root.requestId)?.state, "stopped");
+});
+
+test("startup drains stopped requests whose turns or jobs were still running", async (t) => {
+  const rootPath = await temporaryRoot(t);
+  let store = await AmpleFileRequestStore.open({ rootPath, maxRecords: 1 });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "stopping-turn" });
+  await store.markTurnRunning("stopping-turn");
+  const child = await store.beginChild({ parentTaskId: "stopping-turn", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "accepted-child" });
+  await store.noteJobStarted({ taskId: "stopping-turn", jobId: "job-20261018090000-aaaaaaaa", name: "Working" });
+  await store.markStopRequested(request.requestId);
+  await store.markStopRequested(child.requestId);
+  assert.equal(store.get(request.requestId)!.state, "stopped");
+  assert.equal(isAmpleFileRequestSettled(store.get(request.requestId)!), false);
+  await store.flush();
+
+  store = await AmpleFileRequestStore.open({ rootPath, maxRecords: 10 });
+  assert.equal((await store.reconcile({ turns: [] })).settled, 3);
+  const [parent, recoveredChild] = [store.get(request.requestId)!, store.get(child.requestId)!];
+  assert.equal(parent.state, "stopped");
+  assert.equal(parent.turns[0]?.state, "interrupted");
+  assert.equal(parent.jobs?.[0]?.state, "interrupted");
+  assert.equal(recoveredChild.state, "stopped");
+  assert.equal(recoveredChild.turns[0]?.state, "interrupted");
+  assert.ok(isAmpleFileRequestSettled(parent) && isAmpleFileRequestSettled(recoveredChild));
+  assert.equal((await store.reconcile({ turns: [] })).settled, 0);
 });
 
 test("a new request can continue after a formerly-expiring interval", async (t) => {

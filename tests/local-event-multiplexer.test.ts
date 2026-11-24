@@ -4,7 +4,9 @@ import { EventEmitter } from "node:events";
 import type { ServerResponse } from "node:http";
 import { createLocalEventMultiplexer } from "../web-local/src/lib/local-event-multiplexer.js";
 import { createLocalEventSink, createLocalEventChannel, parseLocalEventSubscriptions } from "../src/local/local-event-stream.js";
-import type { LocalEventEnvelope, LocalEventSubscription } from "../src/shared/local-event-stream.js";
+import { localEventStreamLimits, type LocalEventEnvelope, type LocalEventSubscription } from "../src/shared/local-event-stream.js";
+import { publishControlHint } from "../src/local/api/event-streams.js";
+import type { LocalApiState } from "../src/local/api/state.js";
 
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -101,6 +103,25 @@ test("physical close disposes all channels once, including a watcher that finish
   let lateCleanup = 0;
   channels[1]!.onClose(() => { lateCleanup++; });
   assert.equal(lateCleanup, 1);
+});
+
+test("control hints survive ordinary stream backpressure", () => {
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false, writableEnded: false, writableLength: 16_384,
+    writeHead() {},
+    write(frame: string) { this.writableLength += Buffer.byteLength(frame); return false; },
+    end() { this.writableEnded = true; },
+  });
+  const sink = createLocalEventSink(response as unknown as ServerResponse);
+  const control = createLocalEventChannel(sink, "control");
+  const state = { controlStreams: new Set([control]) } as LocalApiState;
+  publishControlHint(state, "activity");
+  assert.equal(control.closed, false);
+  publishControlHint(state, "models");
+  assert.equal(sink.closed, false);
+  response.writableLength = localEventStreamLimits.queuedBytes;
+  publishControlHint(state, "connected-folders");
+  assert.equal(sink.closed, true);
 });
 
 test("backpressure is bounded on the physical stream rather than independently per channel", () => {

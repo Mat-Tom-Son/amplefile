@@ -9,7 +9,7 @@
 
 import { rm } from "node:fs/promises";
 import { isPiProjectMutationTrusted } from "../agent/pi-runtime-config.js";
-import { isAmpleFileRequestTerminalState, type AmpleFileRequestRecord } from "../requests/request-records.js";
+import { isAmpleFileRequestSettled, type AmpleFileRequestRecord } from "../requests/request-records.js";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint, type ConnectedFolderCheckpoint } from "../history.js";
 import { getConnectedFolder, resolveConnectedFolderPath, withConnectedFolderHistoryOperation } from "../connected-folder.js";
 import { invalidateAllClients, invalidateAmpleFileClients } from "./conversation-clients.js";
@@ -45,12 +45,7 @@ export async function runHistoryRestore<T>(
 
 /** Stop is not settled until its accepted turns have actually drained. */
 export function requestHasUnsettledWork(state: LocalApiState, request: AmpleFileRequestRecord): boolean {
-  return [request, ...state.requests.subtree(request.requestId)].some((record) =>
-    !isAmpleFileRequestTerminalState(record.state)
-    || record.continuationState === "pending"
-    || record.turns.some((turn) => turn.state === "accepted" || turn.state === "running")
-    // A job a Stop is still ending keeps its request unsettled until it has.
-    || (record.jobs ?? []).some((job) => job.state === "running"));
+  return [request, ...state.requests.subtree(request.requestId)].some((record) => !isAmpleFileRequestSettled(record));
 }
 
 /** Called with the Connected Folder's mutation fence held; deletion refuses instead of interrupting work. */
