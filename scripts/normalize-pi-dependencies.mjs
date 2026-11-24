@@ -53,7 +53,7 @@ async function normalizeDependency({
   const nestedDir = join(piDir, "node_modules", name);
   const nestedPackagePath = join(nestedDir, "package.json");
   const nestedPackage = await readJsonIfPresent(nestedPackagePath);
-  // Pi 1.1 hoists reviewed dependencies. Do not invent nested packages absent
+  // Pi can hoist reviewed dependencies. Do not invent nested packages absent
   // from the lockfile; normalize only a published, reviewed nested exception.
   const piRequire = createRequire(join(piDir, "package.json"));
   const currentPackage = await readJson(piRequire.resolve(`${name}/package.json`));

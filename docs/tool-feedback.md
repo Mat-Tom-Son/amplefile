@@ -396,7 +396,7 @@ Model output-length exhaustion preserves partial work and ends with an explicit
 incomplete failure, rather than recording a successful final answer or replaying work.
 Pi's existing compact-and-retry remains responsible for input overflow. A successful
 native retry clears the discarded attempt's error and text in the host projection.
-Pi 1.1 persists recovery omissions as canonical context edits and retains the
+Pi persists recovery omissions as canonical context edits and retains the
 one-retry guard. The reviewed patch uses session order to distinguish fresh
 retries from pre-compaction context when timestamps are equal. It changes no
 retry count or ordinary output-length behavior.
