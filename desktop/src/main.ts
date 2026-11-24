@@ -1,6 +1,6 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
 import { finderOpenPaths } from "./finder-open-paths.js";
-import { FileManagerWindows, parseWindowLocation, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
+import { FileManagerWindows, parseWindowLocation, shownConnectedFolder, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
 import {
   cascadeBounds,
   parseWindowPlacements,
@@ -129,6 +129,7 @@ import {
 } from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
 import { pickLinuxOpenWithApp } from "./open-with-linux-chooser.js";
+import { linuxTerminalLaunchPlan } from "./linux-open-terminal.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
@@ -818,9 +819,10 @@ async function createFileManagerWindow(options: FileManagerWindowOptions = {}): 
   window.webContents.on("did-start-navigation", () => railTooltipOverlay.hide());
   window.webContents.on("render-process-gone", () => railTooltipOverlay.hide());
   window.webContents.on("page-title-updated", (event) => {
-    if ((process.platform !== "darwin" && process.platform !== "linux") || !fileManagerWindows.entry(window)?.connectedFolder) return;
+    const entry = fileManagerWindows.entry(window);
+    if ((process.platform !== "darwin" && process.platform !== "linux") || !entry?.connectedFolder) return;
     event.preventDefault();
-    applyNativeActiveConnectedFolderToWindow(fileManagerWindows.entry(window));
+    applyNativeActiveConnectedFolderToWindow(entry);
   });
   configureWindowStatePersistence(window, slot);
   const refreshDisplayBounds = () => {
@@ -1074,6 +1076,27 @@ function registerIpc(): void {
     const error = await shell.openPath(connectedFolder.connectedFolderRoot);
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
+  if (process.platform === "linux") {
+    ipcMain.handle("amplefile:place:open-terminal", async (event, value: unknown) => {
+      assertTrustedMainRenderer(event);
+      const location = parseWindowLocation(value);
+      if (!location) throw new Error("Choose a folder to open in a terminal.");
+      const { place, path } = location;
+      const resolveFolder = async () => place.kind === "connected-folder"
+        ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
+        : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null;
+      const folder = await resolveFolder();
+      const original = folder ? await lstat(folder) : null;
+      if (!folder || !original?.isDirectory()) throw new Error("Choose a folder to open in a terminal.");
+      const plan = await linuxTerminalLaunchPlan(folder);
+      // The desktop terminal lookup can take time. Recheck the place before launching into it.
+      const current = await resolveFolder() === folder ? await lstat(folder) : null;
+      if (!current?.isDirectory() || current.dev !== original.dev || current.ino !== original.ino) {
+        throw new Error("That folder changed. Try opening it in a terminal again.");
+      }
+      await launchOpenWith(plan);
+    });
+  }
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
     assertMainOrAgentPopoverRenderer(event);
     const request = connectedFolderPathRequest(value);
@@ -1319,7 +1342,10 @@ function registerIpc(): void {
   // folder the renderer names (Open in New Window in its menus) or where this one is.
   onRendererMessage("amplefile:window:set-location", (event, value: unknown) => {
     const entry = fileManagerWindows.entry(senderWindow(event));
-    if (entry) entry.location = parseWindowLocation(value);
+    if (!entry) return;
+    entry.location = parseWindowLocation(value);
+    // The title names the Connected Folder the tab in front shows, and none for a plain folder.
+    applyNativeActiveConnectedFolderToWindow(entry);
   });
   ipcMain.handle("amplefile:window:new-window", async (event) => {
     assertTrustedMainRenderer(event);
@@ -1558,6 +1584,7 @@ function registerIpc(): void {
 type RendererMenuCommand =
   | "new-connected-folder"
   | "open-local-folder"
+  | "open-terminal"
   | "new-chat"
   | "close-tab"
   | "refresh"
@@ -1625,6 +1652,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
       ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
+      ...(process.platform === "linux" ? [{ id: "open-terminal", label: "Open Terminal Here", enabled: state.terminalFolderOpen === true, click: menuCommand("open-terminal") }] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
       // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.
@@ -1846,6 +1874,7 @@ function refreshApplicationMenuState(): void {
   setMenuItemEnabled(menu, "show-hidden-files", state.folderTabsOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh", state.folderTabsOpen);
+  setMenuItemEnabled(menu, "open-terminal", state.terminalFolderOpen === true);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
   const showTabBar = menu?.getMenuItemById("show-tab-bar");
   if (showTabBar) showTabBar.checked = state.showTabBar;
@@ -2142,12 +2171,14 @@ function startItemDrag(sender: Electron.WebContents, items: string[]): boolean {
 }
 
 /**
- * The Connected Folder a window shows. Each window has its own, and it is
- * used for that window's title (and its represented folder on a Mac) and for
- * the Open Recent list, which records Connected Folders in the order any
- * window showed them. Nothing else reads it: the kernel resolves the CLI's
- * context from the caller's directory, and the AmpleFile Agent works above
- * every Connected Folder, so neither follows a window.
+ * The Connected Folder a window last showed. Each window has its own. The
+ * Open Recent list records Connected Folders in the order any window showed
+ * them; the window's title (and its represented folder on a Mac) and the
+ * window a Worker's browser page appears in follow `shownConnectedFolder`,
+ * which is none while the tab in front is a plain folder, Trash, or Recents.
+ * Nothing else reads it: the kernel resolves the CLI's context from the
+ * caller's directory, and the AmpleFile Agent works above every Connected
+ * Folder, so neither follows a window.
  */
 async function setWindowConnectedFolder(window: BrowserWindow | null, connectedFolderId: string | null): Promise<void> {
   const entry = fileManagerWindows.entry(window);
@@ -2343,8 +2374,9 @@ function applyNativeActiveConnectedFolderToWindow(entry: FileManagerWindowEntry<
   if ((process.platform !== "darwin" && process.platform !== "linux") || !entry || !window || window.isDestroyed()) return;
   // The window title names the Connected Folder shown, as on the Mac, so task
   // switchers and window lists (niri's included) tell windows apart.
-  if (process.platform === "darwin") window.setRepresentedFilename(entry.connectedFolder?.connectedFolderRoot ?? "");
-  window.setTitle(entry.connectedFolder?.name ?? productName);
+  const shown = shownConnectedFolder(entry);
+  if (process.platform === "darwin") window.setRepresentedFilename(shown?.connectedFolderRoot ?? "");
+  window.setTitle(shown?.name ?? productName);
 }
 
 /**

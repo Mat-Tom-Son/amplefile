@@ -289,6 +289,12 @@ amplefile help capabilities
 `connected-folders list --json` adds `parentConnectedFolderId` to a Connected
 Folder registered inside another Connected Folder's folder.
 
+`context --json` reports `cwd` and the resolved `connectedFolder`, plus
+`selectedPath` and `activeSurface`, which are always `null`. They stay in the
+v1 shape for compatibility. The kernel knows nothing of the windows, their
+tabs, or their selection, so no command reports what a person is looking at;
+context comes only from `--connected-folder` or the working directory.
+
 `--connected-folder <id-or-exact-name>` selects a Connected Folder
 explicitly. Without it, Connected Folder–aware read commands resolve the
 terminal's current working directory. Duplicate exact names are refused as
@@ -444,7 +450,13 @@ honest error saying it may have partly happened and its effects should be
 checked.
 
 `files add` copies outside material in with a targeted restore point that
-succeeds or fails together with the placement, and `connected-folders create`
+succeeds or fails together with the placement. It copies as the window's
+Copy does ([What a copy carries](product-model.md#the-file-manager-window)):
+links inside a folder stay links as written, a folder's `.amplefile/` (another
+Connected Folder's identity and Chats) is left behind, a name already taken
+gets Finder's " copy" name, and a source that is itself a link is refused.
+`chat handoff --file` and an Automation's `files` step copy the same way.
+`connected-folders create` and `connected-folders create`
 and `connected-folders register` grant the same runtime authorization as the
 window's actions. Content-bearing Chat and agent-preference reads
 (`chat status|result`, `chats list`, `connected-folders worker show`) belong

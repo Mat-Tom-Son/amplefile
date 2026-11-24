@@ -52,6 +52,7 @@ export function FileContextMenu({
   // Several rows selected together get only the actions that make sense for all of them.
   const selection = state.selection && state.selection.length > 1 ? state.selection : null;
   const openLabel = nativeOpenLabel(entry);
+  const revealLabel = revealInFileManagerLabel();
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { window.requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()); }, [entry.path, selection?.length]);
 
@@ -87,7 +88,7 @@ export function FileContextMenu({
       {entry.kind === "file" && canOpenDirectly(entry.path) ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => { onSelect(entry.path); return onOpenLocal(entry.path, openLabel.office ? "open-native" : "open"); })}><ExternalLink size={15} />{openLabel.text}</button> : null}
       {entry.kind === "file" && canOpenWith ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onOpenLocal(entry.path, "open-with"))}><AppWindow size={15} />Open With</button> : null}
       {entry.kind === "folder" ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onOpenLocal(entry.path, "open"))}><FolderOpen size={15} />Open Folder</button> : null}
-      <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onOpenLocal(entry.path, "reveal"))}><FolderOpen size={15} />{revealInFileManagerLabel()}</button>
+      {revealLabel ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onOpenLocal(entry.path, "reveal"))}><FolderOpen size={15} />{revealLabel}</button> : null}
       <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onCopyPath(entry.path))}><Copy size={15} />Copy {entry.kind === "folder" ? "Folder" : "File"} Path</button>
       {entry.kind === "file" ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onAddToChatContext(entry.path))}><CirclePlus size={15} />Attach to Chat</button> : null}
       {entry.kind === "file" ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onShowVersionHistory(entry.path))}><History size={15} />Version History</button> : null}

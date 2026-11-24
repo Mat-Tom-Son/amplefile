@@ -4,6 +4,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { lstat, readdir, readFile, readlink, statfs } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { linuxBlockDevicesCommand, parseLinuxMountableVolumes, type LinuxMountableVolume, type MountableVolumeSummary } from "./linux-mountable-volumes.js";
 
 /**
  * The drives a system file manager shows, for the file manager window
@@ -595,6 +596,56 @@ export async function listVolumes(options: VolumeListOptions = {}): Promise<Volu
   return (await listVolumeRecords(options)).map(({ device: _device, ...volume }) => volume);
 }
 
+async function linuxMountableVolumeRecords(run: ToolRunner): Promise<Array<LinuxMountableVolume & MountableVolumeSummary>> {
+  const timeoutMs = 3_000;
+  const answer = await answerWithin(run(linuxBlockDevicesCommand, { timeoutMs, readOnly: true, maxOutput: 256 * 1024 }), timeoutMs);
+  if (answer?.code !== 0) return [];
+  const entries = parseLinuxMountableVolumes(answer.stdout);
+  const sequences = new Map<string, Promise<string>>();
+  return Promise.all(entries.map(async (entry) => {
+    let sequence = sequences.get(entry.disk);
+    if (!sequence) {
+      // A Linux disk's sequence changes even if a replug uses the same device name and numbers.
+      sequence = readFile(join("/sys/class/block", basename(entry.disk), "diskseq"), "utf8").then((value) => value.trim(), () => "");
+      sequences.set(entry.disk, sequence);
+    }
+    const id = volumeId("unmounted", JSON.stringify([entry.device, entry.disk, entry.majorMinor, entry.fileSystem, entry.uuid, await sequence]));
+    return { ...entry, id };
+  }));
+}
+
+export async function listMountableVolumes(run: ToolRunner = runTool, platform = process.platform): Promise<MountableVolumeSummary[]> {
+  if (platform !== "linux") return [];
+  return (await linuxMountableVolumeRecords(run)).map(({ id, name }) => ({ id, name }));
+}
+
+const mountingVolumes = new Set<string>();
+
+export async function mountListedLinuxVolume(id: string, run: ToolRunner = runTool, readMounts: () => Promise<string> = readMountInfo): Promise<{ mountPath: string }> {
+  if (mountingVolumes.has(id)) throw Object.assign(new Error("That drive is already being mounted."), { statusCode: 409 });
+  mountingVolumes.add(id);
+  try {
+    const volume = (await linuxMountableVolumeRecords(run)).find((candidate) => candidate.id === id);
+    if (!volume) throw Object.assign(new Error("That drive isn’t available to mount anymore."), { statusCode: 404 });
+    const answer = await run({ command: "udisksctl", args: ["mount", "--no-user-interaction", "--block-device", volume.device] }, { timeoutMs: 20_000 });
+    if (answer.missing) throw Object.assign(new Error("Mounting drives needs udisksctl (from UDisks)."), { statusCode: 503 });
+    const mounts = parseMountInfo(await readMounts());
+    const mounted = linuxUserVolumes(mounts, { home: homedir(), user: safeUserName() }).find(({ mount }) => mount.majorMinor === volume.majorMinor || mount.source === volume.device);
+    if (mounted) return { mountPath: mounted.mount.mountPoint };
+    const message = answer.stderr.trim().split(/\r?\n/)[0]?.slice(0, 400);
+    throw Object.assign(new Error(message || `AmpleFile couldn’t open “${volume.name}”.`), { statusCode: 409 });
+  } finally {
+    mountingVolumes.delete(id);
+    noteVolumesMayHaveChanged();
+  }
+}
+
+/** Both kinds of drive the sidebar can act on. Mounted records keep their existing shape. */
+export async function listSidebarVolumes(): Promise<{ volumes: VolumeSummary[]; mountable?: MountableVolumeSummary[] }> {
+  const [volumes, mountable] = await Promise.all([listVolumes(), volumeSourceForTests ? [] : listMountableVolumes()]);
+  return { volumes, ...(mountable.length ? { mountable } : {}) };
+}
+
 /**
  * Each drive's space. A disk's volume is measured in this process, one after
  * another, so a healthy list has one file call out at a time. A share is asked
@@ -1039,20 +1090,20 @@ export async function ejectVolume(
 
 // Change notification ------------------------------------------------------
 
-export type VolumeEvent = { type: "volumes"; volumes: VolumeSummary[] };
+export type VolumeEvent = { type: "volumes"; volumes: VolumeSummary[]; mountable?: MountableVolumeSummary[] };
 type VolumeListener = (event: VolumeEvent) => void;
 
 const listeners = new Set<VolumeListener>();
 let monitor: { stop(): void } | null = null;
 let lastSignature: string | null = null;
-let lastVolumes: VolumeSummary[] = [];
+let lastVolumeEvent: VolumeEvent = { type: "volumes", volumes: [] };
 let refreshTimer: NodeJS.Timeout | null = null;
 let refreshing: Promise<void> | null = null;
 let refreshAgain = false;
 
 /** The set of drives, without their space, which changes all the time. */
-function signature(volumes: readonly VolumeSummary[]): string {
-  return JSON.stringify(volumes.map((volume) => [volume.id, volume.name, volume.mountPath, volume.ejectable]));
+function signature(event: VolumeEvent): string {
+  return JSON.stringify([event.volumes.map((volume) => [volume.id, volume.name, volume.mountPath, volume.ejectable]), event.mountable]);
 }
 
 async function refresh(): Promise<void> {
@@ -1060,12 +1111,12 @@ async function refresh(): Promise<void> {
   if (refreshing) { refreshAgain = true; return refreshing; }
   refreshing = (async () => {
     try {
-      const volumes = await listVolumes();
-      const next = signature(volumes);
-      lastVolumes = volumes;
+      const event: VolumeEvent = { type: "volumes", ...await listSidebarVolumes() };
+      const next = signature(event);
+      lastVolumeEvent = event;
       if (next === lastSignature) return;
       lastSignature = next;
-      for (const listener of [...listeners]) { try { listener({ type: "volumes", volumes }); } catch { listeners.delete(listener); } }
+      for (const listener of [...listeners]) { try { listener(event); } catch { listeners.delete(listener); } }
     } catch { /* the next change tries again */ }
   })().finally(() => {
     refreshing = null;
@@ -1086,21 +1137,24 @@ export function noteVolumesMayHaveChanged(): void {
   if (listeners.size) scheduleRefresh();
 }
 
-/**
- * Linux: `findmnt --poll` waits on the kernel's own mount-table notification
- * and prints a line per change. Without it, the folders drives appear in are
- * watched instead, with a slow check for mounts elsewhere.
- */
 function startLinuxMonitor(): { stop(): void } {
+  // A block event arrives after udev has populated the data lsblk reads. The mount table catches mounts made elsewhere.
+  const devices = watchLinuxVolumeChanges({ command: "udevadm", args: ["monitor", "--udev", "--subsystem-match=block"] }, ["/dev", "/dev/disk", "/dev/disk/by-uuid"]);
+  const mounts = watchLinuxVolumeChanges({ command: "findmnt", args: ["--poll", "--raw", "--noheadings", "--output", "ACTION"] }, ["/run/media", `/run/media/${safeUserName()}`, "/media", `/media/${safeUserName()}`, "/mnt", "/run/mount"]);
+  return { stop() { devices.stop(); mounts.stop(); } };
+}
+
+/** Follow system notifications, with directory watches and a slow check if the tool is unavailable. */
+function watchLinuxVolumeChanges({ command, args }: ToolCommand, folders: readonly string[]): { stop(): void } {
   let stopped = false;
   let fallback: { stop(): void } | null = null;
   let child: ChildProcess | null = null;
   try {
-    child = spawn("findmnt", ["--poll", "--raw", "--noheadings", "--output", "ACTION"], { shell: false, stdio: ["ignore", "pipe", "ignore"] });
+    child = spawn(command, args, { shell: false, stdio: ["ignore", "pipe", "ignore"] });
   } catch { child = null; }
   const useFallback = () => {
     if (stopped || fallback) return;
-    fallback = startFolderMonitor(["/run/media", `/run/media/${safeUserName()}`, "/media", `/media/${safeUserName()}`, "/mnt", "/run/mount"], 30_000);
+    fallback = startFolderMonitor(folders, 30_000);
   };
   if (child) {
     child.stdout?.on("data", () => scheduleRefresh());
@@ -1162,11 +1216,12 @@ export function subscribeVolumes(listener: VolumeListener): () => void {
     monitor = startMonitor();
     lastSignature = null;
   }
-  void listVolumes().then((volumes) => {
+  void listSidebarVolumes().then((listing) => {
     if (!listeners.has(listener)) return;
-    if (lastSignature === null) { lastSignature = signature(volumes); lastVolumes = volumes; }
-    listener({ type: "volumes", volumes });
-  }).catch(() => { if (listeners.has(listener)) listener({ type: "volumes", volumes: lastVolumes }); });
+    const event: VolumeEvent = { type: "volumes", ...listing };
+    if (lastSignature === null) { lastSignature = signature(event); lastVolumeEvent = event; }
+    listener(event);
+  }).catch(() => { if (listeners.has(listener)) listener(lastVolumeEvent); });
   return () => {
     listeners.delete(listener);
     if (!listeners.size && monitor) {

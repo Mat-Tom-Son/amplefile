@@ -51,11 +51,23 @@ export async function verifyPackagedPiIdentity(archivePath) {
   return `PASS packaged Pi identity ${entry.version}: reviewed ID-token validation and Codex reasoning`;
 }
 
+/**
+ * The reviewed runtime bytes every packaged app must carry, on every
+ * platform: the image-size parser fix and both patched Pi packages. The Mac
+ * lane checks them inside `verifyPackagedNativeTools`; the Linux lane, which
+ * has no built-ASAR smoke, checks them alone (scripts/sign-computer-helper.cjs).
+ */
+export async function verifyPackagedReviewedPatches(archivePath) {
+  return [
+    await verifyPackagedImageSize(archivePath),
+    await verifyPackagedPiRecovery(archivePath),
+    await verifyPackagedPiIdentity(archivePath),
+  ];
+}
+
 /** Exercise the complete built bytes, with no model, accounts or production app launch. */
 export async function verifyPackagedNativeTools(archivePath) {
-  const security = await verifyPackagedImageSize(archivePath);
-  const recovery = await verifyPackagedPiRecovery(archivePath);
-  const identity = await verifyPackagedPiIdentity(archivePath);
+  const [security, recovery, identity] = await verifyPackagedReviewedPatches(archivePath);
   const temporary = await mkdtemp(join(tmpdir(), "amplefile-built-native-tools-"));
   try {
     const archive = join(temporary, "application", "app.asar");

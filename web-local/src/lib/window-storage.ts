@@ -54,7 +54,8 @@ export function startWindowStorage(): void {
 }
 
 /** Tells the desktop where this window is, so File → New Window opens there. */
-export function reportWindowLocation(location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null): void {
+export function reportWindowLocation(location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null, view: "folder" | "trash" | "recents" = "folder"): void {
   if (typeof window === "undefined") return;
-  window.ampleFileDesktop?.windows?.setLocation(location ? { place: { kind: location.place.kind, id: location.place.id }, path: location.path } : null);
+  // A tab showing the Trash or Recents shows no Connected Folder, though it keeps the folder it came from.
+  window.ampleFileDesktop?.windows?.setLocation(location ? { place: { kind: location.place.kind, id: location.place.id }, path: location.path, ...(view !== "folder" ? { view } : {}) } : null);
 }

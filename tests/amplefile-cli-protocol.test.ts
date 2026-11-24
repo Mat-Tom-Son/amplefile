@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import test from "node:test";
+import { AmpleFileCliKernelAdapter } from "../src/local/amplefile-cli-adapter.js";
+import type { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import {
   normalizeAmpleFileAutomationProposal,
   ampleFileAutomationMessagePlaceholders,
@@ -161,17 +163,20 @@ test("CLI help covers every landed act family and is honest about what it runs",
   assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "collaborate"), /\ban app\b/);
   // Automations have no on-settled trigger any more.
   assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "automations"), /on-settled/);
-  // Recently deleted is where a delete History could not fully cover goes
+  // Recently Deleted is where a delete History could not fully cover goes
   // (docs/act-ledger.md), and nothing empties it early.
   const recentlyDeletedTopic = ampleFileCliHelp("AmpleFile", "recently-deleted");
-  assert.match(recentlyDeletedTopic, /Recently deleted holds what a delete could not leave to History/);
+  assert.match(recentlyDeletedTopic, /Recently Deleted holds what a delete could not leave to History/);
   assert.match(recentlyDeletedTopic, /30 days by default/);
-  assert.match(recentlyDeletedTopic, /Nothing empties Recently deleted early/);
+  assert.match(recentlyDeletedTopic, /Nothing empties Recently Deleted early/);
   // The topic offers no --to copy and names no app data.
   assert.doesNotMatch(recentlyDeletedTopic, /--to\b|app data/);
   assert.match(overview, /recently-deleted list\|restore\s+Bring back what was deleted/);
-  assert.match(ampleFileCliHelp("AmpleFile", "files"), /moves to Recently deleted instead/);
-  assert.match(ampleFileCliHelp("AmpleFile", "connected-folders"), /moves\na managed Connected Folder to Recently deleted/);
+  assert.match(ampleFileCliHelp("AmpleFile", "files"), /moves to Recently Deleted instead/);
+  // delete waits for settled work, the caller's own running turn included; it never "always goes through".
+  assert.match(ampleFileCliHelp("AmpleFile", "files"), /delete is refused while the\nConnected Folder has unfinished work/);
+  assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "files"), /always goes through/);
+  assert.match(ampleFileCliHelp("AmpleFile", "connected-folders"), /moves\na managed Connected Folder to Recently Deleted/);
   assert.doesNotMatch(overview, /files destroy|\bdestroy\b/);
   // The setup-only boundary stays visible where an agent looks first.
   assert.match(overview, /local setup/);
@@ -339,7 +344,7 @@ test("help collaborate's worked example parses through the real act parser", () 
   }
   // Bounds are visible where a person can change them, and a refusal names
   // the same place (docs/act-ledger.md).
-  assert.match(help, /Settings → (?:Automations|Recently deleted)/);
+  assert.match(help, /Settings → (?:Automations|Recently Deleted)/);
   assert.match(help, /Nothing waits on someone clicking something\./);
   assert.doesNotMatch(help, /\bcard\b|\bmode\b|sandboxed/i);
 });
@@ -561,3 +566,15 @@ function fixtureKernel(calls: Array<{ method: string; actor: AmpleFileCliActor; 
     },
   };
 }
+
+test("context's selectedPath and activeSurface are always null, and help says so", async () => {
+  const folder = { id: "space-aaaaaaaaaaaaaaaa", name: "Home", connectedFolderRoot: resolve("home"), location: { storage: "linked" }, createdAt: "", updatedAt: "" };
+  const kernel = {
+    async getContext() { return { kind: "amplefile.context", version: 1, actor: { kind: "cli" }, resolution: "cwd", connectedFolder: folder }; },
+    async getConnectedFolders() { return { kind: "amplefile.connected-folders", version: 1, actor: { kind: "cli" }, connectedFolders: [folder] }; },
+  } as unknown as AmpleFileKernel;
+  const context = await new AmpleFileCliKernelAdapter(kernel).getContext({ kind: "cli", cwd: resolve("home") }, {});
+  assert.equal(context.selectedPath, null);
+  assert.equal(context.activeSurface, null);
+  assert.match(ampleFileCliHelp("AmpleFile", "context"), /selectedPath and activeSurface are always null/);
+});

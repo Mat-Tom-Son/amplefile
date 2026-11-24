@@ -1,7 +1,7 @@
 import type { MouseEvent } from "react";
 
 import "./file-manager-places.css";
-import type { DriveRow } from "./file-manager-drives";
+import type { DriveRow, MountableVolume } from "./file-manager-drives";
 import { DriveGlyph, EjectGlyph, TrashGlyph } from "./file-manager-glyphs";
 
 /**
@@ -25,7 +25,7 @@ export function SidebarTrashRow({ current, openProps }: { current: boolean; open
   </button></li>;
 }
 
-export function SidebarDrives({ rows, currentKey, ejecting, openProps, onEject }: {
+export function SidebarDrives({ rows, currentKey, ejecting, openProps, onEject, mountable, mounting, onMount }: {
   rows: readonly DriveRow[];
   /** The row holding the folder shown, if any. */
   currentKey: string | null;
@@ -34,6 +34,9 @@ export function SidebarDrives({ rows, currentKey, ejecting, openProps, onEject }
   /** Opening a drive: its row's click, and ⌘-click (Ctrl-click) or a middle click for a new tab. */
   openProps: (row: DriveRow) => SidebarOpenProps;
   onEject: (row: DriveRow) => void;
+  mountable: readonly MountableVolume[];
+  mounting: string | null;
+  onMount: (volume: MountableVolume) => void;
 }) {
   return <>
     <div className="fm-sidebar-heading"><span id="fm-drives-heading">Drives</span></div>
@@ -48,6 +51,12 @@ export function SidebarDrives({ rows, currentKey, ejecting, openProps, onEject }
           {row.ejectable ? <button type="button" className="fm-eject" aria-label={`Eject ${row.name}`} title={`Eject “${row.name}”`} disabled={ejecting === row.key} onClick={() => onEject(row)}><EjectGlyph /></button> : null}
         </li>;
       })}
+      {mountable.map((volume) => <li key={volume.id} className="fm-drive">
+        <button type="button" className="fm-sidebar-item" title={`Mount “${volume.name}”`} aria-label={`Mount ${volume.name}`} disabled={mounting !== null} onClick={() => onMount(volume)}>
+          <span className="fm-sidebar-icon"><DriveGlyph removable /></span>
+          <span className="fm-sidebar-name">{mounting === volume.id ? `Mounting ${volume.name}…` : volume.name}</span>
+        </button>
+      </li>)}
     </ul>
   </>;
 }

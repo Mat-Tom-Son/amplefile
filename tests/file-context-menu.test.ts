@@ -77,7 +77,7 @@ test("a link's menu reaches its target with Open and Show Original, and acts on 
   ]);
   // A broken link has nothing to open or show; in a Standard Folder it goes to the Trash.
   const broken = parseNativeFileMenuRequest({ ...fileRequest, connectedFolderId: undefined, standardFolderId: "downloads", kind: "folder", capabilities: { ...fileRequest.capabilities, open: false, organize: true, link: true } });
-  assert.deepEqual(nativeFileMenuItems(broken, "linux").map((item) => item.type === "item" ? item.command : "separator"), ["reveal", "copy-path", "separator", "copy", "cut", "duplicate", "compress", "separator", "rename", "delete"]);
+  assert.deepEqual(nativeFileMenuItems(broken, "linux").map((item) => item.type === "item" ? item.command : "separator"), ["copy-path", "separator", "copy", "cut", "duplicate", "compress", "separator", "rename", "delete"]);
   assert.equal(nativeFileMenuItems(broken, "linux").at(-1)?.type === "item" && (nativeFileMenuItems(broken, "linux").at(-1) as { label: string }).label, "Move to Trash");
   assert.throws(() => parseNativeFileMenuRequest({ ...fileRequest, capabilities: { ...fileRequest.capabilities, link: "yes" } }), /capabilities/);
 });

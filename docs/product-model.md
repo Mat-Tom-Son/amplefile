@@ -59,13 +59,14 @@ other surface.
   hides the panel (**Hide Panel**) and shows it again (**Show Panel**). The
   toolbar's **Action** button (⋯) and right-clicking a Connected Folder in
   the sidebar offer **Customize Connected Folder**, **Organize**, **Show in
-  Finder**, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
+  Finder** on Mac, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
   Folder…** for a managed one), and **Settings…**. **Organize** opens the
   panel and starts a Chat asking that Connected Folder's Worker to organize
   it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
-  list keeps 360px.
+  list keeps 360px. On Linux, **Open Terminal Here** opens the current folder from **File** or the
+  folder background menu, and the chosen folder from its own menu.
 - **Sidebar:** flush with the window's edges and square like the rest of the
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
@@ -79,7 +80,7 @@ other surface.
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
   Folder…** and **Connect Folder…**. Right-clicking a Standard Folder offers
-  Show in Finder, **Connect This Folder**, and, for one added with +, Remove
+  Show in Finder on Mac, **Connect This Folder**, and, for one added with +, Remove
   from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
@@ -180,7 +181,8 @@ other surface.
   answering (a share whose server has gone) stays in the list without its
   space, and the host does not ask it again until it has answered. The host
   reads this computer's own list of mounted drives; nothing about a drive
-  leaves it.
+  leaves it. On Linux, unmounted filesystems on removable drives also appear
+  here. Clicking one mounts it through UDisks and opens its folder.
 - **Trash:** the sidebar's **Trash** shows the computer's Trash in the list
   area: what was moved to the Trash from any app, this window's Standard
   Folders and other folders included, with Name, Original Location, Date
@@ -625,7 +627,9 @@ other surface.
   window is there with or without a Connected Folder.
 - **Right panel:** **Info** shows the selection (a picture or PDF shows its
   larger thumbnail, an SVG shows itself; files show Where, Modified, and
-  Size; folders add their measured size, see **Folder sizes**), the Trash
+  Size; folders add their measured size, see **Folder sizes**). On Linux,
+  Info also reads Created when the filesystem records it, Permissions,
+  Owner, and Group for the selected item. Info shows the Trash
   item chosen in the Trash, or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
   ready-made ones it has not turned on ([Automations](automations.md)).
@@ -657,11 +661,16 @@ other surface.
   Folder's own model from the names in the folder shown and its recent Chat
   titles, kept for 30 minutes or until those change; plain ones cover a
   selection and the wait.
-- **What the Worker changed:** after a Worker reply or an Automation run, the
-  files it added, moved, or changed carry a small dot in the list, and Info
-  opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
-  changed") listing the first few, with **Undo** (History's restore) and
-  **Done**.
+- **What the Worker changed:** after a Worker reply (an Automation's Chat
+  step included), the files it added, moved, or changed carry a small dot in
+  the list, and Info opens with a receipt ("The Worker changed 14 items · 3
+  added · 9 moved · 2 changed") listing the first few, with **Undo** and
+  **Done**. The receipt compares the turn's own "Before turn" and "After
+  turn" restore points, so nothing changed after the reply (a paste, a move
+  in, an edit) is counted as the Worker's. **Undo** puts back only those
+  files, each only while it is still as the turn left it; a file changed
+  again since stays as it is, and the notice says how many were kept. Undo
+  takes its own restore point first, so ⇧⌘Z redoes it.
 - **Set Up for Me:** right after a folder is connected, Info opens with a
   card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
   Thanks**. Either answer closes the card for good; the card is the only
@@ -711,7 +720,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Al
   selection, and Chat), panel, Browser pane tabs, and size and place on the
   screen, and the Connected Folder it shows, which names the window in its
   title. The window's title, Open Recent, and **New Window** follow the tab
-  in front. Every window sees the same Connected
+  in front; while that tab shows a plain folder, the computer, the Trash, or
+  Recents, the window shows no Connected Folder and is titled AmpleFile. Every window sees the same Connected
   Folders, Standard Folders, drives, Trash, running Chats, running file
   operations, and Cut, so a change made in one (a rename, a new Connected
   Folder, a finished copy, items cut) shows in the others.
@@ -735,8 +745,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Al
   front window and each further one in a new window, as a system file
   manager does.
 - **Browser pages** belong to the window that opened them; a page a Worker
-  opens appears in the window showing that Worker's Connected Folder, else the
-  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+  opens appears in the window whose tab in front shows that Worker's Connected
+  Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
 - **Closing and quitting:** closing one of several windows closes only it.
   Closing the last window keeps AmpleFile and every accepted Chat turn,
   Automation, and file operation running; reopening AmpleFile (the Dock, the

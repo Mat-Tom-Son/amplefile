@@ -36,6 +36,7 @@ interface AmpleFileCommandLineStatus {
 type AmpleFileDesktopMenuCommand =
   | "new-connected-folder"
   | "open-local-folder"
+  | "open-terminal"
   | "new-chat"
   | "refresh"
   | "check-for-updates"
@@ -185,6 +186,7 @@ declare global {
       placeLink?: {
         open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => Promise<void>;
       };
+      openTerminal?: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }) => Promise<void>;
       /**
        * Files on the system pasteboard, to and from Finder (absent in older
        * desktop builds). The window never reads the pasteboard: paste happens
@@ -334,11 +336,11 @@ declare global {
         newWindow: () => Promise<boolean>;
         /** Open in New Window: another window at this place and folder, with `select` selected there. */
         openInNewWindow: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null }) => Promise<boolean>;
-        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string } | null) => void;
+        setLocation: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; view?: "trash" | "recents" } | null) => void;
       };
       menu: {
         /** What the menu bar reflects; a key left out keeps its value. */
-        setState: (state: { connectedFolderOpen?: boolean; showHiddenFiles?: boolean; folderTabsOpen?: boolean; showTabBar?: boolean }) => void;
+        setState: (state: { connectedFolderOpen?: boolean; showHiddenFiles?: boolean; folderTabsOpen?: boolean; showTabBar?: boolean; terminalFolderOpen?: boolean }) => void;
         popup: (menuId: AmpleFileDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;
         onCommand: (listener: (command: AmpleFileDesktopMenuCommand) => void) => () => void;
       };

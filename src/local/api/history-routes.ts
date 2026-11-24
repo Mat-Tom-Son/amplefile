@@ -11,12 +11,14 @@ import {
   restoreFileVersion,
   restoreConnectedFolderCheckpoint,
   previewConnectedFolderCheckpointRestore,
+  compareConnectedFolderTurnCheckpoints,
+  undoConnectedFolderTurnChanges,
 } from "../history.js";
 import { compareHistoryFile, readHistoryFile } from "../history-review.js";
 import { getConnectedFolder } from "../connected-folder.js";
-import { badRequest, match, optionalBoundedInteger, readJsonBody, sendJson } from "./http.js";
+import { badRequest, match, notFound, optionalBoundedInteger, readJsonBody, sendJson } from "./http.js";
 import { runHistoryRestore } from "./reservations.js";
-import type { LocalApiRequest } from "./state.js";
+import type { LocalApiRequest, LocalApiState } from "./state.js";
 
 /** History: restore points, previews, reading and comparing versions, and restoring files. */
 export async function handleHistoryRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
@@ -81,6 +83,34 @@ export async function handleHistoryRoutes({ state, req, res, url, method }: Loca
     return true;
   }
 
+  // What the last Worker turn here changed, from its own before and after
+  // restore points, so nothing anyone did after the turn is counted or undone.
+  const workerChangesMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/worker-changes$/);
+  if (method === "GET" && workerChangesMatch) {
+    const connectedFolder = await getConnectedFolder(workerChangesMatch[1]);
+    const turn = latestWorkerTurnChanges(state, connectedFolder.id);
+    if (!turn) { sendJson(res, { changes: null }); return true; }
+    const changes = await compareConnectedFolderTurnCheckpoints(connectedFolder.connectedFolderRoot, turn.beforeCheckpointId, turn.afterCheckpointId)
+      .catch(() => null);
+    sendJson(res, { changes: changes ? { ...turn, ...changes } : null });
+    return true;
+  }
+  const workerChangesUndoMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/worker-changes\/undo$/);
+  if (method === "POST" && workerChangesUndoMatch) {
+    const connectedFolder = await getConnectedFolder(workerChangesUndoMatch[1]);
+    const body = await readJsonBody<{ beforeCheckpointId?: string; afterCheckpointId?: string }>(state, req);
+    const before = body.beforeCheckpointId?.trim();
+    const after = body.afterCheckpointId?.trim();
+    if (!before || !after) throw badRequest("A turn's before and after restore points are required.");
+    // Only a pair a Worker turn in this Connected Folder recorded can be undone this way.
+    if (!state.turnStore.list().some((record) => record.connectedFolderId === connectedFolder.id
+      && record.fileChanges?.beforeCheckpointId === before && record.fileChanges.afterCheckpointId === after)) {
+      throw notFound("This Worker turn's changes are no longer recorded.");
+    }
+    sendJson(res, await runHistoryRestore(state, connectedFolder, () => undoConnectedFolderTurnChanges(connectedFolder.connectedFolderRoot, before, after)));
+    return true;
+  }
+
   const fileVersionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/file-versions$/);
   if (method === "GET" && fileVersionsMatch) {
     const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
@@ -97,4 +127,14 @@ export async function handleHistoryRoutes({ state, req, res, url, method }: Loca
     return true;
   }
   return false;
+}
+
+/** The last settled Worker turn in a Connected Folder that History saw change something. */
+function latestWorkerTurnChanges(state: LocalApiState, connectedFolderId: string): { beforeCheckpointId: string; afterCheckpointId: string; settledAt: string } | null {
+  const latest = state.turnStore.list()
+    .filter((record) => record.connectedFolderId === connectedFolderId && record.fileChanges)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  const changes = latest?.fileChanges;
+  if (!changes || changes.beforeCheckpointId === changes.afterCheckpointId) return null;
+  return { beforeCheckpointId: changes.beforeCheckpointId, afterCheckpointId: changes.afterCheckpointId, settledAt: latest.updatedAt };
 }

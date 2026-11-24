@@ -11,7 +11,7 @@ import { itemMenuCapabilities, selectionMenuCapabilities, type QuickMenuItem, ty
 import type { PlaceFileBridge } from "./file-manager-view-helpers";
 
 /** The Action menu's Connected Folder (null for the place shown when it is not one) and where the window's own copy of it is drawn. */
-export interface ActionMenuState { target: ConnectedFolderSummary | null; x: number; y: number; /** Opened from the sidebar, which offers Open in New Tab (and Open in New Window where the desktop has windows). */ sidebar?: boolean; newWindow?: boolean }
+export interface ActionMenuState { target: ConnectedFolderSummary | null; x: number; y: number; /** Opened from the sidebar, which offers Open in New Tab (and Open in New Window where the desktop has windows). */ sidebar?: boolean; newWindow?: boolean; terminal?: boolean }
 
 /** What the menus' items do; each is the window's own action, run as if its button or key had been used. */
 export interface FileManagerMenuActions {
@@ -25,6 +25,7 @@ export interface FileManagerMenuActions {
   /** Open in New Window, where the desktop can open another window (null elsewhere). */
   openInNewWindow: ((where: FileManagerLocation) => void) | null;
   openLocal: (path: string, action: "reveal" | "open" | "open-native" | "open-with") => Promise<void>;
+  openTerminal: (where: FileManagerLocation) => Promise<void>;
   showOriginal: (entry: TreeEntry) => Promise<void>;
   copyPaths: (paths: readonly string[]) => Promise<void>;
   showVersionHistory: ((entry: TreeEntry) => void) | null;
@@ -76,6 +77,8 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   const { mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, actions, onError } = context;
   const [quickMenu, setQuickMenu] = useState<QuickMenuState | null>(null);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
+  const desktop = window.ampleFileDesktop;
+  const terminal = !fixtureMode && Boolean(desktop?.openTerminal);
 
   /** A small menu at the pointer: the native one on the Mac, the in-window one elsewhere. */
   async function popupMenu(event: MouseEvent<HTMLElement>, menuActions: Partial<Record<"reveal" | "putToWork" | "removeFromSidebar" | "createConnectedFolder" | "useExistingFolder" | "openInNewTab" | "openInNewWindow", boolean>>, fallback: QuickMenuItem[], run: (command: string | null) => void) {
@@ -97,15 +100,18 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   /** Right-clicking a Standard Folder: Show in Finder, Connect This Folder, and Remove from Sidebar for one added with +. */
   function openStandardFolderMenu(folder: StandardFolderSummary, event: MouseEvent<HTMLElement>) {
     const target: FileManagerPlace = { kind: "standard", id: folder.id };
+    const revealLabel = revealInFileManagerLabel();
     void popupMenu(event, { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow), reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
       { label: "Open in New Tab", command: "open-in-new-tab" },
       ...(actions.openInNewWindow ? [{ label: "Open in New Window", command: "open-in-new-window" }] : []),
-      { label: revealInFileManagerLabel(), command: "reveal" },
+      ...(terminal ? [{ label: "Open Terminal Here", command: "open-terminal" }] : []),
+      ...(revealLabel ? [{ label: revealLabel, command: "reveal" }] : []),
       { label: "Connect This Folder", command: "put-to-work" },
       ...(folder.added ? [{ label: "Remove from Sidebar", command: "remove-from-sidebar" }] : []),
     ], (command) => {
       if (command === "open-in-new-tab") actions.openPlaceInNewTab(target);
       else if (command === "open-in-new-window") actions.openInNewWindow?.({ place: target, path: "" });
+      else if (command === "open-terminal") void actions.openTerminal({ place: target, path: "" });
       else if (command === "reveal") void window.ampleFileDesktop?.standardFolder?.openPath(folder.id, "", "reveal").catch((caught) => onError(errorText(caught)));
       else if (command === "put-to-work") void actions.putToWork("", target);
       else if (command === "remove-from-sidebar") void actions.removeStandardFolder(folder);
@@ -147,13 +153,15 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
       } catch (caught) { onError(errorText(caught)); }
       return;
     }
-    setActionMenu({ target, x: Math.min(point.x, window.innerWidth - 240), y: Math.min(point.y, window.innerHeight - (sidebar ? 224 : 200)), ...(sidebar ? { sidebar, newWindow: Boolean(actions.openInNewWindow) } : {}) });
+    const height = sidebar ? (terminal ? 248 : 224) : 200;
+    setActionMenu({ target, x: Math.min(point.x, window.innerWidth - 240), y: Math.min(point.y, window.innerHeight - height), terminal: sidebar && terminal, ...(sidebar ? { sidebar, newWindow: Boolean(actions.openInNewWindow) } : {}) });
   }
 
   function runActionCommand(command: string | null, target: ConnectedFolderSummary | null) {
     if (command === "settings") actions.openSettings();
     else if (command === "open-in-new-tab" && target) actions.openPlaceInNewTab({ kind: "connected-folder", id: target.id });
     else if (command === "open-in-new-window" && target) actions.openInNewWindow?.({ place: { kind: "connected-folder", id: target.id }, path: "" });
+    else if (command === "open-terminal" && target) void actions.openTerminal({ place: { kind: "connected-folder", id: target.id }, path: "" });
     else if (command === "customize" && target) actions.customize(target);
     else if (command === "remove-connected-folder" && target) void actions.removeConnectedFolder(target);
     else if (command === "skills" && target) actions.openSkills(target);
@@ -180,7 +188,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     const target: TreeEntry = entry ?? { name: location.path.split("/").pop() || placeName, path: location.path, kind: "folder" };
     const several = entry && paths.length > 1 ? paths.map((path) => byPath.get(path)).filter((item): item is TreeEntry => Boolean(item)) : null;
     const owner = place.kind === "standard" ? { connectedFolderId: "", standardFolderId: place.id } : { connectedFolderId: place.id };
-    const capabilities = several ? selectionMenuCapabilities(several) : itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: await actions.canPaste(), newWindow: Boolean(actions.openInNewWindow) });
+    const capabilities = several ? selectionMenuCapabilities(several) : { ...itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: target.kind === "folder" && !target.link && await actions.canPaste(), newWindow: Boolean(actions.openInNewWindow) }), ...(terminal ? { terminal: true } : {}) };
     const selectionCounts = several ? { files: several.filter((item) => item.kind === "file").length, folders: several.filter((item) => item.kind === "folder").length } : null;
     const run = (command: string | null) => several ? runSelectionCommand(command, several) : runMenuCommand(command, target);
     const popupFileMenu = window.ampleFileDesktop?.connectedFolder.popupFileMenu;
@@ -197,7 +205,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
       kind: target.kind,
       capabilities,
       ...(selectionCounts ? { selection: selectionCounts } : {}),
-    }, desktopPlatform() ?? (mac ? "darwin" : "linux"))
+    }, desktopPlatform() ?? "browser")
       // Open With needs the desktop's app chooser.
       .filter((item) => item.type === "separator" || item.command !== "open-with" || (!fixtureMode && Boolean(bridge?.openWith)))
       .map((item) => item.type === "separator" ? { label: "", command: "-" } : { label: item.label, command: item.command });
@@ -225,6 +233,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     else if (command === "open-in-new-tab") actions.openEntryInNewTab(target);
     else if (command === "open-in-new-window") actions.openEntryInNewWindow(target);
     else if (command === "open-with") await actions.openLocal(target.path, "open-with");
+    else if (command === "open-terminal") await actions.openTerminal({ place, path: target.path });
     else if (command === "show-package-contents") await actions.showPackageContents(target);
     else if (command === "reveal") await actions.openLocal(target.path, "reveal");
     else if (command === "show-original") await actions.showOriginal(target);

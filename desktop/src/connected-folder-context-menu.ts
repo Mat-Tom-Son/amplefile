@@ -87,7 +87,7 @@ export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMen
   if (actions.newChat) items.push({ type: "item", label: "New Chat", command: "new-chat" });
   if (actions.customize) items.push({ type: "item", label: "Customize Connected Folder", command: "customize" });
   if (actions.organize) items.push({ type: "item", label: "Organize", command: "organize" });
-  if (actions.reveal) items.push({ type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" });
+  if (actions.reveal && platform !== "linux") items.push({ type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" });
   if (actions.putToWork) items.push({ type: "item", label: "Connect This Folder", command: "put-to-work" });
   if (actions.skills) items.push({ type: "item", label: "Skills & Extensions…", command: "skills" });
   const tail: NativeConnectedFolderMenuItem[] = [];

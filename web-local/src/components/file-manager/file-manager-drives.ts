@@ -19,6 +19,9 @@ export interface VolumeSummary {
   fileSystem: string | null;
 }
 
+export interface MountableVolume { id: string; name: string }
+export interface DriveListing { volumes: VolumeSummary[]; mountable: MountableVolume[] }
+
 /** Space on the volume holding a folder, from `GET /api/volume-space`. */
 export interface VolumeSpace { totalBytes: number | null; freeBytes: number | null }
 
@@ -126,14 +129,23 @@ export function ejectMessage(name: string, outcome: { ok: true } | { ok: false; 
 }
 
 /** Reads an events-stream frame: the whole list of drives, or null for anything else. */
-export function parseVolumesEvent(data: string): VolumeSummary[] | null {
+export function parseVolumesEvent(data: string): DriveListing | null {
   try {
-    const event = JSON.parse(data) as { type?: unknown; volumes?: unknown };
-    if (event.type !== "volumes" || !Array.isArray(event.volumes)) return null;
-    return event.volumes.filter(isVolumeSummary);
+    const event = JSON.parse(data) as { type?: unknown; volumes?: unknown; mountable?: unknown };
+    return event?.type === "volumes" ? parseDriveListing(event) : null;
   } catch {
     return null;
   }
+}
+
+export function parseDriveListing(value: { volumes?: unknown; mountable?: unknown } | null): DriveListing | null {
+  if (!Array.isArray(value?.volumes)) return null;
+  return {
+    volumes: value.volumes.filter(isVolumeSummary),
+    mountable: Array.isArray(value.mountable) ? value.mountable.filter((volume): volume is MountableVolume => {
+      return volume && typeof volume.id === "string" && typeof volume.name === "string";
+    }) : [],
+  };
 }
 
 function isVolumeSummary(value: unknown): value is VolumeSummary {

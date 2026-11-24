@@ -21,7 +21,7 @@ const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vi
 const rawWindowSlot = Number(argumentValue("window-slot"));
 const windowSlot = Number.isInteger(rawWindowSlot) && rawWindowSlot >= 1 && rawWindowSlot <= 64 ? rawWindowSlot : 1;
 const windowFresh = argumentValue("window-fresh") === "1";
-type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null };
+type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null; view?: "trash" | "recents" };
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
@@ -283,6 +283,9 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     setShowFilesFromOtherApps: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-show-files-from-other-apps", enabled),
     setOpenFoldersByDefault: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-open-folders-by-default", enabled),
   } } : {}),
+  ...(process.platform === "linux" ? {
+    openTerminal: (location: Pick<WindowLocation, "place" | "path">) => ipcRenderer.invoke("amplefile:place:open-terminal", location),
+  } : {}),
   // Windows: which one this is, where it is (so File → New Window opens there), and new ones.
   windows: {
     slot: windowSlot,

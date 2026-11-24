@@ -27,7 +27,7 @@ export function outsideAgentSkill(identity: OutsideAgentSkillIdentity = productI
   const agent = `${product} agent`;
   return `---
 name: ${outsideAgentSkillName(identity)}
-description: Drive ${product} on this Mac from the command line. List Connected Folders, hand work to a folder's Worker and wait for the result, ask the ${agent} to coordinate across folders, follow requests, undo changes, and run Automations. Use when the person asks you to do something in their ${product} Connected Folders or with their Workers.
+description: Drive ${product} on this computer from the command line. List Connected Folders, hand work to a folder's Worker and wait for the result, ask the ${agent} to coordinate across folders, follow requests, undo changes, and run Automations. Use when the person asks you to do something in their ${product} Connected Folders or with their Workers.
 ---
 
 # ${product}
@@ -37,8 +37,8 @@ ${product} gives folders on this computer their own AI Worker. A **Connected Fol
 ## Rules
 
 - Add \`--json\` to every command and read the result. Exit code 0 means it worked.
-- Name the Connected Folder on every command that acts inside one: \`--connected-folder <id or exact name>\`.
-- Every command that changes something runs at once and leaves a receipt. Prefer these commands to your own file tools inside a Connected Folder: they keep History restore points and Recently deleted, and raw edits do not. When one is refused, report the refusal instead of working around it.
+- Name the Connected Folder on every command that acts inside one: \`--connected-folder <id or exact name>\`. The commands act on Connected Folders only; a folder outside every Connected Folder has no Worker, History, or \`${cli}\` command, and none reaches the computer's Trash.
+- Every command that changes something runs at once and leaves a receipt. Prefer these commands to your own file tools inside a Connected Folder: they keep History restore points and Recently Deleted, and raw edits do not. When one is refused, report the refusal instead of working around it.
 - Never enter, read, or pass on API keys or passwords. The person sets those up in ${product}'s Settings.
 - Don't loop, poll, or sleep. Wait once with the wait commands below.
 - \`${cli} help <command>\` has exact usage, for example \`${cli} help chat\`, \`${cli} help collaborate\`, \`${cli} help automations\`.

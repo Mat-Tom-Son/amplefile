@@ -499,7 +499,7 @@ test("direct verbs parse with strict shapes", () => {
     /--connected-folder cannot be used with 'automations enable'/,
   );
 
-  // Recently deleted sits above Connected Folders too (docs/act-ledger.md):
+  // Recently Deleted sits above Connected Folders too (docs/act-ledger.md):
   // each item names the Connected Folder it came from, so neither verb takes --connected-folder
   assert.deepEqual(parseAmpleFileCliActArgv(["recently-deleted", "list", "--json"]), { name: "recently-deleted.list", output: "json" });
   assert.deepEqual(
@@ -1144,17 +1144,17 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
     ],
   };
   const movedToRecentlyDeleted = await execute(["files", "delete", "--connected-folder", "connected-folder-1", "--path", "docs/old.md"]);
-  assert.match(movedToRecentlyDeleted.stdout, /It is in Recently deleted until 2026-10-10T08:30:00\.000Z because History could not keep a copy of 2 files: docs\/big\.iso \(too large\); docs\/link\.md \(a link\)\./);
+  assert.match(movedToRecentlyDeleted.stdout, /It is in Recently Deleted until 2026-10-10T08:30:00\.000Z because History could not keep a copy of 2 files: docs\/big\.iso \(too large\); docs\/link\.md \(a link\)\./);
   assert.match(movedToRecentlyDeleted.stdout, /Put it back with 'recently-deleted restore --entry trash-20260910083000-53db781d'/);
   assert.equal(lastOk().detail, "recently-deleted trash-20260910083000-53db781d");
   assert.deepEqual(lastOk().undoRef, { kind: "recently-deleted-entry", value: "trash-20260910083000-53db781d" });
   assert.equal(lastOk().checkpointId, "cp-20260810130200-cccccccc", "the restore point still covered what it could");
   deleteRecovery = { kind: "history" as const };
 
-  // Recently deleted's own verbs: a content-free listing and a restore whose
+  // Recently Deleted's own verbs: a content-free listing and a restore whose
   // undo is the additive restore point it recorded.
   const recentlyDeletedListed = await execute(["recently-deleted", "list"]);
-  assert.match(recentlyDeletedListed.stdout, /1 item\(s\) in Recently deleted \(kept 30 days\):/);
+  assert.match(recentlyDeletedListed.stdout, /1 item\(s\) in Recently Deleted \(kept 30 days\):/);
   assert.match(recentlyDeletedListed.stdout, /- trash-20260910083000-53db781d — folder "Drafts" from Fold Connected Folder \[connected-folder-1\] — 12400 bytes/);
   assert.match(recentlyDeletedListed.stdout, /kept until 2026-10-10T08:30:00\.000Z/);
   assert.deepEqual(calls.at(-1), { method: "recentlyDeletedList" });
