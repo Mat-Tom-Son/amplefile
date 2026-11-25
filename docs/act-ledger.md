@@ -106,14 +106,16 @@ record only per-verb additions.
    another attempt is a fresh call.
 5. **How replay is prevented.** The broker's freshness window and pending
    response dedup, then the journal's `accepted` records as the durable
-   at-most-once ledger: a duplicated request id is refused outright, and a
+   at-most-once ledger: a duplicated request id is refused outright, naming
+   what that id already ran, and a
    damaged journal fails closed rather than risk re-execution — an
    unreadable file always, an unreadable line until the freshness window
    and clock-skew allowance have passed since the line written after it.
    Journal rotation holds entries at least as long as the freshness window.
 
 Act-protocol conventions: the versioned act envelope
-(`src/local/cli/act-protocol.ts`), the per-launch act token, explicit
+(`src/local/cli/act-protocol.ts`), the per-launch act token, an optional
+caller-chosen `--request-id` that the request must travel under, explicit
 `--connected-folder` on every Connected Folder–scoped write (never
 working-directory resolution), `--parent-task` lineage validated against an
 active AmpleFile Agent request, and `--json` output. Prepared verbs use the
@@ -433,6 +435,15 @@ scope.
 joined by `agent overview` ([the overview](amplefile-agent-overview.md)). The
 CLI group is `agent`. Automation verbs are in [Automations](automations.md);
 `automations enable` is the prepared verb that pins a declaration digest.
+
+### Receipts
+
+Any act request can be traced by its request id after its caller stops
+waiting ([Following an act after the wait ends](amplefile-agent-and-cli.md#following-an-act-after-the-wait-ends)).
+
+| Verb | In the window | Target | Command shape | Receipt adds | Undo | Conflicts |
+|---|---|---|---|---|---|---|
+| Show what became of an act | — | direct verb (act read) | `receipts show --id <request-id>` | the id read and the state found | n/a | runs beside the serial queue; takes no `--connected-folder`; refuses an `--id` equal to its own `--request-id` |
 
 ### The setup-only boundary
 

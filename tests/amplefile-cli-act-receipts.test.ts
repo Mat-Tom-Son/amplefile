@@ -242,6 +242,52 @@ test("status polls journal beside the acts, so they never push real receipts out
   assert.equal(await receipts.hasAccepted(pollIds.at(-1)!), true, "a read's id is still accepted at most once");
 });
 
+test("a lookup by request id finds its one execution, the latest refusal, and how far back the journals reach", async (t) => {
+  const sandbox = await receiptsSandbox(t);
+  const start = Date.parse("2026-07-31T12:00:00.000Z");
+  let current = start;
+  const receipts = new AmpleFileCliActReceipts({ stateRoot: sandbox, maxBytes: 256, now: () => new Date(current) });
+  assert.deepEqual(
+    await receipts.lookup(randomUUID()),
+    { accepted: null, settled: null, rejected: null, journalSince: null },
+    "a journal that never rotated dropped nothing",
+  );
+
+  // Refused once for waiting too long, run under the same id, then replayed.
+  const ran = randomUUID();
+  await receipts.append({ requestId: ran, command: "files.rename", outcome: "rejected", errorCode: "timeout", detail: "waited too long behind other commands" });
+  current += 1_000;
+  await receipts.append({ requestId: ran, command: "files.rename", outcome: "accepted", surface: "cli" });
+  current += 1_000;
+  await receipts.append({ requestId: ran, command: "files.rename", outcome: "ok", surface: "cli", checkpointId: "checkpoint-1" });
+  current += 1_000;
+  await receipts.append({ requestId: ran, command: "files.rename", outcome: "rejected", errorCode: "conflict", detail: "duplicate act request id" });
+  const found = await receipts.lookup(ran);
+  assert.equal(found.accepted?.at, new Date(start + 1_000).toISOString());
+  assert.equal(found.settled?.outcome, "ok");
+  assert.equal(found.settled?.checkpointId, "checkpoint-1");
+  assert.equal(found.rejected?.errorCode, "conflict", "the latest refusal is the one kept");
+
+  // A read's lines live in the reads journal, and an act that never settled has no outcome.
+  const read = randomUUID();
+  await receipts.append({ requestId: read, command: "chat.status", outcome: "accepted" });
+  assert.equal((await receipts.lookup(read)).accepted?.command, "chat.status");
+  const unsettled = randomUUID();
+  await receipts.append({ requestId: unsettled, command: "files.delete", outcome: "accepted" });
+  assert.equal((await receipts.lookup(unsettled)).settled, null);
+
+  // Rotation moves the old lines aside; the lookup still reads them, and
+  // says the journal now reaches back only to its rotated generation's start.
+  current = start + 10 * 60 * 1000;
+  for (let index = 0; index < 6; index += 1) {
+    await receipts.append({ requestId: randomUUID(), command: "files.add", outcome: "ok", detail: "x".repeat(64) });
+  }
+  assert.ok(existsSync(receipts.rotatedPath));
+  const rotated = await receipts.lookup(ran);
+  assert.equal(rotated.settled?.outcome, "ok", "the rotated generation is still searched");
+  assert.equal(rotated.journalSince, new Date(start).toISOString());
+});
+
 test("every read-journal verb is a real act verb", async () => {
   const { AMPLEFILE_CLI_ACT_READ_COMMANDS, parseAmpleFileCliActArgv } = await import("../src/local/cli/index.js");
   for (const name of AMPLEFILE_CLI_ACT_READ_COMMANDS) {

@@ -77,7 +77,8 @@ export class AmpleFileCliFileBroker {
   private readonly maxActRequestBytes: number;
   private readonly claimReadBytes: number;
   private readonly maxResponseBytes: number;
-  private readonly maxRequestAgeMs: number;
+  /** A request created longer ago than this is refused rather than claimed. */
+  readonly maxRequestAgeMs: number;
   private readonly maxFutureSkewMs: number;
   private readonly inFlight = new Map<string, Promise<AmpleFileCliResponseV1>>();
 
@@ -221,6 +222,26 @@ export class AmpleFileCliFileBroker {
     });
     this.inFlight.set(normalized, operation);
     return operation;
+  }
+
+  /**
+   * A request this broker holds and has not answered: its file is waiting to
+   * be claimed, or it is being processed (claimed, perhaps still in line).
+   * `writtenAt` is when the shim wrote the file, which is no earlier than the
+   * request's own creation time. An unclaimed file already too old to claim
+   * is not pending: it can never run. The file is looked for before the
+   * in-flight set because processing starts before the claim moves the
+   * file, so a request between the two is never missed.
+   */
+  async pendingRequest(id: string): Promise<{ writtenAt: Date; processing: boolean } | null> {
+    const normalized = normalizeAmpleFileCliRequestId(id);
+    const paths = this.requestPaths(normalized);
+    const submitted = await modifiedAt(paths.request);
+    if (this.inFlight.has(normalized)) {
+      return { writtenAt: submitted ?? await modifiedAt(paths.claim) ?? this.now(), processing: true };
+    }
+    if (!submitted || this.now().getTime() - submitted.getTime() > this.maxRequestAgeMs) return null;
+    return { writtenAt: submitted, processing: false };
   }
 
   async cleanup(options: { olderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
@@ -393,6 +414,12 @@ function assertWithin(root: string, path: string): void {
   const child = relative(base, candidate);
   if (child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child))) return;
   throw new AmpleFileCliError("permissionDenied", "CLI broker path escapes its state root.");
+}
+
+/** A regular file's modification time, or null when there is none to read. */
+async function modifiedAt(path: string): Promise<Date | null> {
+  const info = await lstat(path).catch(() => null);
+  return info?.isFile() ? info.mtime : null;
 }
 
 async function fileExists(path: string): Promise<boolean> {
