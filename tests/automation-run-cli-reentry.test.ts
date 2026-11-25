@@ -131,6 +131,13 @@ test("a run started from the CLI never holds up its own steps' amplefile command
   assert.equal(await exists(join(connectedFolder.connectedFolderRoot, "Renamed.png")), true);
   assert.equal(await exists(join(connectedFolder.connectedFolderRoot, "Screenshot 1.png")), false);
 
+  // Status polls are reads: they go to the reads journal, never the acts journal.
+  const { readFile } = await import("node:fs/promises");
+  const actLines = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { command?: string });
+  const readLines = (await readFile(host.receipts.readsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { command?: string });
+  assert.equal(actLines.some((line) => line.command === "automations.status"), false, "a wait's polls never crowd the acts journal");
+  assert.ok(readLines.some((line) => line.command === "automations.status"));
+
   // A run the app does not know is not found, never a run that waits forever.
   const unknown = await cli(["automations", "status", "--automation", automationId, "--run", "run-unknown", "--json"]);
   assert.equal(unknown?.exitCode, AmpleFileCliExitCode.notFound, unknown?.stderr);
@@ -138,4 +145,73 @@ test("a run started from the CLI never holds up its own steps' amplefile command
   const hostWait = await cli(["automations", "wait", "--automation", automationId, "--run", run.runId, "--json"]);
   assert.equal(hostWait?.exitCode, AmpleFileCliExitCode.usage);
   assert.match(hostWait?.stderr ?? "", /runs inside the AmpleFile shim/);
+});
+
+test("a run refused at admission says it did not start, and its receipt says so", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-run-refused-"));
+  await mkdir(join(sandbox, "agent", "extensions"), { recursive: true });
+  await writeFile(join(sandbox, "agent", "extensions", "hold.ts"), `export default function (pi) {
+    pi.registerCommand("hold", { description: "Stand in for the Worker", handler: async () => {} });
+  }\n`, "utf8");
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let stepStarted = false;
+  const token = "d".repeat(64);
+  const api = await startLocalApi({
+    port: 0,
+    stateBase: join(sandbox, "state"),
+    connectedFolderBase: join(sandbox, "content"),
+    loadEnv: false,
+    piRuntimeProvider: { async resolveRuntime() { return { agentDir: join(sandbox, "agent") }; } },
+    async beforeAgentPrompt(event) {
+      if (!event.automation) return;
+      stepStarted = true;
+      await held;
+    },
+  });
+  const host = new AmpleFileDesktopCliHost({
+    stateRoot: join(sandbox, "cli-state"),
+    kernel: new AmpleFileCliKernelAdapter(api.kernel),
+    version: "1.0.0",
+    getActFacade: () => ({ facade: api.actFacade, token }),
+  });
+  await host.initialize();
+  t.after(async () => {
+    release();
+    await within(host.whenIdle(), 5_000);
+    await api.close();
+    await rm(sandbox, { recursive: true, force: true });
+  });
+  const cli = async (argv: string[]) => {
+    const request = createAmpleFileCliActRequest({ id: randomUUID(), argv, cwd: sandbox, actToken: token });
+    await host.broker.writeActRequest(request);
+    await host.processRequest(request.id);
+    return { id: request.id, response: await host.broker.readResponse(request.id) };
+  };
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Held" });
+  const proposalPath = join(sandbox, "held.amplefile-automation.json");
+  await writeFile(proposalPath, JSON.stringify({
+    kind: "amplefile.automation-proposal", version: ampleFileAutomationContractVersion, name: "Held", createdBy: "assistant", createdAt: new Date().toISOString(),
+    automation: { title: "Held", trigger: { kind: "manual" }, steps: [{ id: "hold", kind: "chat", connectedFolder: connectedFolder.id, message: "/hold" }] },
+  }), "utf8");
+  const { automationId } = await api.actFacade.automationsEnable({ proposalPath, cwd: sandbox, requestId: "req-enable-held" });
+
+  const first = await cli(["automations", "run", "--automation", automationId, "--json"]);
+  assert.equal(first.response.exitCode, 0, first.response.stderr);
+  for (let attempt = 0; attempt < 400 && !stepStarted; attempt += 1) await pause(25);
+  assert.ok(stepStarted, "the first run is going");
+
+  const second = await cli(["automations", "run", "--automation", automationId, "--json"]);
+  assert.equal(second.response.exitCode, 0, second.response.stderr);
+  const refused = (JSON.parse(second.response.stdout) as { data: { run: { state: string; outcome?: string; error?: string } } }).data.run;
+  assert.equal(refused.state, "settled", "a refused admission is reported as settled, not queued");
+  assert.equal(refused.outcome, "skipped");
+  assert.match(refused.error ?? "", /already pending or active/);
+  const human = await cli(["automations", "run", "--automation", automationId]);
+  assert.match(human.response.stdout, /did not start a run: run .* settled skipped\. Another run of this automation is already pending or active\./);
+  assert.doesNotMatch(human.response.stdout, /Started automation/);
+  const { readFile } = await import("node:fs/promises");
+  const receipt = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { requestId?: string; outcome?: string; detail?: string })
+    .find((line) => line.requestId === second.id && line.outcome === "ok");
+  assert.match(receipt?.detail ?? "", /not started \(skipped\)/);
 });

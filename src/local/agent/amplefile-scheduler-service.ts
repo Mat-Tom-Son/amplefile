@@ -53,6 +53,12 @@ export interface AmpleFileSchedulerRunResult {
 export interface AmpleFileSchedulerRunAdmission {
   runId: string;
   result: Promise<AmpleFileSchedulerRunResult>;
+  /**
+   * True when the scheduler settled this admission without queuing it:
+   * closed, suspended, disabled, overlapping another run, or unregistered.
+   * Its result then follows at once, with no run work to wait for.
+   */
+  refused?: true;
 }
 
 /**
@@ -294,6 +300,7 @@ export class AmpleFileSchedulerService {
       return {
         runId,
         result: this.#immediateResult(runId, normalizedKey, "manual", scheduledAt, "cancelled", "closed", "Automation service is closed."),
+        refused: true,
       };
     }
     const job = this.#jobs.get(automationKey(normalizedKey));
@@ -301,6 +308,7 @@ export class AmpleFileSchedulerService {
       return {
         runId,
         result: this.#immediateResult(runId, normalizedKey, "manual", scheduledAt, "cancelled", "registration-changed", "Automation is not registered."),
+        refused: true,
       };
     }
     return this.#requestRun(job, "manual", scheduledAt, runId);
@@ -405,15 +413,15 @@ export class AmpleFileSchedulerService {
     this.#unsettled.set(runId, { state: "queued", key: copyKey(pending.key) });
     if (this.#closed) {
       this.#finishWithoutLaunch(pending, "cancelled", "closed", "Automation service is closed.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (this.#suspended) {
       this.#finishWithoutLaunch(pending, "skipped", "suspended", "Automation scheduling is suspended.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (reason !== "manual" && !job.definition.enabled) {
       this.#finishWithoutLaunch(pending, "skipped", "disabled", "Automation is disabled.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (this.#busyKeys.has(job.encodedKey)) {
       // A manual copy must never spend a one-time slot. Keep the exact due
@@ -425,7 +433,7 @@ export class AmpleFileSchedulerService {
         job.atConsumed = false;
       }
       this.#finishWithoutLaunch(pending, "skipped", "overlap", "Another run of this automation is already pending or active.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     this.#busyKeys.add(job.encodedKey);
     this.#pending.push(pending);

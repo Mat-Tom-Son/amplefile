@@ -10,6 +10,7 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import { buildTurnContextMessage, previousTurnPartialTextMaxChars } from "../src/local/agent/pi-client.js";
 import { describeProviderFailure, providerHttpStatus } from "../src/local/agent/turn-failure.js";
+import { runActOperation } from "../src/local/api/act-support.js";
 import { AmpleFileCliError } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
 import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
@@ -24,6 +25,8 @@ const privateBody = "acct_private_123 billing.invalid/private sk-live-secret";
 test("provider failures are sorted into fixed causes that say what helps, without provider text", () => {
   const cases: Array<[string, string, RegExp]> = [
     [`402 {"error":{"message":"needs credits ${privateBody}"}}`, "billing", /credit or billing limit \(HTTP 402\)/],
+    [`400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the API. ${privateBody}"}}`, "billing", /credit or billing limit \(HTTP 400\)/],
+    [`Summarization failed: 401 Incorrect API key provided ${privateBody}`, "credentials", /did not accept AmpleFile's API key or sign-in \(HTTP 401\)/],
     [`401 {"error":{"message":"bad key ${privateBody}"}}`, "credentials", /did not accept AmpleFile's API key or sign-in \(HTTP 401\)/],
     [`404: {"message":"The model \`x\` does not exist or you do not have access to it. ${privateBody}","code":"model_not_found"}`, "model_access", /says the model "probe-model" does not exist or this account cannot use it \(HTTP 404\)/],
     [`403 status code (no body)`, "model_access", /refused this request for this account \(HTTP 403\)/],
@@ -215,4 +218,26 @@ test("file acts refuse a taken name as a conflict and a locked folder in plain w
       && /can’t be changed/.test(error.message)
       && !error.message.includes(sandbox),
   );
+});
+
+test("a failed system call at the act boundary names a file refusal plainly and leaves other failures neutral", async () => {
+  const failedCall = (code: string, syscall: string, path?: string) =>
+    Object.assign(new Error(`${code}: failed, ${syscall}${path ? ` '${path}'` : ""}`), { code, syscall, ...(path ? { path } : {}) });
+  const refusal = async (error: unknown) => runActOperation(async () => { throw error; }).then(
+    () => assert.fail("expected a refusal"),
+    (thrown: unknown) => thrown as AmpleFileCliError,
+  );
+  const locked = await refusal(failedCall("EACCES", "open", "/Users/someone/Private/report.txt"));
+  assert.equal(locked.code, "permissionDenied");
+  assert.match(locked.message, /“report\.txt” can’t be changed/);
+  assert.doesNotMatch(locked.message, /Users\/someone/);
+  for (const [code, syscall] of [["ECONNREFUSED", "connect"], ["ENOTFOUND", "getaddrinfo"], ["ENOENT", "spawn rg"], ["EISDIR", "read"], ["EMFILE", "open"]] as const) {
+    const neutral = await refusal(failedCall(code, syscall, syscall.startsWith("spawn") ? "rg" : undefined));
+    assert.equal(neutral.code, "failure", `${syscall} ${code} is a plain failure, not a conflict`);
+    assert.equal(neutral.message, `The system refused this request (${code}).`);
+  }
+  // Not a system call (a package manager's own code): its message stands.
+  const npm = await refusal(Object.assign(new Error("No matching version found"), { code: "E404" }));
+  assert.equal(npm.code, "failure");
+  assert.equal(npm.message, "No matching version found");
 });

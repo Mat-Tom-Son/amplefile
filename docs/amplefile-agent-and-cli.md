@@ -973,8 +973,9 @@ that is honest for a personal, local product:
   turn-conflict refusal, History checkpoints, and kernel task records.
   Without the running app there is no facade and nothing changes. Errors
   keep the window's meaning: a name another item already has is a conflict
-  (exit 5), and a disk refusal (locked, no permission, no room) reads as the
-  window says it, naming the item but never its full path.
+  (exit 5), a disk refusal (locked, no permission, no room) reads as the
+  window says it, naming the item but never its full path, and any other
+  failed system call is a plain failure that names only its error code.
 - **Prepared acts.** Runnable-code, standing-power, and destruction acts
   prepare a fully pinned record, recheck every pin at effect time, consume it
   journal-first, and execute at most once through a fenced kernel task,

@@ -14,6 +14,8 @@ import { describeJobState, AmpleFileJobLimitError, type AmpleFileJobRecord } fro
 import { JobOutputWriter, readJobOutputPage, sanitizeJobOutput } from "../src/local/jobs/job-output.js";
 import { reapOrphanedJobProcesses, AmpleFileJobService, type AmpleFileJobServicePorts } from "../src/local/jobs/job-service.js";
 import { AmpleFileJobStore } from "../src/local/jobs/job-store.js";
+import { backgroundJobsForTurn } from "../src/local/api/background-jobs.js";
+import type { LocalApiState } from "../src/local/api/state.js";
 
 /**
  * The background job service on its own (docs/background-jobs.md):
@@ -529,4 +531,24 @@ test("a job ended from outside names the signal, not only its exit code", async 
   const ended = (await h.service.wait(job.jobId, { seconds: 10 })).job;
   assert.equal(ended.signal, "SIGKILL");
   assert.match(describeJobState(ended, new Date()), /^was ended by signal SIGKILL \(exit code 137\) after/);
+});
+
+test("the Chat's next turn lists a job whose follow-up could not start, and only once", async (t) => {
+  const h = await harness(t);
+  const job = await start(h, "exit 0");
+  await h.service.wait(job.jobId, { seconds: 10 });
+  // The request claimed this end for a follow-up turn that never started.
+  await h.service.markDelivered(job.jobId, "follow_up", null);
+  const state = {
+    jobs: h.service,
+    jobsSettledThisRun: new Set([job.jobId]),
+    requests: {
+      get: () => ({ deliveredJobIds: [job.jobId] }),
+      noteJobDelivery: async () => undefined,
+    },
+  } as unknown as LocalApiState;
+  const first = await backgroundJobsForTurn(state, "af-1", "chat-1", "turn-2");
+  assert.deepEqual(first.map(({ jobId, finished }) => ({ jobId, finished })), [{ jobId: job.jobId, finished: true }]);
+  assert.equal(h.service.get(job.jobId)?.delivery?.taskId, "turn-2");
+  assert.deepEqual(await backgroundJobsForTurn(state, "af-1", "chat-1", "turn-3"), [], "a turn that received it ends the matter");
 });

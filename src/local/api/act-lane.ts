@@ -1768,7 +1768,11 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const admission = await runActOperation(() => state.automations.runNowAdmission(automationId, {
         ...(input.requestId ? { requestId: input.requestId } : {}),
       }));
-      void admission.result.catch(() => undefined);
+      // A refused admission (another run of it in progress, scheduling
+      // suspended) settles at once with no run work, so its outcome is
+      // reported here instead of a run that will never start.
+      if (admission.refused) await admission.result.catch(() => undefined);
+      else void admission.result.catch(() => undefined);
       // The scheduler marks every admission before handing it back, so the
       // run is at least queued here.
       const status = state.automations.runStatus(automationId, admission.runId);

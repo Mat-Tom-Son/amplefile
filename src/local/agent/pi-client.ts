@@ -1283,10 +1283,16 @@ export class PiConversationClient extends EventEmitter {
     }
     if (raw.type === "compaction_end" && raw.errorMessage) {
       if (raw.reason === "overflow") {
-        // Pi's own words (no provider text): its one compact-and-retry
-        // attempt could not make the conversation fit.
-        this.pendingAssistantError = String(raw.errorMessage);
-        this.pendingAssistantErrorKind = /context overflow/i.test(String(raw.errorMessage)) ? "context_overflow" : "length";
+        const text = String(raw.errorMessage);
+        // "Context overflow recovery failed: <error>" means the compaction
+        // request itself failed (a rejected key, an unreachable provider):
+        // that error is the cause. Otherwise Pi's own words say its one
+        // compact-and-retry attempt could not make the reply or context fit.
+        const compactionCallFailed = /^Context overflow recovery failed: ([\s\S]+)$/.exec(text);
+        this.pendingAssistantError = compactionCallFailed ? compactionCallFailed[1]! : text;
+        this.pendingAssistantErrorKind = compactionCallFailed
+          ? "provider"
+          : /^Context overflow recovery failed after/i.test(text) ? "context_overflow" : "length";
       }
       this.emitEvent({ type: "status", message: `Compaction warning: ${compactText(String(raw.errorMessage))}`, raw });
       return;

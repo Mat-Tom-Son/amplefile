@@ -219,6 +219,10 @@ for every *enabled* automation, receipted, never a schedule mutation. It
 returns the run id as soon as the run is admitted, as Settings does, and never
 waits for the run: a run's steps start turns that use the same `amplefile`
 command, and a command waiting on them would hold them up.
+A run-now refused at admission, because another run of the same automation is
+pending or active or scheduling is suspended, starts nothing: the command
+reports that run settled `skipped` with the reason, and its receipt says it did
+not start.
 `automations status --automation <id> --run <run-id>` reads that run as
 `queued`, `running`, or `settled` with its outcome, and
 `automations wait --automation <id> --run <run-id>` repeats that read in the

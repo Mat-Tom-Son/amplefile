@@ -49,7 +49,8 @@ export interface ProviderFailureInput {
 /** The HTTP status a provider error carries in the shapes Pi's providers format, if any. */
 export function providerHttpStatus(message: string): number | undefined {
   const patterns = [
-    /^\s*(?:HTTP(?:\/[\d.]+)?\s+)?([1-5]\d\d)\b/i,
+    // Optionally after one short label, as Pi wraps a compaction's error ("Summarization failed: 401 …").
+    /^\s*(?:[A-Za-z][\w ]{0,40}:\s*)?(?:HTTP(?:\/[\d.]+)?\s+)?([1-5]\d\d)\b/i,
     /\bAPI error \(([1-5]\d\d)\)/i,
     /\b([1-5]\d\d) status code\b/i,
     /"(?:code|status|statusCode)"\s*:\s*"?([1-5]\d\d)\b/,
@@ -96,11 +97,13 @@ export function describeProviderFailure(input: ProviderFailureInput): TurnFailur
   const status = providerHttpStatus(message);
   const at = status !== undefined ? ` (HTTP ${status})` : "";
   const withStatus = status !== undefined ? { status } : {};
-  if (status === 402) {
+  // Billing is recognised by its words too: some providers answer an empty
+  // balance with 400 or 429 rather than 402.
+  if (status === 402 || /credit balance|insufficient[_ ](?:credit|balance|funds|quota)|billing (?:details|limit|hard limit)|payment required/i.test(message)) {
     return {
       cause: "billing",
-      status,
-      text: "The model provider reported a credit or billing limit (HTTP 402). Check its available credit or reduce the maximum response length before trying again.",
+      ...withStatus,
+      text: `The model provider reported a credit or billing limit${at}. Check its available credit or reduce the maximum response length before trying again.`,
     };
   }
   if (status === 401) {

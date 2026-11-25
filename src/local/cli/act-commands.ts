@@ -3004,7 +3004,12 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       return `${lines.join("\n")}\n`;
     }
     case "automations.run": {
-      const run = record.run as { runId?: unknown; state?: unknown } | undefined;
+      const run = record.run as { runId?: unknown; state?: unknown; outcome?: unknown; error?: unknown } | undefined;
+      if (run?.state === "settled") {
+        // Refused at admission: no run started.
+        const why = typeof run.error === "string" && run.error ? ` ${terminalText(run.error)}` : "";
+        return `Automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] did not start a run: run ${terminalText(run.runId)} settled ${terminalText(run.outcome)}.${why}\n`;
+      }
       const follow = `'automations wait --automation ${terminalText(record.automationId)} --run ${terminalText(run?.runId)}'`;
       return `Started automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] as run ${terminalText(run?.runId)} (${terminalText(run?.state)}). `
         + `Run-now never shifts the schedule. ${follow} waits for it to finish; per-hop receipts are in 'automations receipts'.\n`;
@@ -3210,7 +3215,7 @@ function actReceiptDetail(
     removed?: unknown;
     source?: unknown;
     digest?: unknown;
-    run?: { runId?: unknown };
+    run?: { runId?: unknown; state?: unknown; outcome?: unknown };
     automationId?: unknown;
     declarationDigest?: unknown;
     alreadyEnabled?: unknown;
@@ -3359,7 +3364,9 @@ function actReceiptDetail(
     // evidence.
     case "automations.run":
       return typeof record.automationId === "string" && typeof record.run?.runId === "string"
-        ? `automation ${record.automationId}; started run ${record.run.runId}`
+        ? record.run.state === "settled"
+          ? `automation ${record.automationId}; run ${record.run.runId} not started (${String(record.run.outcome)})`
+          : `automation ${record.automationId}; started run ${record.run.runId}`
         : undefined;
     case "automations.stop":
       return typeof record.automationId === "string"
