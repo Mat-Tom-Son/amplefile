@@ -34,7 +34,6 @@ import type { AmpleFileJobShell } from "../jobs/job-service.js";
 import { parseUntilPattern } from "../agent/job-tools.js";
 import {
   createConnectedFolderCheckpoint,
-  createConnectedFolderMutationCheckpoint,
   listConnectedFolderCheckpoints,
   listConnectedFolderCheckpointPage,
   listFileVersionPage,
@@ -61,12 +60,8 @@ import { AmpleFileCliError } from "../cli/protocol.js";
 import type { AmpleFileActFacade, AmpleFileActRecentlyDeletedEntry } from "../cli/act-facade.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "../amplefile-cli-adapter.js";
 import {
-  createConnectedFolderFolder,
-  createConnectedFolderTextFile,
   getConnectedFolder,
   listConnectedFolders,
-  moveConnectedFolderEntry,
-  renameConnectedFolderEntry,
   renameConnectedFolder,
   resolveConnectedFolderPath,
   type ConnectedFolderRemovalResult,
@@ -118,7 +113,14 @@ import {
 } from "./connected-folder-routes.js";
 import { createWorktreeToolHost, getClient, refreshClientIfMarked } from "./conversation-clients.js";
 import { broadcast, publishControlHint } from "./event-streams.js";
-import { addExternalFilesInternal, deleteConnectedFolderEntryWithRecovery, normalizeConnectedFolderRelativePath } from "./file-changes.js";
+import {
+  addExternalFilesInternal,
+  createConnectedFolderFolderWithHistory,
+  createConnectedFolderTextFileWithHistory,
+  deleteConnectedFolderEntryWithRecovery,
+  moveConnectedFolderEntryWithHistory,
+  renameConnectedFolderEntryWithHistory,
+} from "./file-changes.js";
 import { errorMessage } from "./http.js";
 import { type PreparedActOutcome, runPreparedActOperation } from "./prepared-act-adapters.js";
 import { recentlyDeletedEntryView, restoreRecentlyDeletedEntry } from "./recently-deleted-routes.js";
@@ -143,7 +145,7 @@ import {
   waitingRefForTask,
 } from "./request-records.js";
 import { queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
-import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore, runWithHistorySafety } from "./reservations.js";
+import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./turn-acceptance.js";
 import { yieldBackgroundCompaction } from "./turn-run.js";
@@ -1092,28 +1094,17 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const sourceRaw = input.fromPath.trim();
       if (!sourceRaw) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
       return runActOperation(async () => {
-        // Exactly the desktop move route: a targeted restore point that undoes
-        // the move, then the mutation, with the unused restore point discarded
-        // when the mutation fails.
-        const moveSource = normalizeConnectedFolderRelativePath(sourceRaw);
-        const moveTargetFolder = normalizeConnectedFolderRelativePath(input.toDir);
-        const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-          movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
-          reason: "pre_move",
-          label: `Before moving ${sourceRaw}`,
-        });
-        const moved = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => moveConnectedFolderEntry(connectedFolder.connectedFolderRoot, {
-          sourcePath: moveSource,
+        const { moved, safetyCheckpointId } = await moveConnectedFolderEntryWithHistory(connectedFolder, {
+          sourcePath: sourceRaw,
           targetFolderPath: input.toDir,
-        }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.move", connectedFolder, checkpointId: safety.checkpointId });
+        });
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.move", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           fromPath: moved.fromPath,
           path: moved.path,
           kind: moved.kind,
-          safetyCheckpointId: safety.checkpointId,
+          safetyCheckpointId,
         };
       });
     },
@@ -1124,23 +1115,15 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const newName = input.newName.trim();
       if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
-        const renameSource = normalizeConnectedFolderRelativePath(sourceRaw);
-        const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
-        const renameDestination = [renameParent, newName].filter(Boolean).join("/");
-        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-          movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
-          reason: "pre_rename",
-          label: `Before renaming ${sourceRaw}`,
-        });
-        const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: sourceRaw, newName }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", connectedFolder, checkpointId: safety.checkpointId });
+        const { renamed, safetyCheckpointId } = await renameConnectedFolderEntryWithHistory(connectedFolder, { path: sourceRaw, newName });
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           fromPath: renamed.fromPath,
           path: renamed.path,
-          priorName: basename(renameSource),
+          priorName: basename(renamed.fromPath),
           kind: renamed.kind,
-          safetyCheckpointId: safety.checkpointId,
+          safetyCheckpointId,
         };
       });
     },
@@ -1164,42 +1147,32 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesMkdir(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const { target, parentPath, name } = splitActEntryPath(input.path, "A folder path is required.");
+      const { parentPath, name } = splitActEntryPath(input.path, "A folder path is required.");
       return runActOperation(async () => {
-        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-          deleteOnRestore: [target],
-          reason: "pre_create",
-          label: `Before creating ${name}`,
-        });
-        const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, parentPath, name));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", connectedFolder, checkpointId: safety.checkpointId });
+        const { folder, safetyCheckpointId } = await createConnectedFolderFolderWithHistory(connectedFolder, { parentPath, name });
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           created: true as const,
           path: folder.path,
           kind: "folder" as const,
-          safetyCheckpointId: safety.checkpointId,
+          safetyCheckpointId,
         };
       });
     },
     async filesCreate(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const { target, parentPath, name } = splitActEntryPath(input.path, "A file path is required.");
+      const { parentPath, name } = splitActEntryPath(input.path, "A file path is required.");
       return runActOperation(async () => {
-        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-          deleteOnRestore: [target],
-          reason: "pre_create",
-          label: `Before creating ${name}`,
-        });
-        const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, parentPath, name, ""));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.create", connectedFolder, checkpointId: safety.checkpointId });
+        const { file, safetyCheckpointId } = await createConnectedFolderTextFileWithHistory(connectedFolder, { parentPath, name, text: "" });
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.create", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           created: true as const,
           path: file.path,
           kind: "file" as const,
-          safetyCheckpointId: safety.checkpointId,
+          safetyCheckpointId,
         };
       });
     },

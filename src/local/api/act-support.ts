@@ -91,16 +91,15 @@ export async function recordFacadeAction(
 }
 
 /**
- * Splits one Connected Folder–relative act path into the desktop create routes' parent
- * and name inputs, so `files mkdir`/`files create` run the exact same
- * `createConnectedFolderFolder`/`createConnectedFolderTextFile` internals as the renderer.
+ * Splits one Connected Folder–relative act path into the parent and name the
+ * window's New Folder and New File send, so `files mkdir`/`files create` call
+ * the same owners in `file-changes.ts` with the same inputs.
  */
-export function splitActEntryPath(rawPath: string, missingMessage: string): { target: string; parentPath: string; name: string } {
+export function splitActEntryPath(rawPath: string, missingMessage: string): { parentPath: string; name: string } {
   const target = normalizeConnectedFolderRelativePath(rawPath);
   if (!target) throw new AmpleFileCliError("usage", missingMessage);
   const lastSlash = target.lastIndexOf("/");
   return {
-    target,
     parentPath: lastSlash === -1 ? "" : target.slice(0, lastSlash),
     name: lastSlash === -1 ? target : target.slice(lastSlash + 1),
   };
