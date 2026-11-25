@@ -36,8 +36,10 @@ release needs no rebuild and an unpublished version is never linked.
 Linux links open the newest Linux preview. The previews are prereleases in
 `Mat-Tom-Son/amplefile`, which no "latest" address reaches, so the same
 script asks GitHub for that repository's releases and points every Linux link
-at the page of the newest prerelease whose tag starts with `linux-`. Until
-GitHub answers, a Linux link opens the list of releases. A visitor on Linux
+at the page of the newest prerelease whose tag starts with `linux-`. Newest
+means published last (`site/linux-preview.mjs`): GitHub does not list one
+day's releases newest first, so the first match in its list can be an older
+preview. Until GitHub answers, a Linux link opens the list of releases. A visitor on Linux
 sees the Linux button as the blue one at the top of the page, and the Linux
 preview first in the menu bar's Download menu.
 

@@ -1389,8 +1389,19 @@ html.os-linux .mn-nav .mn-btn.linux, html.os-windows .mn-nav .mn-btn.win { --b:v
     if (asset) point("mac", asset.browser_download_url, true);
   });
   // Linux links open the newest Linux preview's page, which lists its packages; without an answer they open the list of releases.
+  // The newest is chosen by publish time (site/linux-preview.mjs): GitHub's list is not newest first within a day.
+  function newestLinuxPreview(list) {
+    let newest = null;
+    let newestAt = -1;
+    for (const x of Array.isArray(list) ? list : []) {
+      if (!(x && x.prerelease && !x.draft && /^linux-/.test(x.tag_name))) continue;
+      const at = Date.parse(x.published_at) || 0;
+      if (at > newestAt) { newest = x; newestAt = at; }
+    }
+    return newest;
+  }
   ask("https://api.github.com/repos/Mat-Tom-Son/amplefile/releases?per_page=30").then((list) => {
-    const rel = (Array.isArray(list) ? list : []).find((x) => x.prerelease && !x.draft && /^linux-/.test(x.tag_name));
+    const rel = newestLinuxPreview(list);
     if (rel) point("linux", rel.html_url, false);
   });
 })();
