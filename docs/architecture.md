@@ -206,8 +206,10 @@ opaque id its listing minted; the host finds it again for every act.
   refuses a drive the listing does not mark ejectable. For a drive holding a
   registered Connected Folder, it holds that Connected Folder's History and
   the shared Connected Folder reservation through the eject. It refuses, as a
-  deletion does, while a turn or compaction runs there, a request is
-  unsettled, or a background job or Automation run may be writing there.
+  deletion does and with the same `busy` refusal, while a turn or compaction
+  runs there, a request is unsettled, or a background job or Automation run
+  may be writing there. Work in a Connected Folder on a drive that stays does
+  not hold the eject up.
   The host compares registered roots as written and follows linked ancestors
   under the shared drive guard when it needs the resolved location. If a
   location cannot be checked, Eject refuses.
