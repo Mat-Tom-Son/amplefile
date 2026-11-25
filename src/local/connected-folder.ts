@@ -2119,14 +2119,30 @@ function safeUploadPath(value: string): string {
   return segments.map(safeFileName).join("/");
 }
 
-function safeFileName(value: string): string {
+/** The longest name, in characters, AmpleFile gives an item it makes, renames, or copies into a Connected Folder. */
+export const maxConnectedFolderEntryNameLength = 240;
+
+/**
+ * The name an item in a Connected Folder gets for a requested name: trimmed,
+ * and refused when it is empty, a path, reserved, or longer than
+ * {@link maxConnectedFolderEntryNameLength} characters. A name is never
+ * shortened, so whoever plans a change from it names the item the change
+ * makes.
+ */
+export function safeFileName(value: string): string {
   const name = value.trim();
   if (!name || name === "." || name === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(name)) throw new Error("File name is not allowed.");
   const windowsStem = name.split(".")[0]?.toLocaleUpperCase() ?? "";
   if (/[. ]$/.test(name) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)) {
     throw new Error("File name is reserved by Windows.");
   }
-  return name.slice(0, 240);
+  if (name.length > maxConnectedFolderEntryNameLength) {
+    throw Object.assign(
+      new Error(`A name can be at most ${maxConnectedFolderEntryNameLength} characters long, and this one has ${name.length}. Choose a shorter name.`),
+      { status: 400, statusCode: 400 },
+    );
+  }
+  return name;
 }
 
 function normalizeConnectedFolderName(value: string): string {

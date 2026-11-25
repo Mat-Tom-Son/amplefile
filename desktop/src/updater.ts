@@ -3,6 +3,9 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { BrowserWindow, MessageBoxOptions } from "electron";
 
+import type { DesktopUpdateStatus } from "../../src/shared/desktop-ipc.js";
+import { sendToRenderer } from "./desktop-ipc-main.js";
+
 const require = createRequire(import.meta.url);
 
 const defaultStartupDelayMs = 5_000;
@@ -22,35 +25,6 @@ export class UpdateStagingTimeoutError extends Error {
     super(message);
     this.name = "UpdateStagingTimeoutError";
   }
-}
-
-export type DesktopUpdatePhase =
-  | "unsupported"
-  | "idle"
-  | "checking"
-  | "available"
-  | "not_available"
-  | "downloading"
-  | "ready"
-  | "installing"
-  | "error";
-
-export interface DesktopUpdateStatus {
-  supported: boolean;
-  phase: DesktopUpdatePhase;
-  currentVersion: string;
-  availableVersion: string | null;
-  progressPercent: number | null;
-  checkedAt: string | null;
-  message: string;
-  error: string | null;
-  /**
-   * "system" when the computer's package manager installs AmpleFile's
-   * updates (a repository-managed Linux RPM, desktop/src/system-package-updates.ts):
-   * "ready" then means the update is already installed and only a restart is
-   * left. Absent for the app's own updater.
-   */
-  updatesFrom?: "app" | "system";
 }
 
 /** What the desktop host asks of whichever update source this install has. */
@@ -752,7 +726,7 @@ function defaultElectronHost(getWindow: () => BrowserWindow | null, getWindows: 
     },
     emitStatus: (status) => {
       for (const window of getWindows()) {
-        if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("amplefile:updates:status-changed", status);
+        if (!window.isDestroyed() && !window.webContents.isDestroyed()) sendToRenderer(window.webContents, "amplefile:updates:status-changed", status);
       }
     },
   };

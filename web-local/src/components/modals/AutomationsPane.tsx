@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { errorText } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
+import { desktopPlatform, type DesktopPlatform } from "../../lib/platform";
 import { notifyFolderAutomationsChanged } from "../../hooks/useFolderAutomations";
 import { createFixtureAutomationReads } from "../../fixtures/settings-fixture";
 import { showToast } from "../../ui/feedback";
@@ -11,150 +12,29 @@ import {
   automationCatchUpSentence,
   formatAutomationDateTime as formatDateTime,
   automationTriggerSummary as triggerSummary,
-  type AutomationCatchUpReason,
   type AutomationOutcome,
-  type AutomationTriggerView,
 } from "../../../../src/shared/automation-presentation";
+import type {
+  AutomationConnectedFolderRef,
+  AutomationDetailView,
+  AutomationHealthState,
+  AutomationHistoryHopView,
+  AutomationHistoryResponse,
+  AutomationHistoryRunView,
+  AutomationProposalView,
+  AutomationStepView,
+  AutomationSummaryView,
+  AutomationsResponse,
+} from "../../../../src/shared/automation-settings-view";
 
-export type AutomationHealthState = "enabled" | "disabled" | "suspended" | "completed";
-export type AutomationsPaneOutcome = AutomationOutcome;
-
-export interface AutomationConnectedFolderRef {
-  connectedFolderId: string;
-  connectedFolderName?: string;
-}
-
-export type AutomationsPaneTriggerView = AutomationTriggerView;
-
-export type AutomationStepView =
-  | {
-    id: string;
-    kind: "chat";
-    connectedFolder: AutomationConnectedFolderRef;
-    message: string;
-    model?: { provider: string; id: string };
-  }
-  | {
-    id: string;
-    kind: "files";
-    fromConnectedFolder: AutomationConnectedFolderRef;
-    toConnectedFolder: AutomationConnectedFolderRef;
-    to: string;
-    source:
-      | { kind: "paths"; paths: string[] }
-      | { kind: "tree"; path: string; recursive: boolean; extensions: string[] }
-      | { kind: "step-created-files"; step: string; extensions?: string[]; maxFiles: number; maxTotalBytes: number };
-  }
-  | {
-    id: string;
-    kind: "agent";
-    message: string;
-    model?: { provider: string; id: string };
-  };
-
-export interface AutomationSummaryView {
-  automationId: string;
-  title: string;
-  health: AutomationHealthState;
-  trigger: AutomationsPaneTriggerView;
-  fileWatch?: {
-    state: "starting" | "watching" | "paused" | "error";
-    detail?: string;
-    lastObservedAt?: string;
-    lastTriggeredAt?: string;
-    /** A catch-up found and waiting for the folder to settle, its cooldown, or other automation work. */
-    catchingUp?: { reason: AutomationCatchUpReason; count: number };
-    lastCatchUpAt?: string;
-    notice?: string;
-  };
-  stepCount: number;
-  /** Every Connected Folder the trigger or a step names; drives the Connected Folder filter. */
-  connectedFolders?: AutomationConnectedFolderRef[];
-  nextScheduledAt?: string;
-  lastScheduledAt?: string;
-  activeRun?: { runId: string; startedAt: string };
-  lastRun?: {
-    runId: string;
-    outcome: AutomationsPaneOutcome;
-    startedAt: string;
-    finishedAt?: string;
-    partial?: true;
-  };
-  /** The newest run that caught up on files changed while AmpleFile could not watch. */
-  lastCatchUp?: { runId: string; at: string; count: number; reason: AutomationCatchUpReason };
-  suspension?: {
-    at: string;
-    reason?: string;
-    missingConnectedFolders?: AutomationConnectedFolderRef[];
-  };
-}
-
-export interface AutomationDetailView extends AutomationSummaryView {
-  createdAt: string;
-  createdBy?: string;
-  connectedFolders: AutomationConnectedFolderRef[];
-  steps: AutomationStepView[];
-  completedAt?: string;
-}
-
-export interface AutomationHistoryHopView {
-  hopId: string;
-  kind: "chat" | "files" | "agent";
-  outcome: AutomationsPaneOutcome;
-  partial?: true;
-  connectedFolderName?: string;
-  detail?: string;
-  evidence?: Array<{ label: string; value: string }>;
-}
-
-export interface AutomationHistoryRunView {
-  runId: string;
-  outcome: AutomationsPaneOutcome;
-  startedAt: string;
-  finishedAt?: string;
-  cause?: string;
-  detail?: string;
-  partial?: true;
-  hops: AutomationHistoryHopView[];
-}
-
-export interface AutomationsResponse {
-  automations: AutomationSummaryView[];
-  status: {
-    storeDamaged: boolean;
-    storeDamageReason?: string;
-    journalDamaged: boolean;
-    journalDamageReason?: string;
-    activeRunCount: number;
-  };
-}
-
-export interface AutomationDetailResponse {
-  automation: AutomationDetailView;
-}
-
-export interface AutomationHistoryResponse {
-  runs: AutomationHistoryRunView[];
-  truncated: boolean;
-  damagedLineCount: number;
-}
-
-/** A `*.amplefile-automation.json` file the AmpleFile Agent wrote that is not stored yet. */
-export type AutomationProposalView =
-  | {
-    valid: true;
-    path: string;
-    fileName: string;
-    automationId: string;
-    digest: string;
-    title: string;
-    trigger: AutomationsPaneTriggerView;
-  }
-  | { valid: false; path: string; fileName: string; problem: string };
-
-export interface AutomationProposalsResponse {
-  proposals: AutomationProposalView[];
-  truncated: boolean;
+/**
+ * The empty list points at the AmpleFile Agent, which sets Automations up: in
+ * the menu bar on the Mac, and in the View menu on Linux, where a desktop may
+ * not show tray icons.
+ */
+export function automationsEmptyText(platform: DesktopPlatform = desktopPlatform()): string {
+  if (platform === "linux") return "No automations yet. To set one up, open View → AmpleFile Agent and ask it. Say what should happen, when, and in which Connected Folders.";
+  return "No automations yet. To set one up, ask the AmpleFile Agent in the menu bar. Say what should happen, when, and in which Connected Folders.";
 }
 
 const emptyHistory: AutomationHistoryResponse = { runs: [], truncated: false, damagedLineCount: 0 };
@@ -464,7 +344,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
         </section>
       ) : null}
       {data && !allAutomations.length ? (
-        <div className="automations-empty">No automations yet. To set one up, ask the AmpleFile Agent in the menu bar. Say what should happen, when, and in which Connected Folders.</div>
+        <div className="automations-empty">{automationsEmptyText()}</div>
       ) : null}
       {showFolderFilter ? (
         <div className="capabilities-type-chips automation-folder-filter" role="group" aria-label="Connected Folder">
@@ -839,7 +719,7 @@ function connectedFolderLabel(connectedFolder: AutomationConnectedFolderRef): st
 }
 
 /** A succeeded run or step whose Worker reported finishing only partly reads "Partly done". */
-function outcomeLabel(outcome: AutomationsPaneOutcome, partial?: true): string {
+function outcomeLabel(outcome: AutomationOutcome, partial?: true): string {
   if (partial && outcome === "succeeded") return "Partly Done";
   return ({
     accepted: "Started",

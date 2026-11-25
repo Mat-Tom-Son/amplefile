@@ -5,7 +5,8 @@ import { connectedFolderEntryNativePath, nativePathEntryPath } from "../../lib/p
 import { showToast } from "../../ui/feedback";
 import type { TreeEntry } from "../../types";
 import { samePlace, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
-import { operationTitle, type FileOperationKind, type TransferAnswer } from "./file-operations-model";
+import type { TransferAnswer } from "../../../../src/shared/file-transfer";
+import { operationTitle, type FileOperationKind } from "./file-operations-model";
 import { moveResultMessage } from "./move-result";
 import { historyTurn, transferLabel } from "./file-manager-undo";
 import { desktopErrorText } from "./file-manager-view-helpers";

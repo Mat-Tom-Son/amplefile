@@ -96,17 +96,11 @@ test("the AmpleFile Agent streams its steps and keeps one compact line for deleg
   assert.doesNotMatch(popover, /PhasePill|pill-working/);
 });
 
-test("the popover renders the live agent response and reconciles the durable transcript", async () => {
+test("the popover renders the live agent response", async () => {
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
-  // Reconnect snapshots replace the transient projection, deltas are batched
-  // to an animation frame, and the authoritative final message replaces it.
-  assert.match(popover, /event\.type === "turn_snapshot" && typeof event\.text === "string"[\s\S]*replaceStreamingAssistant\(event\.text\)/);
-  assert.match(popover, /event\.type === "assistant_delta" && typeof event\.text === "string"[\s\S]*queueStreamingAssistant\(event\.text\)/);
-  assert.match(popover, /event\.type === "assistant_message" && typeof event\.text === "string"[\s\S]*replaceStreamingAssistant\(event\.text\)/);
-  assert.match(popover, /window\.requestAnimationFrame\(flushStreamingAssistant\)/);
+  // How the response streams, is replaced, and clears is exercised in amplefile-agent-live-steps-ui.
   assert.match(popover, /className="popover-message assistant streaming" aria-label="amplefile is replying"/);
   assert.match(popover, /<PopoverMarkdown text=\{streamingAssistant\} \/>/);
-  assert.match(popover, /if \(!summary\.latestRequest \|\| !activePhases\.has\(summary\.latestRequest\.phase\)\) \{\s*replaceStreamingAssistant\(""\);/);
 });
 
 test("the compact popover leaves the overview to the main window and approved web clients", async () => {
@@ -157,7 +151,6 @@ test("the popover composer behaves like every other AmpleFile composer", async (
   assert.match(popover, /new ResizeObserver\(stick\)/);
   assert.match(popover, /if \(!target\.clientHeight\) return;/);
   assert.match(popover, /target\.scrollHeight - target\.scrollTop - target\.clientHeight < 120/);
-  assert.match(popover, /clearLiveSteps\(\);\s*followLatest\(\);/);
   assert.match(popover, /className="agent-jump-latest" type="button" onClick=\{\(\) => followLatest\("smooth"\)\}/);
   assert.match(popover, /sameTranscript\(current, merged\) \? current : merged/);
   // Staged chips render outside the composer conditional so a mid-turn drop
@@ -186,7 +179,7 @@ test("the fold composer names its model and exposes real text-only reasoning con
   assert.match(popover, /setAmpleFileAgentComposer\(result\.composer\)/);
   assert.match(popover, /bridge\?\.ampleFileAgent\?\.openAiModelsSettings\(\)/);
   assert.match(preload, /openAiModelsSettings: \(\) => ipcRenderer\.invoke\("amplefile:agent:open-ai-models-settings"\)/);
-  assert.match(main, /const window = senderWindow\(event\) \?\? await ensureWindow\(\);[\s\S]*?window\.webContents\.send\("amplefile:agent:open-settings", "agent"\)/);
+  assert.match(main, /const window = senderWindow\(event\) \?\? await ensureWindow\(\);[\s\S]*?sendToRenderer\(window\.webContents, "amplefile:agent:open-settings", "agent"\)/);
 
   assert.doesNotMatch(popover, /Brain(?:Circuit)?\d+(?:Filled|Regular)/);
   assert.match(popover, /thinkingLevels\.length >= 2 && composerThinking/);

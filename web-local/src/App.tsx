@@ -20,8 +20,9 @@ import { useBootstrapRefresh } from "./hooks/useBootstrapRefresh";
 import { api, errorText } from "./lib/api";
 import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from "./lib/connected-folder-setup";
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
-import { isMacOS } from "./lib/platform";
-import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
+import { desktopPlatform, isMacOS } from "./lib/platform";
+import type { DesktopUpdateStatus } from "../../src/shared/desktop-ipc";
+import type { AgentStatus, AppThemePreference, BootstrapResponse, ConnectedFolderSummary } from "./types";
 import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
 import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
@@ -100,7 +101,8 @@ export function App() {
   const [locationHanded, setLocationHanded] = useState(false);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
-  const showDesktopTitleBar = window.ampleFileDesktop?.app.platform === "win32";
+  // The Linux preview (`&platform=linux`) draws the Linux title bar too, buttons included.
+  const showDesktopTitleBar = ["win32", "linux"].includes(desktopPlatform() ?? "");
 
   const openSettings = useCallback((page: SettingsPage = "appearance", modelScope?: ModelScope, focusAiModel = false, workerConnectedFolderId?: string, focusWorkerInstructions = false, backToCustomization?: () => void) => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;

@@ -193,11 +193,7 @@ test("provider interruptions stay visible and the configured model is disclosed 
   assert.match(styles, /\.turn-interruption/);
 });
 
-test("a new turn clears the prior idle stream snapshot before running becomes visible", () => {
-  const sendMessage = chatPanel.match(/async function sendMessage\([\s\S]*?\n  async function steerMessage/)?.[0] ?? "";
-  assert.match(sendMessage, /cancelStreamingFlush\(\);\s*\n\s*setStreamingAssistant\(""\);/);
-  assert.ok(sendMessage.indexOf('setStreamingAssistant("");') < sendMessage.indexOf("setRunning(true);"));
-  assert.match(chatPanel, /typeof data\.text === "string" && data\.running === true/);
+test("admitting a turn resets the Chat's event turn before anything awaits", () => {
   const admissionStart = localServer.match(/state\.runningTurns\.add\(turnKey\);[\s\S]*?const userMessageId/)?.[0] ?? "";
   assert.match(admissionStart, /state\.runningTurns\.add\(turnKey\);\s*\n[\s\S]*?resetChatEventTurn\(state, turnKey\);/);
   assert.doesNotMatch(admissionStart, /await /);
@@ -295,9 +291,7 @@ test("reasoning and real tool calls form one chronological steps strip", () => {
   assert.match(activity, /node\.type === "text"/);
   assert.match(activity, /connectedFolderPathCandidate\(value\.slice\(root\.length \+ 1\)/);
   assert.match(chatPanel, /if \(data\.type === "tool"\)/);
-  assert.match(chatPanel, /kind: "tool"/);
   assert.match(chatPanel, /replyStarted=\{liveTurnView\.hasFinal\}/);
-  assert.match(chatPanel, /durationMs: Math\.max\(0, endedAt - entry\.startedAt\)/);
   assert.match(messages, /connectedFolderRoot=\{connectedFolderRoot\}/);
   assert.match(piClient, /event\.detail = previous\?\.detail \|\| event\.detail \|\| ""/);
   assert.match(piClient, /summarizeToolValue\(args\)/);

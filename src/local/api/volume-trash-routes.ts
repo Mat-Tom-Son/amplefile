@@ -55,7 +55,7 @@ import {
 } from "../volumes.js";
 import { parseFileOperationId, runFileOperation } from "../file-operations.js";
 import { badRequest, errorMessage, httpError, notFound, readJsonBody, sendJson } from "./http.js";
-import { requestHasUnsettledWork } from "./reservations.js";
+import { runWithSettledConnectedFolders, type SettledWorkWording } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 
 export async function handleVolumeAndTrashRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
@@ -188,18 +188,11 @@ async function ejectListedVolume(state: LocalApiState, volumeId: string): Promis
   let toolRan = false;
   try {
     await withConnectedFolderHistoryOperations(held.map(({ connectedFolder }) => connectedFolder.connectedFolderRoot), async () => {
-      const reserved: string[] = [];
-      try {
-        for (const { connectedFolder, drive } of held) {
-          reserveForEject(state, connectedFolder, volume, drive);
-          reserved.push(connectedFolder.id);
-        }
-        for (const { connectedFolder, drive } of held) await assertSettledForEject(state, connectedFolder, volume, drive);
+      const settled = held.map(({ connectedFolder, drive }) => ({ id: connectedFolder.id, wording: ejectWording(connectedFolder, volume, drive) }));
+      await runWithSettledConnectedFolders(state, settled, async () => {
         toolRan = true;
         await ejectVolume(volume, process.platform, leaving.slice(1).map((drive) => ({ name: drive.volume.name, certain: drive.certain })));
-      } finally {
-        for (const id of reserved) state.capabilityMutations.delete(id);
-      }
+      });
     });
   } finally {
     // A disk that would not go may still have lost the volume that was asked for.
@@ -225,26 +218,15 @@ function onAnotherDrive(connectedFolder: { name: string }, volume: VolumeRecord,
     : ` ${connectedFolder.name} is on “${drive.volume.name}”, and AmpleFile couldn’t check whether that drive is on the same disk.`;
 }
 
-/** The shared Connected Folder reservation (src/local/api/reservations.ts), refused in eject's words. */
-function reserveForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord, drive: EjectCompanion): void {
+/** Why a held Connected Folder keeps the drive in place, for the shared settled-work refusal (src/local/api/reservations.ts). */
+function ejectWording(connectedFolder: { name: string }, volume: VolumeRecord, drive: EjectCompanion): SettledWorkWording {
   const where = onAnotherDrive(connectedFolder, volume, drive);
-  if (state.capabilityMutations.has("*") || state.capabilityMutations.has(connectedFolder.id)) {
-    throw httpError(409, `Wait for the current change to ${connectedFolder.name} to finish before ejecting “${volume.name}”.${where}`);
-  }
-  const prefix = `${connectedFolder.id}:`;
-  if ([...state.runningTurns, ...state.compactingConversations].some((key) => key.startsWith(prefix))) {
-    throw httpError(409, `${connectedFolder.name}’s Worker is working. Wait for it to finish, or stop it, before ejecting “${volume.name}”.${where}`);
-  }
-  state.capabilityMutations.add(connectedFolder.id);
-}
-
-async function assertSettledForEject(state: LocalApiState, connectedFolder: { id: string; name: string }, volume: VolumeRecord, drive: EjectCompanion): Promise<void> {
-  const where = onAnotherDrive(connectedFolder, volume, drive);
-  if (state.requests.list({ connectedFolderId: connectedFolder.id }).some((request) => requestHasUnsettledWork(state, request))) {
-    throw httpError(409, `Finish or stop ${connectedFolder.name}’s outstanding work before ejecting “${volume.name}”.${where}`);
-  }
-  const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolder.id);
-  if (blockers.length) throw httpError(409, `“${volume.name}” can’t be ejected while ${connectedFolder.name} has running work. ${blockers[0]!}${where}`);
+  return {
+    changing: `Wait for the current change to ${connectedFolder.name} to finish before ejecting “${volume.name}”.${where}`,
+    working: `${connectedFolder.name}’s Worker is working. Wait for it to finish, or stop it, before ejecting “${volume.name}”.${where}`,
+    outstanding: `Finish or stop ${connectedFolder.name}’s outstanding work before ejecting “${volume.name}”.${where}`,
+    blocked: (blocker) => `“${volume.name}” can’t be ejected while ${connectedFolder.name} has running work. ${blocker}${where}`,
+  };
 }
 
 export interface PutBackResponse extends PutBackResult {

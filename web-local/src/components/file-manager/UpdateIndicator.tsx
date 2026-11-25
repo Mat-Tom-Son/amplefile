@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { updateIndicatorDuringCheck, updateIndicatorFor, type UpdateIndicatorModel } from "../../lib/update-status";
-import type { DesktopUpdateStatus } from "../../types";
+import type { DesktopUpdateStatus } from "../../../../src/shared/desktop-ipc";
 
 /**
  * The foot of the sidebar when an update needs the person: a dot in the

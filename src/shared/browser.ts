@@ -92,6 +92,21 @@ export interface BrowserPageState {
 /** What a browser tab's right-click menu asks the tab strip to do; the page's own actions run in the desktop host. */
 export type BrowserTabMenuCommand = "duplicate" | "close" | "close-others" | "reopen-closed";
 
+/** What the window's toolbar, find bar, and notices ask of one page; the desktop host checks each before acting. */
+export type BrowserCommand =
+  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" | "leave-page" | "stay-on-page" }
+  | { type: "mute"; muted: boolean }
+  | { type: "find"; text: string; forward: boolean; newSearch: boolean }
+  | { type: "forget-permission" | "open-privacy-settings"; kind: BrowserSitePermission };
+
+/** A page in the browser's history, for the address bar's suggestions and a new tab's recent pages. */
+export interface BrowserHistoryEntry {
+  url: string;
+  title: string;
+  visits: number;
+  lastVisitedAt: string;
+}
+
 /**
  * How a page reached the browser, for the site button: over https; on this
  * computer (a local server or a file); over plain http elsewhere, which is

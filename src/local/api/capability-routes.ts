@@ -62,6 +62,8 @@ export async function handleCapabilityRoutes({ state, req, res, url, method }: L
           fileName: bundle.fileName,
           bytes: bundle.bytes,
           scope: scope === "project" ? "project" : "user",
+          // Built for this install and installed as built.
+          expectedContentDigest: null,
         }, state.runtimeProvider);
         return { kind: "skill" as const, item, imported };
       }
@@ -266,7 +268,8 @@ export async function handleCapabilityRoutes({ state, req, res, url, method }: L
       async () => {
         const results = [];
         for (const file of multipart.files) {
-          results.push(await importPiSkillBundle(connectedFolder.connectedFolderRoot, { fileName: file.fileName, bytes: file.data, scope }, state.runtimeProvider));
+          // The bytes this request carried, installed as sent.
+          results.push(await importPiSkillBundle(connectedFolder.connectedFolderRoot, { fileName: file.fileName, bytes: file.data, scope, expectedContentDigest: null }, state.runtimeProvider));
         }
         return results;
       },

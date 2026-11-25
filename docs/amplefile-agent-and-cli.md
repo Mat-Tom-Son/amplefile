@@ -447,7 +447,8 @@ succeeds or fails together with the placement. It copies as the window's
 Copy does ([What a copy carries](product-model.md#the-file-manager-window)):
 links inside a folder stay links as written, a folder's `.amplefile/` (another
 Connected Folder's identity and Chats) is left behind, a name already taken
-gets Finder's " copy" name, and a source that is itself a link is refused.
+gets Finder's " copy" name, and a source that is itself a link is refused, as
+is one whose name is longer than 240 characters, which a copy never shortens.
 `chat handoff --file` and an Automation's `files` step copy the same way.
 `connected-folders create`
 and `connected-folders register` grant the same runtime authorization as the

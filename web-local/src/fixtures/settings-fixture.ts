@@ -6,9 +6,9 @@ import type {
   AutomationProposalsResponse,
   AutomationsResponse,
   AutomationConnectedFolderRef,
-} from "../components/modals/AutomationsPane";
+} from "../../../src/shared/automation-settings-view";
 import type { RecentlyDeletedResponse } from "../components/modals/RecentlyDeletedPane";
-import type { DesktopUpdateStatus } from "../types";
+import type { DesktopUpdateStatus } from "../../../src/shared/desktop-ipc";
 
 /**
  * Sample Settings data for the browser preview (`?fixture=connected-folder`): the

@@ -245,7 +245,7 @@ test("a closing window's pages: a Worker's page moves, the person's closes, and 
 });
 
 test("the browser host sends a page's events to its own window and lets only that window answer its site", () => {
-  assert.match(browserHost, /#send\(page: BrowserPage \| null, channel[\s\S]*?const window = page \? this\.#home\(page\) : this\.#front\(\);/);
+  assert.match(browserHost, /#send<C extends BrowserEventChannel>\(page: BrowserPage \| null, channel[\s\S]*?const window = page \? this\.#home\(page\) : this\.#front\(\);/);
   assert.doesNotMatch(browserHost, /this\.#options\.send\(browserChannels\./, "every page event goes through #send");
   assert.doesNotMatch(browserHost, /this\.#options\.window\(\)/);
   assert.match(browserHost, /respondPermission\([^)]*window: BrowserWindow\): void \{\s*const page = this\.#pages\.get\(pageId\);\s*if \(!page \|\| this\.#home\(page\) !== window\) return;/);
@@ -290,9 +290,9 @@ test("a Cut is the host's, for every window: a paste in any window moves it, and
   const host = section(main, "const fileClipboard = new FileClipboard({", "\n});\n");
   assert.match(host, /read: readPasteboardFiles,/);
   assert.match(host, /token: \(\) => process\.platform === "darwin" \? randomBytes\(16\)\.toString\("hex"\) : null,/);
-  assert.match(host, /for \(const window of fileManagerWindows\.windows\(\)\) \{\s*if \(!window\.webContents\.isDestroyed\(\)\) window\.webContents\.send\("amplefile:file-clipboard:cut-changed", cut\);/);
+  assert.match(host, /for \(const window of fileManagerWindows\.windows\(\)\) \{\s*if \(!window\.webContents\.isDestroyed\(\)\) sendToRenderer\(window\.webContents, "amplefile:file-clipboard:cut-changed", cut\);/);
   // Paste, Cut, the question of what is cut, and Esc's cancel all go through it, from the trusted window only.
-  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:paste"', "\n  });\n"), /assertTrustedMainRenderer\(event\);[\s\S]*?return fileClipboard\.paste\(request, await listConnectedFolders\(\), \(body\) => transferFileEntries\(body\)\);/);
+  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:paste"', "\n  });\n"), /assertTrustedMainRenderer\(event\);[\s\S]*?return fileClipboard\.paste\(request, await listConnectedFolders\(\), \(body\) => transferFileEntries\(body\)\)/);
   const write = section(main, 'ipcMain.handle("amplefile:file-clipboard:write"', "\n  });\n");
   assert.match(write, /value\.operation === "cut"[\s\S]*?parseCutItems\(value\)[\s\S]*?await fileClipboard\.cut\(/);
   assert.match(write, /await writePasteboardFilePaths\(paths\);\s*\/\/ A Copy replaces whatever was cut\.\s*fileClipboard\.replaced\(\);/);
@@ -363,7 +363,7 @@ test("handed-over folders open in the most recent window, a request's further fo
   assert.match(main, /pendingOpenPaths\.push\(\.\.\.finderOpenPaths\(paths, /);
   const hand = section(main, "function handOpenLocation(");
   assert.match(hand, /fileManagerWindows\.handOpenLocation\(window, request\)/);
-  assert.match(hand, /window\.webContents\.send\("amplefile:file-manager:open-location", request\)/);
+  assert.match(hand, /sendToRenderer\(window\.webContents, "amplefile:file-manager:open-location", request\)/);
   // New Window opens at the folder the window it came from shows, else the home folder.
   const open = section(main, "async function openNewWindow(");
   assert.match(open, /options\.location\s*\?\? \(shown \? \{ place: shown\.place, path: shown\.path, select: null \} : null\)\s*\?\? await folderLocationForOpenPath\(homedir\(\)\)/);

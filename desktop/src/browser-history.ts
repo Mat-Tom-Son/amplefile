@@ -9,12 +9,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-export interface BrowserHistoryEntry {
-  url: string;
-  title: string;
-  visits: number;
-  lastVisitedAt: string;
-}
+import type { BrowserHistoryEntry } from "../../src/shared/browser.js";
 
 /** The newest pages kept; the least recently visited go first. */
 const entryLimit = 20_000;

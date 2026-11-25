@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { productIdentity } from "../../src/shared/product-identity.js";
 import { outsideAgentSkill, outsideAgentSkillName } from "../../src/shared/outside-agent-skill.js";
+import type { CommandLineSkillStatus, CommandLineSkillTarget, CommandLineStatus } from "../../src/shared/desktop-ipc.js";
 
 /**
  * Letting other AI agents use this app: the app's
@@ -21,30 +22,6 @@ import { outsideAgentSkill, outsideAgentSkillName } from "../../src/shared/outsi
  * Every name comes from src/shared/product-identity.json, so a rename changes
  * the command, the PATH file, and the skill folder together.
  */
-
-export type CommandLineSkillTarget = "claude" | "codex";
-
-export interface CommandLineSkillStatus {
-  /** The agent's own folder exists on this computer. */
-  available: boolean;
-  installed: "none" | "current" | "outdated";
-  /** Where the skill file goes. */
-  path: string;
-}
-
-export interface CommandLineStatus {
-  command: string;
-  path: {
-    /** Only an installed Mac app in a fixed place can put its command on the PATH. */
-    supported: boolean;
-    /** Why not, in plain words, when it can't. */
-    reason: string | null;
-    state: "installed" | "missing" | "elsewhere";
-    binDirectory: string | null;
-    entryFile: string;
-  };
-  skills: Record<CommandLineSkillTarget, CommandLineSkillStatus>;
-}
 
 export interface CommandLineEnvironment {
   platform: NodeJS.Platform;
