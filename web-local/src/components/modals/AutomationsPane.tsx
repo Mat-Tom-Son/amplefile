@@ -428,6 +428,11 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                   <h5>Watched Folder</h5>
                   <p>{detail.trigger.watch.path || "Top level of the Connected Folder"}{detail.trigger.watch.recursive ? " and subfolders" : ""} · {detail.trigger.watch.extensions.join(", ")}</p>
                   <p>{watchStateLabel(detail.fileWatch?.state)}{detail.fileWatch?.detail ? ` · ${detail.fileWatch.detail}` : ""}</p>
+                  {detail.fileWatch?.followingUp ? (
+                    <p className="automation-follow-up-pending">
+                      Following up on {detail.fileWatch.followingUp.count} new {detail.fileWatch.followingUp.count === 1 ? "file" : "files"} that arrived while an Automation was running.
+                    </p>
+                  ) : null}
                   {detail.trigger.ifMissed === "run" ? <>
                     <p className="automation-catch-up">
                       Catches up after AmpleFile was closed: files added or changed while AmpleFile was closed, the computer was asleep, or this automation was off start one run when AmpleFile is back.
@@ -443,8 +448,8 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                         : "none yet"}
                     </p>
                     {detail.fileWatch?.notice ? <p className="automation-catch-up-notice">{detail.fileWatch.notice}</p> : null}
-                    <p>Changes made while an Automation is running are skipped.</p>
-                  </> : <p>Changes made while an Automation runs, the computer sleeps, or AmpleFile restarts are skipped.</p>}
+                    <p>New files that arrive while an Automation is running start one follow-up run; edits and renames made then are skipped.</p>
+                  </> : <p>New files that arrive while an Automation is running start one follow-up run; edits and renames made then, and changes made while the computer sleeps or AmpleFile restarts, are skipped.</p>}
                 </section> : null}
                 <dl className="automation-facts">
                   <div><dt>Next</dt><dd>{detail.nextScheduledAt ? formatDateTime(detail.nextScheduledAt) : "—"}</dd></div>

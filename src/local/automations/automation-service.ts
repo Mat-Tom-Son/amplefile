@@ -1,6 +1,7 @@
 import type { AmpleFileResultEnvelope } from "../requests/request-records.js";
 import {
   AmpleFileAutomationFileWatch,
+  ampleFileAutomationFileObserverBounds,
   type AmpleFileAutomationCatchUpReason,
   type AmpleFileAutomationFileObserver,
   type AmpleFileAutomationFileSnapshot,
@@ -288,6 +289,13 @@ export class AmpleFileAutomationService {
   #fileEpoch = 0;
   #fileHoldChain: Promise<void> = Promise.resolve();
   readonly #fileLoads = new WeakMap<AmpleFileAutomationFileWatch, Promise<void>>();
+  /**
+   * Folder observation's pause for automation runs, from the first run
+   * starting to the last one ending: the paths files acts and files steps
+   * placed meanwhile, by Connected Folder, and whether a follow-up run was
+   * among the runs, which makes the watches absorb what arrived.
+   */
+  #runPause: { placed: Map<string, Set<string>>; placedCount: number; absorb: boolean } | null = null;
   readonly #store: AmpleFileAutomationStore;
   readonly #receipts: AmpleFileAutomationReceipts;
   readonly #ports: AmpleFileAutomationHopPorts;
@@ -805,6 +813,61 @@ export class AmpleFileAutomationService {
     }
   }
 
+  /**
+   * An automation run starts: every folder watch pauses until the last run
+   * ends. A follow-up run marks the pause to be absorbed, so whatever arrives
+   * while it works never starts another run.
+   */
+  #pauseFileWatchesForRun(cause: AmpleFileAutomationRunCause): void {
+    this.#fileEpoch += 1;
+    this.#runPause ??= { placed: new Map(), placedCount: 0, absorb: false };
+    if (cause.kind === "files-changed" && cause.followUp) this.#runPause.absorb = true;
+    for (const watch of this.#fileWatches.values()) watch.pauseForRun();
+  }
+
+  /**
+   * An automation run ended. Once no run is working, each watch learns what
+   * the runs placed in its Connected Folder, and its first look is compared
+   * with the look it had before them. Sleep and quit already reset the
+   * watches: a gap is never compared across.
+   */
+  #resumeFileWatchesAfterRun(): void {
+    this.#fileEpoch += 1;
+    if (this.#activeRuns.size > 0) return;
+    const pause = this.#runPause;
+    this.#runPause = null;
+    if (this.#suspensionDesired) return;
+    for (const [automationId, watch] of this.#fileWatches) {
+      const trigger = this.#armed.get(automationId)?.trigger;
+      const placed = trigger?.kind === "files-changed" ? pause?.placed.get(trigger.connectedFolder) : undefined;
+      watch.resumeAfterRuns([...(placed ?? [])], pause?.absorb ?? true);
+    }
+  }
+
+  /**
+   * A files act placed these Connected Folder–relative paths — added,
+   * moved, renamed, or created — or a files step copied them. While
+   * automation runs are working they are the runs' own files, so they never
+   * start a follow-up run. At any other time this does nothing, and a watch
+   * sees them as ordinary changes. More paths than a snapshot can hold make
+   * the pause absorb what arrived, as a follow-up run does.
+   */
+  notePlacedFiles(connectedFolderId: string, paths: readonly string[]): void {
+    const pause = this.#runPause;
+    if (!pause || pause.absorb) return;
+    let placed = pause.placed.get(connectedFolderId);
+    if (!placed) pause.placed.set(connectedFolderId, placed = new Set());
+    for (const path of paths) {
+      if (placed.has(path)) continue;
+      if (++pause.placedCount > ampleFileAutomationFileObserverBounds.maxFiles) {
+        pause.absorb = true;
+        pause.placed.clear();
+        return;
+      }
+      placed.add(path);
+    }
+  }
+
   async pollFileChanges(): Promise<void> {
     if (this.#closed || this.#suspensionDesired || this.#activeRuns.size || this.#filePollBusy || !this.#observeFiles) return;
     this.#filePollBusy = true;
@@ -833,6 +896,7 @@ export class AmpleFileAutomationService {
               changedCount: observed.changedCount,
               changedPaths: observed.changedPaths,
               ...(observed.catchUp ? { catchUp: observed.catchUp } : {}),
+              ...(observed.followUp ? { followUp: observed.followUp } : {}),
             });
             void admission.result.catch(() => undefined);
           }
@@ -898,22 +962,26 @@ export class AmpleFileAutomationService {
 
   /**
    * Runs as an automation run begins, after observation paused and before its
-   * first step. A due catch-up comparison is made now, while the folder still
-   * shows only what changed during the gap, and what it owes is saved to fire
-   * after the run. Then every opted-in saved snapshot is marked running: until
-   * the post-run look is saved, it may predate this run's own edits, so a
-   * quit, sleep, or Turn off in between never compares against it.
+   * first step. A due comparison is made now, while the folder still shows
+   * nothing of this run: a catch-up across a gap, or the first look after
+   * earlier runs that ended before any poll took it. What it owes is kept
+   * (and saved, for an opted-in watch) to fire after the run, and that look is
+   * what the first look after this run is compared with. Then every opted-in
+   * saved snapshot is marked running: until the post-run look is saved, it
+   * may predate this run's own edits, so a quit, sleep, or Turn off in
+   * between never compares against it.
    */
   async #holdFileWatchesForRun(): Promise<void> {
     const hold = this.#fileHoldChain.then(async () => {
       for (const [automationId, watch] of [...this.#fileWatches]) {
         const armed = this.#armed.get(automationId);
-        if (!watch.catchUp || armed?.trigger.kind !== "files-changed") continue;
+        if (armed?.trigger.kind !== "files-changed") continue;
         const current = () => this.#fileWatches.get(automationId) === watch;
-        if (watch.pendingComparison !== undefined && !watch.dirty && this.#observeFiles) {
+        const catchUpDue = () => watch.catchUp && watch.pendingComparison !== undefined && !watch.dirty;
+        if ((watch.lookDueAfterRuns || catchUpDue()) && this.#observeFiles) {
           try {
-            await this.#loadFileWatch(automationId, watch, armed.trigger);
-            if (current() && watch.saved && !watch.dirty && watch.pendingComparison !== undefined) {
+            if (catchUpDue()) await this.#loadFileWatch(automationId, watch, armed.trigger);
+            if (current() && (watch.lookDueAfterRuns || (catchUpDue() && watch.saved))) {
               const snapshot = await this.#observeFiles(armed.trigger);
               if (current()) {
                 watch.compareBeforeRun(snapshot, this.#now().getTime());
@@ -921,11 +989,12 @@ export class AmpleFileAutomationService {
               }
             }
           } catch {
-            // The folder could not be read: the comparison stays due and the
-            // running mark below turns it into a fresh look after the run.
+            // The folder could not be read: a catch-up stays due and the
+            // running mark below turns it into a fresh look after the run;
+            // the first look after the earlier runs simply comes later.
           }
         }
-        if (!current() || watch.dirty) continue;
+        if (!watch.catchUp || !current() || watch.dirty) continue;
         watch.dirty = true;
         await this.#fileSnapshots.markRunning(automationId, this.#now().toISOString()).catch(() => undefined);
       }
@@ -1066,7 +1135,7 @@ export class AmpleFileAutomationService {
       taskId = null;
     }
     const active: ActiveRunState = { automationId, runId, controller, stopRequested: false, stoppedHopTaskIds: [] };
-    this.#resetFileWatches(true);
+    this.#pauseFileWatchesForRun(cause);
     this.#activeRuns.set(runId, active);
     try {
       // Best-effort bookkeeping for folder catch-up; it never fails a run.
@@ -1120,7 +1189,7 @@ export class AmpleFileAutomationService {
     } finally {
       releaseOuterAbort();
       this.#activeRuns.delete(runId);
-      this.#resetFileWatches(this.#activeRuns.size > 0 || this.#suspensionDesired);
+      this.#resumeFileWatchesAfterRun();
       if (taskId !== null) {
         try {
           this.#tasks?.finish(taskId);
@@ -1285,6 +1354,8 @@ export class AmpleFileAutomationService {
             });
           } else {
             const result = await this.#ports.files(step, resolved.source, hopContext);
+            // The copies are this run's own files, never a follow-up's.
+            this.notePlacedFiles(step.toConnectedFolder, result.copiedPaths);
             await this.#receipts.append({
               scope: "hop",
               outcome: "succeeded",
@@ -1614,14 +1685,15 @@ function hopConnectedFolderFields(
 }
 
 function sameSavedFileState(
-  left: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] } },
-  right: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] } },
+  left: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] }; arrived?: string[] },
+  right: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] }; arrived?: string[] },
 ): boolean {
   if (left.snapshot.digest !== right.snapshot.digest || left.lastTriggeredAt !== right.lastTriggeredAt) return false;
+  const samePaths = (a: string[] | undefined, b: string[] | undefined) =>
+    a === undefined || b === undefined ? a === b : a.length === b.length && a.every((path, index) => path === b[index]);
+  if (!samePaths(left.arrived, right.arrived)) return false;
   if (!left.owed || !right.owed) return !left.owed && !right.owed;
-  return left.owed.reason === right.owed.reason
-    && left.owed.paths.length === right.owed.paths.length
-    && left.owed.paths.every((path, index) => path === right.owed!.paths[index]);
+  return left.owed.reason === right.owed.reason && samePaths(left.owed.paths, right.owed.paths);
 }
 
 function compareAutomationStrings(left: string, right: string): number {
@@ -1677,14 +1749,19 @@ function causeSummary(cause: AmpleFileAutomationRunCause, declaration: AmpleFile
       return `Caught-up run for the ${cause.slotAt} slot.`;
     case "files-changed": {
       const watched = declaration.trigger.kind === "files-changed" ? declaration.trigger.watch.path : "the watched folder";
+      const followUp = cause.followUp
+        ? ` ${cause.followUp.count === cause.changedCount ? (cause.changedCount === 1 ? "It" : "They") : `${cause.followUp.count} of them`}`
+          + " arrived while an automation run was working."
+        : "";
       if (cause.catchUp) {
         const { count, reason } = cause.catchUp;
         const more = cause.changedCount - count;
         return `Caught up on ${count} ${count === 1 ? "file" : "files"} ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}`
           + ` that changed ${automationCatchUpGap(reason)}.`
-          + (more > 0 ? ` ${more} more ${more === 1 ? "file" : "files"} changed after that.` : "");
+          + (more > 0 ? ` ${more} more ${more === 1 ? "file" : "files"} changed after that.` : "")
+          + followUp;
       }
-      return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}.`;
+      return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}.${followUp}`;
     }
   }
 }

@@ -80,6 +80,13 @@ watch is refused.
 
 By default (no `ifMissed`, or `"ifMissed": "skip"`), a fresh enable, restart,
 wake, or recovered observer error first establishes a baseline without firing.
+Only a content change counts: a new path, or a new size or modification time.
+A file whose device, inode, or change time alone moved has not changed —
+opening it (macOS records when it was last opened), a Finder tag, Spotlight,
+a sync client, or a remount does that. A file that only has a new name has
+not changed either: a path that appears with the same device, inode, size,
+and modification time as one that disappeared is that file, renamed.
+Removals never start a run. The same rule decides a catch-up (below).
 Changes must settle for the declared 1–3600 seconds, with 0–10080 minutes
 between firings. Bursts coalesce into the latest snapshot, not a queue of
 events. An accepted run records its source Connected Folder, snapshot digest,
@@ -87,11 +94,27 @@ and change count before any hop. Every launch rechecks the exact declaration
 grant; revocation invalidates in-flight scans. The observer reports
 starting/watching/paused/error state and errors in Settings → Automations.
 
-All folder observers pause while any automation executes and establish fresh
-baselines afterward. This absorbs automation-generated edits and prevents
-cross-automation file loops. Changes made during that pause are **never
-replayed**. Changes made while asleep or quit are not replayed either, unless
-the trigger opts into one catch-up (below). Either way this is an awake-app
+All folder observers pause while any automation run works. When the last run
+ends, each watch compares its first look with the look it had before the runs,
+by the same rule. **New files** that arrived meanwhile — a changed path whose
+device and inode no file had before — start one **follow-up run** once the
+folder settles and the cooldown allows, listed in `{{trigger.changedFiles}}`.
+It is one run per watch, never a backlog: it coalesces with any other change
+in the same window, and new files from a later pause join it. Edits and
+renames made during the pause are absorbed, because they may be a run's own
+work. So are the files the runs placed themselves: what an `amplefile files`
+act (`add`, `move`, `rename`, `create`, `mkdir`) placed in any Connected
+Folder while a run was working, and what a files step copied, including
+everything inside a copied folder. AmpleFile records nothing else it could use
+to tell a run's file apart — not a shell command's output, and not a Worker's
+own file tools — so such a file counts as new and can start one follow-up run.
+Whatever arrives while a follow-up run works is absorbed, so nothing chains. A
+follow-up's cause adds `followUp: {"count": n}`, where `count` of
+`changedCount` paths arrived during a run, and `{{trigger.summary}}` says so;
+Settings shows a follow-up still waiting. The first look after the runs is
+taken before another run starts, so a run that begins first never hides what
+arrived. Changes made while asleep or quit are not replayed, unless the
+trigger opts into one catch-up (below). Either way this is an awake-app
 convenience trigger, not a durable filesystem event bus. Keep a complete
 cross–Connected Folder sequence in one automation: wait for A's Chat, copy its
 created files, then run B's Chat. There is no transcript relay or ambient
@@ -107,18 +130,21 @@ example, screenshots that land while the Mac is asleep still get filed.
 behavior above. A version 3 or 4 declaration that names `ifMissed` is refused
 with a message naming version 5.
 
-- **What is kept.** For an opted-in automation only, AmpleFile saves the
+- - **What is kept.** For an opted-in automation only, AmpleFile saves the
   snapshot its observer has accounted for — the same metadata it already reads
   (relative path → device, inode, size, and modification and change times),
-  never file contents — plus the time it last started a run and any catch-up
-  still owed. It lives at `automations/folder-snapshots/<automation id>.json`
-  under the state root, machine-local, never inside a Connected Folder, and
-  bounded by the observer's 50,000-file scan. The record is rewritten only when
-  that accounted-for state changes: the first look, a firing, the look after an
-  automation run, or a catch-up found or spent. Turning the automation off
-  keeps it, so Turn On can catch up; deleting the automation, removing its
-  watched Connected Folder, or dropping `ifMissed` removes it, and a changed
-  folder, recursion, or extension list is never compared with it.
+  never file contents — plus the time it last started a run, any catch-up
+  still owed, and any new files that arrived during an automation run and
+  still wait for their follow-up run. It lives at
+  `automations/folder-snapshots/<automation id>.json` under the state root,
+  machine-local, never inside a Connected Folder, and bounded by the
+  observer's 50,000-file scan. The record is rewritten only when that
+  accounted-for state changes: the first look, a firing, the look after an
+  automation run, or a catch-up or follow-up found or spent. Turning the
+  automation off keeps it, so Turn On can catch up; deleting the automation,
+  removing its watched Connected Folder, or dropping `ifMissed` removes it,
+  and a changed folder, recursion, or extension list is never compared with
+  it.
 - **When AmpleFile compares.** At the first look after a gap: launch ("while
   AmpleFile was closed"), wake ("while the computer was asleep"), Turn On
   ("while this automation was off"), and recovery from an observer error
@@ -126,11 +152,11 @@ with a message naming version 5.
   already on, over the same folder, is not a gap. If an automation run is about
   to start before that first look, AmpleFile makes the comparison just before
   the run's first step, so the run's own edits are never part of it.
-- **What counts.** A file is caught up when it is new or its size or
-  modification time differs from the saved snapshot. Removed files never start
-  a catch-up, and device, inode, or change-time differences alone do not
-  either: a remount, a sync client, or opening a file can change those without
-  changing the file.
+- **What counts.** The same rule as live watching: a file is caught up when
+  it is new or its size or modification time differs from the saved snapshot.
+  Removed files, renamed files, and device, inode, or change-time differences
+  alone never start a catch-up: a remount, a sync client, or opening a file
+  can change those without changing the file.
 - **At most once.** What the comparison finds is owed as one set, saved with
   the snapshot so a quit before it fires does not lose it. It fires as one run
   once the folder has been stable for the declared debounce and the cooldown
@@ -140,17 +166,19 @@ with a message naming version 5.
   that still exist plus any coalesced live changes in
   `{{trigger.changedFiles}}`, and afterward observing continues from the new
   state.
-- **No self-trigger.** The observer still pauses during every automation run
-  and saves the fresh look it takes afterward, which is what keeps a run's own
-  edits from starting another run, across restarts too. While a run is in
-  progress the saved snapshot carries a small `<automation id>.running`
-  marker; if AmpleFile quits, sleeps, or turns the automation off before the
-  post-run look is saved, the next look cannot tell that run's edits apart
-  from anyone else's, so it takes a fresh look instead of catching up, and
-  Settings says so. A catch-up already found before that run still fires.
-  Turning an automation back on catches up on whatever changed while it was
-  off, including files another automation wrote meanwhile — a person's
-  explicit Turn On, once, never a chain.
+- - **No self-trigger.** The observer still pauses during every automation run
+  and saves the look it takes afterward, with any follow-up that look owes,
+  which is what keeps a run's own edits from starting another run across
+  restarts too; a follow-up still waiting when AmpleFile quits fires after the
+  next launch, once its cooldown allows. While a run is in progress the saved
+  snapshot carries a small `<automation id>.running` marker; if AmpleFile
+  quits, sleeps, or turns the automation off before the post-run look is
+  saved, the next look cannot tell that run's edits apart from anyone else's,
+  so it takes a fresh look instead of catching up, and Settings says so. A
+  catch-up already found before that run still fires. Turning an automation
+  back on catches up on whatever changed while it was off, including files
+  another automation wrote meanwhile — a person's explicit Turn On, once,
+  never a chain.
 - **Same receipts.** A catch-up is an ordinary `files-changed` run with the
   same journal-first accepted and terminal receipts. Its cause adds
   `catchUp: {"reason": "closed"|"asleep"|"off"|"unavailable", "count": n}`,
@@ -623,20 +651,24 @@ machine-wide count, step-count, or exact-path-count quota.
 - Settings surface and pending proposals — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/api/automation-settings.ts`, the `amplefile:automations:*` channels in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/amplefile-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
 - Per–Connected Folder view and trigger summaries — `src/shared/automation-presentation.ts` (the one trigger summary Settings, the Info panel, and the route share), `ampleFileAutomationConnectedFolderRoles` in `src/local/automations/automation-declarations.ts`, the `/api/connected-folders/:id/automations` routes in `src/local/api/automation-settings.ts`, `web-local/src/hooks/useFolderAutomations.ts`, `web-local/src/components/file-manager/file-manager-automations.ts`; `tests/folder-automations.test.ts`.
 - Ready-made Automations — `src/shared/automation-templates.ts`, `src/local/automations/automation-templates.ts`.
+- Folder watching across runs — the change rule, the comparison after runs, and the follow-up set in `src/local/automations/automation-file-observer.ts`; the pause, what runs placed, and the follow-up cause in `src/local/automations/automation-service.ts`; files acts report what they placed from `src/local/api/act-lane.ts`; `tests/amplefile-automation-file-observer.test.ts`, `tests/amplefile-automation-service.test.ts`.
 - Folder catch-up — `ifMissed` in `src/local/automations/automation-declarations.ts`, the comparison and owed set in `src/local/automations/automation-file-observer.ts`, saved snapshots and running markers in `src/local/automations/automation-file-snapshots.ts`, load/save and the pre-run comparison in `src/local/automations/automation-service.ts`; `tests/amplefile-automation-folder-catch-up.test.ts`.
 
 ## Deliberately not in this design
 
-- **Automation chains.** Automation-caused settles never fire triggers;
-  multi-hop behavior across automations is excluded structurally, not merely
-  bounded.
+- **Automation chains.** Automation-caused settles never fire triggers. A
+  folder change a run makes starts nothing when AmpleFile can tell it is the
+  run's own; one it cannot tell apart starts at most one follow-up run, and
+  nothing that arrives while a follow-up run works starts another. There is
+  no other multi-hop behavior across automations.
 - **Worker-turn, compaction, and AmpleFile Agent request triggers**, for the
   reasons given under Triggers.
 - **Ambient or durable file watching.** Only the explicitly reviewed, bounded
   folder observation above is admitted; it never watches an unselected
   Connected Folder or replays offline events. The opt-in catch-up compares one
   saved metadata snapshot with the folder and starts at most one coalesced run
-  per gap; it is not an event log, never queues missed events, and never
+  per gap, and the follow-up after automation runs covers new files only, at
+  most once per watch; neither is an event log, queues missed events, or
   replays edits made while an automation was running.
 - **Expressions, conditions, branching, retries, or free templating.** Only
   the closed, host-filled placeholder set is admitted; nothing evaluates model

@@ -1098,6 +1098,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           sourcePath: sourceRaw,
           targetFolderPath: input.toDir,
         });
+        state.automations?.notePlacedFiles(connectedFolder.id, [moved.path]);
         await recordFacadeAction(state, input.parentTaskId, { command: "files.move", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1116,6 +1117,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
         const { renamed, safetyCheckpointId } = await renameConnectedFolderEntryWithHistory(connectedFolder, { path: sourceRaw, newName });
+        state.automations?.notePlacedFiles(connectedFolder.id, [renamed.path]);
         await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1150,6 +1152,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const { parentPath, name } = splitActEntryPath(input.path, "A folder path is required.");
       return runActOperation(async () => {
         const { folder, safetyCheckpointId } = await createConnectedFolderFolderWithHistory(connectedFolder, { parentPath, name });
+        state.automations?.notePlacedFiles(connectedFolder.id, [folder.path]);
         await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1166,6 +1169,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const { parentPath, name } = splitActEntryPath(input.path, "A file path is required.");
       return runActOperation(async () => {
         const { file, safetyCheckpointId } = await createConnectedFolderTextFileWithHistory(connectedFolder, { parentPath, name, text: "" });
+        state.automations?.notePlacedFiles(connectedFolder.id, [file.path]);
         await recordFacadeAction(state, input.parentTaskId, { command: "files.create", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1222,6 +1226,9 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const result = await runActOperation(() => addExternalFilesInternal(connectedFolder, input));
+      // While an automation run is working, what a files act places is the
+      // run's own, so it never starts a follow-up run (docs/automations.md).
+      state.automations?.notePlacedFiles(connectedFolder.id, result.copied);
       await recordLandedAction(state, input.parentTaskId, {
         command: "files.add",
         at: new Date().toISOString(),

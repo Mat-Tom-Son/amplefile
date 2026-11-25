@@ -52,7 +52,7 @@ async function startConnectedFolder(t: TestContext) {
     };
     return (await walk(root, "")).sort();
   }
-  return { facade: api.actFacade, id: connectedFolder.id, root, post, restoreOverHttp, listing };
+  return { api, sandbox, facade: api.actFacade, id: connectedFolder.id, root, post, restoreOverHttp, listing };
 }
 
 const usage = (error: unknown) => error instanceof AmpleFileCliError && error.code === "usage" && /240 characters/.test(error.message);
@@ -158,4 +158,31 @@ test("restoring a New Folder or New File History point removes the item it made,
   assert.equal(cliFile.path, "notes/made.md");
   await facade.historyRestore({ connectedFolder: id, checkpointId: cliFile.safetyCheckpointId });
   assert.deepEqual(await listing(), before);
+});
+
+test("every files act tells the automation executor what it placed, so an automation run's own files start no follow-up", async (t) => {
+  const { api, sandbox, facade, id } = await startConnectedFolder(t);
+  const placed: Array<[string, string[]]> = [];
+  const notePlacedFiles = api.automations.notePlacedFiles.bind(api.automations);
+  api.automations.notePlacedFiles = (connectedFolderId: string, paths: readonly string[]) => {
+    placed.push([connectedFolderId, [...paths]]);
+    notePlacedFiles(connectedFolderId, paths);
+  };
+  await writeFile(join(sandbox, "outside.md"), "from elsewhere", "utf8");
+
+  await facade.filesMkdir({ connectedFolder: id, path: "notes" });
+  await facade.filesCreate({ connectedFolder: id, path: "notes/new.md" });
+  await facade.filesRename({ connectedFolder: id, path: "notes/new.md", newName: "renamed.md" });
+  await facade.filesMkdir({ connectedFolder: id, path: "archive" });
+  await facade.filesMove({ connectedFolder: id, fromPath: "notes/renamed.md", toDir: "archive" });
+  await facade.addFiles({ connectedFolder: id, fromPaths: [join(sandbox, "outside.md")], toDir: "notes", cwd: sandbox });
+
+  assert.deepEqual(placed, [
+    [id, ["notes"]],
+    [id, ["notes/new.md"]],
+    [id, ["notes/renamed.md"]],
+    [id, ["archive"]],
+    [id, ["archive/renamed.md"]],
+    [id, ["notes/outside.md"]],
+  ]);
 });

@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { chmod, lstat, mkdir, mkdtemp, rename, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
-import { observeAmpleFileAutomationFiles, AmpleFileAutomationFileWatch } from "../src/local/automations/automation-file-observer.js";
+import {
+  observeAmpleFileAutomationFiles,
+  ampleFileAutomationChangedPaths,
+  AmpleFileAutomationFileWatch,
+  type AmpleFileAutomationFileSnapshot,
+} from "../src/local/automations/automation-file-observer.js";
 import { ampleFileAutomationBounds, type AmpleFileAutomationFilesChangedTrigger } from "../src/local/automations/automation-declarations.js";
 
 test("folder observation bounds file types, detects same-size edits, and refuses linked or separately owned trees", async (t) => {
@@ -61,4 +68,136 @@ test("changed paths are sorted and capped, and the count stays true", () => {
   assert.equal(observed?.changedPaths.length, ampleFileAutomationBounds.maxChangedPathsRecorded);
   assert.deepEqual(observed?.changedPaths, [...observed!.changedPaths].sort());
   assert.equal(observed?.changedPaths[0], "note-000.md");
+});
+
+const draftsTrigger: AmpleFileAutomationFilesChangedTrigger = { kind: "files-changed", connectedFolder: "space-aaaaaaaaaaaaaaaa", watch: { kind: "tree", path: "Drafts", recursive: false, extensions: [".md"] }, debounceSeconds: 2, cooldownMinutes: 0 };
+
+/** Feeds one look to the watch and returns what fired once that look has settled for the debounce. */
+function settle(watch: AmpleFileAutomationFileWatch, snapshot: AmpleFileAutomationFileSnapshot, at: number) {
+  assert.equal(watch.observe(snapshot, at, draftsTrigger), null);
+  return watch.observe(snapshot, at + 2_000, draftsTrigger);
+}
+
+test("only a new path or a new size or modification time counts as a change; metadata, renames, and removals never do", () => {
+  const before = { digest: "a", entries: { "S/same.md": "1:10:5:100:100", "S/opened.md": "1:11:5:100:100", "S/edited.md": "1:12:5:100:100", "S/old-name.md": "1:13:5:100:100", "S/gone.md": "1:14:5:100:100", "S/renamed-and-edited.md": "1:15:5:100:100" } };
+  const after = { digest: "b", entries: {
+    "S/same.md": "1:10:5:100:100",
+    // Opening a file, a Finder tag, Spotlight, or a sync client: change time only.
+    "S/opened.md": "1:11:5:100:999",
+    "S/edited.md": "1:12:5:101:101",
+    "S/new-name.md": "1:13:5:100:200",
+    "S/edited-after-rename.md": "1:15:6:300:300",
+    "S/new.md": "1:16:5:100:100",
+  } };
+  assert.deepEqual(ampleFileAutomationChangedPaths(before, after), ["S/edited-after-rename.md", "S/edited.md", "S/new.md"]);
+  const renamed = { digest: "c", entries: { "S/b.md": "1:10:5:100:300" } };
+  assert.deepEqual(ampleFileAutomationChangedPaths({ digest: "d", entries: { "S/a.md": "1:10:5:100:100" } }, renamed), []);
+  assert.deepEqual(ampleFileAutomationChangedPaths(renamed, { digest: "e", entries: { "S/a.md": "1:10:5:100:400" } }), [], "renaming back is a rename too");
+  // A copy beside the original is a new file, even with the same size and time.
+  assert.deepEqual(ampleFileAutomationChangedPaths(renamed, { digest: "f", entries: { "S/b.md": "1:10:5:100:300", "S/b copy.md": "1:17:5:100:300" } }), ["S/b copy.md"]);
+});
+
+test("a watch starts no run for a file's metadata, a rename, or a removal, and still runs for a new file", () => {
+  const watch = new AmpleFileAutomationFileWatch();
+  const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
+  assert.equal(watch.observe(look({ "a.md": "1:10:5:100:100", "b.md": "1:11:5:100:100" }), 0, draftsTrigger), null);
+  assert.equal(settle(watch, look({ "a.md": "1:10:5:100:777", "b.md": "1:11:5:100:100" }), 10_000), null, "change time only");
+  assert.equal(settle(watch, look({ "renamed.md": "1:10:5:100:888", "b.md": "1:11:5:100:100" }), 20_000), null, "a rename");
+  assert.equal(settle(watch, look({ "renamed.md": "1:10:5:100:888" }), 30_000), null, "a removal");
+  assert.deepEqual(settle(watch, look({ "renamed.md": "1:10:5:100:888", "new.md": "1:12:5:100:100" }), 40_000), { changedCount: 1, changedPaths: ["new.md"] });
+});
+
+test("on disk, a last-opened date, a mode change, a rename, and a removal start no run, and a new file does", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "amplefile-observer-metadata-"));
+  configureAmpleFileStateRoot(join(dir, "state"));
+  t.after(async () => { configureAmpleFileStateRoot(undefined); await rm(dir, { recursive: true, force: true }); });
+  const root = join(dir, "connected-folder");
+  await mkdir(join(root, "Drafts"), { recursive: true });
+  const connectedFolder = await registerLinkedConnectedFolder(root);
+  await writeFile(join(root, "Drafts/a.md"), "kept");
+  await writeFile(join(root, "Drafts/b.md"), "kept");
+  const trigger: AmpleFileAutomationFilesChangedTrigger = { ...draftsTrigger, connectedFolder: connectedFolder.id };
+  const watch = new AmpleFileAutomationFileWatch();
+  let now = 0;
+  const step = async () => {
+    const snapshot = await observeAmpleFileAutomationFiles(trigger);
+    now += 10_000;
+    assert.equal(watch.observe(snapshot, now, trigger), null);
+    return { snapshot, fired: watch.observe(snapshot, now + 2_000, trigger) };
+  };
+  const baseline = (await step()).snapshot;
+  const before = await lstat(join(root, "Drafts/a.md"), { bigint: true });
+
+  // macOS writes the date a file was last opened as an extended attribute;
+  // it changes the file's change time and nothing else.
+  if (process.platform === "darwin") {
+    await promisify(execFile)("xattr", ["-w", "com.apple.lastuseddate#PS", "opened", join(root, "Drafts/a.md")]);
+  }
+  await chmod(join(root, "Drafts/a.md"), 0o600);
+  const after = await lstat(join(root, "Drafts/a.md"), { bigint: true });
+  assert.notEqual(after.ctimeNs, before.ctimeNs);
+  assert.equal(after.mtimeNs, before.mtimeNs);
+  assert.equal(after.size, before.size);
+  const metadata = await step();
+  assert.notEqual(metadata.snapshot.digest, baseline.digest, "the look did see the change time move");
+  assert.equal(metadata.fired, null);
+
+  await rename(join(root, "Drafts/b.md"), join(root, "Drafts/b renamed.md"));
+  assert.equal((await step()).fired, null);
+  await rm(join(root, "Drafts/b renamed.md"));
+  assert.equal((await step()).fired, null);
+  await writeFile(join(root, "Drafts/new.md"), "new");
+  assert.deepEqual((await step()).fired, { changedCount: 1, changedPaths: ["Drafts/new.md"] });
+});
+
+test("after automation runs, only new files that no run placed are owed one follow-up; edits, renames, and metadata are absorbed", () => {
+  const watch = new AmpleFileAutomationFileWatch();
+  const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
+  assert.equal(watch.observe(look({ "Drafts/edited.md": "1:10:5:100:100", "Drafts/raw.md": "1:11:5:100:100", "Drafts/opened.md": "1:12:5:100:100" }), 0, draftsTrigger), null);
+  watch.pauseForRun();
+  assert.equal(watch.view().state, "paused");
+  watch.resumeAfterRuns(["Drafts/created-by-act.md", "Drafts/copied-folder"], false);
+  assert.equal(watch.lookDueAfterRuns, true);
+  assert.equal(watch.observe(look({
+    "Drafts/edited.md": "1:10:9:200:200",
+    "Drafts/filed name.md": "1:11:5:100:300",
+    "Drafts/opened.md": "1:12:5:100:400",
+    "Drafts/created-by-act.md": "1:13:5:100:100",
+    "Drafts/copied-folder/one.md": "1:14:5:100:100",
+    "Drafts/arrived.md": "1:15:5:100:100",
+  }), 10_000, draftsTrigger), null, "the first look after the runs compares and waits for the debounce");
+  assert.equal(watch.lookDueAfterRuns, false);
+  assert.deepEqual(watch.view().followingUp, { count: 1 });
+  const fired = watch.observe(look({
+    "Drafts/edited.md": "1:10:9:200:200",
+    "Drafts/filed name.md": "1:11:5:100:300",
+    "Drafts/opened.md": "1:12:5:100:400",
+    "Drafts/created-by-act.md": "1:13:5:100:100",
+    "Drafts/copied-folder/one.md": "1:14:5:100:100",
+    "Drafts/arrived.md": "1:15:5:100:100",
+  }), 12_000, draftsTrigger);
+  assert.deepEqual(fired, { changedCount: 1, changedPaths: ["Drafts/arrived.md"], followUp: { count: 1 } });
+  assert.equal(watch.view().followingUp, undefined);
+});
+
+test("a follow-up run's pause, a gap, or a watch with no look before the runs owes nothing", () => {
+  const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
+  const arrived = look({ "a.md": "1:10:5:100:100", "new.md": "1:11:5:100:100" });
+  const scenarios: Array<[string, (watch: AmpleFileAutomationFileWatch) => void]> = [
+    ["a follow-up run was among the runs", (watch) => { watch.pauseForRun(); watch.resumeAfterRuns([], true); }],
+    ["the computer slept during the run", (watch) => { watch.pauseForRun(); watch.reset(true); watch.resumeAfterRuns([], false); }],
+  ];
+  for (const [label, act] of scenarios) {
+    const watch = new AmpleFileAutomationFileWatch();
+    assert.equal(watch.observe(look({ "a.md": "1:10:5:100:100" }), 0, draftsTrigger), null);
+    act(watch);
+    assert.equal(watch.observe(arrived, 10_000, draftsTrigger), null, label);
+    assert.equal(watch.observe(arrived, 12_000, draftsTrigger), null, label);
+  }
+  const unseen = new AmpleFileAutomationFileWatch();
+  unseen.pauseForRun();
+  unseen.resumeAfterRuns([], false);
+  assert.equal(unseen.lookDueAfterRuns, false);
+  assert.equal(unseen.observe(arrived, 10_000, draftsTrigger), null);
+  assert.equal(unseen.observe(arrived, 12_000, draftsTrigger), null);
 });

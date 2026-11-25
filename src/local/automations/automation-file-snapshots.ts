@@ -18,8 +18,9 @@ import {
  * Machine-local application state beside the automation store, never inside a
  * Connected Folder: one file per automation holding the metadata the observer
  * already reads (relative path → device, inode, size, and modification and
- * change times), the time it last started a run, and any catch-up it still
- * owes. No file contents. A record is bounded by the observer's own scan
+ * change times), the time it last started a run, any catch-up it still owes,
+ * and any new files that arrived during an automation run and still wait for
+ * their follow-up run. No file contents. A record is bounded by the observer's own scan
  * bounds and is read fail-safe: a missing, damaged, oversized, or
  * differently-scoped record means there is nothing to compare with, so the
  * watch takes a fresh look — it never guesses a catch-up.
@@ -75,6 +76,7 @@ interface SnapshotFileShape {
   snapshot: { digest: string; entries: Record<string, string> };
   lastTriggeredAt?: string;
   owed?: AmpleFileAutomationOwedCatchUp;
+  arrived?: string[];
 }
 
 const unreadableProblem =
@@ -119,6 +121,7 @@ export class AmpleFileAutomationFileSnapshots {
           savedAt: record.savedAt,
           ...(record.lastTriggeredAt !== undefined ? { lastTriggeredAt: record.lastTriggeredAt } : {}),
           ...(record.owed !== undefined ? { owed: record.owed } : {}),
+          ...(record.arrived !== undefined ? { arrived: record.arrived } : {}),
         },
         dirty,
       };
@@ -137,6 +140,7 @@ export class AmpleFileAutomationFileSnapshots {
         snapshot: { digest: state.snapshot.digest, entries: state.snapshot.entries },
         ...(state.lastTriggeredAt !== undefined ? { lastTriggeredAt: state.lastTriggeredAt } : {}),
         ...(state.owed !== undefined ? { owed: state.owed } : {}),
+        ...(state.arrived !== undefined ? { arrived: state.arrived } : {}),
       };
       if (!snapshotRecord(record, automationId)) {
         throw new Error("This folder snapshot is outside the bounds a saved snapshot may hold, so it was not saved.");
@@ -220,7 +224,7 @@ function isRelativePath(value: unknown): value is string {
 function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const allowed = new Set(["kind", "v", "automationId", "watchKey", "savedAt", "snapshot", "lastTriggeredAt", "owed"]);
+  const allowed = new Set(["kind", "v", "automationId", "watchKey", "savedAt", "snapshot", "lastTriggeredAt", "owed", "arrived"]);
   if (Object.keys(record).some((key) => !allowed.has(key))) return null;
   if (record.kind !== ampleFileAutomationFileSnapshotKind || record.v !== 1 || record.automationId !== automationId) return null;
   if (typeof record.watchKey !== "string" || !/^[a-f0-9]{64}$/.test(record.watchKey)) return null;
@@ -258,6 +262,13 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
     if (!owedPaths.every(isRelativePath)) return null;
     owed = { reason: reason as AmpleFileAutomationOwedCatchUp["reason"], paths: [...owedPaths], foundAt };
   }
+  let arrived: string[] | undefined;
+  if (record.arrived !== undefined) {
+    const candidate = record.arrived;
+    if (!Array.isArray(candidate) || candidate.length < 1 || candidate.length > ampleFileAutomationFileObserverBounds.maxFiles) return null;
+    if (!candidate.every(isRelativePath)) return null;
+    arrived = [...candidate];
+  }
   return {
     kind: ampleFileAutomationFileSnapshotKind,
     v: 1,
@@ -267,5 +278,6 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
     snapshot: { digest, entries: normalizedEntries },
     ...(record.lastTriggeredAt !== undefined ? { lastTriggeredAt: record.lastTriggeredAt } : {}),
     ...(owed ? { owed } : {}),
+    ...(arrived ? { arrived } : {}),
   };
 }
