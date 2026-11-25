@@ -42,7 +42,9 @@ export async function openFolderInTerminal(options: {
   }
   try {
     await options.launch(plan);
-  } catch {
+  } catch (error) {
+    // The window gets the plain sentence; the host's log keeps why, for a missing or broken Terminal.
+    console.warn(`Open Terminal Here failed: ${error instanceof Error ? error.message : String(error)}`);
     throw new Error("AmpleFile couldn’t open Terminal.");
   }
 }
