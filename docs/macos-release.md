@@ -268,6 +268,27 @@ Apple submission.
   `npm run desktop:verify:feed:mac -- --version 0.2.4` reported that the
   feed offers it; an installed update from `0.2.3` to `0.2.4` is not recorded
   here.
+- **0.2.5** was published to `Mat-Tom-Son/amplefile` on November 25, 2026,
+  from the annotated source tag `v0.2.5` (commit `2aa47e6`, PR 55). It
+  carries folder watches that count only content changes and give a file
+  that arrives during a run one follow-up run (PR 54). It also carries PR 53:
+  - Automation runs started from the CLI that return at admission, with
+    `automations status` and `automations wait`;
+  - turn failures named by their cause;
+  - `--request-id` with `receipts show`;
+  - Automation authoring guidance that follows the validator.
+
+  Both PRs had independent reviews and re-reviews before merging. The
+  release check, the signed build, app and DMG notarization, and strict
+  verification all passed on their first run. Before tagging, the signed
+  candidate's packaged `amplefile` command, launched on its own profile,
+  reported 0.2.5 and showed `automations status` and `automations wait`, the
+  version-6 authoring guide, and `receipts show`.
+  `npm run desktop:verify:feed:mac -- --version 0.2.5` reported that the feed
+  offers it; an installed update from `0.2.4` to `0.2.5` is not recorded here.
+  `npm audit --audit-level=high` reported two high findings, both in
+  `image-size`, reached through `pptxgenjs` (used by the Documents tool);
+  neither is new in this release.
 
 ## Release procedure
 
