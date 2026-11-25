@@ -212,6 +212,11 @@ extra repository instruction source.
   it fails the run and names the test file if anything still changes the real
   folder. Running a test file directly with `node --import tsx --test` skips
   that isolation; use `npm test -- <file>` instead.
+- Tests leave nothing in the system's temporary folder. A test removes the
+  folders it makes, and when each test file's process ends the runner removes
+  any folder that file made with `mkdtemp` and left there. Cleanup hooks run
+  in the order they were added, so add the hook that removes a folder after
+  the hook that closes whatever writes into it.
 - `npm run desktop:prepare` verifies desktop resources, compiled code, native
   preloads, and the built-in browser. After a compiled native change,
   `npm run desktop:browser:smoke` drives real browser pages served from a

@@ -11,6 +11,7 @@ const testsDir = join(rootDir, "tests");
 const tsxCli = join(rootDir, "node_modules", "tsx", "dist", "cli.mjs");
 const realPiGuard = pathToFileURL(join(rootDir, "scripts", "test-real-pi-guard.mjs")).href;
 const fluentIcons = pathToFileURL(join(rootDir, "scripts", "test-fluent-icons.mjs")).href;
+const temporaryFolders = pathToFileURL(join(rootDir, "scripts", "test-temp-folders.mjs")).href;
 
 let selection;
 try {
@@ -118,7 +119,7 @@ function limitFromEnvironment(name, fallback) {
   return parsed;
 }
 
-const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...concurrencyArgs, ...timeoutArgs, ...files], {
+const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--import", temporaryFolders, "--test", ...concurrencyArgs, ...timeoutArgs, ...files], {
   cwd: rootDir,
   env,
   stdio: "inherit",
