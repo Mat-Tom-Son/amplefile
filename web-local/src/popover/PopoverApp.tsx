@@ -213,7 +213,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   // The current turn's reply and steps, as the main window's Chat shows them (live-reply-model.ts).
   const liveReply = useLiveReply();
   const { text: streamingAssistant, steps: liveSteps } = liveReply.reply;
-  const { apply: applyLiveEvent, clear: clearLiveReply, clearText: clearReplyText } = liveReply;
+  const { apply: applyLiveEvent, clear: clearLiveReply, clearText: clearReplyText, streamClosed: closeLiveStream } = liveReply;
   const [ampleFileAgentComposer, setAmpleFileAgentComposer] = useState<ComposerState | null>(popoverFixtureRequested ? popoverFixtureComposer : null);
   const [conversationRuntime, setConversationRuntime] = useState<ConversationRuntime | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -405,8 +405,11 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         void refreshConversation();
       }
     };
-    return () => stream.close();
-  }, [conversationId, refreshConversation, refreshConversationRuntime, applyLiveEvent, clearLiveReply]);
+    return () => {
+      stream.close();
+      closeLiveStream();
+    };
+  }, [conversationId, refreshConversation, refreshConversationRuntime, applyLiveEvent, clearLiveReply, closeLiveStream]);
 
   useEffect(() => {
     if (popoverFixtureRequested) return;

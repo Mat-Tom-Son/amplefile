@@ -186,3 +186,32 @@ test("a sample Chat shows its reply and steps as given", () => {
   assert.equal(shown.steps, steps);
   assert.equal(liveReplyReducer(shown, { type: "show", steps: [] }).text, "Sample reply", "showing steps alone keeps the text");
 });
+
+test("a closed stream drops its waiting text and its open thinking row's claim on later thinking", () => {
+  const open = play([
+    { type: "assistant_delta", text: "Shown" },
+    "flush",
+    { type: "assistant_thinking", thinkingPhase: "start", workTrailId: "thinking:old" },
+    { type: "assistant_delta", text: " never shown" },
+  ]);
+  const closed = liveReplyReducer(open, { type: "streamClosed" });
+  assert.equal(liveReplyReducer(closed, { type: "flush" }).text, "Shown", "a frame after the close shows nothing from that stream");
+  assert.equal(closed.steps, open.steps, "what is on screen stays");
+  const next = play([{ type: "assistant_thinking", text: "A new thought." }], closed);
+  assert.deepEqual(next.steps.map((step) => [step.id, step.text]), [["thinking:old", ""], ["thinking-1", "A new thought."]], "the next stream's thinking starts its own row");
+  assert.equal(liveReplyReducer(closed, { type: "streamClosed" }), closed, "closing twice changes nothing");
+});
+
+test("showing other steps takes the open thinking row from those steps", () => {
+  const open = play([{ type: "assistant_thinking", thinkingPhase: "start", workTrailId: "thinking:old" }]);
+  const replaced = liveReplyReducer(open, { type: "show", steps: [{ id: "saved", kind: "tool", text: "Read", phase: "complete" }] });
+  const next = play([{ type: "assistant_thinking", text: "Fresh." }], replaced);
+  assert.deepEqual(next.steps.map((step) => [step.id, step.text]), [["saved", "Read"], ["thinking-1", "Fresh."]], "thinking text is not lost on a row that is gone");
+  const live = liveReplyReducer(emptyLiveReply, { type: "show", steps: [
+    { id: "thinking:done", kind: "thinking", text: "Earlier", phase: "complete" },
+    { id: "thinking:live", kind: "thinking", text: "Still", phase: "streaming" },
+  ] });
+  assert.equal(play([{ type: "assistant_thinking", text: " going." }], live).steps[1]!.text, "Still going.", "a shown row that is still thinking keeps streaming");
+  const textOnly = liveReplyReducer(open, { type: "show", text: "Sample" });
+  assert.equal(play([{ type: "assistant_thinking", text: " more" }], textOnly).steps[0]!.text, " more", "showing text alone leaves the steps and their open row");
+});

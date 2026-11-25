@@ -767,6 +767,7 @@ export function ChatPanel({
       closed = true;
       if (eventStreamReadyConversationIdRef.current === conversationId) eventStreamReadyConversationIdRef.current = null;
       source.close();
+      liveReply.streamClosed();
     };
   }, [conversation?.id, shouldKeepEventStreamOpen, connectedFolder.id]);
 

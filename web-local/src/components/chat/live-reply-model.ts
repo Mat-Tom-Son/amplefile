@@ -39,7 +39,13 @@ export type LiveReplyAction =
   /** Clears the steps and what places text among them; the reply text stays. */
   | { type: "clearSteps" }
   /** Puts a known reply and steps on screen, as a sample Chat does. */
-  | { type: "show"; text?: string; steps?: RuntimePreviewEntry[] };
+  | { type: "show"; text?: string; steps?: RuntimePreviewEntry[] }
+  /**
+   * The surface closed its stream: what that stream had not shown yet is
+   * dropped, and its open thinking row takes no later thinking. What is on
+   * screen stays.
+   */
+  | { type: "streamClosed" };
 
 export const emptyLiveReply: LiveReply = {
   text: "",
@@ -66,8 +72,10 @@ export function liveReplyReducer(reply: LiveReply, action: LiveReplyAction): Liv
       return {
         ...reply,
         ...(action.text !== undefined ? { text: action.text, pendingText: "" } : {}),
-        ...(action.steps !== undefined ? { steps: action.steps } : {}),
+        ...(action.steps !== undefined ? { steps: action.steps, activeThinkingId: openThinkingId(action.steps) } : {}),
       };
+    case "streamClosed":
+      return reply.pendingText || reply.activeThinkingId ? { ...reply, pendingText: "", activeThinkingId: null } : reply;
     case "event":
       return applyEvent(reply, action.event, action.now);
   }
@@ -194,10 +202,11 @@ function applySnapshot(reply: LiveReply, event: ChatStreamEvent): LiveReply {
   const text = snapshot?.text ?? event.text ?? "";
   const next = { ...authoritativeText(reply, text, snapshot?.assistantPresentation), truncated: snapshot?.truncated === true };
   if (!snapshot) return next;
-  return {
-    ...next,
-    steps: snapshot.workTrail,
-    activeThinkingId: [...snapshot.workTrail].reverse()
-      .find((entry) => entry.kind === "thinking" && ["running", "streaming"].includes(entry.phase ?? ""))?.id ?? null,
-  };
+  return { ...next, steps: snapshot.workTrail, activeThinkingId: openThinkingId(snapshot.workTrail) };
+}
+
+/** The latest thinking row still in progress, which thinking text without its own id goes to. */
+function openThinkingId(steps: RuntimePreviewEntry[]): string | null {
+  return [...steps].reverse()
+    .find((entry) => entry.kind === "thinking" && ["running", "streaming"].includes(entry.phase ?? ""))?.id ?? null;
 }
