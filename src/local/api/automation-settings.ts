@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import {
   automationCatchUpSentence,
+  automationFollowUpSentence,
   automationTriggerSummary,
   type AutomationCatchUpReason,
   type FolderAutomationState,
@@ -42,6 +43,7 @@ import { getConnectedFolder } from "../connected-folder.js";
 import { runActOperation } from "./act-support.js";
 import {
   automationReceiptCatchUp,
+  automationReceiptFollowUp,
   readAutomationReceiptProjection,
   readAutomationReceiptProjectionsByAutomation,
   toActAutomationFilesSource,
@@ -694,7 +696,12 @@ function automationSettingsCause(value: unknown): string | undefined {
   const cause = value as Record<string, unknown>;
   if (cause.kind === "files-changed") {
     const catchUp = automationReceiptCatchUp(cause.catchUp, Number(cause.changedCount));
-    return catchUp ? automationCatchUpSentence(catchUp.count, catchUp.reason) : `Folder changed · ${cause.changedCount} file(s)`;
+    const followUp = automationReceiptFollowUp(cause.followUp, Number(cause.changedCount));
+    const labels = [
+      ...(catchUp ? [automationCatchUpSentence(catchUp.count, catchUp.reason)] : []),
+      ...(followUp ? [automationFollowUpSentence(followUp.count)] : []),
+    ];
+    return labels.length ? labels.join(" · ") : `Folder changed · ${cause.changedCount} file(s)`;
   }
   if (cause.kind === "run-now") return "Run Now";
   if ((cause.kind === "scheduled" || cause.kind === "resume") && typeof cause.slotAt === "string") {

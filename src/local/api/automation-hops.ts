@@ -10,6 +10,7 @@ import { createConversation } from "../agent/chat-store.js";
 import { listPiModels } from "../agent/pi-runtime-config.js";
 import { getConnectedFolderCheckpoint } from "../history.js";
 import { resolveFolderTargets } from "../automations/folder-targets.js";
+import { ampleFileAutomationPlacedFileIds } from "../automations/automation-file-observer.js";
 import { ampleFileAutomationBounds } from "../automations/automation-declarations.js";
 import type { AmpleFileAutomationHopPorts } from "../automations/automation-service.js";
 import {
@@ -58,6 +59,8 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
           actorKind: "system",
           automationSource: { automationId: context.automationId, title: context.title },
         });
+        // Acts and Pi writes in this turn's request lineage are the run's own.
+        context.turnAccepted(taskId);
         const settled = await waitForSettledRequest(state, connectedFolder.id, conversation.id, taskId, context.signal);
         const result = await completedRequestEnvelope(state, taskId);
         return {
@@ -92,6 +95,8 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
         ampleFileAgentAttachments: [],
         automationSource: { automationId: context.automationId, title: context.title },
       });
+      // Acts and Pi writes in this turn's request lineage are the run's own.
+      context.turnAccepted(taskId);
       const settled = await waitForSettledRequest(state, scope.id, conversation.id, taskId, context.signal);
       return {
         conversationId: conversation.id,
@@ -148,11 +153,13 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
             label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
           });
           const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
+          const placedFileIds = await ampleFileAutomationPlacedFileIds(copied.map((path) => resolveConnectedFolderPath(to.connectedFolderRoot, path))).catch(() => []);
           return {
             ...(safety ? { restorePointId: safety.checkpointId } : {}),
             copiedPaths: copied,
             fileCount: measured.fileCount,
             totalBytes: measured.totalBytes,
+            ...(placedFileIds.length ? { placedFileIds } : {}),
           };
         } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
       });

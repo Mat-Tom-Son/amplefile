@@ -98,6 +98,12 @@ export type AmpleFileAutomationRunCause =
        * changed while AmpleFile was watching and coalesced into the same run.
        */
       catchUp?: { reason: AutomationCatchUpReason; count: number };
+      /**
+       * Present on a follow-up run: `count` of the changed paths are new files
+       * that arrived while an automation run was working. What arrives while a
+       * follow-up run works never starts another run.
+       */
+      followUp?: { count: number };
     }
   | { kind: "run-now"; requestId?: string; surface?: AmpleFileCliActSurface };
 

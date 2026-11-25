@@ -254,6 +254,7 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
     fileWatch: {
       state: "watching" as const,
       catchingUp: { reason: "asleep" as const, count: 2 },
+      followingUp: { count: 1 },
       notice: "An automation was running when AmpleFile stopped watching, so it took a fresh look instead of catching up; files that changed in that gap were not caught up.",
     },
     stepCount: 1,
@@ -294,8 +295,12 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
     /^Last catch-up: .+ · Caught up on 3 files that changed while AmpleFile was closed$/,
   );
   assert.match(dom.container.querySelector(".automation-catch-up-notice")?.textContent ?? "", /took a fresh look instead of catching up/);
-  assert.match(text, /Changes made while an Automation is running are skipped\./);
-  assert.doesNotMatch(text, /Changes made while an Automation runs, the computer sleeps, or AmpleFile restarts are skipped\./);
+  assert.equal(
+    dom.container.querySelector(".automation-follow-up-pending")?.textContent,
+    "Following up on 1 new file that arrived while an Automation was running.",
+  );
+  assert.match(text, /New files that arrive while an Automation is running start one follow-up run; edits and renames made then are skipped\./);
+  assert.doesNotMatch(text, /changes made while the computer sleeps or AmpleFile restarts, are skipped\./);
 });
 
 test("desktop wake catches asynchronous automation resume failures", () => {

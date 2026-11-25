@@ -16,7 +16,7 @@ import {
 } from "../src/local/automations/automation-declarations.js";
 import {
   observeAmpleFileAutomationFiles,
-  ampleFileAutomationCaughtUpPaths,
+  ampleFileAutomationChangedPaths,
   ampleFileAutomationDirtySnapshotNotice,
   ampleFileAutomationFileObserverBounds,
   AmpleFileAutomationFileWatch,
@@ -106,6 +106,19 @@ class FakeFolder {
     this.files.delete(path);
   }
 
+  /** The device and inode AmpleFile records for a file a run placed. */
+  id(path: string): string {
+    const file = this.files.get(path)!;
+    return `${file.dev}:${file.ino}`;
+  }
+
+  /** A rename keeps the file: device, inode, size, and modification time; only the change time moves. */
+  rename(from: string, to: string): void {
+    const file = this.files.get(from)!;
+    this.files.delete(from);
+    this.files.set(to, { ...file, ctime: ++this.#tick });
+  }
+
   /** What a remount, a sync client, or opening a file can do without changing the file. */
   churnMetadata(path: string): void {
     const file = this.files.get(path)!;
@@ -129,13 +142,18 @@ class FakeFolder {
 
 class FakePorts implements AmpleFileAutomationHopPorts {
   readonly messages: Array<{ automationId: string; message: string }> = [];
-  /** Runs inside the chat hop, before it settles; a test can edit the folder here. */
-  onChat: (context: AmpleFileAutomationHopContext) => Promise<void> | void = () => undefined;
+  /**
+   * Runs inside the chat hop, before it settles; a test can edit the folder
+   * here, and return the device and inode of files the turn's own write tool
+   * placed.
+   */
+  onChat: (context: AmpleFileAutomationHopContext) => Promise<string[] | void> | string[] | void = () => undefined;
 
   async chat(_step: AmpleFileAutomationChatStep, message: string, context: AmpleFileAutomationHopContext): Promise<AmpleFileAutomationChatHopResult> {
     this.messages.push({ automationId: context.automationId, message });
-    await this.onChat(context);
+    const placed = await this.onChat(context);
     return {
+      ...(placed?.length ? { placedFileIds: placed } : {}),
       conversationId: `conversation-${context.runId}`,
       turnTaskId: `turn-${context.runId}`,
       outcome: context.signal.aborted ? "aborted" : "succeeded",
@@ -346,10 +364,11 @@ test("a catch-up fires once, after the debounce, with exactly the files added or
   assert.equal((await harness.acceptedRuns()).length, 1);
 });
 
-test("nothing changed, only removals, or only device/inode/change-time churn: no catch-up", async (t) => {
+test("nothing changed, only removals, renames, or device/inode/change-time churn: no catch-up", async (t) => {
   const harness = await createHarness(t);
   harness.folder.write("Screenshots/a.png");
   harness.folder.write("Screenshots/b.png");
+  harness.folder.write("Screenshots/c.png");
   await enableAndSettle(harness);
 
   harness.quit();
@@ -359,6 +378,7 @@ test("nothing changed, only removals, or only device/inode/change-time churn: no
   harness.quit();
   harness.folder.remove("Screenshots/b.png");
   harness.folder.churnMetadata("Screenshots/a.png");
+  harness.folder.rename("Screenshots/c.png", "Screenshots/c renamed.png");
   await harness.launch();
   for (let step = 0; step < 3; step += 1) await harness.poll(70_000);
 
@@ -430,13 +450,15 @@ test("the saved snapshot is metadata in app state, bounded to the watched select
   assert.equal(existsSync(recordPath), false, "deleting the automation forgets its snapshot");
 });
 
-test("a run that edits its own watched folder never starts another run, even across a restart", async (t) => {
+test("a run that renames or edits files in its own watched folder never starts another run, even across a restart", async (t) => {
   const harness = await createHarness(t);
+  harness.folder.write("Screenshots/kept.png");
   await enableAndSettle(harness);
   harness.ports.onChat = () => {
-    // The Worker renames and files the screenshot it was given.
-    harness.folder.remove("Screenshots/raw.png");
-    harness.folder.write("Screenshots/2026-10-11 receipt.png");
+    // The Worker renames and files the screenshot it was given, and edits
+    // one that was already there.
+    harness.folder.rename("Screenshots/raw.png", "Screenshots/2026-10-11 receipt.png");
+    harness.folder.write("Screenshots/kept.png", 42);
   };
 
   harness.folder.write("Screenshots/raw.png");
@@ -454,6 +476,49 @@ test("a run that edits its own watched folder never starts another run, even acr
   await harness.launch();
   for (let step = 0; step < 4; step += 1) await harness.poll(70_000);
   assert.equal((await harness.acceptedRuns()).length, 1, "a restart does not catch up on the run's own output");
+});
+
+test("a new file that arrived during a run still gets its follow-up after a quit, and the cooldown still holds", async (t) => {
+  const harness = await createHarness(t);
+  await enableAndSettle(harness);
+  let chats = 0;
+  harness.ports.onChat = () => {
+    // A second screenshot lands while the first one is being filed.
+    if (++chats === 1) harness.folder.write("Screenshots/second.png");
+  };
+
+  harness.folder.write("Screenshots/first.png");
+  await harness.poll(1_000);
+  await harness.poll(2_000);
+  await harness.settledRuns(1);
+  await harness.poll(1_000);
+  await harness.poll(5_000);
+  await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  assert.equal((await harness.acceptedRuns()).length, 1, "the follow-up waits for the cooldown");
+  assert.deepEqual((await harness.service.getAutomation(automationId))?.fileWatch?.followingUp, { count: 1 });
+  const saved = JSON.parse(await readFile(join(harness.snapshotsDir, `${automationId}.json`), "utf8")) as { arrived?: string[] };
+  assert.deepEqual(saved.arrived, ["Screenshots/second.png"]);
+
+  harness.quit();
+  await harness.launch();
+  await harness.poll(1_000);
+  await harness.poll(5_000);
+  await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  assert.equal((await harness.acceptedRuns()).length, 1, "the cooldown survives the restart");
+  await harness.poll(60_000);
+  await harness.settledRuns(2);
+  const runs = await harness.acceptedRuns();
+  assert.equal(runs.length, 2);
+  assert.deepEqual(runs[1]?.cause, {
+    kind: "files-changed",
+    connectedFolderId: connectedFolderA,
+    snapshotDigest: harness.folder.snapshot().digest,
+    changedCount: 1,
+    changedPaths: ["Screenshots/second.png"],
+    followUp: { count: 1 },
+  });
+  for (let step = 0; step < 3; step += 1) await harness.poll(70_000);
+  assert.equal((await harness.acceptedRuns()).length, 2);
 });
 
 test("quitting during a run takes a fresh look on the next launch instead of catching up on the run's edits", async (t) => {
@@ -587,7 +652,10 @@ test("a run that starts before the first look still leaves the catch-up owed, wi
     steps: [{ id: "write", kind: "chat", connectedFolder: connectedFolderA, message: "Put a chart in Screenshots." }],
   });
   harness.ports.onChat = (context) => {
-    if (context.automationId === "automation-other-writer") harness.folder.write("Screenshots/chart-from-another-run.png");
+    if (context.automationId !== "automation-other-writer") return;
+    // Pi's write tool: the step reports the file as its own.
+    harness.folder.write("Screenshots/chart-from-another-run.png");
+    return [harness.folder.id("Screenshots/chart-from-another-run.png")];
   };
 
   harness.quit();
@@ -609,7 +677,7 @@ test("a run that starts before the first look still leaves the catch-up owed, wi
 test("the catch-up comparison counts new and resized or retimed files, and caps listed paths with a true count", () => {
   const saved = { digest: "a".repeat(64), entries: { "S/same.png": "1:10:5:100:100", "S/resized.png": "1:11:5:100:100", "S/retimed.png": "1:12:5:100:100", "S/gone.png": "1:13:5:100:100" } };
   const current = { digest: "b".repeat(64), entries: { "S/same.png": "9:99:5:100:555", "S/resized.png": "1:11:6:100:100", "S/retimed.png": "1:12:5:101:100", "S/new.png": "1:14:5:100:100" } };
-  assert.deepEqual(ampleFileAutomationCaughtUpPaths(saved, current), ["S/new.png", "S/resized.png", "S/retimed.png"]);
+  assert.deepEqual(ampleFileAutomationChangedPaths(saved, current), ["S/new.png", "S/resized.png", "S/retimed.png"]);
 
   const trigger: AmpleFileAutomationFilesChangedTrigger = { ...watchTrigger, watch: { ...watchTrigger.watch, extensions: [".png"] }, ifMissed: "run" };
   const watch = new AmpleFileAutomationFileWatch({ catchUp: "closed" });
@@ -636,6 +704,7 @@ test("saved snapshots are read fail-safe and never exceed the observer's bounds"
     savedAt: "2026-10-11T09:00:00.000Z",
     lastTriggeredAt: "2026-10-11T08:59:00.000Z",
     owed: { reason: "closed" as const, paths: ["S/a.png"], foundAt: "2026-10-11T09:00:00.000Z" },
+    arrived: ["S/a.png"],
   };
 
   assert.deepEqual(await snapshots.read(id, key), { state: null, dirty: false });
@@ -656,6 +725,8 @@ test("saved snapshots are read fail-safe and never exceed the observer's bounds"
     /outside the bounds/,
   );
   await assert.rejects(snapshots.save(id, key, { ...state, snapshot: { digest: state.snapshot.digest, entries: { "/etc/passwd": "1:2:3:4:5" } } }), /outside the bounds/);
+  await assert.rejects(snapshots.save(id, key, { ...state, arrived: ["/etc/passwd"] }), /outside the bounds/);
+  await assert.rejects(snapshots.save(id, key, { ...state, arrived: [] }), /outside the bounds/);
   assert.deepEqual(plain((await snapshots.read(id, key)).state), state, "a refused save leaves the last good snapshot");
 
   const recordPath = join(directory, `${id}.json`);
