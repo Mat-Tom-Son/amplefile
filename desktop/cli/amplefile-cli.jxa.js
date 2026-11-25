@@ -226,6 +226,7 @@ function performRequest(context, argv, actToken, payload, suppliedRequestId) {
   const requestPath = `${context.cliRoot}/requests/${requestId}.json`;
   const responsePath = `${context.cliRoot}/responses/${requestId}.json`;
   let temporaryRequestPath = `${context.cliRoot}/requests/${requestId}.${ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase()}.tmp`;
+  let writtenAt = "";
 
   try {
     // A caller retrying under its own id while the first try still waits to
@@ -252,6 +253,7 @@ function performRequest(context, argv, actToken, payload, suppliedRequestId) {
           createdAt: new Date().toISOString(),
         };
     if (actToken && payload) request.payload = payload;
+    writtenAt = request.createdAt;
     writeText(temporaryRequestPath, JSON.stringify(request));
     if (!fileManager.moveItemAtPathToPathError($(temporaryRequestPath), $(requestPath), null)) {
       throw new Error("AmpleFile CLI request could not be committed.");
@@ -259,9 +261,27 @@ function performRequest(context, argv, actToken, payload, suppliedRequestId) {
     temporaryRequestPath = "";
     return awaitResponse(context, requestId, responsePath, actToken);
   } finally {
-    for (const path of [temporaryRequestPath, requestPath, responsePath]) {
+    // An id this shim made up is its own, so it clears everything. Under a
+    // caller's own id another caller may be waiting on the same answer, or
+    // may come back for it: the shim leaves the answer, which AmpleFile
+    // removes after a few minutes, and removes a request file only if it
+    // wrote that file itself.
+    const ownFiles = suppliedRequestId
+      ? [temporaryRequestPath, writtenAt && requestFileCreatedAt(requestPath) === writtenAt ? requestPath : ""]
+      : [temporaryRequestPath, requestPath, responsePath];
+    for (const path of ownFiles) {
       if (path && fileManager.fileExistsAtPath($(path))) fileManager.removeItemAtPathError($(path), null);
     }
+  }
+}
+
+/** The creation time a request file records, or "" when it cannot be read. */
+function requestFileCreatedAt(path) {
+  if (!$.NSFileManager.defaultManager.fileExistsAtPath($(path))) return "";
+  try {
+    return String(JSON.parse(readText(path)).createdAt || "");
+  } catch (error) {
+    return "";
   }
 }
 

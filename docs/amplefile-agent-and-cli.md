@@ -498,13 +498,17 @@ The read runs beside the host's serial queue, as `jobs output` and
 `chat compact` do, because it is usually asked while the act it names still
 waits in that queue. It journals itself in `act-reads.jsonl`.
 
-The same id also makes a retry safe. A retry while the first try's file still
-waits to be claimed joins that try; while the first is being processed, the
-broker gives both the same answer; an answer the host wrote after the caller
-left is returned to the retry; and once that answer is gone, the
-at-most-once journal refuses the id and names the command and how it ended.
-A `rejected` request never ran, so sending it again under the same id runs
-it. Every new command needs a new id. `chat wait` and `agent wait` refuse
+The same id also makes a retry safe. Every caller waiting under one id gets
+its one answer: a retry while the first try's file still waits to be claimed
+joins that try, and one that arrives while it runs shares its result. A shim
+that sent its command under its own id therefore leaves the answer in place
+for the others and removes only the request file it wrote; the host removes
+the answer five minutes after writing it, or when it next starts. In that
+time a caller that comes back under the id is handed the answer as it was,
+as long as the id ran. An answer for a try that never ran (`rejected`, or
+refused before it was journaled) is dropped instead, and the retry runs.
+Once the answer is gone, the at-most-once journal refuses the id and names
+the command and how it ended. Every new command needs a new id. `chat wait` and `agent wait` refuse
 `--request-id`, because each of their polls is a read of its own. When the
 shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
 the request id with the `receipts show` command that answers for it.
@@ -899,9 +903,12 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
 4. The shim returns that output and removes its request and response files.
-   A shim killed before then leaves the response behind, and a retry under
-   the same request id receives it. The broker also removes stale bounded
-   files during initialization.
+   Under a caller's own `--request-id` it removes only the request file it
+   wrote and leaves the response for other callers under that id. The host
+   removes every response five minutes after writing it, and leftover ones
+   when it starts; a retry under the same id receives it in that time if the
+   id ran. The broker also removes stale bounded files during
+   initialization.
 
 A CLI-only launch can start the host, process its queue, flush Pi state, and
 exit without showing the window. If the window is already open, the command

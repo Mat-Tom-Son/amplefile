@@ -30,6 +30,13 @@ export interface AmpleFileDesktopCliHostOptions {
   getActFacade?: () => AmpleFileCliActAuthority | null;
   /** Validates explicit management-turn lineage for act receipts. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
+  /**
+   * How long an answer stays for every caller waiting on its id; defaults to
+   * the broker freshness window. A shim that sent a command under its own
+   * --request-id leaves the answer in place, since another caller under that
+   * id may still be waiting, or may come back for it.
+   */
+  keepAnswersMs?: number;
 }
 
 /**
@@ -60,6 +67,7 @@ export class AmpleFileDesktopCliHost {
   #queue: Promise<unknown> = Promise.resolve();
   readonly #pending = new Set<Promise<void>>();
   readonly #maxQueuedMs: number;
+  readonly #keepAnswersMs: number;
   readonly #now: (() => Date) | undefined;
 
   constructor(options: AmpleFileDesktopCliHostOptions) {
@@ -71,12 +79,14 @@ export class AmpleFileDesktopCliHost {
     this.#getActFacade = options.getActFacade ?? (() => null);
     this.#resolveLineageParent = options.resolveLineageParent ?? (() => null);
     this.#maxQueuedMs = options.maxQueuedMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
+    this.#keepAnswersMs = options.keepAnswersMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
     this.#now = options.now;
   }
 
   async initialize(): Promise<void> {
     await this.broker.initialize();
-    await this.broker.cleanup();
+    // Answers kept before a quit or a CLI-only launch's exit go now.
+    await this.broker.cleanup({ answersOlderThanMs: this.#keepAnswersMs });
   }
 
   processRequest(requestId: string): Promise<void> {
@@ -103,7 +113,20 @@ export class AmpleFileDesktopCliHost {
         version: this.#version,
         productName: this.#productName,
       }));
-    }).then(() => undefined);
+    }, {
+      // An answer left under this id goes to the next caller only when the
+      // id ran: then it is that run's own answer. An answer for a try that
+      // never ran (refused, or never journaled) is dropped, and this request
+      // runs. Running is still at most once: the executor checks the journal.
+      reuseAnswer: () => this.receipts.hasAccepted(id).catch(() => true),
+    }).then(() => {
+      // Every caller waiting on the id reads the answer within moments; it
+      // stays a while longer for one that comes back under the same id.
+      const removal = setTimeout(() => {
+        void this.broker.removeAnswer(id, this.#keepAnswersMs).catch(() => undefined);
+      }, this.#keepAnswersMs + 1_000);
+      removal.unref?.();
+    });
     this.#pending.add(operation);
     void operation.catch(() => undefined).finally(() => this.#pending.delete(operation));
     return operation;
