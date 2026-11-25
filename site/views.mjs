@@ -58,6 +58,11 @@ export const glyph = {
   paneFold: sv('<rect x="2" y="3" width="12" height="10" rx="1.75"/><path d="M2 9.75h12"/>', 1.1),
   code: sv('<path d="m5.25 5-3 3 3 3M10.75 5l3 3-3 3M9 3.5l-2 9"/>', 1.2),
   box: sv('<path d="M2.5 5 8 2.25 13.5 5v6L8 13.75 2.5 11z"/><path d="M2.5 5 8 7.75 13.5 5M8 7.75v6"/>', 1.2),
+  // The sidebar's Trash, Drives, and Eject (file-manager-glyphs.tsx).
+  trash: sv('<path d="M2.5 4.25h11M6.25 4.25V2.75h3.5v1.5"/><path d="M3.75 4.25l.75 9.5h7l.75-9.5"/><path d="M6.5 6.75v4.5M9.5 6.75v4.5"/>'),
+  disk: sv('<rect x="1.75" y="4.25" width="12.5" height="7.5" rx="1.5"/><path d="M1.75 9h12.5"/><circle cx="11.5" cy="10.4" r="0.4" fill="currentColor"/>'),
+  usb: sv('<rect x="3.25" y="1.75" width="9.5" height="12.5" rx="1.5"/><path d="M6 1.75v3M8 1.75v3M10 1.75v3"/><path d="M5.75 11.25h4.5"/>'),
+  eject: sv('<path d="M8 3 3.5 8.5h9z"/><path d="M3.5 12.5h9"/>'),
 };
 
 const CURSOR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 2.8v16.6l4-3.9 2.7 6.2 2.9-1.25-2.7-6.1h5.6z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
@@ -78,11 +83,30 @@ function at(a = {}) {
   if (a.focusOut != null) s += ` data-focus-out="${a.focusOut}"`;
   if (a.on != null) s += ` data-on="${a.on}"`;
   if (a.flash != null) s += ` data-flash="${a.flash}"`;
+  if (a.curIn != null) s += ` data-cur-in="${a.curIn}"`;
+  if (a.curOut != null) s += ` data-cur-out="${a.curOut}"`;
   if (a.d) s += ` style="--d:${a.d}ms"`;
   return s;
 }
 /** Text that changes at steps: [[text, {in, out}], ...]. */
 const swap = (parts) => parts.map(([t, a]) => `<span class="sw"${at(a)}>${t}</span>`).join("");
+
+/**
+ * Words or markup for each system, as the app shows them there. The page marks the visitor's system on <html>
+ * (os-mac, os-linux, os-windows) and shows only that variant; a phone, an unknown system, or a visit without scripts
+ * gets `other`, the neutral one (site/build.mjs). Windows gets `other` too unless it has words of its own: this
+ * repository has no Windows window to draw from, so the windows drawn for it stay neutral. A variant left null is drawn nowhere.
+ */
+export function per(mac, linux, other = linux, windows = other) {
+  const groups = [];
+  for (const [key, text] of [["mac", mac], ["linux", linux], ["windows", windows], ["other", other]]) {
+    if (text == null) continue;
+    const same = groups.find((g) => g.text === text);
+    if (same) same.keys.push(key); else groups.push({ text, keys: [key] });
+  }
+  if (groups.length === 1 && groups[0].keys.length === 4) return groups[0].text;
+  return groups.map((g) => `<span class="${g.keys.map((k) => `on-${k}`).join(" ")}">${g.text}</span>`).join("");
+}
 
 // ---------- Icons: the app's Finder-shaped drawings, sized by font-size ----------
 
@@ -102,19 +126,23 @@ function dot(kind, a) { return `<i class="mw-dot ${kind}${a && a.in != null ? " 
 
 /**
  * The sidebar. std: [{id, cur, at}], con: [{name, cur, depth, open, dots: [[kind, at]], at}].
+ * iCloud Drive is a Mac's alone; Drives starts with the computer's disk, named as each system names it. A window too
+ * short to show Drives whole leaves it out (`drives: false`) rather than cut it off.
  */
-function sidebar({ std, con }) {
-  const s = std.map(({ id, cur, at: a }) => `<li class="mw-si${cur ? " cur" : ""}${a && a.in != null ? " a-row" : ""}"${at(a)}><span class="ic">${glyph[id]}</span><span class="nm">${STD[id]}</span></li>`).join("");
+function sidebar({ std, con, drives = true }) {
+  const s = std.map(({ id, cur, at: a }) => `<li class="mw-si${cur ? " cur" : ""}${a && a.in != null ? " a-row" : ""}${id === "icloud" ? " on-mac" : ""}"${at(a)}><span class="ic">${glyph[id]}</span><span class="nm">${STD[id]}</span></li>`).join("");
   const c = con.map(({ name, cur, depth = 0, open, dots = [], at: a, curAt }) => {
     const pad = depth ? ` style="--depth:${depth}"` : "";
     const caret = open ? `<span class="mw-caret open">${glyph.caret}</span>` : "";
     const cls = `mw-si${cur ? " cur" : ""}${a && a.in != null ? " a-row" : ""}`;
     return `<li class="${cls}"${at(a)}${pad}>${caret}<span class="ic">${fi("folder", COLORS[name])}</span><span class="nm">${name}</span>${dots.map(([k, da]) => dot(k, da)).join("")}</li>`;
   }).join("");
-  return `<aside class="mw-side"><div class="mw-inset"><div class="mw-lights" aria-hidden="true"><i></i><i></i><i></i></div></div>
-<ul class="mw-sl top"><li class="mw-si"><span class="ic">${glyph.recents}</span><span class="nm">Recents</span></li></ul>
+  const disk = (name, on) => `<li class="mw-si ${on}"><span class="ic">${glyph.disk}</span><span class="nm">${name}</span></li>`;
+  return `<aside class="mw-side"><div class="mw-inset on-mac"><div class="mw-lights" aria-hidden="true"><i></i><i></i><i></i></div></div>
+<ul class="mw-sl top"><li class="mw-si"><span class="ic">${glyph.recents}</span><span class="nm">Recents</span></li><li class="mw-si"><span class="ic">${glyph.trash}</span><span class="nm">Trash</span></li></ul>
 <div class="mw-sh"><span>Standard Folders</span>${glyph.plus}</div><ul class="mw-sl">${s}</ul>
-<div class="mw-sh"><span>Connected Folders</span>${glyph.plus}</div><ul class="mw-sl">${c}</ul></aside>`;
+<div class="mw-sh"><span>Connected Folders</span>${glyph.plus}</div><ul class="mw-sl">${c}</ul>
+${drives ? `<div class="mw-sh"><span>Drives</span></div><ul class="mw-sl">${disk("Macintosh HD", "on-mac")}${disk("File System", "on-linux")}<li class="mw-si"><span class="ic">${glyph.usb}</span><span class="nm">Backup</span><span class="mw-ej">${glyph.eject}</span></li></ul>` : ""}</aside>`;
 }
 
 /** The Action menu's items for a Connected Folder; null is the separator. */
@@ -122,13 +150,21 @@ const ACTIONS = ["Customize Connected Folder", "Organize", "Skills & Extensions�
 /** The Action menu, open from step `open` until `choose`, when the pointer chooses `item`. */
 const actionMenu = ({ open, choose, item }) => `<div class="mw-menu a-menu"${at({ in: open, out: choose })}>${ACTIONS.map((t) => (t == null ? '<i class="sep"></i>' : `<span class="mi"${t === item ? at({ press: choose }) : ""}>${t.replace("&", "&amp;")}</span>`)).join("")}</div>`;
 
-/** The toolbar. title: name; icon: HTML (or swap parts); more: when Action is pressed; menu: the Action menu's HTML. */
-function toolbar({ title, icon, more, menu = "" }) {
-  return `<header class="mw-tb"><span class="mw-cap"><span class="mw-tool dis">${glyph.chevL}</span><span class="mw-tool dis">${glyph.chevR}</span></span>
+const SEARCH_PH = "Search names and contents";
+
+/**
+ * The toolbar. title: name; icon: HTML (or swap parts); more: when Action is pressed; menu: the Action menu's HTML;
+ * gridAt: the step List gives way to Icons; search: the search field's HTML.
+ */
+function toolbar({ title, icon, more, menu = "", gridAt, back = "dis", search = `<span class="mw-search">${glyph.search}<span>${SEARCH_PH}</span></span>` }) {
+  const views = gridAt == null
+    ? `<span class="mw-tool">${glyph.grid}</span><span class="mw-tool on">${glyph.list}</span>`
+    : `<span class="mw-tool" data-cur-in="${gridAt}">${glyph.grid}</span><span class="mw-tool on" data-cur-out="${gridAt}">${glyph.list}</span>`;
+  return `<header class="mw-tb"><span class="mw-cap"><span class="mw-tool ${back}">${glyph.chevL}</span><span class="mw-tool dis">${glyph.chevR}</span></span>
 <span class="mw-title">${icon}<span class="tt">${title}</span></span><span class="mw-space"></span>
-<span class="mw-cap"><span class="mw-tool">${glyph.grid}</span><span class="mw-tool on">${glyph.list}</span></span>
+<span class="mw-cap">${views}</span>
 <span class="mw-cap${menu ? " mw-anchor" : ""}"><span class="mw-tool"${at(more)}>${glyph.more}</span>${menu}</span><span class="mw-cap"><span class="mw-tool">${glyph.globe}</span></span>
-<span class="mw-search">${glyph.search}<span>Search names and contents</span></span><span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span></header>`;
+${search}<span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span></header>`;
 }
 
 const head = `<div class="mw-cols"><span class="mw-col on">Name ${glyph.sortUp}</span><span class="mw-col">Date Modified</span><span class="mw-col s">Size</span></div>`;
@@ -145,8 +181,14 @@ function rows(list, { focus = false, focusOut, cls = "", a } = {}) {
   return `<div class="mw-rlist${focus ? " focus" : ""}${cls ? ` ${cls}` : ""}"${at({ ...(a || {}), ...(focusOut != null ? { focusOut } : {}) })}>${list.map(row).join("")}</div>`;
 }
 
+const crumbs = (parts) => parts.map((p) => `<span class="cr">${p}</span>`).join(`<span class="sep">${glyph.chevR}</span>`);
+/**
+ * The path bar, from the home folder down. The app starts it at the disk, which each system names its own way
+ * (Macintosh HD, or File System over /home on Linux); the neutral view starts at the home folder.
+ */
+const homeCrumbs = (parts) => `<span class="mw-pre on-mac">${crumbs(["Macintosh HD", "Users"])}<span class="sep">${glyph.chevR}</span></span><span class="mw-pre on-linux">${crumbs(["File System", "home"])}<span class="sep">${glyph.chevR}</span></span>${crumbs(parts)}`;
 function pathbar(parts, count) {
-  return `<footer class="mw-path"><span class="mw-goto">${glyph.goto}</span><span class="mw-crumbs">${parts.map((p) => `<span class="cr">${p}</span>`).join(`<span class="sep">${glyph.chevR}</span>`)}</span><span class="ct">${count}</span></footer>`;
+  return `<footer class="mw-path"><span class="mw-goto">${glyph.goto}</span><span class="mw-crumbs">${homeCrumbs(parts)}</span><span class="ct">${count}</span></footer>`;
 }
 
 function main({ title, icon, more, menu, lists, path, count }) {
@@ -185,7 +227,7 @@ function infoComp({ placeholder, suggests = SUGGEST_ALL, sugA, sugRise = false, 
 /** The Chat's message box: while the Worker runs it reads Steer / Queue with a stop button, then Reply. */
 function chatComp(doneAt) {
   if (doneAt == null) return `<div class="mw-comp chat"><div class="mw-field focus"><span class="tx"><span class="caret"></span><span class="ph">Reply</span></span><span class="mw-send">${glyph.send}</span></div>${meta(true)}</div>`;
-  return `<div class="mw-comp chat"><div class="mw-field focus"><span class="tx"><span class="caret"></span><span class="ph">${swap([["Steer (Enter) · Queue (⌘Enter)", { out: doneAt }], ["Reply", { in: doneAt }]])}</span></span><span class="mw-send run"${at({ out: doneAt })}>${glyph.stop}</span><span class="mw-send"${at({ in: doneAt })}>${glyph.send}</span></div>${meta(true)}</div>`;
+  return `<div class="mw-comp chat"><div class="mw-field focus"><span class="tx"><span class="caret"></span><span class="ph">${swap([[per("Steer (Enter) · Queue (⌘Enter)", "Steer (Enter) · Queue (Ctrl+Enter)"), { out: doneAt }], ["Reply", { in: doneAt }]])}</span></span><span class="mw-send run"${at({ out: doneAt })}>${glyph.stop}</span><span class="mw-send"${at({ in: doneAt })}>${glyph.send}</span></div>${meta(true)}</div>`;
 }
 
 /** A Worker step: running verb (shimmering) until `doneAt`, then the past tense. */
@@ -206,15 +248,24 @@ function toast(text, a, tone = "ok", action = "") {
 
 const cursor = '<div class="mw-cursor" aria-hidden="true">' + CURSOR + "</div>";
 
+// Linux's title bar, which AmpleFile draws itself (docs/linux-build.md, "Title bar and desktop appearance"): its name,
+// the menus, and the window buttons, drawn here as with no button layout from the desktop, all three on the right.
+const WINDOW_BUTTONS = ['<path d="M4 11.5h8"/>', '<path d="M4.5 4.5h7v7h-7z"/>', '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'];
+const LINUX_TITLE_BAR = `<header class="mw-ltb on-linux"><b>AmpleFile</b>${["File", "Edit", "View", "Help"].map((m) => `<span class="m">${m}</span>`).join("")}<span class="sp"></span>${WINDOW_BUTTONS.map((d) => `<span class="wb"><svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg></span>`).join("")}</header>`;
+
 function win({ label, h = H, steps, start, body, extra = "" }) {
   const n = steps ? steps.length : 0;
   const sc = steps ? ` data-steps="${steps.join(",")}"${start ? ` data-cursor="${start}"` : ""}` : "";
   const cls = Array.from({ length: n }, (_, i) => ` s${i + 1}`).join("");
-  return `<div class="mw${cls}"${sc} style="height:calc(${h} * var(--u))" role="img" aria-label="${label}">${body}${extra}${steps && start ? cursor : ""}</div>`;
+  return `<div class="mw${cls}"${sc} style="height:calc(${h} * var(--u))" role="img" aria-label="${label}">${LINUX_TITLE_BAR}<div class="mw-frame">${body}</div>${extra}${steps && start ? cursor : ""}</div>`;
 }
 
 // ---------- Downloads: the hero's Organize run ----------
 
+// What each system calls a screenshot and an app download, as Downloads would hold them there.
+const DL_SHOT = per("Screenshot 2026-11-06 at 8.02.51 AM.png", "Screenshot From 2026-11-06 08-02-51.png", "Screenshot 2026-11-06 080251.png");
+const DL_APP = per("PhotoTool-Installer.dmg", "PhotoTool-2.1.x86_64.rpm", "PhotoTool-2.1.zip");
+const DL_DRIVER = per("printer-driver-5.2.pkg", "printer-driver-5.2.x86_64.rpm", "printer-driver-5.2.zip");
 const DL_BEFORE = [
   ["document (3).pdf", "pdf", "Nov 4, 2026 at 2:18 PM", "86 KB"],
   ["garden-plan.jpg", "img", "Oct 28, 2026 at 7:12 PM", "3.4 MB"],
@@ -223,14 +274,14 @@ const DL_BEFORE = [
   ["kickoff-notes.docx", "docx", "Nov 5, 2026 at 4:40 PM", "47 KB"],
   ["lease-renewal-412-maple.pdf", "pdf", "Nov 2, 2026 at 6:15 PM", "2.0 MB"],
   ["order-113-4492.pdf", "pdf", "Nov 3, 2026 at 10:22 AM", "63 KB"],
-  ["PhotoTool-Installer.dmg", "dmg", "Oct 31, 2026 at 8:47 PM", "463.5 MB"],
-  ["printer-driver-5.2.pkg", "pkg", "Oct 29, 2026 at 1:05 PM", "202.2 MB"],
+  [DL_APP, "dmg", "Oct 31, 2026 at 8:47 PM", "463.5 MB"],
+  [DL_DRIVER, "pkg", "Oct 29, 2026 at 1:05 PM", "202.2 MB"],
   ["receipt-0931.pdf", "pdf", "Nov 4, 2026 at 9:12 AM", "40 KB"],
-  ["Screenshot 2026-11-06 at 8.02.51 AM.png", "img", "Yesterday at 8:02 AM", "1.3 MB"],
+  [DL_SHOT, "img", "Yesterday at 8:02 AM", "1.3 MB"],
   ["slides-final-v3.pptx", "pptx", "Yesterday at 3:31 PM", "8.0 MB"],
-].map(([n, k, d, s]) => ({ n, k, d, s }));
+].map(([n, k, d, s]) => ({ n, k, d, s, key: /^<span[^>]*>([^<]*)</.exec(n)?.[1] ?? n }));
 const DL_FOLDERS = ["Home", "Installers", "Photos", "Receipts", "Work"];
-const DL_PATH = ["Macintosh HD", "Users", "you", "Downloads"];
+const DL_PATH = ["you", "Downloads"];
 const CON = ["Client Work", "Downloads", "Home Renovation", "Taxes 2026"];
 const STD_ALL = ["desktop", "documents", "pictures", "home", "icloud"];
 
@@ -238,16 +289,17 @@ const STD_ALL = ["desktop", "documents", "pictures", "home", "icloud"];
 export function viewOrganizeLive() {
   // 1 press Action; 2 choose Organize; 3 thought; 4 listed; 5 reading; 6 mkdir running; 7 folders appear, first mv; 8–10 a batch leaves per mv; 11 the turn ends.
   const steps = [1100, 900, 800, 550, 600, 1000, 850, 700, 700, 700, 650];
+  // Each loose file leaves with its batch; the keys are the Mac names, and every system's name sorts to the same place.
   const batch = { "document (3).pdf": 8, "invoice-2026-10-internet.pdf": 8, "order-113-4492.pdf": 8, "receipt-0931.pdf": 8, "IMG_4471.HEIC": 9, "Screenshot 2026-11-06 at 8.02.51 AM.png": 9, "garden-plan.jpg": 9, "lease-renewal-412-maple.pdf": 9, "PhotoTool-Installer.dmg": 10, "printer-driver-5.2.pkg": 10, "kickoff-notes.docx": 10, "slides-final-v3.pptx": 10 };
-  const folders = DL_FOLDERS.map((n, i) => ({ n, k: "folder", d: "Today at 9:41 AM", s: "--", at: { in: 7, d: i * 28 }, dot: { in: 11, d: 80 + i * 45 } }));
+  const folders = DL_FOLDERS.map((n, i) => ({ n, key: n, k: "folder", d: "Today at 9:41 AM", s: "--", at: { in: 7, d: i * 28 }, dot: { in: 11, d: 80 + i * 45 } }));
   // The listing sorts by name alone, so the new folders land among the files.
-  const all = [...DL_BEFORE.map((r) => ({ ...r, gone: batch[r.n] })), ...folders].sort((a, b) => a.n.localeCompare(b.n, "en", { sensitivity: "base" }));
+  const all = [...DL_BEFORE.map((r) => ({ ...r, gone: batch[r.key] })), ...folders].sort((a, b) => a.key.localeCompare(b.key, "en", { sensitivity: "base" }));
   const list = `<div class="mw-rlist">${all.map((r) => row(r).replace(/^<div class="mw-row"/, r.gone ? `<div class="mw-row" data-gone="${r.gone}"` : '<div class="mw-row"')).join("")}</div>`;
   const sidebarHtml = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Downloads", dots: name === "Downloads" ? [["run", { in: 2, out: 11 }]] : [] })) });
   const info = `<div class="mw-pane info"${at({ out: 2 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Downloads", "12 items", "--cf-1")}${automations()}</div>${infoComp({ placeholder: "Work in Downloads" })}</div>`;
   const msgs = `<div class="mw-ub a-send">Organize this folder.</div>
 <div class="mw-working shim"${at({ in: 2, out: 3 })}>Working…</div>
-<div class="mw-steps"${at({ in: 3, out: 11 })}>${step({ icon: "thought", done: "Thought for 2s", inAt: 3 })}${step({ icon: "listed", done: "Listed", target: ".", inAt: 4 })}${step({ icon: "read", run: "Reading", done: "Read", target: "document (3).pdf", inAt: 5, doneAt: 6 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mkdir Home Installers Photos Receipts Work", cmd: true, inAt: 6, doneAt: 7 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv 'document (3).pdf' invoice-2026-10-internet.pdf order-113-4492.pdf receipt-0931.pdf Receipts/", cmd: true, inAt: 7, doneAt: 8 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv IMG_4471.HEIC 'Screenshot 2026-11-06 at 8.02.51 AM.png' Photos/; mv garden-plan.jpg lease-renewal-412-maple.pdf Home/", cmd: true, inAt: 8, doneAt: 9 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv PhotoTool-Installer.dmg printer-driver-5.2.pkg Installers/; mv kickoff-notes.docx slides-final-v3.pptx Work/", cmd: true, inAt: 9, doneAt: 10 })}</div>
+<div class="mw-steps"${at({ in: 3, out: 11 })}>${step({ icon: "thought", done: "Thought for 2s", inAt: 3 })}${step({ icon: "listed", done: "Listed", target: ".", inAt: 4 })}${step({ icon: "read", run: "Reading", done: "Read", target: "document (3).pdf", inAt: 5, doneAt: 6 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mkdir Home Installers Photos Receipts Work", cmd: true, inAt: 6, doneAt: 7 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv 'document (3).pdf' invoice-2026-10-internet.pdf order-113-4492.pdf receipt-0931.pdf Receipts/", cmd: true, inAt: 7, doneAt: 8 })}${step({ icon: "ran", run: "Running", done: "Ran", target: `mv IMG_4471.HEIC '${DL_SHOT}' Photos/; mv garden-plan.jpg lease-renewal-412-maple.pdf Home/`, cmd: true, inAt: 8, doneAt: 9 })}${step({ icon: "ran", run: "Running", done: "Ran", target: `mv ${DL_APP} ${DL_DRIVER} Installers/; mv kickoff-notes.docx slides-final-v3.pptx Work/`, cmd: true, inAt: 9, doneAt: 10 })}</div>
 <span class="mw-pill a-fade"${at({ in: 11 })}>${glyph.listed}<span>Listed files, read a file, ran commands</span>${glyph.chevR}</span>
 <div class="mw-as a-rise"${at({ in: 11, d: 120 })}><p>I sorted the 12 loose files into five new folders:</p><ul><li><b>Home</b>: the lease renewal and the garden plan</li><li><b>Installers</b>: PhotoTool and the printer driver</li><li><b>Photos</b>: IMG_4471.HEIC and yesterday’s screenshot</li><li><b>Receipts</b>: three receipts and the October internet invoice</li><li><b>Work</b>: the kickoff notes and the slides</li></ul><p>Nothing was renamed or deleted. ${fileLink("document (3).pdf")} turned out to be a receipt from Barrow Tile, so it’s in Receipts.</p></div>`;
   const chat = chatPane({ title: "Organize this folder", a: { in: 2 }, msgs, comp: chatComp(11) });
@@ -267,7 +319,7 @@ const DESK = [
   ["Team Offsite Agenda.png", "img", "Nov 6, 2026 at 3:15 PM", "625 KB"],
   ["to-do.txt", "txt", "Nov 3, 2026 at 7:30 AM", "1000 B"],
 ].map(([n, k, d, s]) => ({ n, k, d, s }));
-const DESK_PATH = ["Macintosh HD", "Users", "you", "Desktop"];
+const DESK_PATH = ["you", "Desktop"];
 
 /** Desktop is a Standard Folder; Connect This Folder makes it a Connected Folder with a Worker. */
 export function viewConnect({ h = 680 } = {}) {
@@ -287,11 +339,11 @@ export function viewConnect({ h = 680 } = {}) {
 
 // ---------- Desktop: an Automation renames a new screenshot ----------
 
-/** Give Screenshots Friendly Names is switched on; a screenshot lands with the name macOS gives it, and the Worker renames it in place. */
+/** Give Screenshots Friendly Names is switched on; a screenshot lands with the name the system gives it, and the Worker renames it in place. */
 export function viewAutomationRun({ h = 760 } = {}) {
   // 1 the switch is clicked on; 2 the screenshot lands; 3 the Automation's Worker starts; 4 it's renamed, with the receipt.
   const steps = [900, 1500, 900, 2300];
-  const OLD = "Screenshot 2026-11-08 at 9.12.04 AM.png", NEW = "Seattle Flight Confirmation.png";
+  const OLD = per("Screenshot 2026-11-08 at 9.12.04 AM.png", "Screenshot From 2026-11-08 09-12-04.png", "Screenshot 2026-11-08 091204.png"), NEW = "Seattle Flight Confirmation.png";
   const shotRow = `<div class="mw-row a-row"${at({ in: 2, flash: 4 })}><span class="c n"><span class="ri">${fi("img")}</span><span class="rn">${swap([[OLD, { out: 4 }], [NEW, { in: 4 }]]).replace(/class="sw"/g, 'class="sw nm-swap"')}</span><i class="mw-cdot a-pop"${at({ in: 4, d: 260 })}></i></span><span class="c">Today at 9:12 AM</span><span class="c s">402 KB</span></div>`;
   // Sorted by name, the friendly name lands in the same place the screenshot was.
   const list = `<div class="mw-rlist">${DESK.slice(0, 4).map(row).join("")}${shotRow}${DESK.slice(4).map(row).join("")}</div>`;
@@ -305,7 +357,7 @@ export function viewAutomationRun({ h = 760 } = {}) {
 
 // ---------- Home Renovation: select three quotes and ask ----------
 
-const HR_PATH = ["Macintosh HD", "Users", "you", "Documents", "Home Renovation"];
+const HR_PATH = ["you", "Documents", "Home Renovation"];
 const ACRO = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.5h6.2l2.8 2.8v10.2h-9z" fill="#fff" stroke="#b9b9c0" stroke-width=".8" stroke-linejoin="round"/><path d="M9.7 1.5v2.8h2.8" fill="none" stroke="#b9b9c0" stroke-width=".8"/><rect x="2" y="3" width="6" height="3.2" rx=".6" fill="#d93a2b"/><path d="M3.1 5.3V3.9h.75a.45.45 0 0 1 0 .9H3.1M4.9 5.3V3.9h.5a.7.7 0 0 1 0 1.4zM6.6 5.3V3.9h.95M6.6 4.6h.75" fill="none" stroke="#fff" stroke-width=".45" stroke-linecap="round"/><path d="M5.2 12.6c.9-1.6 1.6-3.4 1.8-4.9.15-1-.9-1-.8 0 .2 1.6 1.6 3.3 3.6 4.1 1 .4 1.3-.5.3-.6-1.9-.2-3.9.4-5.3 1.3-.6.4-.2 1 .4.1z" fill="none" stroke="#d93a2b" stroke-width=".7" stroke-linejoin="round"/></svg>';
 const pdfChip = (n) => `<span class="mw-fchip">${ACRO}<b>${n}</b></span>`;
 const ctxChip = (n, more, a) => `<span class="mw-cchip-wrap"${at(a)}><span class="mw-cchip">${fi("pdf")}<span class="n">${n}</span><span class="cx">${glyph.x}</span></span>${more ? `<span class="mw-cchip more">${more}</span>` : ""}</span>`;
@@ -439,7 +491,7 @@ export function viewHistory({ h = 600 } = {}) {
   const changes = card(change("Before a Worker reply", "Today at 10:02 AM · 12 files", "Undo", 1) + change("Before a Worker reply", "Yesterday at 6:40 PM · 31 files", "Undo") + change("Before deleting old-drafts", "Monday at 11:15 AM · 3 files", "Undo") + change("Saved by you", "Nov 1 · 48 files", "Restore"));
   const chats = card(chatRow("Rename the statements", "Today at 10:05 AM", true) + chatRow("What’s still missing?", "Yesterday at 7:15 PM") + chatRow("Sort receipts by month", "Yesterday at 6:41 PM"));
   const panel = `<div class="mw-pane info">${tabs("History", true)}<div class="mw-pscroll"><section class="mw-sec first"><div class="mw-sec-h">Changes</div>${changes}</section><section class="mw-sec"><div class="mw-sec-h">Chats</div>${chats}</section></div><div class="mw-comp"><div class="mw-field"><span class="tx"><span class="ph">Work in Taxes 2026</span></span><span class="mw-send">${glyph.send}</span></div>${meta()}</div></div>`;
-  const body = `${side}${main({ title: "Taxes 2026", icon: folderTitle("Taxes 2026"), lists: html, path: ["Macintosh HD", "Users", "you", "Documents", "Taxes 2026"], count: swap([["8 items", { out: 1 }], ["7 items", { in: 1 }]]) })}<aside class="mw-panel">${panel}</aside>`;
+  const body = `${side}${main({ title: "Taxes 2026", icon: folderTitle("Taxes 2026"), lists: html, path: ["you", "Documents", "Taxes 2026"], count: swap([["8 items", { out: 1 }], ["7 items", { in: 1 }]]) })}<aside class="mw-panel">${panel}</aside>`;
   return win({ label: "AmpleFile's History tab for Taxes 2026: Undo on the latest Worker reply puts the folder back as it was", h, steps, start: "56,92", body, extra: toast("Undid Worker reply", { in: 1, fade: 2 }, "info", "Undo") });
 }
 
@@ -459,6 +511,7 @@ export function viewNested({ h = 520 } = {}) {
       { name: "Permits", depth: 1, dots: [["run", { in: 3, out: 5, d: 260 }], ["done", { in: 5 }]] },
       { name: "Taxes 2026" },
     ],
+    drives: false,
   });
   const list = [
     { n: "budget.xlsx", k: "xlsx", d: "Yesterday at 7:02 PM", s: "30 KB" },
@@ -479,6 +532,74 @@ export function viewNested({ h = 520 } = {}) {
   const chat = chatPane({ title: "Plan the kitchen week", a: { in: 2 }, msgs, comp: chatComp(7) });
   const body = `${side}${main({ title: "Home Renovation", icon: folderTitle("Home Renovation"), lists: rows(list), path: HR_PATH, count: swap([["7 items", { out: 6 }], ["8 items", { in: 6 }]]) })}<aside class="mw-panel">${info}${chat}</aside>`;
   return win({ label: "Home Renovation's Worker asks the Kitchen and Permits Workers inside it for updates, then writes Kitchen Week Plan.docx", h, steps, start: "40,94", body });
+}
+
+// ---------- The file manager: a folder's size, search, folder tabs, and thumbnails ----------
+
+// Pictures and a PDF as the host draws them in icon view and in Info: the file's own picture, or a PDF's first page.
+const thumb = (kind, cls = "") => `<i class="mw-th t-${kind}${cls ? ` ${cls}` : ""}"></i>`;
+const tile = (name, art, a) => `<div class="mw-tile"${at(a)}><span class="ti">${art}</span><span class="tn">${name}</span></div>`;
+const crumbSet = (inner, a) => `<span class="mw-pre"${at(a)}>${inner}</span>`;
+const irow = (label, value, extra = "", cls = "", a) => `<div class="mw-irow${cls ? ` ${cls}` : ""}"${at(a)}><span class="l">${label}</span><span class="v">${value}</span>${extra}</div>`;
+// Linux's Info adds an item's permissions and who owns it (src/local/linux-entry-details.ts).
+const linuxRows = (mode) => irow("Permissions", mode, "", "on-linux") + irow("Owner", "you", "", "on-linux") + irow("Group", "you", "", "on-linux");
+const information = (rows) => `<section class="mw-sec"><div class="mw-sec-h">Information</div><div class="mw-card">${rows}</div></section>`;
+const plainFoot = (name) => `<div class="mw-pfoot"><p>No Worker here yet. Connect This Folder adds a Worker and History to “${name}”. Nothing moves.</p><span class="mw-btn small primary">Connect This Folder</span></div>`;
+
+/**
+ * Documents as a list while Info measures it; a search of names and the text in files; the second folder tab, which
+ * keeps its own Icons view and search; and a photo's thumbnail in Info. Nothing here needs a Worker.
+ */
+export function viewFileManager({ h = 640 } = {}) {
+  // 1 the size is measured; 2 click Search and type; 3 the results; 4 the Pictures tab; 5 a photo is chosen.
+  const steps = [1300, 1000, 400, 1600, 1300];
+  const side = sidebar({
+    std: STD_ALL.map((id) => (id === "documents" ? { id, cur: true, at: { curOut: 4 } } : id === "pictures" ? { id, at: { curIn: 4 } } : { id })),
+    con: CON.map((name) => ({ name })),
+  });
+  const docs = `<div class="mw-fmlist"${at({ out: 3 })}>${head}<div class="mw-rows">${rows([
+    { n: "Apartment", k: "folder", d: "Nov 2, 2026 at 6:10 PM", s: "--" },
+    { n: "budget-2026.xlsx", k: "xlsx", d: "Yesterday at 7:02 PM", s: "30 KB" },
+    { n: "errands.txt", k: "txt", d: "Today at 8:20 AM", s: "312 B" },
+    { n: "Home Renovation", k: "folder", tint: "--cf-2", d: "Today at 9:44 AM", s: "--" },
+    { n: "Letters", k: "folder", d: "Sep 3, 2026 at 11:30 AM", s: "--" },
+    { n: "Resume 2026.docx", k: "docx", d: "Oct 12, 2026 at 4:05 PM", s: "64 KB" },
+    { n: "Taxes 2026", k: "folder", tint: "--cf-3", d: "Today at 10:05 AM", s: "--" },
+  ])}</div></div>`;
+  // A plain folder's search reads names and the text in text files; the Connected Folders inside keep their own search.
+  const hit = (pre, word, post) => `${pre}<mark>${word}</mark>${post}`;
+  const result = (n, k, match, where) => `<div class="mw-row sr"><span class="c n"><span class="ri">${fi(k)}</span><span class="rn">${n}</span></span><span class="c${match === "Name" ? " nm" : ""}">${match}</span><span class="c">${where}</span></div>`;
+  const search = `<div class="mw-fmlist a-fade"${at({ in: 3, out: 4 })}><div class="mw-scope">Search:<span class="mw-pill">All Connected Folders</span><span class="mw-pill on">“Documents”</span></div>
+<div class="mw-cols sr"><span class="mw-col">Name</span><span class="mw-col">Match</span><span class="mw-col">Where</span></div>
+<div class="mw-rows"><div class="mw-rlist">${result("lease-agreement.pdf", "pdf", "Name", "Documents › Apartment")}${result("move-in notes.md", "txt", hit("Keys go back the day the ", "lease", " ends."), "Documents › Apartment")}${result("errands.txt", "txt", hit("Renew the ", "lease", " before March 1"), "Documents")}</div>
+<p class="mw-snote">Connected Folders inside are searched with their own rules. <span>Search All Connected Folders</span></p></div></div>`;
+  const shot = per("Screenshot 2026-11-09 at 10.31.52 AM.png", "Screenshot From 2026-11-09 10-31-52.png", "Screenshot 2026-11-09 103152.png");
+  // Sorted by name; HEIC keeps its icon, since the host draws no HEIC thumbnail.
+  const grid = `<div class="mw-grid a-fade"${at({ in: 4 })}>${[
+    tile("beach-day.jpg", thumb("beach")),
+    tile("garden-before.jpg", thumb("garden"), { sel: 5, press: 5 }),
+    tile("IMG_4471.HEIC", fi("img")),
+    tile("kitchen-tile.png", thumb("tile", "sq")),
+    tile("recipe-card.pdf", thumb("page", "pt")),
+    tile(shot, thumb("shot")),
+    tile("sunset-pier.jpg", thumb("sunset", "pt")),
+    tile("wallpaper.webp", thumb("wall")),
+  ].join("")}</div>`;
+  const tabsHtml = `<div class="mw-ftabs"><span class="mw-ftab on"${at({ curOut: 4 })}><span class="x">${glyph.x}</span><span class="t">Documents</span></span><span class="mw-ftab"${at({ curIn: 4, press: 4 })}><span class="x">${glyph.x}</span><span class="t">Pictures</span></span><span class="nt">${glyph.plus}</span></div>`;
+  // Each tab keeps its own search, so the Pictures tab's field is empty.
+  const searchField = `<span class="mw-search"${at({ press: 2, focusIn: 2, focusOut: 4 })}>${glyph.search}<span class="q"${at({ out: 4 })}><span class="ty" data-type="2" data-text="lease">lease</span><span class="caret"></span><span class="ph">${SEARCH_PH}</span><span class="sx">${glyph.x}</span></span><span class="ph"${at({ in: 4 })}>${SEARCH_PH}</span></span>`;
+  const title = swap([["Documents", { out: 4 }], ["Pictures", { in: 4 }]]);
+  const path = `<footer class="mw-path"><span class="mw-goto">${glyph.goto}</span><span class="mw-crumbs">${crumbSet(homeCrumbs(["you", "Documents"]), { out: 3 })}${crumbSet(crumbs(["Searching “Documents”"]), { in: 3, out: 4 })}${crumbSet(homeCrumbs(["you", "Pictures"]), { in: 4, out: 5 })}${crumbSet(homeCrumbs(["you", "Pictures", "garden-before.jpg"]), { in: 5 })}</span><span class="ct">${swap([["7 items", { out: 3 }], ["3 items", { in: 3, out: 4 }], ["8 items", { in: 4, out: 5 }], ["1 of 8 selected", { in: 5 }]])}</span></footer>`;
+  const mainHtml = `<section class="mw-main">${toolbar({ title, icon: fi("folder"), gridAt: 4, search: searchField })}${tabsHtml}<div class="mw-fmc">${docs}${search}${grid}</div>${path}</section>`;
+  // Info follows what is shown: Documents as it is measured, then Pictures and the chosen photo.
+  const recalc = (a) => `<span class="b"${at(a)}>Recalculate</span>`;
+  const size = swap([["Calculating…", { out: 1 }], ["1.8 GB", { in: 1 }]]);
+  const documents = `<div class="mw-pane info"${at({ out: 4 })}><div class="mw-pscroll untabbed">${pv("Documents", "7 items")}${information(irow("Where", "you") + irow("Modified", "Today at 10:05 AM") + irow("Size", size, recalc({ in: 1 })) + irow("Contains", "1,204 items", "", "a-fade", { in: 1 }) + linuxRows("rwxr-xr-x (0755)"))}</div>${plainFoot("Documents")}</div>`;
+  const pictures = `<div${at({ out: 5 })}>${pv("Pictures", "8 items")}${information(irow("Where", "you") + irow("Modified", "Today at 8:15 AM") + irow("Size", "41.3 MB", recalc()) + irow("Contains", "8 items") + linuxRows("rwxr-xr-x (0755)"))}</div>`;
+  const photo = `<div class="a-fade"${at({ in: 5 })}><div class="mw-hd"><div class="mw-pv">${thumb("garden", "big")}</div><div class="mw-pv-name">garden-before.jpg</div><div class="mw-pv-meta">JPEG image · 3.1 MB</div></div>${information(irow("Where", "Pictures") + irow("Modified", "Oct 28, 2026 at 7:12 PM") + irow("Size", "3.1 MB") + linuxRows("rw-r--r-- (0644)"))}</div>`;
+  const picturesPane = `<div class="mw-pane info"${at({ in: 4 })}><div class="mw-pscroll untabbed">${pictures}${photo}</div>${plainFoot("Pictures")}</div>`;
+  const body = `${side}${mainHtml}<aside class="mw-panel">${documents}${picturesPane}</aside>`;
+  return win({ label: "AmpleFile as a file manager: Info measures Documents, Search finds “lease” in file names and in the text of files, the Pictures tab shows its pictures as thumbnails, and a chosen photo shows its picture and details in Info; the sidebar holds the Trash and the drives", h, steps, start: "62,30", body });
 }
 
 // ---------- The AmpleFile agent in the menu bar ----------
@@ -539,16 +660,38 @@ const STEP_CSS = Array.from({ length: 12 }, (_, i) => {
 :is(.mw, .mb-pop)[data-steps].s${k} .mw-field[data-focus-in="${k}"] .caret { display:block; }
 :is(.mw, .mb-pop)[data-steps].s${k} .mw-sw[data-on="${k}"] { background:var(--fm-accent); }
 :is(.mw, .mb-pop)[data-steps].s${k} .mw-sw[data-on="${k}"]::after { transform:translateX(14px); }
-:is(.mw, .mb-pop)[data-steps].s${k} .mw-row[data-flash="${k}"] { animation:mw-flash 2000ms ease-out both; }`;
+:is(.mw, .mb-pop)[data-steps].s${k} .mw-row[data-flash="${k}"] { animation:mw-flash 2000ms ease-out both; }
+.mw[data-steps].s${k} .mw-si[data-cur-in="${k}"] { background:var(--fm-cap2); }
+.mw[data-steps].s${k} .mw-si[data-cur-out="${k}"] { background:transparent; }
+.mw[data-steps].s${k} .mw-ftab[data-cur-in="${k}"] { background:var(--fm-btn); box-shadow:var(--fm-btn-shadow); color:var(--fm-text); }
+.mw[data-steps].s${k} .mw-ftab[data-cur-out="${k}"] { background:transparent; box-shadow:none; color:var(--fm-text2); }
+.mw[data-steps].s${k} .mw-ftab[data-cur-in="${k}"] .x { opacity:1; }
+.mw[data-steps].s${k} .mw-ftab[data-cur-out="${k}"] .x { opacity:0; }
+.mw[data-steps].s${k} .mw-tool[data-cur-in="${k}"] { background:var(--fm-seg); color:var(--fm-text); box-shadow:0 1px 2px rgba(0,0,0,.14); }
+.mw[data-steps].s${k} .mw-tool[data-cur-out="${k}"] { background:transparent; color:var(--fm-text2); box-shadow:none; }
+.mw[data-steps].s${k} .mw-tile[data-sel="${k}"] .ti { background:var(--fm-cap2); }
+.mw[data-steps].s${k} .mw-tile[data-sel="${k}"] .tn { background:var(--fm-accent); color:var(--fm-on); }
+.mw[data-steps].s${k} .mw-search[data-focus-in="${k}"] { background:var(--fm-field); box-shadow:0 0 0 1px var(--fm-accent), 0 0 0 4px var(--fm-accent-soft); }
+.mw[data-steps].s${k} .mw-search[data-focus-in="${k}"] .caret { display:block; }
+.mw[data-steps].s${k} .mw-search[data-focus-out="${k}"] { background:var(--fm-cap); box-shadow:none; }`;
 }).join("\n");
 
 export const WINDOW_CSS_PX = `
 .mw { --fm-window:#ffffff; --fm-side:#f0f0f2; --fm-text:#1d1d1f; --fm-text2:#5d5d62; --fm-text3:#66666c; --fm-line:rgba(0,0,0,.08); --fm-stripe:#f6f6f8; --fm-cap:rgba(0,0,0,.055); --fm-cap2:rgba(0,0,0,.09); --fm-seg:#ffffff; --fm-accent:#0a64d6; --fm-accent-soft:rgba(10,100,214,.14); --fm-on:#ffffff; --fm-panel:#f5f5f7; --fm-field:#ffffff; --fm-field-line:rgba(0,0,0,.14); --fm-card:#ffffff; --fm-card-line:rgba(0,0,0,.08); --fm-btn:#ffffff; --fm-btn-shadow:0 0 0 .5px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.14), 0 1px 0 rgba(0,0,0,.04); --fm-green:#1e9e4a;
   --cf-1:#ec9e3a; --cf-2:#4fb36c; --cf-3:#9980e0; --cf-4:#e46689; --cf-5:#3fa3c3;
   --es:cubic-bezier(.2,0,0,1); --ep:cubic-bezier(.34,1.4,.64,1);
-  position:relative; width:1280px; height:760px; display:flex; border-radius:12px; overflow:hidden; background:var(--fm-window); color:var(--fm-text); box-shadow:0 40px 90px rgba(0,0,0,.34), 0 0 0 .5px rgba(0,0,0,.3);
+  position:relative; width:1280px; height:760px; display:flex; flex-direction:column; border-radius:12px; overflow:hidden; background:var(--fm-window); color:var(--fm-text); box-shadow:0 40px 90px rgba(0,0,0,.34), 0 0 0 .5px rgba(0,0,0,.3);
   font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif; font-size:13px; line-height:1.35; letter-spacing:0; text-align:left; -webkit-font-smoothing:antialiased; }
 .mw svg { display:block; flex:none; }
+.mw-frame { flex:1; min-height:0; display:flex; }
+/* Linux: the title bar AmpleFile draws, with its menus and the window buttons (web-local styles.css, desktop-titlebar) */
+.mw-ltb { flex:none; height:40px; display:flex; align-items:center; gap:2px; padding:0 4px 0 10px; border-bottom:1px solid var(--fm-line); background:var(--fm-window); white-space:nowrap; }
+.mw-ltb b { margin-right:10px; font-size:13px; font-weight:600; }
+.mw-ltb .m { height:30px; display:inline-flex; align-items:center; padding:0 9px; border-radius:4px; }
+.mw-ltb .sp { flex:1; }
+.mw-ltb .wb { position:relative; width:34px; height:34px; display:grid; place-items:center; }
+.mw-ltb .wb::before { content:""; position:absolute; inset:5px; border-radius:50%; background:rgba(29,29,31,.1); }
+.mw-ltb .wb svg { position:relative; width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
 .mw-side, .mw-sh, .mw-search, .mw-crow, .mw-cchip, .mw-btn, .mw-seg, .mw-si, .mw-field, .mw-toast { box-sizing:border-box; }
 .mw-sl { list-style:none; margin:0; padding:0; }
 .mw b { font-weight:600; }
@@ -575,6 +718,9 @@ export const WINDOW_CSS_PX = `
 .mw-lights i { width:12px; height:12px; border-radius:50%; background:#ff5f57; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.14); }
 .mw-lights i:nth-child(2) { background:#febc2e; } .mw-lights i:nth-child(3) { background:#28c840; }
 .mw-sl.top { margin-top:4px; }
+html:not(.os-mac) .mw-side { padding-top:12px; }
+.mw-ej { flex:none; width:20px; height:20px; margin-right:-4px; display:grid; place-items:center; color:var(--fm-text2); }
+.mw-ej svg { width:12px; height:12px; }
 .mw-sh { display:flex; align-items:center; gap:4px; height:30px; padding:6px 5px 0 8px; color:var(--fm-text3); font-size:11px; font-weight:600; white-space:nowrap; }
 .mw-sh > span { flex:1; }
 .mw-sh svg { width:14px; height:14px; }
@@ -629,6 +775,7 @@ export const WINDOW_CSS_PX = `
 .mw-goto svg { width:15px; height:15px; }
 .mw-crumbs { flex:1; min-width:0; display:flex; align-items:center; overflow:hidden; }
 .mw-crumbs .cr { padding:2px 4px; }
+.mw-pre { display:contents; }
 .mw-crumbs .sep svg { width:9px; height:9px; opacity:.55; }
 .mw-path .ct { flex:none; padding-left:12px; }
 
@@ -857,6 +1004,59 @@ export const WINDOW_CSS_PX = `
 .bp-site .r .d { color:#6d6259; }
 .mw[data-steps].s5 .bp-site .r[data-hit] { background:#f4e3d2; }
 .mw[data-steps].s5 .bp-site .r[data-hit] .d { color:#7a3e24; font-weight:600; }
+
+/* The file manager: folder tabs, icon view with thumbnails, search, and Info (file-manager-tabs.css, -places.css, file-manager.css) */
+.mw-search .ty { color:var(--fm-text); }
+.mw-search .ty:empty { display:none; }
+.mw-search .ty:not(:empty) ~ .ph { display:none; }
+.mw-search .caret { display:none; flex:none; width:1.5px; height:15px; margin-left:-5px; background:var(--fm-text); animation:mw-blink 1.06s steps(1) infinite; }
+.mw-search .sx { display:none; width:16px; height:16px; margin-left:auto; place-items:center; border-radius:50%; background:rgba(0,0,0,.28); color:#fff; }
+.mw-search .sx svg { width:8px; height:8px; color:#fff; }
+.mw-search .ty:not(:empty) ~ .sx { display:grid; }
+.mw-ftabs { flex:none; display:flex; align-items:center; gap:4px; height:34px; padding:0 8px 0 12px; border-top:1px solid var(--fm-line); border-bottom:1px solid var(--fm-line); background:var(--fm-stripe); }
+.mw-ftab { position:relative; flex:1 1 0; min-width:0; max-width:320px; height:26px; display:flex; align-items:center; justify-content:center; padding:0 24px; border-radius:6px; color:var(--fm-text2); font-size:12px; white-space:nowrap; transition:background-color 110ms ease-out, color 110ms ease-out, box-shadow 110ms ease-out; }
+.mw-ftab.on { background:var(--fm-btn); box-shadow:var(--fm-btn-shadow); color:var(--fm-text); }
+.mw-ftab .t { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.mw-ftab .x { position:absolute; top:5px; left:5px; width:16px; height:16px; display:grid; place-items:center; color:var(--fm-text2); opacity:0; }
+.mw-ftab .x svg { width:9px; height:9px; }
+.mw-ftab.on .x { opacity:1; }
+.mw-ftabs .nt { flex:none; width:26px; height:26px; display:grid; place-items:center; color:var(--fm-text2); }
+.mw-ftabs .nt svg { width:14px; height:14px; }
+.mw-fmc { position:relative; flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.mw-fmc > * { flex:1; min-height:0; }
+.mw-fmlist { display:flex; flex-direction:column; }
+.mw-search .q { display:contents; }
+.mw-grid { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); align-content:start; gap:10px 6px; padding:16px; }
+.mw-tile { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0; padding:4px 2px; }
+.mw-tile .ti { width:80px; height:74px; display:grid; place-items:center; border-radius:10px; }
+.mw-tile .ti .fi { font-size:56px; }
+.mw-tile .tn { max-width:104px; padding:1px 5px; overflow:hidden; border-radius:4px; font-size:12px; line-height:16px; text-align:center; white-space:nowrap; text-overflow:ellipsis; }
+.mw-th { display:block; flex:none; width:72px; height:48px; border-radius:3px; background:#ccc; box-shadow:0 0 0 .5px var(--fm-line), 0 1px 2px rgba(0,0,0,.12); }
+.mw-th.sq { width:60px; height:60px; }
+.mw-th.pt { width:46px; height:64px; }
+.mw-th.big { width:168px; height:112px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,.18); }
+.mw-th.t-beach { background:linear-gradient(180deg, #a9d4f2 0 48%, #4aa3c9 48% 63%, #ecd7a6 63%); }
+.mw-th.t-garden { background:radial-gradient(ellipse 30% 22% at 28% 58%, #4f8f3c 0 98%, transparent), radial-gradient(ellipse 24% 17% at 72% 62%, #5c9c44 0 98%, transparent), linear-gradient(180deg, #cfe8f7 0 42%, #86bd62 42% 72%, #8c6a46 72%); }
+.mw-th.t-tile { background:repeating-conic-gradient(#e9e5dd 0 25%, #6f8790 0 50%) 0 0 / 15px 15px; }
+.mw-th.t-page { background:linear-gradient(#3a3a3e, #3a3a3e) 6px 7px / 24px 3px no-repeat, repeating-linear-gradient(180deg, #d5d7dc 0 1.5px, transparent 1.5px 5px) 6px 15px / 34px 42px no-repeat, #fff; }
+.mw-th.t-shot { background:linear-gradient(#e4e4e8, #e4e4e8) 0 0 / 100% 7px no-repeat, linear-gradient(#f0f0f3, #f0f0f3) 0 7px / 28% 100% no-repeat, linear-gradient(#0a64d6, #0a64d6) 30px 16px / 30px 4px no-repeat, linear-gradient(#cdd1d8, #cdd1d8) 30px 25px / 36px 3px no-repeat, linear-gradient(#cdd1d8, #cdd1d8) 30px 32px / 28px 3px no-repeat, #fff; }
+.mw-th.t-sunset { background:radial-gradient(circle at 50% 50%, #ffd27a 0 9%, transparent 10%), linear-gradient(180deg, #f4a259 0, #e0697a 50%, #2f3f6b 50% 62%, #1f2b4a); }
+.mw-th.t-wall { background:linear-gradient(135deg, #4f7cf7, #a066c9 60%, #e57aa0); }
+.mw-cols.sr, .mw-row.sr { grid-template-columns:minmax(0, 1fr) minmax(0, 1.25fr) 160px; }
+.mw-row.sr .c.nm { color:var(--fm-text3); }
+.mw-row mark { padding:0 1px; border-radius:3px; background:rgba(255,196,0,.42); color:inherit; }
+.mw-scope { flex:none; display:flex; align-items:center; gap:6px; height:34px; padding:0 18px; color:var(--fm-text2); font-size:12px; white-space:nowrap; }
+.mw-pill { display:inline-flex; align-items:center; height:22px; padding:0 10px; border-radius:999px; color:var(--fm-text); font-weight:500; }
+.mw-pill.on { background:var(--fm-cap2); }
+.mw-snote { margin:6px 0 0; padding:6px 8px; color:var(--fm-text3); font-size:12px; }
+.mw-snote span { margin-left:6px; color:var(--fm-accent); }
+.mw-irow { display:flex; align-items:center; gap:10px; min-height:32px; margin-bottom:-.5px; padding:0 12px; border-bottom:.5px solid var(--fm-card-line); }
+.mw-irow .l { flex:none; color:var(--fm-text2); }
+.mw-irow .v { flex:1; min-width:0; overflow:hidden; text-align:right; white-space:nowrap; text-overflow:ellipsis; }
+.mw-irow .b { flex:none; color:var(--fm-accent); font-size:11px; font-weight:500; }
+.mw-pv .mw-th.big { margin-top:4px; }
+.mw-pfoot { flex:none; padding:12px 14px 14px; border-top:1px solid var(--fm-line); }
+.mw-pfoot p { margin:0 0 8px; color:var(--fm-text2); font-size:12px; line-height:1.4; }
 
 /* Notices rise from the bottom center of the folder list */
 .mw-toast { position:absolute; z-index:4; bottom:40px; left:594px; translate:-50% 0; display:flex; align-items:center; gap:10px; min-height:42px; padding:10px 10px 10px 14px; border:1px solid #d8e0e8; border-left:4px solid #0b6fd6; border-radius:8px; background:rgba(255,255,255,.96); box-shadow:0 8px 16px rgba(0,0,0,.14); color:#253044; font-weight:600; white-space:nowrap; transition:opacity 220ms ease-out, transform 220ms ease-out; }

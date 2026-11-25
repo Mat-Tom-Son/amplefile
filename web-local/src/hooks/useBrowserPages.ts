@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import type { BrowserPageState } from "../../../src/shared/browser";
 import { browserTabsReducer, emptyBrowserTabs, newBrowserPageId, savedFileName, type BrowserTab } from "../lib/browser-pages";
-import { isMacOS } from "../lib/platform";
+import { revealInFileManagerLabel } from "../lib/file-actions";
 import { showToast } from "../ui/feedback";
 
 export type BrowserBridge = NonNullable<NonNullable<Window["ampleFileDesktop"]>["browser"]>;
@@ -73,12 +73,12 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
     const offKeyboard = bridge.onShortcut((shortcut) => { if (shortcut.key === "KeyboardReturned") keepKeyboardOutOfFields(); });
     const offDownload = bridge.onDownload((download) => {
       if (download.state === "completed") {
+        const revealLabel = revealInFileManagerLabel();
         showToast({
           // The name it was saved under: a second "report.txt" is "report (1).txt".
           text: `Downloaded ${savedFileName(download.path, download.filename)}`,
           tone: "success",
-          actionLabel: isMacOS() ? "Show in Finder" : "Show in Folder",
-          onAction: () => { void bridge.showDownload(download.path).catch(() => undefined); },
+          ...(revealLabel ? { actionLabel: revealLabel, onAction: () => { void bridge.showDownload(download.path).catch(() => undefined); } } : {}),
           durationMs: 8000,
         });
       } else if (download.state === "interrupted") {

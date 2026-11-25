@@ -1,4 +1,4 @@
-import type { DesktopUpdateStatus } from "../types";
+import type { DesktopUpdateStatus } from "../../../src/shared/desktop-ipc";
 
 /**
  * What a person's click does in each update phase, and how the two places
@@ -42,6 +42,11 @@ export function updateIsBusy(phase: UpdatePhase): boolean {
   return updateCallFor({ phase, availableVersion: null }) === null;
 }
 
+/** The system's package manager already installed it; a restart is all that is left. */
+export function installedBySystem(status: Pick<DesktopUpdateStatus, "updatesFrom"> | null): boolean {
+  return status?.updatesFrom === "system";
+}
+
 /** The download's progress as a number from 0 to 100, or null when the status carries none. */
 function progressOf(status: DesktopUpdateStatus): number | null {
   const percent: unknown = status.progressPercent;
@@ -57,7 +62,7 @@ function percentText(status: DesktopUpdateStatus): string | null {
 export function updateActionLabel(status: DesktopUpdateStatus): string {
   switch (status.phase) {
     case "available": return "Update and Restart";
-    case "ready": return "Restart and Install";
+    case "ready": return installedBySystem(status) ? "Restart to Update" : "Restart and Install";
     case "error": return updateFailedWithVersion(status) ? "Retry" : "Check Again";
     case "checking": return "Checking";
     case "downloading": return percentText(status) ?? "Downloading";
@@ -127,9 +132,13 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
       detail: version,
       progressPercent: null,
       accessibleName: version ? `Restart to Update: AmpleFile ${version}` : "Restart to Update",
-      tooltip: `${named} is ready. AmpleFile asks, then quits and opens again to install it.`,
+      tooltip: installedBySystem(status)
+        ? `${named} was installed with your system's software updates. AmpleFile asks, then quits and opens again to use it.`
+        : `${named} is ready. AmpleFile asks, then quits and opens again to install it.`,
       click: "update",
-      announcement: `${named} is ready to install. Restart to Update is at the bottom of the sidebar.`,
+      announcement: installedBySystem(status)
+        ? `${named} was installed. Restart to Update is at the bottom of the sidebar.`
+        : `${named} is ready to install. Restart to Update is at the bottom of the sidebar.`,
     };
     case "installing": return {
       tone: "installing",

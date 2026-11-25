@@ -12,12 +12,14 @@ export type FileMenuCommand =
   | "open-in-new-tab"
   | "open-in-new-window"
   | "open-with"
+  | "open-terminal"
   | "show-package-contents"
   | "reveal"
   | "show-original"
   | "copy-path"
   | "attach-chat"
   | "version-history"
+  | "get-info"
   | "new-folder"
   | "upload-here"
   | "refresh"
@@ -65,6 +67,8 @@ export interface FileMenuCapabilities {
   newTab?: boolean;
   /** Open in New Window, for a folder where the desktop can open another window. */
   newWindow?: boolean;
+  /** Linux desktop: open the folder in an installed terminal. */
+  terminal?: boolean;
 }
 
 export interface FileMenuTarget {
@@ -98,12 +102,16 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   const itemWord = request.capabilities.link ? "Link" : packaged ? "Item" : request.kind === "folder" ? "Folder" : "File";
   const deleteLabel = request.standardFolderId ? "Move to Trash" : `Delete ${itemWord}`;
   const showContents: FileMenuItem = { type: "item", label: "Show Package Contents", command: "show-package-contents" };
+  // The panel, opened at Info for this item: the one way to ask for Info when the panel is hidden or shows something else.
+  const getInfo: FileMenuItem = { type: "item", label: "Get Info", command: "get-info" };
   if (request.capabilities.link) {
     // Open and Show Original reach what the link points to; the rest act on the link itself.
     if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" && !packaged ? "Open Folder" : "Open", command: "open" });
     if (request.capabilities.open && packaged) items.push(showContents);
     if (request.capabilities.original) items.push({ type: "item", label: "Show Original", command: "show-original" });
-    items.push(reveal, { type: "item", label: "Copy Link Path", command: "copy-path" });
+    if (platform !== "linux") items.push(reveal);
+    items.push({ type: "item", label: "Copy Link Path", command: "copy-path" });
+    items.push(getInfo);
     if (request.capabilities.organize && request.path) items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.path && (request.capabilities.rename || request.capabilities.delete)) {
       items.push({ type: "separator" });
@@ -123,10 +131,10 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (request.kind === "folder" && request.capabilities.newTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
   if (request.kind === "folder" && request.capabilities.newWindow) items.push({ type: "item", label: "Open in New Window", command: "open-in-new-window" });
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
-  items.push(
-    reveal,
-    { type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" },
-  );
+  if (platform === "linux" && request.kind === "folder" && !packaged && request.capabilities.terminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
+  if (platform !== "linux") items.push(reveal);
+  items.push({ type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" });
+  items.push(getInfo);
   if (request.capabilities.organize && request.path) {
     items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.kind === "file" && request.capabilities.extract) items.push({ type: "item", label: `Extract “${name}”`, command: "extract" });

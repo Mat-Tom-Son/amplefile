@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { createFileManagerHarness } from "./support/file-manager.js";
-import type { ConnectedFolderSummary, DesktopUpdateStatus } from "../web-local/src/types.js";
+import type { DesktopUpdateStatus } from "../src/shared/desktop-ipc.js";
+import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 
 // Its own file (and process): the file manager harness binds the module graph to this file's mock.
 const lab = { id: "lab", name: "Lab", connectedFolderRoot: "/tmp/lab", location: { storage: "linked" } } as ConnectedFolderSummary;

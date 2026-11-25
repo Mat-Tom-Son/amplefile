@@ -143,8 +143,9 @@ placed in one of them, its window:
 - A tab the person opens belongs to the window it was opened in, and a tab or
   pop-up a page opens belongs to that page's window. Only that window lists
   the tab, lays the page out, and hears about it.
-- A page a Worker opens appears, as a background tab, in the window showing
-  that Worker's Connected Folder, else in the front window. A page the
+- A page a Worker opens appears, as a background tab, in the window whose tab
+  in front shows that Worker's Connected Folder (a window gone to a plain
+  folder, the Trash, or Recents does not count), else in the front window. A page the
   AmpleFile Agent opens appears in the front window.
 - A site's question is shown and answered only in the window holding the
   page.

@@ -22,7 +22,7 @@ type ReceiptEntry = Omit<AmpleFileCliActReceiptV3, "v" | "at">;
  * (docs/act-ledger.md): argv → executor → the real facade inside
  * startLocalApi → the store. A delete History could not fully keep a copy of
  * is listed here, comes back on request, and the receipt's undo reference is
- * the item itself. Recently deleted sits above Connected Folders, so neither verb takes
+ * the item itself. Recently Deleted sits above Connected Folders, so neither verb takes
  * `--connected-folder`, and nothing empties it.
  */
 async function recentlyDeletedHarness(prefix: string): Promise<{
@@ -92,7 +92,7 @@ async function deleteUncoverable(
   }
 }
 
-test("files delete reports the Recently deleted item, and recently-deleted list and restore bring a file back", async () => {
+test("files delete reports the Recently Deleted item, and recently-deleted list and restore bring a file back", async () => {
   const h = await recentlyDeletedHarness("files");
   try {
     const created = await h.api.actFacade.createConnectedFolder({ name: "Fold Connected Folder" });
@@ -143,7 +143,7 @@ test("files delete reports the Recently deleted item, and recently-deleted list 
 
     // The human form names the item and how to bring it back.
     const human = await h.execute(["recently-deleted", "list"]);
-    assert.match(human.stdout, /1 item\(s\) in Recently deleted \(kept 30 days\)/);
+    assert.match(human.stdout, /1 item\(s\) in Recently Deleted \(kept 30 days\)/);
     assert.match(human.stdout, new RegExp(`${entryId} — file "ledger\\.csv" from Fold Connected Folder`));
 
     // Something else took the name in the meantime, so the restore renames.
@@ -216,7 +216,7 @@ test("recently-deleted restore brings a deleted Connected Folder back with its i
     const again = await h.execute(["recently-deleted", "restore", "--entry", entryId!, "--json"]);
     assert.equal(errorCodeOf(again.stderr), "notFound");
 
-    // Recently deleted is above Connected Folders: neither verb takes --connected-folder
+    // Recently Deleted is above Connected Folders: neither verb takes --connected-folder
     const scoped = await h.execute(["recently-deleted", "list", "--connected-folder", connectedFolder.id, "--json"]);
     assert.equal(errorCodeOf(scoped.stderr), "usage");
     assert.match(scoped.stderr, /--connected-folder cannot be used with 'recently-deleted list'/);
@@ -255,7 +255,7 @@ test("recently-deleted restore takes no --to: nothing is saved out as a copy any
 
 /**
  * Earlier builds kept Connected Folder app data, Releases, and App Studio
- * history in Recently deleted. Those items
+ * history in Recently Deleted. Those items
  * still list and wait out their window, but nothing can put them back.
  */
 test("an app item an earlier build kept lists as blocked and cannot be restored", async () => {

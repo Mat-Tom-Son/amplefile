@@ -712,8 +712,9 @@ test("parent file mutations respect nested ownership while allowing siblings and
   assert.deepEqual(await writeUploadedFiles(parent.connectedFolderRoot, "Group", [{ fileName: "Child", data: Buffer.from("collision sibling") }]), [
     { path: "Group/Child (2)", sizeBytes: 17 },
   ], "a colliding nested folder name can become an ordinary sibling file");
-  assert.equal(await copyPathIntoConnectedFolder(source, parent.connectedFolderRoot, "Group"), "Group/Child-2");
-  assert.equal(await readFile(join(parent.connectedFolderRoot, "Group", "Child-2", "copy.txt"), "utf8"), "copied sibling");
+  // A copy into a taken name gets Finder's " copy" name, as the window's Copy does.
+  assert.equal(await copyPathIntoConnectedFolder(source, parent.connectedFolderRoot, "Group"), "Group/Child copy");
+  assert.equal(await readFile(join(parent.connectedFolderRoot, "Group", "Child copy", "copy.txt"), "utf8"), "copied sibling");
 
   await writeConnectedFolderTextFile(childRoot, "note.txt", "child update");
   await createConnectedFolderTextFile(childRoot, "", "own.txt", "child create");

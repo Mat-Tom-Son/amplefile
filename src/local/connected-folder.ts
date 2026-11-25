@@ -41,6 +41,7 @@ import { containsReservedConnectedFolderPathSegment } from "./connected-folder-p
 import { isHomeFolder, isSystemHiddenEntry } from "./hidden-entries.js";
 import { usualMacPath, withoutMacDataVolumeName } from "./mac-data-volume.js";
 import { productIdentity } from "../shared/product-identity.js";
+import { copyItemTo, freeDestination, isInside as isInsideTransfer } from "./file-transfer.js";
 import { isMacPackageName } from "../shared/mac-packages.js";
 
 import type { ConnectedFolderLocation, ConnectedFolderSummary } from "../shared/connected-folder-summary.js";
@@ -1019,6 +1020,15 @@ export async function writeUploadedFiles(
   return written;
 }
 
+/**
+ * Copies outside material into a Connected Folder the way the window copies
+ * (`copyItemTo` in file-transfer.ts): links inside a folder stay links as
+ * written, every file keeps its mode and date, a name already taken gets
+ * Finder's " copy" name, and a folder's `.amplefile/` (another Connected
+ * Folder's identity and Chats) is left behind. A copy that fails partway
+ * takes back what it wrote. `files add`, `chat handoff --file`, and an
+ * Automation's `files` step all copy through here.
+ */
 export async function copyPathIntoConnectedFolder(
   sourcePath: string,
   connectedFolderRoot: string,
@@ -1026,16 +1036,13 @@ export async function copyPathIntoConnectedFolder(
 ): Promise<string> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
-  const destination = await nextAvailablePath(join(targetFolder, safeFileName(basename(sourcePath))));
-  await assertOutsideNestedFolders(root, normalizeRelative(relative(root, destination)));
+  const name = safeFileName(basename(sourcePath));
+  if (containsReservedConnectedFolderPathSegment(name)) throw new Error("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
+  if (isInsideTransfer(sourcePath, targetFolder)) throw new Error(`“${basename(sourcePath)}” can’t be copied into itself.`);
   await mkdir(targetFolder, { recursive: true });
-  try {
-    await copyVisiblePath(sourcePath, destination);
-  } catch (error) {
-    // A folder copy that fails partway must not strand a partial destination.
-    await rm(destination, { recursive: true, force: true }).catch(() => undefined);
-    throw error;
-  }
+  const destination = await freeDestination(targetFolder, name);
+  await assertOutsideNestedFolders(root, normalizeRelative(relative(root, destination)));
+  await copyItemTo(sourcePath, destination);
   await touchConnectedFolder(connectedFolderRoot);
   return normalizeRelative(relative(connectedFolderRoot, destination));
 }
@@ -2073,22 +2080,6 @@ function contentTypeForExtension(extension: string | null): string {
   }
 }
 
-async function copyVisiblePath(source: string, destination: string): Promise<void> {
-  const info = await stat(source).catch(() => null);
-  if (!info) throw notFound("Source not found.");
-  if (lstatSync(source).isSymbolicLink()) throw new Error("Symbolic links cannot be copied into a Connected Folder.");
-  if (info.isFile()) {
-    await copyFile(source, destination, 1);
-    return;
-  }
-  if (!info.isDirectory()) throw new Error("Only ordinary files and folders can be copied.");
-  await mkdir(destination, { recursive: false });
-  for (const entry of await readdir(source, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) continue;
-    await copyVisiblePath(join(source, entry.name), join(destination, entry.name));
-  }
-}
-
 async function nextAvailableDirectory(parent: string, segment: string): Promise<string> {
   let candidate = join(parent, segment);
   for (let index = 2; existsSync(candidate); index += 1) candidate = join(parent, `${segment}-${index}`);
@@ -2103,12 +2094,6 @@ async function nextAvailableFile(desired: string): Promise<string> {
   let candidate = join(dirname(desired), `${stem} (${index})${extension}`);
   while (existsSync(candidate)) candidate = join(dirname(desired), `${stem} (${index += 1})${extension}`);
   return candidate;
-}
-
-async function nextAvailablePath(desired: string): Promise<string> {
-  if (!existsSync(desired)) return desired;
-  const info = await stat(desired);
-  return info.isDirectory() ? nextAvailableDirectory(dirname(desired), basename(desired)) : nextAvailableFile(desired);
 }
 
 function assertNoLinkSegments(root: string, path: string, finalLink = false): void {
@@ -2134,14 +2119,30 @@ function safeUploadPath(value: string): string {
   return segments.map(safeFileName).join("/");
 }
 
-function safeFileName(value: string): string {
+/** The longest name, in characters, AmpleFile gives an item it makes, renames, or copies into a Connected Folder. */
+export const maxConnectedFolderEntryNameLength = 240;
+
+/**
+ * The name an item in a Connected Folder gets for a requested name: trimmed,
+ * and refused when it is empty, a path, reserved, or longer than
+ * {@link maxConnectedFolderEntryNameLength} characters. A name is never
+ * shortened, so whoever plans a change from it names the item the change
+ * makes.
+ */
+export function safeFileName(value: string): string {
   const name = value.trim();
   if (!name || name === "." || name === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(name)) throw new Error("File name is not allowed.");
   const windowsStem = name.split(".")[0]?.toLocaleUpperCase() ?? "";
   if (/[. ]$/.test(name) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)) {
     throw new Error("File name is reserved by Windows.");
   }
-  return name.slice(0, 240);
+  if (name.length > maxConnectedFolderEntryNameLength) {
+    throw Object.assign(
+      new Error(`A name can be at most ${maxConnectedFolderEntryNameLength} characters long, and this one has ${name.length}. Choose a shorter name.`),
+      { status: 400, statusCode: 400 },
+    );
+  }
+  return name;
 }
 
 function normalizeConnectedFolderName(value: string): string {

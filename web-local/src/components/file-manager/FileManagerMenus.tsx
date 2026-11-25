@@ -28,6 +28,7 @@ export function ActionMenu({ menu, onClose, onCommand }: { menu: ActionMenuState
         </> : null}
         <button type="button" className="fm-menu-i" role="menuitem" autoFocus={!menu.sidebar} onClick={() => run("customize", menu.target)}>Customize Connected Folder</button>
         <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("organize", menu.target)}>Organize</button>
+        {menu.terminal ? <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("open-terminal", menu.target)}>Open Terminal Here</button> : null}
         <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("skills", menu.target)}>Skills &amp; Extensions…</button>
         <div className="fm-menu-sep" />
         <button type="button" className="fm-menu-i" role="menuitem" onClick={() => run("remove-connected-folder", menu.target)}>{menu.target.location.storage === "linked" ? "Disconnect…" : "Delete Connected Folder…"}</button>

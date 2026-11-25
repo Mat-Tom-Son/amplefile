@@ -14,7 +14,7 @@ import {
 import type { PiExtensionUiBridge } from "../../src/local/agent/extension-ui.js";
 import { ModelPreferenceStore } from "../../src/local/agent/model-preferences.js";
 import { OpenRouterModelCatalog } from "../../src/local/agent/openrouter-model-catalog.js";
-import { importPiSkillBundle, type PiSkillBundleImportResult } from "../../src/local/agent/skill-import.js";
+import type { PiRuntimeHealth } from "../../src/shared/desktop-ipc.js";
 import {
   getPiSetupStatus,
   installPiPackage,
@@ -61,13 +61,6 @@ export interface PackagedPiRuntimeOptions {
   additionalSkillPaths?: string[];
   additionalPromptTemplatePaths?: string[];
   additionalThemePaths?: string[];
-}
-
-export interface PackagedPiRuntimeHealth {
-  ok: boolean;
-  configured: boolean;
-  version: string;
-  message?: string;
 }
 
 /** Native, provider-neutral Pi host used by the Electron main process. */
@@ -118,7 +111,7 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     };
   }
 
-  async health(connectedFolderRoot = process.cwd()): Promise<PackagedPiRuntimeHealth> {
+  async health(connectedFolderRoot = process.cwd()): Promise<PiRuntimeHealth> {
     try {
       const status = await this.getSetupStatus(connectedFolderRoot);
       return {
@@ -221,13 +214,6 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     options: { onProgress?: (event: ProgressEvent) => void } = {},
   ): Promise<void> {
     return updatePiPackages(connectedFolderRoot, source, { ...options, runtimeProvider: this });
-  }
-
-  importSkillBundle(
-    connectedFolderRoot: string,
-    input: { fileName: string; bytes: Uint8Array; scope?: "user" | "project" },
-  ): Promise<PiSkillBundleImportResult> {
-    return importPiSkillBundle(connectedFolderRoot, input, this);
   }
 
   async flush(): Promise<void> {

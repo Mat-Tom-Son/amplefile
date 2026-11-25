@@ -18,10 +18,11 @@ import { folderTreeRows } from "../lib/folder-nesting";
 import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/FolderMentionMenu";
 import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
+import { useLiveReply } from "../components/chat/useLiveReply";
 import { SafeMarkdownAnchor } from "../components/chat/SafeMarkdownAnchor";
 import { TurnAnnouncer, type TurnStatus } from "../components/chat/TurnAnnouncer";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
-import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
+import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest } from "../types";
 
 /** Mirrors the server's AmpleFileActManagementRequest projection. */
 interface AmpleFileAgentRequestView {
@@ -209,11 +210,10 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const [banner, setBanner] = useState<string>("");
   const [dropActive, setDropActive] = useState(false);
   const [activity, setActivity] = useState<string>("");
-  const [streamingAssistant, setStreamingAssistant] = useState("");
-  // The current turn's steps, as the main window's Chat shows them.
-  const [liveSteps, setLiveSteps] = useState<RuntimePreviewEntry[]>([]);
-  const activeThinkingIdRef = useRef<string | null>(null);
-  const stepCounterRef = useRef(0);
+  // The current turn's reply and steps, as the main window's Chat shows them (live-reply-model.ts).
+  const liveReply = useLiveReply();
+  const { text: streamingAssistant, steps: liveSteps } = liveReply.reply;
+  const { apply: applyLiveEvent, clear: clearLiveReply, clearText: clearReplyText, streamClosed: closeLiveStream } = liveReply;
   const [ampleFileAgentComposer, setAmpleFileAgentComposer] = useState<ComposerState | null>(popoverFixtureRequested ? popoverFixtureComposer : null);
   const [conversationRuntime, setConversationRuntime] = useState<ConversationRuntime | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -241,8 +241,6 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const transcriptPinnedRef = useRef(true);
   const [transcriptPinned, setTranscriptPinnedState] = useState(true);
   const dragDepthRef = useRef(0);
-  const streamingDeltaRef = useRef("");
-  const streamingFrameRef = useRef<number | null>(null);
   const requestRef = useRef<AmpleFileAgentRequestView | null>(null);
   const pendingSendIdentityRef = useRef<{
     signature: string;
@@ -273,33 +271,6 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     }
   }, []);
 
-  const flushStreamingAssistant = useCallback(() => {
-    if (streamingFrameRef.current !== null) {
-      window.cancelAnimationFrame(streamingFrameRef.current);
-      streamingFrameRef.current = null;
-    }
-    const delta = streamingDeltaRef.current;
-    streamingDeltaRef.current = "";
-    if (delta) setStreamingAssistant((current) => current + delta);
-  }, []);
-
-  const queueStreamingAssistant = useCallback((delta: string) => {
-    streamingDeltaRef.current += delta;
-    if (streamingFrameRef.current !== null) return;
-    streamingFrameRef.current = window.requestAnimationFrame(flushStreamingAssistant);
-  }, [flushStreamingAssistant]);
-
-  const replaceStreamingAssistant = useCallback((text: string) => {
-    if (streamingFrameRef.current !== null) window.cancelAnimationFrame(streamingFrameRef.current);
-    streamingFrameRef.current = null;
-    streamingDeltaRef.current = "";
-    setStreamingAssistant(text);
-  }, []);
-
-  useEffect(() => () => {
-    if (streamingFrameRef.current !== null) window.cancelAnimationFrame(streamingFrameRef.current);
-  }, []);
-
   const refreshConversation = useCallback(async () => {
     if (popoverFixtureRequested) return;
     const generation = ++refreshGeneration.current;
@@ -326,7 +297,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         setStartingNewChat(true);
         setRequest(null);
         setMessages([]);
-        replaceStreamingAssistant("");
+        clearReplyText();
         return;
       }
       const transcript = await api<{ messages: AmpleFileAgentMessage[] }>(`/api/amplefile-agent/conversations/${encodeURIComponent(nextConversationId)}`);
@@ -346,16 +317,14 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         return sameTranscript(current, merged) ? current : merged;
       });
       if (!summary.latestRequest || !activePhases.has(summary.latestRequest.phase)) {
-        replaceStreamingAssistant("");
-        activeThinkingIdRef.current = null;
-        setLiveSteps([]);
+        clearLiveReply();
       }
     } catch (error) {
       if (generation !== refreshGeneration.current) return;
       if (error instanceof ApiError && error.status === 404) {
         setRequest(null);
         setMessages([]);
-        replaceStreamingAssistant("");
+        clearReplyText();
         setAvailable(true);
         setBanner("This chat is no longer available. Choose another chat or start a new one.");
         return;
@@ -366,7 +335,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     } finally {
       if (generation === refreshGeneration.current) setLoadingChat(false);
     }
-  }, [replaceStreamingAssistant]);
+  }, [clearLiveReply, clearReplyText]);
 
   useEffect(() => {
     void refreshConversation();
@@ -385,44 +354,6 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     });
     return () => unsubscribe?.();
   }, [bridge]);
-
-  const clearLiveSteps = useCallback(() => {
-    activeThinkingIdRef.current = null;
-    setLiveSteps([]);
-  }, []);
-
-  const upsertLiveStep = useCallback((step: RuntimePreviewEntry) => {
-    setLiveSteps((current) => {
-      const index = current.findIndex((item) => item.id === step.id);
-      if (index < 0) return [...current, step];
-      const next = [...current];
-      next[index] = { ...next[index], ...step };
-      return next;
-    });
-  }, []);
-
-  const startLiveThought = useCallback((event?: ChatStreamEvent) => {
-    const id = event?.workTrailId ?? `thinking-${++stepCounterRef.current}`;
-    activeThinkingIdRef.current = id;
-    upsertLiveStep({ id, kind: "thinking", text: "", phase: "streaming", startedAt: event?.startedAt ?? Date.now(), ...(event?.order !== undefined ? { order: event.order } : {}) });
-  }, [upsertLiveStep]);
-
-  const appendLiveThought = useCallback((text: string, event?: ChatStreamEvent) => {
-    let id = event?.workTrailId ?? activeThinkingIdRef.current;
-    if (!id) { startLiveThought(event); id = activeThinkingIdRef.current; }
-    if (!id) return;
-    setLiveSteps((current) => current.map((entry) => entry.id === id ? { ...entry, text: `${entry.text}${text}`, phase: "streaming" } : entry));
-  }, [startLiveThought]);
-
-  const finishLiveThought = useCallback((event?: ChatStreamEvent) => {
-    const id = event?.workTrailId ?? activeThinkingIdRef.current;
-    if (!id) return;
-    activeThinkingIdRef.current = null;
-    const endedAt = Date.now();
-    setLiveSteps((current) => current.map((entry) => entry.id === id
-      ? { ...entry, phase: "complete", ...(event?.durationMs !== undefined ? { durationMs: event.durationMs } : entry.startedAt ? { durationMs: Math.max(0, endedAt - entry.startedAt) } : {}) }
-      : entry));
-  }, []);
 
   // A draft handed in through `draftRequest` lands in the message box.
   useEffect(() => {
@@ -462,61 +393,30 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         if (message || tool) setActivity(message || tool);
       }
       if (event.type === "turn_state" || event.type === "turn_snapshot") {
-        if (event.running === true && !observedRunning) {
-          replaceStreamingAssistant("");
-          clearLiveSteps();
-        }
+        if (event.running === true && !observedRunning) clearLiveReply();
         observedRunning = event.running === true;
       }
-      if (event.type === "turn_snapshot" && typeof event.text === "string" && event.running === true) {
-        replaceStreamingAssistant(event.presentation?.text ?? event.text);
-        // A snapshot replaces the steps at its cursor, so a reconnect never duplicates rows.
-        if (event.presentation) {
-          setLiveSteps(event.presentation.workTrail);
-          activeThinkingIdRef.current = [...event.presentation.workTrail].reverse()
-            .find((entry) => entry.kind === "thinking" && ["running", "streaming"].includes(entry.phase ?? ""))?.id ?? null;
-        }
-      }
-      if (event.type === "tool") {
-        upsertLiveStep({
-          id: event.workTrailId ?? (event.toolCallId?.trim() ? `tool-${event.toolCallId.trim()}` : `tool-${++stepCounterRef.current}`),
-          kind: "tool",
-          text: event.message?.trim() || event.toolName?.trim() || "Tool",
-          ...(event.detail?.trim() ? { detail: event.detail.trim() } : {}),
-          ...(event.toolName?.trim() ? { toolName: event.toolName.trim() } : {}),
-          ...(event.toolTitle?.trim() ? { toolTitle: event.toolTitle.trim() } : {}),
-          ...(event.order !== undefined ? { order: event.order } : {}),
-          ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
-          ...(event.edit ? { edit: event.edit } : {}),
-          phase: event.phase ?? "running",
-        });
-      }
-      if (event.type === "assistant_thinking") {
-        if (event.thinkingPhase === "start") startLiveThought(event);
-        if (event.text) appendLiveThought(event.text, event);
-        if (event.thinkingPhase === "end") finishLiveThought(event);
-      }
-      if (event.type === "assistant_delta" && typeof event.text === "string") {
-        queueStreamingAssistant(event.text);
-      }
-      if (event.type === "assistant_message" && typeof event.text === "string") {
-        replaceStreamingAssistant(event.text);
-      }
+      // The reply, its thinking, and its tool steps follow the live reply's
+      // own rules (a snapshot replaces them at its cursor; an ended turn shows
+      // its waiting text and closes its thinking).
+      applyLiveEvent(event);
       if (event.type === "turn_state" || event.type === "done" || event.type === "error") {
-        if (event.type === "done" || event.type === "error" || event.running === false) { flushStreamingAssistant(); finishLiveThought(); }
         if (event.type === "done" || event.type === "error" || event.running === false) void refreshConversationRuntime(conversationId);
         void refreshConversation();
       }
     };
-    return () => stream.close();
-  }, [conversationId, refreshConversation, refreshConversationRuntime, flushStreamingAssistant, queueStreamingAssistant, replaceStreamingAssistant, clearLiveSteps, upsertLiveStep, startLiveThought, appendLiveThought, finishLiveThought]);
+    return () => {
+      stream.close();
+      closeLiveStream();
+    };
+  }, [conversationId, refreshConversation, refreshConversationRuntime, applyLiveEvent, clearLiveReply, closeLiveStream]);
 
   useEffect(() => {
     if (popoverFixtureRequested) return;
-    replaceStreamingAssistant("");
+    clearReplyText();
     if (conversationId) void refreshConversationRuntime(conversationId);
     else setConversationRuntime(null);
-  }, [conversationId, refreshConversationRuntime, replaceStreamingAssistant]);
+  }, [conversationId, refreshConversationRuntime, clearReplyText]);
 
   // Refresh saved Chats without replacing the person's selected conversation.
   const phase = request?.phase ?? null;
@@ -679,8 +579,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     setSending(true);
     setBanner("");
     setActivity("");
-    replaceStreamingAssistant("");
-    clearLiveSteps();
+    clearLiveReply();
     followLatest();
     try {
       const current = requestRef.current;
@@ -735,7 +634,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     } finally {
       setSending(false);
     }
-  }, [text, staged, sending, loadingChat, stopping, refreshConversation, replaceStreamingAssistant, clearLiveSteps, mentionFolders, followLatest]);
+  }, [text, staged, sending, loadingChat, stopping, refreshConversation, clearLiveReply, mentionFolders, followLatest]);
 
   // Enter while the AmpleFile Agent is working reaches its running turn after
   // its current step, the way a Connected Folder Chat steers.
@@ -805,12 +704,11 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     setConversationRuntime(null);
     setMessages(popoverFixtureRequested && id ? popoverFixtureMessages : []);
     setActivity("");
-    replaceStreamingAssistant("");
-    clearLiveSteps();
+    clearLiveReply();
     setBanner("");
     void refreshConversation();
     window.setTimeout(() => composerRef.current?.focus(), 0);
-  }, [sending, stopping, workState.busy, savingChat, text, staged, chats, refreshConversation, replaceStreamingAssistant, clearLiveSteps]);
+  }, [sending, stopping, workState.busy, savingChat, text, staged, chats, refreshConversation, clearLiveReply]);
   async function changeChat(action: "rename" | "delete") {
     if (!chatAction || savingChat) return;
     const { id } = chatAction;
@@ -843,7 +741,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           setConversationRuntime(null);
           setText(draftsRef.current.get("new")?.text ?? "");
           setStaged(draftsRef.current.get("new")?.staged ?? []);
-          replaceStreamingAssistant("");
+          clearReplyText();
         }
       }
       setChatAction(null);

@@ -4,6 +4,7 @@ import { Chat16Regular, ChevronLeft20Regular, ChevronRight16Regular, History16Re
 import { api, errorText } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import { queueHistoryRequest } from "../../lib/history-queue";
+import { desktopPlatform } from "../../lib/platform";
 import { rawFileObjectUrlAt } from "../../lib/raw-file";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import { showToast } from "../../ui/feedback";
@@ -232,22 +233,26 @@ function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount
 }
 
 /** One file or folder: the preview (a picture shows itself), then where it is, when it changed, and its size. */
+interface ItemDetails { modifiedAt: string; createdAt?: string | null; permissions?: string; owner?: string; group?: string }
+
 function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount }: { apiBase: string | null; place?: FileManagerPlace | null; entry: TreeEntry; where: string; fixtureMode: boolean; itemCount?: number }) {
-  const [modifiedAt, setModifiedAt] = useState<string | null>(null);
+  const [itemDetails, setItemDetails] = useState<{ url: string; details: ItemDetails } | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  // A link's own details come from the listing; the place's routes never read through one.
   const link = entry.link ?? null;
+  const linux = desktopPlatform() === "linux";
+  const detailUrl = !fixtureMode && apiBase && (linux || !link)
+    ? `${apiBase}/${linux ? "entry-details" : "file-info"}?path=${encodeURIComponent(entry.path)}${linux ? "" : "&hash=0"}` : null;
+  const details = itemDetails && itemDetails.url === detailUrl ? itemDetails.details : null;
   useEffect(() => {
-    setModifiedAt(null);
-    if (fixtureMode || !apiBase || link) return;
-    let cancelled = false;
-    // Info shows only the date, so the host need not hash the file.
-    void api<{ modifiedAt: string }>(`${apiBase}/file-info?path=${encodeURIComponent(entry.path)}&hash=0`)
-      .then((result) => { if (!cancelled) setModifiedAt(result.modifiedAt); })
+    setItemDetails(null);
+    if (!detailUrl) return;
+    const controller = new AbortController();
+    void api<ItemDetails>(detailUrl, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setItemDetails({ url: detailUrl, details: result }); })
       .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [apiBase, entry.path, fixtureMode, link]);
+    return () => controller.abort();
+  }, [detailUrl, entry.updatedAt]);
   // A selected folder says how many items it holds, as the design does.
   useEffect(() => {
     setCount(null);
@@ -275,6 +280,7 @@ function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount 
   const icon = fileManagerIcon(entry);
   const shownImage = thumbnail ?? imageUrl;
   const measured = folderSize.state.status === "done" ? folderSizeText(folderSize.state.size) : null;
+  const modifiedAt = details?.modifiedAt ?? entry.updatedAt;
   const folderCount = itemCount ?? count;
   const meta = link ? linkKindLabel(link, entry.package) : entry.package ? fileKindLabel(entry) : entry.kind === "folder"
     ? folderCount === null ? "Folder" : folderCount === 1 ? "1 item" : `${folderCount} items`
@@ -290,16 +296,19 @@ function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount 
       <div className="fm-card">
         <div className="fm-crow"><span className="fm-crow-l">Where</span><span className="fm-crow-v" title={where}>{where}</span></div>
         {link ? <div className="fm-crow"><span className="fm-crow-l">{link.target === "missing" ? "Missing" : "Original"}</span><span className="fm-crow-v" title={link.targetPath}>{link.targetPath}</span></div> : null}
-        {modifiedAt ?? entry.updatedAt ? <div className="fm-crow"><span className="fm-crow-l">Modified</span><span className="fm-crow-v">{formatFileManagerDate(modifiedAt ?? entry.updatedAt)}</span></div> : null}
+        {details?.createdAt ? <div className="fm-crow"><span className="fm-crow-l">Created</span><span className="fm-crow-v">{formatFileManagerDate(details.createdAt)}</span></div> : null}
+        {modifiedAt ? <div className="fm-crow"><span className="fm-crow-l">Modified</span><span className="fm-crow-v">{formatFileManagerDate(modifiedAt)}</span></div> : null}
         {entry.kind === "file" && typeof entry.sizeBytes === "number" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v">{formatBytes(entry.sizeBytes)}</span></div> : null}
         {folderSize.state.status === "calculating" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" aria-live="polite">Calculating…</span></div> : null}
         {measured ? <>
-          <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={measured.items}>{measured.size}</span><button type="button" className="fm-text-button" title="Measure again" onClick={folderSize.recalculate}>Recalculate</button></div>
+          <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={measured.detail ?? measured.items}>{measured.size}</span><button type="button" className="fm-text-button" title="Measure again" onClick={folderSize.recalculate}>Recalculate</button></div>
           <div className="fm-crow"><span className="fm-crow-l">Contains</span><span className="fm-crow-v">{measured.items}</span></div>
         </> : null}
         {folderSize.state.status === "error" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={folderSize.state.message}>Couldn’t measure</span><button type="button" className="fm-text-button" onClick={folderSize.recalculate}>Try Again</button></div> : null}
+        {details?.permissions ? <div className="fm-crow"><span className="fm-crow-l">Permissions</span><span className="fm-crow-v">{details.permissions}</span></div> : null}
+        {details?.owner ? <div className="fm-crow"><span className="fm-crow-l">Owner</span><span className="fm-crow-v" title={details.owner}>{details.owner}</span></div> : null}
+        {details?.group ? <div className="fm-crow"><span className="fm-crow-l">Group</span><span className="fm-crow-v" title={details.group}>{details.group}</span></div> : null}
       </div>
-      {measured?.note ? <div className="fm-size-note">{measured.note}</div> : null}
     </section>
   </>;
 }

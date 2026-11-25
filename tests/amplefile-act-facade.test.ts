@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -174,6 +174,33 @@ test("the act facade drives Connected Folder, conversation, and file-addition li
       () => facade.addFiles({ connectedFolder: createdConnectedFolder.connectedFolder.id, fromPaths: [join(sandbox, "missing.bin")], cwd: sandbox }),
       (error: unknown) => error instanceof AmpleFileCliError && error.code === "notFound",
     );
+
+    // files add copies a folder as the window does: another Connected Folder's
+    // identity and Chats stay behind, links inside stay links as written, and a
+    // name already taken gets Finder's " copy" name.
+    if (process.platform !== "win32") {
+      const project = join(sandbox, "Project");
+      await mkdir(join(project, ".amplefile", "conversations"), { recursive: true });
+      await writeFile(join(project, ".amplefile", "connected-folder.json"), JSON.stringify({ id: "space-00000000000000aa" }), "utf8");
+      await writeFile(join(project, ".amplefile", "conversations", "chat-1.jsonl"), "{}\n", "utf8");
+      await mkdir(join(project, ".pi"), { recursive: true });
+      await writeFile(join(project, ".pi", "settings.json"), "{}", "utf8");
+      await mkdir(join(project, "notes"), { recursive: true });
+      await writeFile(join(project, "notes", "a.txt"), "a", "utf8");
+      await symlink("notes/a.txt", join(project, "a-link.txt"));
+      const root = createdConnectedFolder.connectedFolder.connectedFolderRoot;
+      const first = await facade.addFiles({ connectedFolder: createdConnectedFolder.connectedFolder.id, fromPaths: [project], cwd: sandbox });
+      assert.deepEqual(first.copied, ["Project"]);
+      assert.equal(existsSync(join(root, "Project", ".amplefile")), false, "a copy must leave .amplefile/ behind");
+      assert.equal(await readFile(join(root, "Project", "notes", "a.txt"), "utf8"), "a");
+      assert.equal((await lstat(join(root, "Project", "a-link.txt"))).isSymbolicLink(), true, "a link inside a folder stays a link");
+      assert.equal(await readlink(join(root, "Project", "a-link.txt")), "notes/a.txt");
+      // The folder's Pi configuration is its content and travels, as in the window's copy.
+      assert.equal(existsSync(join(root, "Project", ".pi", "settings.json")), true);
+      const second = await facade.addFiles({ connectedFolder: createdConnectedFolder.connectedFolder.id, fromPaths: [project], cwd: sandbox });
+      assert.deepEqual(second.copied, ["Project copy"]);
+      assert.equal(existsSync(join(root, "Project copy", ".amplefile")), false);
+    }
 
     // A folder copy that fails partway must leave no partial destination.
     if (process.platform !== "win32") {
@@ -425,8 +452,8 @@ test("the act facade drives file and search families with ledger safety rules", 
     const facade = api.actFacade;
     const { connectedFolder } = await facade.createConnectedFolder({ name: "Files Connected Folder" });
 
-    // Creation runs the desktop create internals: additive, name-collision
-    // refused, and undone by files delete rather than a restore point.
+    // Creation runs the window's New Folder and New File: additive,
+    // name-collision refused, and undone by its restore point or files delete.
     const folder = await facade.filesMkdir({ connectedFolder: connectedFolder.id, path: "notes" });
     assert.equal(folder.path, "notes");
     assert.equal(folder.kind, "folder");

@@ -20,8 +20,9 @@ import { useBootstrapRefresh } from "./hooks/useBootstrapRefresh";
 import { api, errorText } from "./lib/api";
 import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from "./lib/connected-folder-setup";
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
-import { isMacOS } from "./lib/platform";
-import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
+import { desktopPlatform, isMacOS } from "./lib/platform";
+import type { DesktopUpdateStatus } from "../../src/shared/desktop-ipc";
+import type { AgentStatus, AppThemePreference, BootstrapResponse, ConnectedFolderSummary } from "./types";
 import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "./ui/feedback";
 import { buildFixtureUpdateStatus, fixtureUpdatePhaseFromQuery } from "./fixtures/settings-fixture";
 import { readRunningWork, runDesktopUpdateAction, type DesktopUpdateCalls } from "./lib/update-restart";
@@ -33,7 +34,7 @@ const fixtureRequested = new URLSearchParams(window.location.search).get("fixtur
 /** The Connected Folder this window shows, kept for this window (web-local/src/lib/window-storage.ts). */
 const activeConnectedFolderStorageKey = windowStorageKey("amplefile.connected-folder.active");
 
-type DesktopActionCommand = "toggle-hidden-files" | "new-chat" | "refresh" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "new-tab" | "next-tab" | "previous-tab" | "toggle-tab-bar";
+type DesktopActionCommand = "toggle-hidden-files" | "new-chat" | "refresh" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "new-tab" | "next-tab" | "previous-tab" | "toggle-tab-bar" | "open-terminal" | "get-info";
 /** A cross-cutting request handled by the open Connected Folder view. */
 type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string };
 
@@ -100,7 +101,8 @@ export function App() {
   const [locationHanded, setLocationHanded] = useState(false);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
-  const showDesktopTitleBar = window.ampleFileDesktop?.app.platform === "win32";
+  // The Linux preview (`&platform=linux`) draws the Linux title bar too, buttons included.
+  const showDesktopTitleBar = ["win32", "linux"].includes(desktopPlatform() ?? "");
 
   const openSettings = useCallback((page: SettingsPage = "appearance", modelScope?: ModelScope, focusAiModel = false, workerConnectedFolderId?: string, focusWorkerInstructions = false, backToCustomization?: () => void) => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -220,7 +222,7 @@ export function App() {
       else if (command === "open-about") openSettings("about");
       else if (command === "open-keyboard-shortcuts") openKeyboardShortcuts();
       else if (command === "new-chat" || command === "refresh" || command === "open-capabilities" || command === "open-skills" || command === "open-extensions" || command === "open-command-palette" || command === "close-tab" || command === "toggle-hidden-files"
-        || command === "new-tab" || command === "next-tab" || command === "previous-tab" || command === "toggle-tab-bar") {
+        || command === "new-tab" || command === "next-tab" || command === "previous-tab" || command === "toggle-tab-bar" || command === "open-terminal" || command === "get-info") {
         setDesktopAction({ id: Date.now(), command });
       }
     });

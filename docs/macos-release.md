@@ -59,7 +59,7 @@ marks latest. It offers that version when it is higher than its own.
 - Drafts, prereleases, and tags without a release are never offered.
 - A repository with no latest release is an error, not "up to date": the
   check ends with "Update check failed." A repository whose only releases
-  are prereleases, as the source repository's `linux-test-*` releases are,
+  are prereleases, as the source repository's Linux releases (`linux-*`) are,
   is in that state, however many tags it has.
 - Whatever is marked latest is what every copy is offered. A latest release
   without `latest-mac.yml` fails every check. Once copies check the source
@@ -829,7 +829,7 @@ app named, the feed the higher app names, and the output of
 
 The source repository owns code, exact release tags, issues, and documentation, and its GitHub Releases are the Mac update feed. `amplefile-mac-releases` holds the bridge, 0.1.5, as its last release and stays public for copies that have not updated yet; nothing more is published there. Do not develop or hand-edit release metadata in either repository's releases, and do not add a competing tag publisher.
 
-The source repository's GitHub Releases also hold `linux-test-*` prereleases. Its latest release is what every installed Mac copy from 0.1.5 on is offered, so two rules hold for anything else published in it:
+The source repository's GitHub Releases also hold Linux prereleases, tagged `linux-*` (the earlier ones `linux-test-*`). Its latest release is what every installed Mac copy from 0.1.5 on is offered, so two rules hold for anything else published in it:
 
 - A Linux preview is published as a prerelease and never as the latest release. `gh release create` marks a release latest unless it is given `--prerelease` or `--latest=false`. If one does take latest, every Mac copy's update check fails until it is undone: mark the last Mac release latest again with `gh release edit v<version> --repo Mat-Tom-Son/amplefile --latest`, or make the other release a prerelease with `gh release edit <tag> --repo Mat-Tom-Son/amplefile --prerelease`. Then confirm with `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile`. The Mac publisher refuses to publish while a release that is not a Mac release is latest there, and checks after publishing that its own release is.
 - The updater reads only the latest release. If Linux ever gets an updater feed of its own in this repository, both platforms have to ship in the same release for each version, with `latest-mac.yml` and the Linux update metadata as assets of that one release.

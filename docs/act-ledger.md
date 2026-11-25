@@ -233,15 +233,19 @@ confirmation.
 
 | Verb | In the window | Target | Command shape | Receipt adds | Undo | Conflicts |
 |---|---|---|---|---|---|---|
-| Add outside material | Drag in from Finder, ⌘V, a drop on the message box | direct verb | `files add --connected-folder <id> --from <p>… [--to <folder>]` | checkpoint id, copied path count | restore the checkpoint | copy and restore point succeed or fail together |
+| Add outside material | Drag in from Finder, ⌘V, a drop on the message box | direct verb | `files add --connected-folder <id> --from <p>… [--to <folder>]` | checkpoint id, copied path count | restore the checkpoint | copy and restore point succeed or fail together; copies as the window's Copy does (links kept, `.amplefile/` left behind, a taken name gets " copy"); a link given as the source is refused, and so is a source whose name is longer than 240 characters |
 | Move an item | Drag onto a folder row, ⌘X then ⌘V, ⌥⌘V | direct verb | `files move --connected-folder <id> --from <path> --to <folder>` | safety checkpoint id, moved path | restore the safety checkpoint | moving into its own subtree is refused; reserved metadata folders such as `.amplefile/` and `.pi/` are never valid endpoints |
-| Rename an item | Right-click → Rename…, Return | direct verb | `files rename --connected-folder <id> --path <p> --name <n>` | safety checkpoint id, prior name | restore the safety checkpoint or rename back | same path policy |
+| Rename an item | Right-click → Rename…, Return | direct verb | `files rename --connected-folder <id> --path <p> --name <n>` | safety checkpoint id, prior name | restore the safety checkpoint or rename back | the name is trimmed, and a name longer than 240 characters is refused rather than shortened; same path policy |
 | Delete an item | Right-click → Delete, ⌘⌫ | direct verb | `files delete --connected-folder <id> --path <p>` | safety checkpoint id; the Recently Deleted entry id when the checkpoint could not cover every matched file | the safety checkpoint, or `recently-deleted restore --entry <id>` when the receipt names one | never refuses for coverage reasons; same path policy |
-| New folder | Right-click → New Folder Here… | direct verb | `files mkdir --connected-folder <id> --path <folder>` | created path; no safety checkpoint, because creation destroys nothing | `files delete` (an empty folder is fully covered) | an existing name is refused; same path policy |
-| New empty file | — | direct verb | `files create --connected-folder <id> --path <p>` | created path; no safety checkpoint, as for `files mkdir` | `files delete` | an existing name is refused; same path policy |
+| New folder | Right-click → New Folder Here… | direct verb | `files mkdir --connected-folder <id> --path <folder>` | safety checkpoint id, created path | restore the safety checkpoint, which removes the folder, or `files delete` | an existing name is refused; the name is trimmed, and a name longer than 240 characters is refused; same path policy |
+| New empty file | — | direct verb | `files create --connected-folder <id> --path <p>` | safety checkpoint id, created path | restore the safety checkpoint, which removes the file, or `files delete` | an existing name is refused; the name is trimmed, and a name longer than 240 characters is refused; same path policy |
 | Content search | Toolbar **Search** | direct verb (content-bearing act read) | `search --connected-folder <id> --query <q> [--scope files\|chats\|all]` | scope only, **not** the query text | n/a | honours ignore rules, skips binary content, and reports when a bound stopped the search rather than implying completeness; the same service as `/api/connected-folders/:id/search` |
 
-The file verbs use the window's own mutation paths and add receipts. A path
+Move, rename, New Folder, and New File each have one function in
+`src/local/api/file-changes.ts` that the window's routes and these verbs both
+call; the verbs add receipts. Each normalizes the request once and takes its
+safety checkpoint, its change, and what it reports from that one destination,
+so restoring the checkpoint finds the item where the change put it. A path
 whose last segment is a symbolic link names the link itself: `files move`,
 `files rename`, and `files delete` act on the link and never on what it
 points to, and a link anywhere earlier in a path is refused. The window's

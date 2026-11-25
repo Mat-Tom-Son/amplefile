@@ -1,36 +1,4 @@
-/**
- * The native right-click menu for the Connected Folder header (macOS), with the
- * same actions as the in-app menu other platforms show.
- */
-export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab" | "open-in-new-window";
-
-export interface NativeConnectedFolderMenuRequest {
-  /**
-   * Which of the header's actions this Connected Folder offers. Organize asks
-   * the Connected Folder's Worker to organize it. Manage Connected Folders
-   * is there unless `manage` is false. The file manager's Action menu
-   * adds Skills & Extensions and Settings and leaves out Manage,
-   * since its sidebar lists the Connected Folders; older renderers omit all three.
-   */
-  actions: {
-    newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
-    /** The file manager's Standard Folders: register the folder, or take an added one off the sidebar. */
-    putToWork?: boolean; removeFromSidebar?: boolean;
-    /** The file manager's + beside Connected Folders. */
-    createConnectedFolder?: boolean; useExistingFolder?: boolean;
-    /**
-     * The file manager's Connected Folder menus: Disconnect… a linked folder
-     * (its files stay), or, with `removeDeletes`, Delete Connected Folder… a
-     * managed one (it moves to Recently Deleted).
-     */
-    remove?: boolean; removeDeletes?: boolean;
-    /** The file manager's sidebar: open the folder in a new folder tab, or in a new window. */
-    openInNewTab?: boolean;
-    openInNewWindow?: boolean;
-  };
-  point: { x: number; y: number };
-}
+import type { NativeConnectedFolderMenuCommand, NativeConnectedFolderMenuRequest } from "../../src/shared/desktop-ipc.js";
 
 export type NativeConnectedFolderMenuItem =
   | { type: "separator" }
@@ -77,7 +45,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
   };
 }
 
-export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMenuRequest): NativeConnectedFolderMenuItem[] {
+export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMenuRequest, platform: NodeJS.Platform = "darwin"): NativeConnectedFolderMenuItem[] {
   const { actions } = request;
   const items: NativeConnectedFolderMenuItem[] = [];
   if (actions.openInNewTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
@@ -87,7 +55,7 @@ export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMen
   if (actions.newChat) items.push({ type: "item", label: "New Chat", command: "new-chat" });
   if (actions.customize) items.push({ type: "item", label: "Customize Connected Folder", command: "customize" });
   if (actions.organize) items.push({ type: "item", label: "Organize", command: "organize" });
-  if (actions.reveal) items.push({ type: "item", label: "Show in Finder", command: "reveal" });
+  if (actions.reveal && platform !== "linux") items.push({ type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" });
   if (actions.putToWork) items.push({ type: "item", label: "Connect This Folder", command: "put-to-work" });
   if (actions.skills) items.push({ type: "item", label: "Skills & Extensions…", command: "skills" });
   const tail: NativeConnectedFolderMenuItem[] = [];

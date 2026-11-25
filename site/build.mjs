@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import feedModule from "../scripts/mac-release-feed.cjs";
+import { newestLinuxPreview } from "./linux-preview.mjs";
 import { MN_CSS, mnMarkup } from "./manila.mjs";
 import * as VIEWS from "./views.mjs";
 import { MENUBAR_ICON, WINDOW_CSS } from "./views.mjs";
@@ -37,8 +38,8 @@ const DOCS = `${SRC}/blob/main/docs/README.md`;
 const CONTRIB = `${SRC}/blob/main/CONTRIBUTING.md`;
 const LICENSE = `${SRC}/blob/main/LICENSE`;
 const ext = 'target="_blank" rel="noopener"';
-const TITLE = "AmpleFile · A Smart File Explorer for Mac";
-const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source, for Apple silicon Macs and Windows, with a Linux preview.";
+const TITLE = "AmpleFile · A Smart File Explorer for Mac, Windows, and Linux";
+const DESC = "Every folder you connect gets its own dedicated AI agent, called a Worker. Free and open source: for Apple silicon Macs, for Windows from the Microsoft Store, and as a Linux preview.";
 
 const MARK = (cls = "mark") => `<svg class="${cls}" viewBox="60 192 904 640" aria-hidden="true"><path class="mk-b" d="M140 192H366C403 192 416 206 434 232L454 260C466 276 480 284 502 284H884C928.183 284 964 319.817 964 364V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V272C60 227.817 95.817 192 140 192Z"/><path class="mk-f" d="M140 336H884C928.183 336 964 371.817 964 416V752C964 796.183 928.183 832 884 832H140C95.817 832 60 796.183 60 752V416C60 371.817 95.817 336 140 336Z"/><circle class="mk-d" cx="760" cy="656" r="80"/></svg>`;
 const APPLE = `<svg class="apple" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>`;
@@ -69,6 +70,12 @@ html.js body { display:flex; flex-direction:column; overflow:clip; }
 .page > * { --gut: max(clamp(16px, 5cqi, 56px), env(safe-area-inset-left, 0px)); }
 html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:clip; scroll-behavior:smooth; }
 .page:focus { outline:none; }
+/* Each system's words and windows (views.mjs, per): the head's script marks the visitor's system on <html>, and every
+   variant but that system's is hidden. A phone, an unknown system, or a visit without scripts sees the neutral one. */
+html:not(.os-mac):not(.os-linux):not(.os-windows) :is(.on-mac, .on-linux, .on-windows, .on-other):not(.on-other),
+html.os-mac :is(.on-linux, .on-windows, .on-other):not(.on-mac),
+html.os-linux :is(.on-mac, .on-windows, .on-other):not(.on-linux),
+html.os-windows :is(.on-mac, .on-linux, .on-other):not(.on-windows) { display:none !important; }
 .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 @media (prefers-reduced-motion: reduce) { html.js .page { scroll-behavior:auto; } }
 
@@ -88,6 +95,9 @@ html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:cl
   /* The dialog's near half at a readable size: its header, two included tools, and what's installed everywhere. */
   .shot.p-tools { --cx:88; --cy:12; --cw:552; --ch:480 !important; }
   .shot.p-tools :is(.mw-cursor, .mw-menu) { display:none !important; }
+  /* The folder area at a readable size: the tabs, the list, the search results, and the thumbnails; on Linux, below the title bar. */
+  .shot.p-fm { --cx:228; --cy:0; --cw:552; --ch:380 !important; }
+  html.os-linux .shot.p-fm { --cy:40; }
   /* The whole window, so a phone sees what the app is before the close-ups. */
   .shot.p-live, .shot.p-full { overflow:visible; border-radius:0; }
 }
@@ -105,6 +115,12 @@ const linuxBtn = (cls) => `<a class="${cls} linux" href="${LINUX_REL}" ${ext} da
 const PAGE = mnMarkup({ shot, macBtn, winBtn, linuxBtn, MENUBAR_ICON, SRC, DL, REL, LINUX_REL, WIN, PRIV, DOCS, CONTRIB, LICENSE, ext, GITHUB, APPLE, LINUX, WINDOWS, WORDMARK, MARK, views: VIEWS });
 
 // ---------- Script ----------
+
+// Before anything draws: which system the visitor is on, as a class on <html> that picks each system's words, windows,
+// and download button. ?os=mac, windows, linux, or other shows the page as that visitor sees it; other is the neutral
+// view a phone, an unknown system, or a visit without scripts gets. An iPad asking for the desktop site says Mac, so
+// a Mac with a touch screen is taken for one.
+const HEAD_SCRIPT = `(()=>{const d=document.documentElement,p=navigator.platform||"",o=(/[?&]os=(mac|windows|linux|other)(?:&|$)/.exec(location.search)||[])[1]||(/Linux|X11/.test(p)&&!/Android|CrOS/.test(navigator.userAgent)?"linux":/^Win/.test(p)?"windows":/^Mac/.test(p)&&!(navigator.maxTouchPoints>1)?"mac":"other");d.classList.add("js");if(o!=="other")d.classList.add("os-"+o)})();`;
 
 const SCRIPT = `
 (() => {
@@ -367,8 +383,10 @@ const SCRIPT = `
     if (asset) point("mac", asset.browser_download_url, true);
   });
   // Linux links open the newest Linux preview's page, which lists its packages; without an answer they open the list of releases.
+  // The newest is chosen by publish time (site/linux-preview.mjs): GitHub's list is not newest first within a day.
+  ${newestLinuxPreview.toString().split("\n").join("\n  ")}
   ask("https://api.github.com/repos/${SOURCE}/releases?per_page=30").then((list) => {
-    const rel = (Array.isArray(list) ? list : []).find((x) => x.prerelease && !x.draft && /^linux-/.test(x.tag_name));
+    const rel = newestLinuxPreview(list);
     if (rel) point("linux", rel.html_url, false);
   });
 })();
@@ -398,7 +416,7 @@ const html = `<!doctype html>
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="AmpleFile: a smart file explorer">
 <meta name="twitter:card" content="summary_large_image">
-<script>document.documentElement.classList.add("js");if(/Linux|X11/.test(navigator.platform||"")&&!/Android|CrOS/.test(navigator.userAgent))document.documentElement.classList.add("os-linux");else if(/^Win/.test(navigator.platform||""))document.documentElement.classList.add("os-windows");</script>
+<script>${HEAD_SCRIPT}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">

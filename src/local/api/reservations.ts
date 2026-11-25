@@ -21,6 +21,31 @@ export type CapabilityScope = "global" | "project";
 export const globalCapabilityMutationKey = "*";
 
 /**
+ * What a refusal for unsettled work says, in the words of the act refused.
+ * The reasons and the refusal's shape (`busyRefusal`: 409 with the code
+ * `busy`) belong to this module; an act that is not a capability change or a
+ * deletion, such as Eject, supplies its own words for the same reasons.
+ */
+export interface SettledWorkWording {
+  /** Another change has this Connected Folder, or every one, reserved. */
+  changing: string;
+  /** A Worker turn or Chat compaction is running there. */
+  working: string;
+  /** A request there is running, waiting on an answer, or draining after Stop. */
+  outstanding: string;
+  /** A background job or Automation run may be writing there; the kernel's reason. */
+  blocked(blocker: string): string;
+}
+
+/** The words a capability change and a deletion refuse in. */
+const defaultWording: SettledWorkWording = {
+  changing: "Wait for the current capability change to finish.",
+  working: "Wait for affected agent work to finish before changing capabilities.",
+  outstanding: "Finish or stop this Connected Folder's outstanding work before deleting.",
+  blocked: (blocker) => blocker,
+};
+
+/**
  * A restore queues for its Connected Folder's History turn first and only
  * then reserves the folder and checks for running work, so a waiting restore
  * neither holds new turns, instruction saves, or deletions off nor acts on a
@@ -48,19 +73,59 @@ export function requestHasUnsettledWork(state: LocalApiState, request: AmpleFile
   return [request, ...state.requests.subtree(request.requestId)].some((record) => !isAmpleFileRequestSettled(record));
 }
 
+/**
+ * Called with the Connected Folder's mutation fence held: refuses, never
+ * waits, while a request there is unsettled (running, waiting on an answer,
+ * or draining after Stop) or a background job or Automation run may be
+ * writing there (AGENTS.md, "Settled deletion").
+ */
+async function assertConnectedFolderSettled(state: LocalApiState, connectedFolderId: string, wording: SettledWorkWording): Promise<void> {
+  assertNoUnsettledRequest(state, connectedFolderId, wording);
+  const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
+  if (blockers.length) throw busyRefusal(wording.blocked(blockers[0]!));
+  assertNoUnsettledRequest(state, connectedFolderId, wording);
+}
+
+function assertNoUnsettledRequest(state: LocalApiState, connectedFolderId: string, wording: SettledWorkWording): void {
+  if (state.requests.list({ connectedFolderId }).some((request) => requestHasUnsettledWork(state, request))) {
+    throw busyRefusal(wording.outstanding);
+  }
+}
+
 /** Called with the Connected Folder's mutation fence held; deletion refuses instead of interrupting work. */
 export async function runSettledConnectedFolderDeletion<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
-  const assertSettled = () => {
-    if (state.requests.list({ connectedFolderId }).some((request) => requestHasUnsettledWork(state, request))) {
-      throw busyRefusal("Finish or stop this Connected Folder's outstanding work before deleting.");
-    }
-  };
-  assertSettled();
-  const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-  if (blockers.length) throw busyRefusal(blockers[0]!);
+  await assertConnectedFolderSettled(state, connectedFolderId, defaultWording);
   await getConnectedFolder(connectedFolderId);
-  assertSettled();
+  assertNoUnsettledRequest(state, connectedFolderId, defaultWording);
   return operation();
+}
+
+/**
+ * One act that takes several Connected Folders out from under their work at
+ * once (Eject takes every one on the drives that leave): each is reserved as
+ * a deletion reserves it, then each must be settled as a deletion requires,
+ * then the act runs, and every reservation is released when it ends. A
+ * refusal is the deletion's, for the same reasons and with the same `busy`
+ * code, in the act's words for that Connected Folder. The act asks nothing of
+ * the folders themselves, so none is read here: a drive that is leaving may be
+ * slow to answer, or no longer hold the folder.
+ */
+export async function runWithSettledConnectedFolders<T>(
+  state: LocalApiState,
+  connectedFolders: ReadonlyArray<{ id: string; wording: SettledWorkWording }>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const reserved: string[] = [];
+  try {
+    for (const { id, wording } of connectedFolders) {
+      reserveCapabilityMutation(state, id, "project", id, wording);
+      reserved.push(id);
+    }
+    for (const { id, wording } of connectedFolders) await assertConnectedFolderSettled(state, id, wording);
+    return await operation();
+  } finally {
+    for (const id of reserved) state.capabilityMutations.delete(id);
+  }
 }
 
 export async function runCapabilityMutation<T>(
@@ -148,18 +213,17 @@ export function reserveCapabilityMutation(
   connectedFolderId: string,
   scope: CapabilityScope,
   key: string,
+  wording: Pick<SettledWorkWording, "changing" | "working"> = defaultWording,
 ): void {
   const mutationConflict = scope === "global"
     ? state.capabilityMutations.size > 0
     : state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId);
-  if (mutationConflict) throw busyRefusal("Wait for the current capability change to finish.");
+  if (mutationConflict) throw busyRefusal(wording.changing);
 
   const runningConflict = scope === "global"
     ? state.runningTurns.size > 0 || state.compactingConversations.size > 0
     : hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId);
-  if (runningConflict) {
-    throw busyRefusal("Wait for affected agent work to finish before changing capabilities.");
-  }
+  if (runningConflict) throw busyRefusal(wording.working);
   state.capabilityMutations.add(key);
 }
 

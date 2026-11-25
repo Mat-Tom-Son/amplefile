@@ -483,6 +483,20 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "- **Chat and window fixes.** Reopening the Chat panel keeps failed drafts without sending them again. Browser tabs keep their window ownership, and quitting waits for an update that is already being prepared.",
     );
   }
+  if (version === "0.2.3") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Get Info.** Choose Get Info from the File menu, an item’s menu, or the folder background, or press ⌘I. It opens the panel at Info for the selection, or for the folder shown.",
+      "- **Undo a Worker’s changes.** After a reply that changed files, Undo puts back only what is still as the Worker left it, and keeps anything you changed since.",
+      "- **Copies into Connected Folders.** Copies made by the `amplefile` command, a handoff, or an Automation keep links as links, leave the source’s own AmpleFile records behind, and name a clash “copy” the way the window does.",
+      "- **Names and History.** A name longer than 240 characters is refused with a message rather than quietly shortened. History restores renames, moves, New Folder, and New File reliably, including names that begin or end with a space.",
+      "- **Windows, Chat, and drives.** A Worker’s browser page opens in the window whose tab in front shows its Connected Folder. “Thought for …” keeps the right length after the window reconnects to a reply. Eject refuses with the same reasons as deleting a Connected Folder while work is running or waiting on that drive. Info no longer prints a note under a folder size it could not finish counting.",
+      "",
+      "Version 0.2.3 matches the Linux preview with the same changes; there is no 0.2.2 for macOS.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",

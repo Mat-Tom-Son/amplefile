@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { pageFateOnWindowClose } from "../desktop/src/browser-page-homes.js";
-import { FileManagerWindows, ownerConnectedFolderId, parseWindowLocation } from "../desktop/src/file-manager-windows.js";
+import { FileManagerWindows, ownerConnectedFolderId, parseWindowLocation, shownConnectedFolder } from "../desktop/src/file-manager-windows.js";
 import {
   cascadeBounds,
   maximumRestoredWindows,
@@ -115,6 +115,41 @@ test("a location handed to a window waits for that window's renderer alone, and 
   assert.equal(windows.handOpenLocation({ id: 42 }, { token: "x", location: { path: "" } }), false);
 });
 
+test("a window whose tab in front is not in a Connected Folder shows none, and a Worker's page goes to one that shows it", () => {
+  const windows = new FileManagerWindows<FakeWindow>();
+  const front = new FakeWindow(1);
+  const back = new FakeWindow(2);
+  const quotes = { id: "space-aaaa", name: "Quotes", connectedFolderRoot: "/q" };
+  const showing = windows.add(back);
+  showing.connectedFolder = quotes;
+  showing.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "" };
+  // The front window was in Quotes and has gone to Downloads: it still names Quotes for Open Recent, but shows none.
+  const away = windows.add(front);
+  away.connectedFolder = quotes;
+  away.location = { place: { kind: "standard", id: "downloads" }, path: "" };
+  assert.equal(shownConnectedFolder(away), null);
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, back, "the window that shows Quotes, not the front one");
+  // The computer place, the Trash, and Recents show no Connected Folder either.
+  away.location = { place: { kind: "standard", id: "computer" }, path: "home" };
+  assert.equal(shownConnectedFolder(away), null);
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "", view: "trash" };
+  assert.equal(shownConnectedFolder(away), null);
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "", view: "recents" };
+  assert.equal(shownConnectedFolder(away), null);
+  showing.location = { place: { kind: "standard", id: "documents" }, path: "" };
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, front, "nobody shows it: the front window");
+  // Back in Quotes, the front window shows it again and comes first.
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "Inbox" };
+  assert.deepEqual(shownConnectedFolder(away), quotes);
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, front);
+  // Before a renderer reports where it is, the Connected Folder it named counts.
+  const fresh = windows.add(new FakeWindow(3));
+  fresh.connectedFolder = quotes;
+  assert.deepEqual(shownConnectedFolder(fresh), quotes);
+  assert.deepEqual(parseWindowLocation({ place: { kind: "standard", id: "documents" }, path: "", view: "trash" }), { place: { kind: "standard", id: "documents" }, path: "", view: "trash" });
+  assert.deepEqual(parseWindowLocation({ place: { kind: "standard", id: "documents" }, path: "", view: "other" }), { place: { kind: "standard", id: "documents" }, path: "" });
+});
+
 test("a Worker's window is the one showing its Connected Folder, else the front window", () => {
   const windows = new FileManagerWindows<FakeWindow>();
   const one = new FakeWindow(1);
@@ -210,7 +245,7 @@ test("a closing window's pages: a Worker's page moves, the person's closes, and 
 });
 
 test("the browser host sends a page's events to its own window and lets only that window answer its site", () => {
-  assert.match(browserHost, /#send\(page: BrowserPage \| null, channel[\s\S]*?const window = page \? this\.#home\(page\) : this\.#front\(\);/);
+  assert.match(browserHost, /#send<C extends BrowserEventChannel>\(page: BrowserPage \| null, channel[\s\S]*?const window = page \? this\.#home\(page\) : this\.#front\(\);/);
   assert.doesNotMatch(browserHost, /this\.#options\.send\(browserChannels\./, "every page event goes through #send");
   assert.doesNotMatch(browserHost, /this\.#options\.window\(\)/);
   assert.match(browserHost, /respondPermission\([^)]*window: BrowserWindow\): void \{\s*const page = this\.#pages\.get\(pageId\);\s*if \(!page \|\| this\.#home\(page\) !== window\) return;/);
@@ -255,9 +290,9 @@ test("a Cut is the host's, for every window: a paste in any window moves it, and
   const host = section(main, "const fileClipboard = new FileClipboard({", "\n});\n");
   assert.match(host, /read: readPasteboardFiles,/);
   assert.match(host, /token: \(\) => process\.platform === "darwin" \? randomBytes\(16\)\.toString\("hex"\) : null,/);
-  assert.match(host, /for \(const window of fileManagerWindows\.windows\(\)\) \{\s*if \(!window\.webContents\.isDestroyed\(\)\) window\.webContents\.send\("amplefile:file-clipboard:cut-changed", cut\);/);
+  assert.match(host, /for \(const window of fileManagerWindows\.windows\(\)\) \{\s*if \(!window\.webContents\.isDestroyed\(\)\) sendToRenderer\(window\.webContents, "amplefile:file-clipboard:cut-changed", cut\);/);
   // Paste, Cut, the question of what is cut, and Esc's cancel all go through it, from the trusted window only.
-  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:paste"', "\n  });\n"), /assertTrustedMainRenderer\(event\);[\s\S]*?return fileClipboard\.paste\(request, await listConnectedFolders\(\), \(body\) => transferFileEntries\(body\)\);/);
+  assert.match(section(main, 'ipcMain.handle("amplefile:file-clipboard:paste"', "\n  });\n"), /assertTrustedMainRenderer\(event\);[\s\S]*?return fileClipboard\.paste\(request, await listConnectedFolders\(\), \(body\) => transferFileEntries\(body\)\)/);
   const write = section(main, 'ipcMain.handle("amplefile:file-clipboard:write"', "\n  });\n");
   assert.match(write, /value\.operation === "cut"[\s\S]*?parseCutItems\(value\)[\s\S]*?await fileClipboard\.cut\(/);
   assert.match(write, /await writePasteboardFilePaths\(paths\);\s*\/\/ A Copy replaces whatever was cut\.\s*fileClipboard\.replaced\(\);/);
@@ -328,7 +363,7 @@ test("handed-over folders open in the most recent window, a request's further fo
   assert.match(main, /pendingOpenPaths\.push\(\.\.\.finderOpenPaths\(paths, /);
   const hand = section(main, "function handOpenLocation(");
   assert.match(hand, /fileManagerWindows\.handOpenLocation\(window, request\)/);
-  assert.match(hand, /window\.webContents\.send\("amplefile:file-manager:open-location", request\)/);
+  assert.match(hand, /sendToRenderer\(window\.webContents, "amplefile:file-manager:open-location", request\)/);
   // New Window opens at the folder the window it came from shows, else the home folder.
   const open = section(main, "async function openNewWindow(");
   assert.match(open, /options\.location\s*\?\? \(shown \? \{ place: shown\.place, path: shown\.path, select: null \} : null\)\s*\?\? await folderLocationForOpenPath\(homedir\(\)\)/);
@@ -383,7 +418,7 @@ test("the renderer keeps the Connected Folder shown, the folder tabs, and the Br
   assert.match(app, /const activeConnectedFolderStorageKey = windowStorageKey\("amplefile\.connected-folder\.active"\);/);
   assert.doesNotMatch(app, /localStorage\.(?:get|set|remove)Item\("amplefile\.connected-folder\.active"/);
   assert.match(view, /const browserPaneStorageKey = windowStorageKey\("amplefile\.file-manager\.browser-pane\.v1"\);/);
-  assert.match(view, /reportWindowLocation\(location\)/, "the window tells the desktop where it is, for New Window");
+  assert.match(view, /reportWindowLocation\(location, activeTab\.view\)/, "the window tells the desktop where it is, for New Window");
   assert.ok(entry.indexOf("startWindowStorage();") < entry.indexOf("<App"), "a new window forgets its slot's leftovers before the app reads them");
 });
 

@@ -154,7 +154,9 @@ test("Info measures a selected folder, saying Calculating… first, and the list
   await dom.act(() => { release!(); });
   await dom.waitFor(() => (dom.container.querySelector(".fm-panel")?.textContent ?? "").includes("At least 2.0 KB"));
   assert.match(dom.container.querySelector(".fm-panel")!.textContent!, /More than 3 items/);
-  assert.match(dom.container.querySelector(".fm-panel")!.textContent!, /Counting stopped after 3 items\./);
+  // Why the figure is a minimum is on the Size row for anyone who points at it, never loose text under the list.
+  assert.doesNotMatch(dom.container.querySelector(".fm-panel")!.textContent!, /counting stopped/i);
+  assert.match([...dom.container.querySelectorAll<HTMLElement>(".fm-panel .fm-crow-v")].find((value) => value.textContent === "At least 2.0 KB")?.title ?? "", /counting stopped after 3 items, so the size is a minimum/);
   await dom.waitFor(() => dom.container.querySelector('[data-fm-path="Notes"] .fm-col-size')?.textContent === "≥ 2.0 KB");
 });
 

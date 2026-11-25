@@ -204,9 +204,9 @@ test("a symbolic link says what it is, opens where it points, and its other acti
     return items;
   };
   const onLink = (name: string) => [`Copy “${name}”`, `Cut “${name}”`, "Duplicate", `Compress “${name}”`, "Rename…", "Delete Link"];
-  assert.deepEqual(await menuFor("Docs link"), ["Open Folder", "Show Original", "Show in File Manager", "Copy Link Path", ...onLink("Docs link")]);
-  assert.deepEqual(await menuFor("notes link"), ["Open", "Show Original", "Show in File Manager", "Copy Link Path", ...onLink("notes link")]);
-  assert.deepEqual(await menuFor("gone link"), ["Show in File Manager", "Copy Link Path", ...onLink("gone link")], "a broken link has nothing to open or show");
+  assert.deepEqual(await menuFor("Docs link"), ["Open Folder", "Show Original", "Show in File Manager", "Copy Link Path", "Get Info", ...onLink("Docs link")]);
+  assert.deepEqual(await menuFor("notes link"), ["Open", "Show Original", "Show in File Manager", "Copy Link Path", "Get Info", ...onLink("notes link")]);
+  assert.deepEqual(await menuFor("gone link"), ["Show in File Manager", "Copy Link Path", "Get Info", ...onLink("gone link")], "a broken link has nothing to open or show");
 
   // Return renames the link itself.
   await dom.act(() => row(dom.container, "notes link")!.click());

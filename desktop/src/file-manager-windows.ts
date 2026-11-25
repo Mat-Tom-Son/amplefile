@@ -11,6 +11,7 @@
  * browser page appears in. It knows nothing of Electron, so it is tested on
  * its own; desktop/src/main.ts keeps the BrowserWindows in it.
  */
+import type { OpenLocationRequest, WindowLocation, WindowMenuState } from "../../src/shared/desktop-ipc.js";
 
 export interface FileManagerWindowLike {
   readonly id: number;
@@ -19,34 +20,11 @@ export interface FileManagerWindowLike {
 
 type WindowReference = Pick<FileManagerWindowLike, "id"> & Partial<Pick<FileManagerWindowLike, "isDestroyed">>;
 
-/** What the window's menus show while it is the one in front. */
-export interface WindowMenuState {
-  connectedFolderOpen: boolean;
-  /** Show Hidden Files, which the View menu checks. */
-  showHiddenFiles: boolean;
-  /** The window shows the file manager, with its folder tabs: New Tab, Close Tab, and the tab items act on it. */
-  folderTabsOpen: boolean;
-  /** View → Show Tab Bar: the window's folder tab strip shows even with one tab. */
-  showTabBar: boolean;
-}
-
 /** The Connected Folder a window shows, as the host-owned registry names it. */
 export interface WindowConnectedFolder {
   id: string;
   name: string;
   connectedFolderRoot: string;
-}
-
-/** A place and folder a window shows: the same shape a folder handed to the app opens at. */
-export interface WindowLocation {
-  place: { kind: "connected-folder" | "standard"; id: string };
-  path: string;
-  select?: string | null;
-}
-
-export interface OpenLocationRequest<Location> {
-  token: string;
-  location: Location;
 }
 
 export interface FileManagerWindowEntry<W extends FileManagerWindowLike, Location> {
@@ -57,7 +35,11 @@ export interface FileManagerWindowEntry<W extends FileManagerWindowLike, Locatio
    */
   readonly slot: number;
   menuState: WindowMenuState;
-  /** The Connected Folder the window shows, for its title and Open Recent; null for a plain folder or none. */
+  /**
+   * The Connected Folder the window last showed, as its renderer named it, for
+   * Open Recent. What the window shows now is `shownConnectedFolder(entry)`:
+   * none while the tab in front is a plain folder, Trash, or Recents.
+   */
   connectedFolder: WindowConnectedFolder | null;
   /** Bumped on every change of `connectedFolder`, so a slower registry read never overwrites a newer one. */
   connectedFolderGeneration: number;
@@ -163,15 +145,15 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     return slot;
   }
 
-  /** The most recent window showing a Connected Folder, or null when none does. */
+  /** The most recent window whose tab in front shows a Connected Folder, or null when none does. */
   showing(connectedFolderId: string | null | undefined): FileManagerWindowEntry<W, Location> | null {
     if (!connectedFolderId) return null;
-    return this.live().find((entry) => entry.connectedFolder?.id === connectedFolderId) ?? null;
+    return this.live().find((entry) => shownConnectedFolder(entry)?.id === connectedFolderId) ?? null;
   }
 
   /**
-   * The window a Worker's browser page appears in: the one showing that
-   * Chat's Connected Folder, else the most recent one. `owner` names the Chat
+   * The window a Worker's browser page appears in: the one whose tab in front
+   * shows that Chat's Connected Folder, else the most recent one. `owner` names the Chat
    * as `<connected-folder id>/<conversation id>` (src/shared/browser.ts).
    */
   workerWindow(owner: string | null | undefined): FileManagerWindowEntry<W, Location> | null {
@@ -189,9 +171,11 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     if (!entry) return null;
     const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
     entry.menuState = {
+      ...entry.menuState,
       connectedFolderOpen: typeof record.connectedFolderOpen === "boolean" ? record.connectedFolderOpen : entry.menuState.connectedFolderOpen,
       showHiddenFiles: typeof record.showHiddenFiles === "boolean" ? record.showHiddenFiles : entry.menuState.showHiddenFiles,
       folderTabsOpen: typeof record.folderTabsOpen === "boolean" ? record.folderTabsOpen : entry.menuState.folderTabsOpen,
+      ...(typeof record.terminalFolderOpen === "boolean" ? { terminalFolderOpen: record.terminalFolderOpen } : {}),
       showTabBar: typeof record.showTabBar === "boolean" ? record.showTabBar : entry.menuState.showTabBar,
     };
     return entry.menuState;
@@ -228,6 +212,19 @@ export function ownerConnectedFolderId(owner: string | null | undefined): string
   return slash > 0 ? owner.slice(0, slash) : null;
 }
 
+/**
+ * The Connected Folder a window shows now, which its title names and a
+ * Worker's browser page follows: the one its tab in front is in, and none
+ * while that tab shows a plain folder, the computer, the Trash, or Recents.
+ * Before its renderer reports where it is, the one it last named.
+ */
+export function shownConnectedFolder(entry: Pick<FileManagerWindowEntry<FileManagerWindowLike, unknown>, "connectedFolder" | "location">): WindowConnectedFolder | null {
+  const location = entry.location;
+  if (!location) return entry.connectedFolder;
+  if (location.view || location.place.kind !== "connected-folder" || location.place.id !== entry.connectedFolder?.id) return null;
+  return entry.connectedFolder;
+}
+
 /** A location a renderer reported or asked to open, checked for shape only; null when it is not one. */
 export function parseWindowLocation(value: unknown): WindowLocation | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -241,5 +238,6 @@ export function parseWindowLocation(value: unknown): WindowLocation | null {
   if (path.split(/[\\/]/).some((segment) => segment === "..")) return null;
   const select = record.select;
   if (select !== undefined && select !== null && (typeof select !== "string" || select.length > 4096 || select.includes("\0"))) return null;
-  return { place: { kind: place.kind, id: place.id }, path, ...(typeof select === "string" ? { select } : {}) };
+  const view = record.view === "trash" || record.view === "recents" ? record.view : undefined;
+  return { place: { kind: place.kind, id: place.id }, path, ...(typeof select === "string" ? { select } : {}), ...(view ? { view } : {}) };
 }

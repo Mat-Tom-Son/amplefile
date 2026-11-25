@@ -249,12 +249,19 @@ other surface.
   view ask, a few at a time with the ones in view first, and a tile scrolled
   away withdraws its request; anything the host cannot draw keeps its icon.
   The list keeps icons.
+- **Get Info:** Info follows the selection, and **Get Info** (⌘I; in File,
+  an item's menu, and the folder background menu) asks for
+  it outright: it opens the panel if it is hidden, leaves an open Chat's view
+  (the Chat keeps running), and shows Info for that item, or for the folder
+  shown when nothing is selected.
 - **Folder sizes:** Info measures the folder it describes (a selected folder,
   or the folder shown) when it is shown, saying **Calculating…** meanwhile,
   then its size and how many items it holds, with **Recalculate**. The host
   stops after 10 seconds or a million items; then Info says "At least …" and
-  "More than … items" and why, and says so when some items could not be read
-  or a drive is mounted inside (not counted). Links are not followed, and
+  "More than … items". Why the figure is a minimum, and that some items could
+  not be read or another drive attached inside is not counted, is on the Size
+  row for anyone who points at it; Info prints no note of its own under the
+  list. Links are not followed, and
   AmpleFile's and Pi's hidden folders are left out. A folder measured this
   session shows its size in the list's Size column too; the list never
   measures the folders it merely shows. The disk itself is never measured.
@@ -599,7 +606,7 @@ other surface.
   window is there with or without a Connected Folder.
 - **Right panel:** **Info** shows the selection (a picture or PDF shows its
   larger thumbnail, an SVG shows itself; files show Where, Modified, and
-  Size; folders add their measured size, see **Folder sizes**), the Trash
+  Size; folders add their measured size, see **Folder sizes**). Info shows the Trash
   item chosen in the Trash, or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
   ready-made ones it has not turned on ([Automations](automations.md)).
@@ -631,11 +638,16 @@ other surface.
   Folder's own model from the names in the folder shown and its recent Chat
   titles, kept for 30 minutes or until those change; plain ones cover a
   selection and the wait.
-- **What the Worker changed:** after a Worker reply or an Automation run, the
-  files it added, moved, or changed carry a small dot in the list, and Info
-  opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
-  changed") listing the first few, with **Undo** (History's restore) and
-  **Done**.
+- **What the Worker changed:** after a Worker reply (an Automation's Chat
+  step included), the files it added, moved, or changed carry a small dot in
+  the list, and Info opens with a receipt ("The Worker changed 14 items · 3
+  added · 9 moved · 2 changed") listing the first few, with **Undo** and
+  **Done**. The receipt compares the turn's own "Before turn" and "After
+  turn" restore points, so nothing changed after the reply (a paste, a move
+  in, an edit) is counted as the Worker's. **Undo** puts back only those
+  files, each only while it is still as the turn left it; a file changed
+  again since stays as it is, and the notice says how many were kept. Undo
+  takes its own restore point first, so ⇧⌘Z redoes it.
 - **Set Up for Me:** right after a folder is connected, Info opens with a
   card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
   Thanks**. Either answer closes the card for good; the card is the only
@@ -685,7 +697,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
   selection, and Chat), panel, Browser pane tabs, and size and place on the
   screen, and the Connected Folder it shows, which names the window in its
   title. The window's title, Open Recent, and **New Window** follow the tab
-  in front. Every window sees the same Connected
+  in front; while that tab shows a plain folder, the computer, the Trash, or
+  Recents, the window shows no Connected Folder and is titled AmpleFile. Every window sees the same Connected
   Folders, Standard Folders, drives, Trash, running Chats, running file
   operations, and Cut, so a change made in one (a rename, a new Connected
   Folder, a finished copy, items cut) shows in the others.
@@ -708,8 +721,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
   in the front window and each further one in a new window, as Finder does,
   up to eight; files in one folder share that folder's window.
 - **Browser pages** belong to the window that opened them; a page a Worker
-  opens appears in the window showing that Worker's Connected Folder, else the
-  front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
+  opens appears in the window whose tab in front shows that Worker's Connected
+  Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
 - **Closing and quitting:** closing one of several windows closes only it.
   Closing the last window keeps AmpleFile and every accepted Chat turn,
   Automation, and file operation running; reopening AmpleFile (the Dock, the
@@ -804,9 +817,7 @@ with that Chat's history as of its last finished reply; the original is never
 changed. Snooze, archive, resume, rename, copy, and delete are act verbs
 ([the act ledger](act-ledger.md#chats)).
 
-A new Chat begins as **New Chat**, with up to three of the Connected Folder's
-most recent active Chats listed below as **Recent Chats**. After its first
-successful turn, AmpleFile asks that Chat's active Pi model for a short title
+A new Chat begins as **New Chat**. After its first successful turn, AmpleFile asks that Chat's active Pi model for a short title
 based on the first request and reply, then saves it so it stays stable across
 restarts and machines. The title request uses the same authenticated Pi model
 transport as the turn, including live provider catalogs and stored Azure
