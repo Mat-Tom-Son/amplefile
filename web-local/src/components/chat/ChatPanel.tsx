@@ -34,7 +34,7 @@ import {
 import { glideFrom } from "../../lib/motion";
 import { latestAssistantMessageId as findLatestAssistantMessageId, settledTurnHasNewAssistantMessage } from "../../lib/chat-turn-artifacts";
 import { assistantTurnView } from "../../lib/chat-work-trail";
-import type { AssistantPresentation } from "../../../../src/shared/chat-presentation";
+import { useLiveReply } from "./useLiveReply";
 import { resolveFixtureConnectedFolderPathCandidates } from "../../lib/connected-folder-path-links";
 import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
 import type { AgentCatalog, AgentCommand, AgentModel, AgentStatus, ComposerState, ChatContextPathRequest,
@@ -217,12 +217,16 @@ export function ChatPanel({
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
   const [settlementPending, setSettlementPending] = useState(false);
-  const [streamingAssistant, setStreamingAssistant] = useState("");
-  const [streamingPresentation, setStreamingPresentation] = useState<{ text: string; metadata?: AssistantPresentation }>({ text: "" });
-  const [previewTruncated, setPreviewTruncated] = useState(false);
-  const pendingTextOrderRef = useRef<number | undefined>(undefined);
+  // The turn's reply, thinking, and tool steps as they stream (live-reply-model.ts).
+  const liveReply = useLiveReply();
+  const {
+    text: streamingAssistant,
+    steps: runtimePreviews,
+    canonical: streamingPresentation,
+    truncated: previewTruncated,
+    pendingOrder: pendingTextOrder,
+  } = liveReply.reply;
   const activeStreamTurnIdRef = useRef<string | null>(null);
-  const [runtimePreviews, setRuntimePreviews] = useState<RuntimePreviewEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [contextAttachments, setContextAttachments] = useState<ContextAttachment[]>([]);
   const [attachingPath, setAttachingPath] = useState<string | null>(null);
@@ -302,10 +306,6 @@ export function ChatPanel({
   // Where the composer stood under a new Chat's greeting when its first message went.
   const composerGlideFromRef = useRef<DOMRect | null>(null);
   const userPinnedToBottomRef = useRef(true);
-  const streamingBufferRef = useRef("");
-  const streamingFlushRef = useRef<number | null>(null);
-  const activeThinkingPreviewIdRef = useRef<string | null>(null);
-  const runtimePreviewIdRef = useRef(0);
   const connectedFolderIdRef = useRef(connectedFolder.id);
   const messagesLoadGenerationRef = useRef(0);
   const runtimeUpdateRevisionRef = useRef(0);
@@ -415,7 +415,6 @@ export function ChatPanel({
 
   useEffect(() => () => {
     if (!fixtureMode && activeDraftStorageKeyRef.current) writeStoredChatDraft(activeDraftStorageKeyRef.current, draftRef.current);
-    cancelStreamingFlush();
     releaseScriptPlayback();
   }, []);
 
@@ -570,17 +569,17 @@ export function ChatPanel({
       setConversation(fixtureConversationSummaryValue);
       onConversationActivated?.(fixtureConversationSummaryValue);
       setMessages(fixtureConversation.messages.filter((message) => message.role !== "system" || message.kind === "context_compaction"));
-      setStreamingAssistant(fixtureConversation.streamingAssistant ?? (fixtureRunning && !eventPreviews.length ? "I’m reading the selected files and checking the generated outputs now." : ""));
+      liveReply.show({ text: fixtureConversation.streamingAssistant ?? (fixtureRunning && !eventPreviews.length ? "I’m reading the selected files and checking the generated outputs now." : "") });
       setContextAttachments(fixtureConversation.contextAttachments ?? []);
     } else {
       setConversation(null);
       onConversationActivated?.(null);
       setMessages([]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setContextAttachments([]);
     }
     setRunning(fixtureRunning);
-    setRuntimePreviews(fixturePreviews);
+    liveReply.show({ steps: fixturePreviews });
   }, [connectedFolder.id, fixtureMode, targetConversationId, fixtureConversations]);
 
   useEffect(() => {
@@ -593,10 +592,9 @@ export function ChatPanel({
       eventStreamReadyConversationIdRef.current = null;
       setConversation(null);
       setMessages([]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setRunning(false);
       clearRuntimePreviews();
-      cancelStreamingFlush();
       setContextAttachments([]);
       userPinnedToBottomRef.current = true;
       setUserPinnedToBottom(true);
@@ -691,28 +689,12 @@ export function ChatPanel({
           // send path. Retire the last reply and any older transcript request.
           clearTurnSettlement();
           setError(null);
-          flushStreamingText();
-          setStreamingAssistant("");
+          liveReply.clearText();
           clearRuntimePreviews();
           resetTurnArtifactTracking();
           if (!sendTransitioning) void loadMessages(conversationId, false).catch(() => undefined);
         }
         if (data.running && data.turnId) activeStreamTurnIdRef.current = data.turnId;
-        if (data.type === "turn_snapshot" && typeof data.text === "string" && data.running === true) {
-          // This frame replaces state at its cursor. Replaying it must not
-          // append an older row or restart a thinking timer.
-          cancelStreamingFlush();
-          const snapshot = data.presentation;
-          const text = snapshot?.text ?? data.text;
-          setStreamingAssistant(text);
-          setStreamingPresentation({ text, metadata: snapshot?.assistantPresentation });
-          pendingTextOrderRef.current = undefined;
-          setPreviewTruncated(snapshot?.truncated === true);
-          if (snapshot) {
-            setRuntimePreviews(snapshot.workTrail);
-            activeThinkingPreviewIdRef.current = [...snapshot.workTrail].reverse().find((entry) => entry.kind === "thinking" && ["running", "streaming"].includes(entry.phase ?? ""))?.id ?? null;
-          }
-        }
         const decision = observeChatTurnState(turnStateGate, data.running === true, sendTransitioning);
         if (decision === "running") {
           beginTurnArtifactTracking();
@@ -730,46 +712,18 @@ export function ChatPanel({
           reportChatSettled(conversationId);
         }
       }
-      if (data.type === "tool") {
-        beginTurnArtifactTracking();
-        const toolPreviewId = data.workTrailId ?? (data.toolCallId?.trim()
-          ? `tool-${data.toolCallId.trim()}`
-          : `tool-${++runtimePreviewIdRef.current}`);
-        addRuntimePreview({
-          id: toolPreviewId,
-          kind: "tool",
-          text: data.message?.trim() || data.toolName?.trim() || "Tool",
-          ...(data.detail?.trim() ? { detail: data.detail.trim() } : {}),
-          ...(data.toolName?.trim() ? { toolName: data.toolName.trim() } : {}),
-          ...(data.toolTitle?.trim() ? { toolTitle: data.toolTitle.trim() } : {}),
-          ...(data.order !== undefined ? { order: data.order } : {}),
-          ...(data.durationMs !== undefined ? { durationMs: data.durationMs } : {}),
-          ...(data.edit ? { edit: data.edit } : {}),
-          phase: data.phase ?? "running",
-        });
-      }
-      if (data.type === "assistant_thinking") {
+      // The reply, its thinking, and its tool steps follow the live reply's
+      // own rules (a snapshot replaces them at its cursor; an ended turn shows
+      // its waiting text and closes its thinking). This handler keeps the
+      // turn's bookkeeping.
+      liveReply.apply(data);
+      if (data.type === "tool") beginTurnArtifactTracking();
+      if (data.type === "assistant_thinking" || (data.type === "assistant_delta" && data.text)) {
         beginTurnArtifactTracking();
         runningRef.current = true;
         setRunning(true);
-        if (data.thinkingPhase === "start") startThinkingPreview(data);
-        if (data.text) appendThinkingPreview(data.text, data);
-        if (data.thinkingPhase === "end") finishThinkingPreview(data);
       }
-      if (data.type === "assistant_delta" && data.text) {
-        beginTurnArtifactTracking();
-        runningRef.current = true;
-        setRunning(true);
-        pendingTextOrderRef.current = data.order;
-        queueStreamingText(data.text);
-      }
-      if (data.type === "assistant_message" && typeof data.text === "string") {
-        beginTurnArtifactTracking();
-        flushStreamingText();
-        setStreamingAssistant(data.text);
-        setStreamingPresentation({ text: data.text, metadata: data.assistantPresentation });
-        pendingTextOrderRef.current = undefined;
-      }
+      if (data.type === "assistant_message" && typeof data.text === "string") beginTurnArtifactTracking();
       if (data.type === "extension_ui_request" && data.request) {
         if (data.request.method === "notify") {
           showToast({ text: data.request.message ?? "Extension notification", tone: "info" });
@@ -793,8 +747,6 @@ export function ChatPanel({
         window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
       }
       if (data.type === "error") {
-        flushStreamingText();
-        finishThinkingPreview();
         setError(data.message ?? "The Worker stopped because of an error.");
         runningRef.current = false;
         setRunning(false);
@@ -804,8 +756,6 @@ export function ChatPanel({
       }
       if (data.type === "done") {
         runningRef.current = false;
-        flushStreamingText();
-        finishThinkingPreview();
         // Keep the streamed bubble on screen until the persisted transcript
         // arrives, then swap in one commit so the reply never blinks out.
         void loadMessages(conversationId, false, { settleStreamingTurn: true }).catch(() => undefined);
@@ -817,8 +767,6 @@ export function ChatPanel({
       closed = true;
       if (eventStreamReadyConversationIdRef.current === conversationId) eventStreamReadyConversationIdRef.current = null;
       source.close();
-      cancelStreamingFlush();
-      activeThinkingPreviewIdRef.current = null;
     };
   }, [conversation?.id, shouldKeepEventStreamOpen, connectedFolder.id]);
 
@@ -891,86 +839,9 @@ export function ChatPanel({
     setUserPinnedToBottom(isPinned);
   }
 
-  function queueStreamingText(text: string) {
-    streamingBufferRef.current += text;
-    if (streamingFlushRef.current !== null) return;
-    streamingFlushRef.current = window.requestAnimationFrame(() => {
-      streamingFlushRef.current = null;
-      flushStreamingText();
-    });
-  }
-
-  function flushStreamingText() {
-    const nextText = streamingBufferRef.current;
-    if (!nextText) return;
-    streamingBufferRef.current = "";
-    setStreamingAssistant((current) => `${current}${nextText}`);
-  }
-
-  function cancelStreamingFlush() {
-    if (streamingFlushRef.current !== null) window.cancelAnimationFrame(streamingFlushRef.current);
-    streamingFlushRef.current = null;
-    streamingBufferRef.current = "";
-  }
-
-  function addRuntimePreview(preview: RuntimePreviewEntry) {
-    setRuntimePreviews((current) => {
-      const existingIndex = current.findIndex((item) => item.id === preview.id);
-      if (existingIndex >= 0) {
-        const updated = [...current];
-        updated[existingIndex] = { ...updated[existingIndex], ...preview };
-        return updated;
-      }
-      return [...current, preview];
-    });
-  }
-
-  function startThinkingPreview(event?: ChatStreamEvent) {
-    const id = event?.workTrailId ?? `thinking-${++runtimePreviewIdRef.current}`;
-    activeThinkingPreviewIdRef.current = id;
-    addRuntimePreview({
-      id,
-      kind: "thinking",
-      text: "",
-      phase: "streaming",
-      startedAt: event?.startedAt ?? Date.now(),
-      ...(event?.order !== undefined ? { order: event.order } : {}),
-    });
-  }
-
-  function appendThinkingPreview(text: string, event?: ChatStreamEvent) {
-    let id = event?.workTrailId ?? activeThinkingPreviewIdRef.current;
-    if (!id) {
-      startThinkingPreview(event);
-      id = activeThinkingPreviewIdRef.current;
-    }
-    if (!id) return;
-    setRuntimePreviews((current) => current.map((entry) => (
-      entry.id === id
-        ? { ...entry, text: `${entry.text}${text}`, phase: "streaming" }
-        : entry
-    )));
-  }
-
-  function finishThinkingPreview(event?: ChatStreamEvent) {
-    const id = event?.workTrailId ?? activeThinkingPreviewIdRef.current;
-    if (!id) return;
-    activeThinkingPreviewIdRef.current = null;
-    const endedAt = Date.now();
-    setRuntimePreviews((current) => current.map((entry) => (
-      entry.id === id
-        ? { ...entry, phase: "complete", ...(event?.durationMs !== undefined ? { durationMs: event.durationMs } : entry.startedAt ? { durationMs: Math.max(0, endedAt - entry.startedAt) } : {}) }
-        : entry
-    )));
-  }
-
   function clearRuntimePreviews() {
-    activeThinkingPreviewIdRef.current = null;
-    setRuntimePreviews([]);
-    setStreamingPresentation({ text: "" });
-    pendingTextOrderRef.current = undefined;
+    liveReply.clearSteps();
     activeStreamTurnIdRef.current = null;
-    setPreviewTruncated(false);
   }
 
   function reportChatSettled(conversationId: string): void {
@@ -1007,9 +878,9 @@ export function ChatPanel({
     commitConversations((fixtureConversations ?? []).map(fixtureConversationSummary));
     setConversation(null);
     setMessages([]);
-    setStreamingAssistant("");
+    liveReply.clearText();
     setRunning(false);
-    setRuntimePreviews([]);
+    liveReply.show({ steps: [] });
     setContextAttachments(conversation.contextAttachments ?? []);
     setDraft("");
     userPinnedToBottomRef.current = true;
@@ -1035,9 +906,9 @@ export function ChatPanel({
 
     const finish = () => {
       setMessages([firstUser, firstAssistant]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setRunning(false);
-      setRuntimePreviews(conversation.runtimePreviews ?? []);
+      liveReply.show({ steps: conversation.runtimePreviews ?? [] });
       scriptPlaybackStateRef.current = "done";
       reportChatSettled(conversation.id);
     };
@@ -1047,12 +918,12 @@ export function ChatPanel({
         schedule(350, finish);
         return;
       }
-      setStreamingAssistant((current) => `${current}${chunks[index]}`);
+      liveReply.apply({ type: "assistant_delta", conversationId: conversation.id, text: chunks[index] });
       schedule(30 + Math.random() * 30, () => streamChunk(index + 1));
     };
 
     const startStreaming = () => {
-      if (firstPreview) setRuntimePreviews([firstPreview]);
+      if (firstPreview) liveReply.show({ steps: [firstPreview] });
       schedule(420, () => streamChunk(0));
     };
 
@@ -1098,7 +969,7 @@ export function ChatPanel({
     transientConversationIdsRef.current = new Set();
     setError(null);
     setRunning(false);
-    setStreamingAssistant("");
+    liveReply.clearText();
     clearRuntimePreviews();
     resetTurnArtifactTracking();
     setContextAttachments([]);
@@ -1122,9 +993,8 @@ export function ChatPanel({
     onConversationActivated?.(selected);
     setRunning(false);
     setError(null);
-    setStreamingAssistant("");
+    liveReply.clearText();
     clearRuntimePreviews();
-    cancelStreamingFlush();
     setContextAttachments([]);
     userPinnedToBottomRef.current = true;
     setUserPinnedToBottom(true);
@@ -1168,7 +1038,7 @@ export function ChatPanel({
   }
 
   const liveTurnView = assistantTurnView(streamingAssistant, streamingPresentation.metadata, runtimePreviews, {
-    canonicalText: streamingPresentation.text, pendingOrder: pendingTextOrderRef.current,
+    canonicalText: streamingPresentation.text, pendingOrder: pendingTextOrder,
   });
   const hasVisibleRuntimePreview = runtimePreviews.some((entry) => (
     entry.kind === "tool"
@@ -1269,7 +1139,7 @@ export function ChatPanel({
           clearRuntimePreviews();
         }
         resetTurnArtifactTracking();
-        setStreamingAssistant("");
+        liveReply.clearText();
         setRunning(false);
       }
     } catch (error) {
@@ -1332,8 +1202,7 @@ export function ChatPanel({
     clearTurnSettlement();
     resetTurnArtifactTracking();
     beginTurnArtifactTracking();
-    cancelStreamingFlush();
-    setStreamingAssistant("");
+    liveReply.clearText();
     const sentDraftStorageKey = draftStorageKey;
     if (startLayout) composerGlideFromRef.current = composerRef.current?.getBoundingClientRect() ?? null;
     const addressedConnectedFolderIds = addressedFolderIds(content, mentionFolders);
@@ -1619,7 +1488,7 @@ export function ChatPanel({
     if (fixtureMode) {
       cancelScriptPlayback();
       setRunning(false);
-      setStreamingAssistant("");
+      liveReply.clearText();
       clearRuntimePreviews();
       resetTurnArtifactTracking();
       return;

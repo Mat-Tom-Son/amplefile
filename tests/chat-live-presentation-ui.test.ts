@@ -422,3 +422,28 @@ test("sending the next message fences a pending recovery before its turn snapsho
   assert.match(dom.container.textContent!, /New request/);
   assert.doesNotMatch(dom.container.textContent!, /Old reply\.|still reconnecting/);
 });
+
+test("sending clears the last reply by the time the Worker shows as running", async (t) => {
+  let read = async (): Promise<{ messages: ChatMessage[] }> => ({ messages: [userMessage] });
+  const { dom, stream, emit } = await chatHarness(t, () => read());
+  await dom.act(() => { stream.onopen?.(); });
+  // A failed settlement read leaves the last reply on screen while the Worker is idle.
+  await emit(replySnapshot("turn-one", "Old reply."));
+  read = async () => {
+    read = async () => ({ messages: [userMessage] });
+    throw new Error("Failed to fetch");
+  };
+  await emit({ type: "done", turnId: "turn-one" });
+  assert.equal(dom.container.querySelector(".streaming > .message-body")?.textContent, "Old reply.");
+  assert.equal(dom.container.querySelectorAll('[aria-label="Stop Worker"]').length, 0);
+
+  const composer = dom.container.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(composer, "New request");
+    composer.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await dom.act(() => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Send Message"]')!.click(); });
+  assert.equal(dom.container.querySelectorAll('[aria-label="Stop Worker"]').length, 1, "the Worker shows as running at once");
+  assert.equal(dom.container.querySelectorAll(".streaming > .message-body").length, 0, "and the last reply is already gone");
+  assert.doesNotMatch(dom.container.textContent!, /Old reply\./);
+});
