@@ -44,6 +44,27 @@ export interface DesktopUpdateStatus {
   checkedAt: string | null;
   message: string;
   error: string | null;
+  /**
+   * "system" when the computer's package manager installs AmpleFile's
+   * updates (a repository-managed Linux RPM, desktop/src/system-package-updates.ts):
+   * "ready" then means the update is already installed and only a restart is
+   * left. Absent for the app's own updater.
+   */
+  updatesFrom?: "app" | "system";
+}
+
+/** What the desktop host asks of whichever update source this install has. */
+export interface DesktopUpdates {
+  /** Whether this build has an update feed of its own to check (and offers Check for Updates). */
+  readonly supported: boolean;
+  start(): void;
+  getStatus(): DesktopUpdateStatus;
+  check(interactive?: boolean): Promise<DesktopUpdateStatus>;
+  updateNow(): Promise<DesktopUpdateStatus>;
+  install(): Promise<DesktopUpdateStatus>;
+  /** True when a restart the person chose has taken over quitting. */
+  prepareForApplicationQuit(): Promise<boolean>;
+  dispose(): void;
 }
 
 /** Kept as an alias for callers from the initial public release. */
@@ -158,7 +179,7 @@ export function hasDownloadedUpdatePayload(options: {
  * Mature installed-update lifecycle. The feed always comes from the packaged
  * app-update.yml; this class never overrides GitHub, signing, or publisher data.
  */
-export class DesktopUpdater {
+export class DesktopUpdater implements DesktopUpdates {
   private readonly updater: DesktopUpdaterAdapter;
   private readonly host: DesktopUpdaterHost;
   private readonly prepareToInstall: () => Promise<void>;
