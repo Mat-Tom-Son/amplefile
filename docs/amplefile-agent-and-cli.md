@@ -844,9 +844,13 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 3. The desktop host claims the request on arrival, executes it through
    `AmpleFileCliKernelAdapter` or the act executor in one serial queue, and
    atomically writes stdout, stderr, structured result, and exit code under
-   `responses`. `jobs output` and `chat compact`, which can take minutes and
-   are fenced by their own services, run beside that queue so they never
-   stall other commands. An act that reaches the front of the queue more
+   `responses`. No command holds that queue while it waits on agent work,
+   because agent work uses the same command: `chat send` and
+   `automations run` return as soon as the turn or run is accepted, and
+   `chat wait`, `agent wait`, and `automations wait` wait in the shim by
+   repeating a quick status read. `jobs output` and `chat compact`, which can
+   take minutes and are fenced by their own services, run beside that queue
+   so they never stall other commands. An act that reaches the front of the queue more
    than five minutes after the shim created it is refused without running
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
@@ -978,8 +982,8 @@ of reaching around it.
 | Act argv parsing and executor | `src/local/cli/act-commands.ts` | `tests/amplefile-cli-act-protocol.test.ts`, `tests/desktop-amplefile-cli-host.test.ts` |
 | Act facade over route internals | `src/local/api/act-lane.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
 | Atomic bounded file broker | `src/local/cli/broker.ts` | `tests/amplefile-cli-broker.test.ts` |
-| Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
-| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
+| Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts`, `tests/automation-run-cli-reentry.test.ts` |
+| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts`, `tests/desktop-cli-automation-wait.test.ts` |
 | Real Pi turn driver | `scripts/amplefile-drive.ts` | Run against the local API when provider credentials are available. |
 | Machine-wide Automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` |
 | Prepared acts | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts`, `tests/amplefile-cli-act-receipts.test.ts` |
@@ -989,7 +993,7 @@ of reaching around it.
 | Turn environment line and role preamble | `src/local/agent/turn-environment.ts`, `src/local/agent/role-preamble.ts` | `tests/turn-environment.test.ts`, `tests/role-preamble-prompt.test.ts` |
 | Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts`, `src/local/api/request-records.ts`, `src/local/api/request-routes.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
 | Bounded inference | `src/local/agent/bounded-inference.ts` | `tests/bounded-inference.test.ts` |
-| Automation declarations, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
+| Automation declarations, authoring guide, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-authoring-guide.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
 | Overview composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |
 
 See [Architecture](architecture.md) for the surrounding process boundaries,

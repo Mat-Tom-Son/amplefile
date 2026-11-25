@@ -94,7 +94,12 @@ import {
   assertAmpleFileAgentParentAccepting,
   resolveAmpleFileAgentConversation,
 } from "./amplefile-agent-routes.js";
-import { readAutomationReceiptProjection, toActAutomationFilesSource, toActAutomationSummary } from "./automation-receipts.js";
+import {
+  readAutomationReceiptProjection,
+  toActAutomationFilesSource,
+  toActAutomationRunStatus,
+  toActAutomationSummary,
+} from "./automation-receipts.js";
 import { enableStoredAutomationDeclaration, readAutomationStagingFile } from "./automation-settings.js";
 import {
   createBackgroundJobToolHost,
@@ -1758,20 +1763,35 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const automationId = input.automation.trim();
       const projection = await runActOperation(() => state.automations.getAutomation(automationId));
       if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
-      const run = await runActOperation(() => state.automations.runNow(automationId, {
+      // Admission only, as Settings does: the run's steps may start turns
+      // that call these same act verbs, so this request must not wait on them.
+      const admission = await runActOperation(() => state.automations.runNowAdmission(automationId, {
         ...(input.requestId ? { requestId: input.requestId } : {}),
       }));
+      void admission.result.catch(() => undefined);
+      // The scheduler marks every admission before handing it back, so the
+      // run is at least queued here.
+      const status = state.automations.runStatus(automationId, admission.runId);
       return {
         automationId,
         title: projection.declaration.title,
-        run: {
-          runId: run.runId,
-          outcome: run.outcome,
-          startedAt: run.startedAt,
-          finishedAt: run.finishedAt,
-          ...(run.error !== undefined ? { error: run.error } : {}),
-        },
+        run: status ? toActAutomationRunStatus(admission.runId, status) : { runId: admission.runId, state: "queued" as const },
       };
+    },
+    async automationsStatus(input) {
+      const automationId = input.automation.trim();
+      const runId = input.run.trim();
+      const projection = await runActOperation(() => state.automations.getAutomation(automationId));
+      if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
+      const status = state.automations.runStatus(automationId, runId);
+      if (!status) {
+        throw new AmpleFileCliError(
+          "notFound",
+          "The running app does not know this run of this automation: it may have run before AmpleFile last started, "
+            + "or be too old to keep in memory. Its record is in 'automations receipts --automation <id>'.",
+        );
+      }
+      return { automationId, title: projection.declaration.title, run: toActAutomationRunStatus(runId, status) };
     },
     async automationsStop(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);

@@ -5,6 +5,7 @@ import test from "node:test";
 import { AmpleFileCliKernelAdapter } from "../src/local/amplefile-cli-adapter.js";
 import type { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import {
+  ampleFileAutomationContractVersion,
   normalizeAmpleFileAutomationProposal,
   ampleFileAutomationMessagePlaceholders,
 } from "../src/local/automations/automation-declarations.js";
@@ -127,7 +128,7 @@ test("CLI help covers every landed act family and is honest about what it runs",
       "worker show", "worker model", "worker instructions",
     ],
     tools: ["import-skill", "install", "update", "remove"],
-    automations: ["enable", "list", "show", "run", "stop", "disable", "delete", "receipts"],
+    automations: ["enable", "list", "show", "run", "status", "wait", "stop", "disable", "delete", "receipts"],
     "recently-deleted": ["list", "restore"],
     requests: ["list", "show"],
     jobs: ["start", "list", "show", "output", "stop"],
@@ -278,9 +279,9 @@ test("Automation help's complete authoring example passes the real proposal vali
   const example = ampleFileCliHelp("AmpleFile", "automations").split("\n").find((line) => line.startsWith('{"kind":"amplefile.automation-proposal"'));
   assert.ok(example);
   const proposal = normalizeAmpleFileAutomationProposal(JSON.parse(example));
-  assert.equal(proposal.version, 5);
+  assert.equal(proposal.version, ampleFileAutomationContractVersion, "the example is written at the newest version");
   assert.equal(proposal.automation.trigger.kind, "files-changed");
-  // The example teaches the version-5 catch-up (docs/automations.md).
+  // The example teaches the catch-up (docs/automations.md).
   assert.equal(proposal.automation.trigger.kind === "files-changed" && proposal.automation.trigger.ifMissed, "run");
   assert.deepEqual(proposal.automation.steps.map((step) => step.kind), ["files", "chat", "agent"]);
   // The example teaches the closed placeholder set, so it must itself be

@@ -98,6 +98,7 @@ export type AmpleFileCliActCommandName =
   | "automations.models"
   | "automations.show"
   | "automations.run"
+  | "automations.status"
   | "automations.stop"
   | "automations.disable"
   | "automations.delete"
@@ -167,6 +168,8 @@ export interface AmpleFileCliActParsedCommand {
   source?: string;
   /** An Automation id for `automations …`. */
   automation?: string;
+  /** One run of that Automation, for `automations status`. */
+  run?: string;
   /** Recently Deleted item id for recently-deleted.restore. */
   entry?: string;
   /** Result-envelope summary for chat.report (docs/collaboration-contract.md). */
@@ -380,6 +383,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--text",
     "--action",
     "--ref",
+    "--run",
   ]);
   const booleanFlags = new Set(["--new", "--message-from-payload", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
 
@@ -1373,6 +1377,18 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     case "automations show":
       allowOnlyFlags("--automation");
       return { name: "automations.show", output, automation: requireBoundedFlag("--automation", "automation-id") };
+    case "automations status":
+      allowOnlyFlags("--automation", "--run");
+      return {
+        name: "automations.status",
+        output,
+        automation: requireBoundedFlag("--automation", "automation-id"),
+        run: requireBoundedFlag("--run", "run-id"),
+      };
+    case "automations wait":
+      // Like chat wait, the wait is a shim-side poll of a quick read, so no
+      // request ever holds the host while a run's steps need it.
+      throw usageError(`${command} runs inside the AmpleFile shim; update the installed AmpleFile CLI.`);
     case "automations run":
     case "automations stop":
     case "automations disable":
@@ -2120,6 +2136,8 @@ async function runActCommand(
       return toTerminalSafeJson(await facade.automationsModels());
     case "automations.show":
       return toTerminalSafeJson(await facade.automationsShow({ automation: command.automation! }));
+    case "automations.status":
+      return toTerminalSafeJson(await facade.automationsStatus({ automation: command.automation!, run: command.run! }));
     case "automations.run":
       return toTerminalSafeJson(await facade.automationsRun({
         automation: command.automation!,
@@ -2766,10 +2784,17 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       return `${lines.join("\n")}\n`;
     }
     case "automations.run": {
-      const run = record.run as { runId?: unknown; outcome?: unknown; error?: unknown } | undefined;
-      const error = typeof run?.error === "string" && run.error ? `\n${terminalText(run.error)}` : "";
-      return `Automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] ran with outcome ${terminalText(run?.outcome)} (run ${terminalText(run?.runId)}). `
-        + `Run-now never shifts the schedule; per-hop receipts are in 'automations receipts'.${error}\n`;
+      const run = record.run as { runId?: unknown; state?: unknown } | undefined;
+      const follow = `'automations wait --automation ${terminalText(record.automationId)} --run ${terminalText(run?.runId)}'`;
+      return `Started automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] as run ${terminalText(run?.runId)} (${terminalText(run?.state)}). `
+        + `Run-now never shifts the schedule. ${follow} waits for it to finish; per-hop receipts are in 'automations receipts'.\n`;
+    }
+    case "automations.status": {
+      const run = record.run as { runId?: unknown; state?: unknown; outcome?: unknown; error?: unknown } | undefined;
+      const where = `Automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] run ${terminalText(run?.runId)}`;
+      if (run?.state !== "settled") return `${where} is ${terminalText(run?.state)}.\n`;
+      const error = typeof run.error === "string" && run.error ? `\n${terminalText(run.error)}` : "";
+      return `${where} ran with outcome ${terminalText(run.outcome)}. Per-hop receipts are in 'automations receipts'.${error}\n`;
     }
     case "automations.stop":
       return `Stopped the active run ${terminalText(record.runId)} of automation [${terminalText(record.automationId)}]. `
@@ -2965,7 +2990,7 @@ function actReceiptDetail(
     removed?: unknown;
     source?: unknown;
     digest?: unknown;
-    run?: { runId?: unknown; outcome?: unknown };
+    run?: { runId?: unknown };
     automationId?: unknown;
     declarationDigest?: unknown;
     alreadyEnabled?: unknown;
@@ -3110,7 +3135,7 @@ function actReceiptDetail(
     // evidence.
     case "automations.run":
       return typeof record.automationId === "string" && typeof record.run?.runId === "string"
-        ? `automation ${record.automationId}; run ${record.run.runId}; outcome ${String(record.run.outcome)}`
+        ? `automation ${record.automationId}; started run ${record.run.runId}`
         : undefined;
     case "automations.stop":
       return typeof record.automationId === "string"

@@ -17,6 +17,7 @@ import {
   type AmpleFileCliTaskSummary,
 } from "./protocol.js";
 import { outsideAgentSkill } from "../../shared/outside-agent-skill.js";
+import { ampleFileAutomationAuthoringGuideLines } from "../automations/automation-authoring-guide.js";
 
 export interface AmpleFileCliExecutorOptions {
   version: string;
@@ -522,6 +523,8 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       `       ${executable} automations show --automation <id> [--json]`,
       `       ${executable} automations models [--json]`,
       `       ${executable} automations run --automation <id> [--json]`,
+      `       ${executable} automations status --automation <id> --run <run-id> [--json]`,
+      `       ${executable} automations wait --automation <id> --run <run-id> [--timeout <seconds>] [--json]`,
       `       ${executable} automations stop --automation <id> [--json]`,
       `       ${executable} automations disable --automation <id> [--json]`,
       `       ${executable} automations delete --automation <id> [--json]`,
@@ -533,30 +536,22 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "enable reads an inert typed proposal, checks that every Connected Folder it",
       "names is registered, and turns it on at once — the receipt pins the",
       "exact declaration, and enabling the same declaration again changes",
-      "nothing. run starts one bounded run now; stop, disable, and delete only",
-      "narrow standing behavior and run immediately. receipts lists per-run",
-      "receipts. Needs the AmpleFile app running.",
+      "nothing. run starts one bounded run now and returns its run id without",
+      "waiting for it, so the run's own steps can use amplefile while it runs.",
+      "status reads one run by id: queued, running, or settled with its outcome.",
+      "wait polls status until the run settles and prints it; a run that did",
+      "not succeed exits 1, and a wait that times out exits 7 while the run",
+      "carries on. stop, disable, and delete only narrow standing behavior and",
+      "run immediately. receipts lists per-run receipts. Needs the AmpleFile",
+      "app running.",
       "",
-      "folder-change proposal example (replace the sample Connected Folder ids,",
-      "paths, messages, and timestamp with your own values):",
-      JSON.stringify({
-        kind: "amplefile.automation-proposal", version: 5, name: "Brief handoff",
-        createdBy: "assistant", createdAt: "2026-01-01T00:00:00.000Z",
-        automation: {
-          title: "Brief handoff",
-          trigger: { kind: "files-changed", connectedFolder: "space-0000000000000001", watch: { kind: "tree", path: "Ready", recursive: false, extensions: [".md"] }, debounceSeconds: 5, cooldownMinutes: 1, ifMissed: "run" },
-          steps: [
-            { id: "copy", kind: "files", fromConnectedFolder: "space-0000000000000001", from: { kind: "paths", paths: ["Ready/brief.md"] }, toConnectedFolder: "space-0000000000000002", to: "Incoming" },
-            { id: "adopt", kind: "chat", connectedFolder: "space-0000000000000002", message: "Adopt the newest Incoming/brief*.md copy into reference/brief.md. Preserve the draft and other files. Changed files this run:\n{{trigger.changedFiles}}" },
-            { id: "report", kind: "agent", message: "{{trigger.summary}} The brief handoff finished. Files the adopt step created:\n{{steps.adopt.createdFiles}}" },
-          ],
-        },
-      }),
+      ...ampleFileAutomationAuthoringGuideLines(),
+      "",
       "Keep title, trigger, and steps inside the automation object. Copies are",
       "additive and collision-renamed. Observers pause during automation runs and take a",
       "fresh baseline afterward, so a run's own edits never start another run.",
       "Without ifMissed, a folder trigger also starts fresh after a restart,",
-      "wake, or Turn on. \"ifMissed\": \"run\" (version 5, as above) catches up",
+      "wake, or Turn on. \"ifMissed\": \"run\" (as in the example) catches up",
       "instead: files added or changed while AmpleFile was closed, the computer",
       "was asleep, or the automation was off start one run, listed in",
       "{{trigger.changedFiles}} — never a backlog of missed events.",
@@ -633,7 +628,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "                      Create, manage, restyle, or configure Connected Folders and their Workers",
     "  tools import-skill|install|enable|disable|update|remove",
     "                      Manage Skills & Extensions",
-    "  automations enable|list|show|run|stop|disable|delete|receipts",
+    "  automations enable|list|show|run|status|wait|stop|disable|delete|receipts",
     "                      Declared steps that run across Connected Folders on a trigger",
     "  recently-deleted list|restore",
     "                      Bring back what was deleted",

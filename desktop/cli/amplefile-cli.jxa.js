@@ -48,8 +48,11 @@ function run(rawArguments) {
         $.exit(6);
       }
       const waitPlan = parseWaitCommand(argumentsList);
+      const automationWaitPlan = waitPlan ? null : parseAutomationWaitCommand(argumentsList);
       if (waitPlan) {
         exitCode = runWaitLoop(context, waitPlan, actToken);
+      } else if (automationWaitPlan) {
+        exitCode = runAutomationWaitLoop(context, automationWaitPlan, actToken);
       } else {
         const prepared = prepareActArguments(argumentsList);
         const outcome = performRequest(context, prepared.argv, actToken, prepared.payload);
@@ -158,6 +161,66 @@ function runWaitLoop(context, plan, actToken) {
   const result = performRequest(context, resultArgv, actToken, null);
   emitOutcome(result);
   return result.exitCode;
+}
+
+function parseAutomationWaitCommand(argumentsList) {
+  const positional = argumentsList.filter((token) => token !== "--json");
+  if (positional[0] !== "automations" || positional[1] !== "wait") return null;
+  const json = argumentsList.includes("--json");
+  let automation = "";
+  let run = "";
+  let timeoutSeconds = 3600;
+  for (let index = 0; index < argumentsList.length; index += 1) {
+    const token = argumentsList[index];
+    if (token === "--automation") { automation = argumentsList[index + 1] || ""; index += 1; }
+    else if (token === "--run") { run = argumentsList[index + 1] || ""; index += 1; }
+    else if (token === "--timeout") {
+      timeoutSeconds = Number(argumentsList[index + 1]);
+      index += 1;
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > MAX_WAIT_SECONDS) {
+        throw usageFailure(`--timeout must be an integer between 1 and ${MAX_WAIT_SECONDS} seconds.`);
+      }
+    } else if (token === "automations" || token === "wait" || token === "--json") {
+      // command tokens
+    } else {
+      throw usageFailure(`Unknown option for automations wait: ${token}`);
+    }
+  }
+  if (!automation) throw usageFailure("Provide --automation <id>.");
+  if (!run) throw usageFailure("Provide --run <id> from automations run.");
+  return { automation, run, timeoutSeconds, json };
+}
+
+function runAutomationWaitLoop(context, plan, actToken) {
+  // Each poll is one quick status read, so nothing holds the app while the
+  // run's own steps use the amplefile command. The loop ends when the run
+  // settles and prints that status; a run that did not succeed exits 1.
+  const statusArgv = ["automations", "status", "--automation", plan.automation, "--run", plan.run, "--json"];
+  const deadline = Date.now() + plan.timeoutSeconds * 1000;
+  for (;;) {
+    const status = performRequest(context, statusArgv, actToken, null);
+    if (status.exitCode !== 0) {
+      emitOutcome(status);
+      return status.exitCode;
+    }
+    let run = null;
+    try {
+      run = JSON.parse(status.stdout).data.run;
+    } catch (error) {
+      throw new Error("AmpleFile returned an unreadable automation run status.");
+    }
+    if (run && run.state === "settled") {
+      const shown = plan.json ? status : performRequest(context, statusArgv.slice(0, -1), actToken, null);
+      emitOutcome(shown);
+      if (shown.exitCode !== 0) return shown.exitCode;
+      return run.outcome === "success" ? 0 : 1;
+    }
+    if (Date.now() >= deadline) {
+      writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: automations wait timed out after ${plan.timeoutSeconds}s.\n`);
+      return 7;
+    }
+    $.NSThread.sleepForTimeInterval(2);
+  }
 }
 
 /** Rewrites --message-file <path> into a bounded payload the host can trust. */

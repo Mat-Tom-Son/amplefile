@@ -92,6 +92,7 @@ export const AMPLEFILE_CLI_ACT_READ_COMMANDS: ReadonlySet<string> = new Set([
   "automations.list",
   "automations.models",
   "automations.show",
+  "automations.status",
   "automations.receipts",
   "recently-deleted.list",
   "requests.list",

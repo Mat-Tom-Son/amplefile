@@ -75,6 +75,7 @@ If the Worker asked a question, \`${cli} chat answer --connected-folder <id> --q
 ## Automations
 
 - \`${cli} automations list --json\` lists them; \`${cli} automations show --automation <id> --json\`, \`${cli} automations run --automation <id> --json\`, and \`${cli} automations receipts --automation <id> --json\` inspect and run one.
+- \`automations run\` returns the run's id as soon as it starts, without waiting. \`${cli} automations status --automation <id> --run <run-id> --json\` reads that run, and \`${cli} automations wait --automation <id> --run <run-id> --json\` holds until it finishes.
 - Turning one on, and writing a new one, are in \`${cli} help automations\`. Only do either when the person asks.
 
 ## Report
