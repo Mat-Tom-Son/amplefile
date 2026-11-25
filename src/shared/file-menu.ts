@@ -67,7 +67,7 @@ export interface FileMenuCapabilities {
   newTab?: boolean;
   /** Open in New Window, for a folder where the desktop can open another window. */
   newWindow?: boolean;
-  /** Linux desktop: open the folder in an installed terminal. */
+  /** Linux and Mac desktops: open the folder in a terminal (Terminal on a Mac). */
   terminal?: boolean;
 }
 
@@ -131,7 +131,7 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (request.kind === "folder" && request.capabilities.newTab) items.push({ type: "item", label: "Open in New Tab", command: "open-in-new-tab" });
   if (request.kind === "folder" && request.capabilities.newWindow) items.push({ type: "item", label: "Open in New Window", command: "open-in-new-window" });
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
-  if (platform === "linux" && request.kind === "folder" && !packaged && request.capabilities.terminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
+  if ((platform === "linux" || platform === "darwin") && request.kind === "folder" && !packaged && request.capabilities.terminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
   if (platform !== "linux") items.push(reveal);
   items.push({ type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" });
   items.push(getInfo);

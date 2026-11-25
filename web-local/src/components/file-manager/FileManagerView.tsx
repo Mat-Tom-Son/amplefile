@@ -607,7 +607,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const drops = useFileDrops({ fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop: searchMode || recentsOpen, listing, changes, select, nameOfPlace, onError });
   const { dropTarget, setDropTarget, isItemDrag } = drops;
   const menus = useFileManagerMenus({
-    mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, onError,
+    mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, onError, folderShown: activeTab.view === "folder",
     actions: {
       openEntry, openLocal, openTerminal, showOriginal, showPackageContents, copyPaths,
       openEntryInNewTab: (entry) => openEntryInNewTab(entry),

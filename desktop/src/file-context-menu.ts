@@ -7,8 +7,8 @@ export type NativeFileMenuCommand = FileMenuCommand;
 export type NativeFileMenuItem = FileMenuItem;
 
 const requestKeys = new Set(["connectedFolderId", "standardFolderId", "path", "kind", "capabilities", "selection", "point"]);
-const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste", "extract", "link", "original", "package", "newTab", "newWindow"]);
-const optionalCapabilityKeys = new Set(["worker", "organize", "paste", "extract", "link", "original", "package", "newTab", "newWindow"]);
+const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste", "extract", "link", "original", "package", "newTab", "newWindow", "terminal"]);
+const optionalCapabilityKeys = new Set(["worker", "organize", "paste", "extract", "link", "original", "package", "newTab", "newWindow", "terminal"]);
 const pointKeys = new Set(["x", "y"]);
 const selectionKeys = new Set(["files", "folders"]);
 const maxSelectionCount = 1_000_000;
@@ -59,6 +59,7 @@ export function parseNativeFileMenuRequest(value: unknown): NativeFileMenuReques
       ...(capabilities.package === true ? { package: true } : {}),
       ...(capabilities.newTab === true ? { newTab: true } : {}),
       ...(capabilities.newWindow === true ? { newWindow: true } : {}),
+      ...(capabilities.terminal === true ? { terminal: true } : {}),
     },
     ...(selection ? { selection } : {}),
     point: {

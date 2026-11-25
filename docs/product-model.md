@@ -51,12 +51,19 @@ other surface.
   toolbar's **Action** button (⋯) and right-clicking a Connected Folder in
   the sidebar offer **Customize Connected Folder**, **Organize**, **Show in
   Finder**, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
-  Folder…** for a managed one), and **Settings…**. **Organize** opens the
+  Folder…** for a managed one), and **Settings…**; the sidebar's also
+  offers **Open Terminal Here**. **Organize** opens the
   panel and starts a Chat asking that Connected Folder's Worker to organize
   it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
-  list keeps 360px.
+  list keeps 360px. **Open Terminal Here** opens a new Terminal window in the
+  folder shown, from **File** or the folder background menu while a folder
+  (not the Trash or Recents) is shown; in a folder, from that folder's own
+  menu (not a package's or a link's); and in a Standard Folder or Connected
+  Folder, from its sidebar menu. Terminal is always the app used, and it is
+  handed only a folder: the host checks the path under its place's rules and
+  passes it in a form that names a folder alone.
 - **Sidebar:** flush with the window's edges and square like the rest of the
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
@@ -70,7 +77,7 @@ other surface.
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
   Folder…** and **Connect Folder…**. Right-clicking a Standard Folder offers
-  Show in Finder, **Connect This Folder**, and, for one added with +, Remove
+  **Open Terminal Here**, Show in Finder, **Connect This Folder**, and, for one added with +, Remove
   from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
