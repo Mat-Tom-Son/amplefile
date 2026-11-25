@@ -19,6 +19,7 @@ test("native file menus use host-owned labels and a bounded command set", () => 
     { type: "item", label: "Open With", command: "open-with" },
     { type: "item", label: "Show in Finder", command: "reveal" },
     { type: "item", label: "Copy File Path", command: "copy-path" },
+    { type: "item", label: "Get Info", command: "get-info" },
     { type: "item", label: "Attach to Chat", command: "attach-chat" },
     { type: "item", label: "Version History", command: "version-history" },
     { type: "separator" },
@@ -35,7 +36,7 @@ test("native folder menus expose only applicable fixed actions", () => {
     capabilities: { open: true, attach: true, history: true, upload: true, rename: false, delete: false },
   });
   assert.deepEqual(nativeFileMenuItems(request).map((item) => item.type === "separator" ? "separator" : item.command), [
-    "open", "reveal", "copy-path", "separator", "new-folder", "upload-here", "refresh",
+    "open", "reveal", "copy-path", "get-info", "separator", "new-folder", "upload-here", "refresh",
   ]);
   const promotable = parseNativeFileMenuRequest({ ...request, capabilities: { ...request.capabilities, worker: true } });
   assert.deepEqual(nativeFileMenuItems(promotable).slice(-2).map((item) => item.type === "separator" ? "separator" : item.label), ["separator", "Connect This Folder"]);
@@ -66,6 +67,7 @@ test("a link's menu reaches its target with Open and Show Original, and acts on 
     { type: "item", label: "Show Original", command: "show-original" },
     { type: "item", label: "Show in Finder", command: "reveal" },
     { type: "item", label: "Copy Link Path", command: "copy-path" },
+    { type: "item", label: "Get Info", command: "get-info" },
     { type: "separator" },
     { type: "item", label: "Copy “Q3.xlsx”", command: "copy" },
     { type: "item", label: "Cut “Q3.xlsx”", command: "cut" },
@@ -77,7 +79,7 @@ test("a link's menu reaches its target with Open and Show Original, and acts on 
   ]);
   // A broken link has nothing to open or show; in a Standard Folder it goes to the Trash.
   const broken = parseNativeFileMenuRequest({ ...fileRequest, connectedFolderId: undefined, standardFolderId: "downloads", kind: "folder", capabilities: { ...fileRequest.capabilities, open: false, organize: true, link: true } });
-  assert.deepEqual(nativeFileMenuItems(broken, "linux").map((item) => item.type === "item" ? item.command : "separator"), ["copy-path", "separator", "copy", "cut", "duplicate", "compress", "separator", "rename", "delete"]);
+  assert.deepEqual(nativeFileMenuItems(broken, "linux").map((item) => item.type === "item" ? item.command : "separator"), ["copy-path", "get-info", "separator", "copy", "cut", "duplicate", "compress", "separator", "rename", "delete"]);
   assert.equal(nativeFileMenuItems(broken, "linux").at(-1)?.type === "item" && (nativeFileMenuItems(broken, "linux").at(-1) as { label: string }).label, "Move to Trash");
   assert.throws(() => parseNativeFileMenuRequest({ ...fileRequest, capabilities: { ...fileRequest.capabilities, link: "yes" } }), /capabilities/);
 });
@@ -85,7 +87,7 @@ test("a link's menu reaches its target with Open and Show Original, and acts on 
 test("an archive offers Extract beside Compress, and Cut sits beside Copy", () => {
   const archive = parseNativeFileMenuRequest({ ...fileRequest, path: "Downloads/photos.tar.gz", capabilities: { ...fileRequest.capabilities, organize: true, extract: true } });
   assert.deepEqual(nativeFileMenuItems(archive).filter((item) => item.type === "item").map((item) => item.type === "item" ? item.command : ""), [
-    "open", "open-with", "reveal", "copy-path", "copy", "cut", "duplicate", "compress", "extract", "attach-chat", "version-history", "rename", "delete",
+    "open", "open-with", "reveal", "copy-path", "get-info", "copy", "cut", "duplicate", "compress", "extract", "attach-chat", "version-history", "rename", "delete",
   ]);
   assert.ok(nativeFileMenuItems(archive).some((item) => item.type === "item" && item.label === "Extract “photos.tar.gz”"));
   const several = parseNativeFileMenuRequest({ ...fileRequest, capabilities: { ...fileRequest.capabilities, organize: true }, selection: { files: 2, folders: 1 } });

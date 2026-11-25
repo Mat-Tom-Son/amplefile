@@ -1413,6 +1413,7 @@ function registerIpc(): void {
 type RendererMenuCommand =
   | "new-connected-folder"
   | "open-local-folder"
+  | "get-info"
   | "new-chat"
   | "close-tab"
   | "refresh"
@@ -1483,6 +1484,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
       // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.
       { id: "refresh", label: "Refresh", accelerator: "CommandOrControl+R", enabled: state.folderTabsOpen, click: menuCommand("refresh") },
+      // The panel, opened at Info for the selection, or for the folder shown when nothing is selected.
+      { id: "get-info", label: "Get Info", accelerator: "CommandOrControl+I", enabled: state.folderTabsOpen, click: menuCommand("get-info") },
     ];
     if (process.platform !== "darwin") {
       items.push(
@@ -1689,6 +1692,7 @@ function refreshApplicationMenuState(): void {
   setMenuItemEnabled(menu, "show-hidden-files", state.folderTabsOpen);
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh", state.folderTabsOpen);
+  setMenuItemEnabled(menu, "get-info", state.folderTabsOpen);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
   const showTabBar = menu?.getMenuItemById("show-tab-bar");
   if (showTabBar) showTabBar.checked = state.showTabBar;

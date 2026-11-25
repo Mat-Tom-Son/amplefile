@@ -614,6 +614,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       openInNewWindow: !fixtureMode && window.ampleFileDesktop?.windows?.openInNewWindow ? (where) => openInNewWindow(where) : null,
       openEntryInNewWindow: (entry) => { const where = folderLocationOf(entry); if (where) openInNewWindow(where); },
       showVersionHistory: connectedFolder ? setVersionHistory : null,
+      showInfo,
       requestNewFolder, refresh: listing.refresh, putToWork, requestRename,
       deletePaths, copySelection: clipboard.copySelection, cutSelection: clipboard.cutSelection, pasteInto: clipboard.pasteInto,
       duplicateSelection, compressSelection: changes.compressSelection, extractArchive: changes.extractArchive, groupSelection: changes.groupSelection,
@@ -889,6 +890,19 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
+  /**
+   * Get Info (⌘I/Ctrl+I, and the item and folder menus): the panel, opened at
+   * Info, for one item, or with no item named for the selection as it stands
+   * (the folder shown when nothing is selected). It opens a hidden panel and
+   * leaves an open Chat's view, which keeps running out of sight.
+   */
+  function showInfo(entry?: TreeEntry) {
+    if (entry) select(entry.path === location.path ? [] : [entry.path]);
+    setPanelOpen(true);
+    setPanelChat((current) => current ? { ...current, open: false } : current);
+    setInfoRequest((value) => value + 1);
+  }
+
   async function openTerminal(target: FileManagerLocation) {
     try {
       await window.ampleFileDesktop?.openTerminal?.({ place: target.place, path: target.path });
@@ -1024,6 +1038,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "refresh") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "open-terminal" && terminalFolderOpen) void openTerminal(location);
+    else if (command === "get-info") showInfo();
     else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W): nothing behind a dialog. While the Browser pane has the keyboard it closes the browser tab in

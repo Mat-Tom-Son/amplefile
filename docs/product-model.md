@@ -249,12 +249,19 @@ other surface.
   view ask, a few at a time with the ones in view first, and a tile scrolled
   away withdraws its request; anything the host cannot draw keeps its icon.
   The list keeps icons.
+- **Get Info:** Info follows the selection, and **Get Info** (⌘I; in File,
+  an item's menu, and the folder background menu) asks for
+  it outright: it opens the panel if it is hidden, leaves an open Chat's view
+  (the Chat keeps running), and shows Info for that item, or for the folder
+  shown when nothing is selected.
 - **Folder sizes:** Info measures the folder it describes (a selected folder,
   or the folder shown) when it is shown, saying **Calculating…** meanwhile,
   then its size and how many items it holds, with **Recalculate**. The host
   stops after 10 seconds or a million items; then Info says "At least …" and
-  "More than … items" and why, and says so when some items could not be read
-  or a drive is mounted inside (not counted). Links are not followed, and
+  "More than … items". Why the figure is a minimum, and that some items could
+  not be read or another drive attached inside is not counted, is on the Size
+  row for anyone who points at it; Info prints no note of its own under the
+  list. Links are not followed, and
   AmpleFile's and Pi's hidden folders are left out. A folder measured this
   session shows its size in the list's Size column too; the list never
   measures the folders it merely shows. The disk itself is never measured.

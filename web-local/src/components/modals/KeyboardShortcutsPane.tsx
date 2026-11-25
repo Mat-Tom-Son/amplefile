@@ -96,6 +96,7 @@ export function fileManagerShortcutGroups(platform: DesktopPlatform, desktop: bo
         { keys: macOS ? ["Option", modifier, "N"] : [modifier, "Alt", "N"], action: "Create a new Connected Folder." },
         { keys: [modifier, "O"], action: "Use an existing folder." },
         { keys: [modifier, "R"], action: "Refresh the folder." },
+        { keys: [modifier, "I"], action: "Get Info on the selection, or on the folder shown." },
         ...(agentPopover ? [{ keys: [modifier, "J"], action: "Show or hide the AmpleFile Agent." }] : []),
         { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },
         { keys: [modifier, ","], action: "Open Settings." },

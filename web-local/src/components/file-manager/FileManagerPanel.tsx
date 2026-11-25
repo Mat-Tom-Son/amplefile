@@ -301,7 +301,7 @@ function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount 
         {entry.kind === "file" && typeof entry.sizeBytes === "number" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v">{formatBytes(entry.sizeBytes)}</span></div> : null}
         {folderSize.state.status === "calculating" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" aria-live="polite">Calculating…</span></div> : null}
         {measured ? <>
-          <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={measured.items}>{measured.size}</span><button type="button" className="fm-text-button" title="Measure again" onClick={folderSize.recalculate}>Recalculate</button></div>
+          <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={measured.detail ?? measured.items}>{measured.size}</span><button type="button" className="fm-text-button" title="Measure again" onClick={folderSize.recalculate}>Recalculate</button></div>
           <div className="fm-crow"><span className="fm-crow-l">Contains</span><span className="fm-crow-v">{measured.items}</span></div>
         </> : null}
         {folderSize.state.status === "error" ? <div className="fm-crow"><span className="fm-crow-l">Size</span><span className="fm-crow-v" title={folderSize.state.message}>Couldn’t measure</span><button type="button" className="fm-text-button" onClick={folderSize.recalculate}>Try Again</button></div> : null}
@@ -309,7 +309,6 @@ function ItemInfo({ apiBase, place = null, entry, where, fixtureMode, itemCount 
         {details?.owner ? <div className="fm-crow"><span className="fm-crow-l">Owner</span><span className="fm-crow-v" title={details.owner}>{details.owner}</span></div> : null}
         {details?.group ? <div className="fm-crow"><span className="fm-crow-l">Group</span><span className="fm-crow-v" title={details.group}>{details.group}</span></div> : null}
       </div>
-      {measured?.note ? <div className="fm-size-note">{measured.note}</div> : null}
     </section>
   </>;
 }

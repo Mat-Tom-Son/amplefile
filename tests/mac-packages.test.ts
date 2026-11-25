@@ -108,6 +108,7 @@ test("a package's menu opens it and offers Show Package Contents, never folder a
     "Show Package Contents=show-package-contents",
     "Show in Finder=reveal",
     "Copy Item Path=copy-path",
+    "Get Info=get-info",
     "-",
     "Copy “Sketch.app”=copy", "Cut “Sketch.app”=cut", "Duplicate=duplicate", "Compress “Sketch.app”=compress",
     "-",
