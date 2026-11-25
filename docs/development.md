@@ -143,6 +143,8 @@ for capture stages, coverage and bounds.
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile Agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
+| `src/shared/desktop-ipc.ts`, `desktop/src/desktop-ipc-main.ts` | The [desktop IPC contract](#desktop-ipc): every channel between the main process, the preloads, and `window.ampleFileDesktop` |
+| `desktop/src/command-line-host.ts`, `desktop/src/linux-file-manager-host.ts` | IPC handler groups that register themselves with their dependencies passed in ([Desktop IPC](#desktop-ipc)) |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
 | `desktop/cli/`, `desktop/assets/` | The installed `amplefile` command's shims; icons and brand artwork |
 | `resources/included-tools/`, `patches/included-tools/` | The four included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
@@ -169,7 +171,7 @@ argument; none imports from `server.ts`.
 | `reservations.ts` | Capability and Connected Folder mutation reservations, the settled-deletion check, and the History restore and safety wrappers |
 | `conversation-clients.ts`, `turn-acceptance.ts`, `turn-run.ts`, `chat-routes.ts` | A Chat's Pi client, turn acceptance with steering and the queued message, running a turn to its settled record, and a Connected Folder's Chat routes |
 | `request-routes.ts`, `request-records.ts`, `background-jobs.ts` | Request routes, the request-level stop, and settle evaluation; the collaboration verbs' ownership rules, views, and results; the host side of background jobs |
-| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Extract, their progress events and cancel, Recents, and Go to Folder (the file engine is `src/local/file-transfer.ts`, `file-conflicts.ts`, `archive-extract.ts`, `zip-writer.ts`, `disk-space.ts`, `move-to-system-trash.ts`, and `file-operations.ts`) |
+| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; renames, moves, New Folder, New File, deletes, and added files with their recovery, one function per verb that the routes and the CLI's act lane share; Standard Folders, transfers, Compress, Extract, their progress events and cancel, Recents, and Go to Folder (the file engine is `src/local/file-transfer.ts`, `file-conflicts.ts`, `archive-extract.ts`, `zip-writer.ts`, `disk-space.ts`, `move-to-system-trash.ts`, and `file-operations.ts`) |
 | `thumbnail-routes.ts` | Picture and PDF thumbnails and folder sizes in every kind of place (`src/local/thumbnails.ts` with its PDF worker, `image-header.ts`, and `folder-size.ts`) |
 | `history-routes.ts`, `recently-deleted-routes.ts` | History routes; Settings → Recently Deleted and its restores |
 | `connected-folder-routes.ts` | Health, the bootstrap read, and creating, connecting, renaming, removing, and customizing Connected Folders |
@@ -181,6 +183,42 @@ argument; none imports from `server.ts`.
 Add a route to the group that owns its area. Groups are tried in the order
 `handleRequest` lists them, so a new group's routes must not match a request
 an earlier group answers.
+
+### Desktop IPC
+
+`src/shared/desktop-ipc.ts` declares every channel between the Electron main
+process, the sandboxed preloads, and the renderer once: renderer requests with
+their arguments and answers (`DesktopInvokeChannels`), renderer messages with
+no answer (`DesktopSendChannels`), and the main process's notifications
+(`DesktopEventChannels`). It also declares what each preload exposes:
+`AmpleFileDesktopBridge` for the file manager window, which
+`web-local/src/desktop.d.ts` gives the renderer as `window.ampleFileDesktop`,
+and the narrower `AmpleFileAgentPopoverBridge` for the AmpleFile Agent popover.
+
+The main process registers handlers on `ipcMain` typed as `DesktopIpcMain`
+and sends events with `sendToRenderer` (`desktop/src/desktop-ipc-main.ts`).
+Each preload views Electron's `ipcRenderer` as `DesktopIpcRenderer` and checks
+its exposed object with `satisfies`. A channel renamed, added, or retyped on one
+side and not the others therefore fails `npm run check`. The contract is types
+only: the preloads run sandboxed, can require nothing but Electron, and import
+it with `import type`. Handlers still receive their arguments as `unknown` and
+check them, and still begin with the sender check their channel needs.
+
+To add a channel, declare it in the contract, register its handler with the
+sender check, and expose it from the preload that needs it. A popover channel
+also needs `assertMainOrAgentPopoverRenderer` and a place in
+`AmpleFileAgentPopoverBridge`.
+
+A group of related handlers lives in a module of its own rather than in
+`main.ts`'s `registerIpc`. `desktop/src/command-line-host.ts` is the model:
+`registerCommandLineIpc(options)` takes `ipcMain` (as `DesktopIpcMain`), the
+sender check as `assertTrusted`, and every other dependency as an option, so it
+imports nothing from `main.ts`. `registerIpc` calls it with
+`assertTrustedMainRenderer`; `tests/command-line-host.test.ts` registers it on a
+stand-in `ipcMain` and checks what each channel answers and that a refused
+sender gets nothing. To move or add a group, write such a module, call it from
+`registerIpc`, test it the same way, and add it to the handler-group row of the
+[source map](#source-map).
 
 Use the [docs map](README.md) to find the document that owns an area. Files
 in `docs/reference-skills/` are examples; app-generated AmpleFile Agent instructions are runtime resources. Neither is an

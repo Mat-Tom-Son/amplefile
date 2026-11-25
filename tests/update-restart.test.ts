@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ConfirmDialogOptions } from "../web-local/src/ui/feedback.js";
-import type { DesktopUpdateStatus } from "../web-local/src/types.js";
+import type { DesktopUpdateStatus } from "../src/shared/desktop-ipc.js";
 import { readRunningWork, runDesktopUpdateAction, updateRestartConfirm, type RunningWork } from "../web-local/src/lib/update-restart.js";
 
 const status = (phase: DesktopUpdateStatus["phase"], changes: Partial<DesktopUpdateStatus> = {}): DesktopUpdateStatus => ({

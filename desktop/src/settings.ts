@@ -4,21 +4,9 @@ import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from "n
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import type { PiAuthStorageData, PiAuthStorageHost } from "../../src/local/agent/auth-storage.js";
+import type { SecureSettingsStatus } from "../../src/shared/desktop-ipc.js";
 
 const require = createRequire(import.meta.url);
-
-export interface SecureSettingsStatus {
-  encryptionAvailable: boolean;
-  configuredProviders: string[];
-  /**
-   * Saved provider credentials could not be decrypted (for example after the
-   * Safe Storage key was reset). They were set aside next to the settings file,
-   * never deleted, and the person needs to re-enter their credentials. Derived
-   * from the set-aside files, so it survives a restart; it clears once
-   * credentials are saved again.
-   */
-  credentialsNeedReentry: boolean;
-}
 
 /** The slice of Electron's `safeStorage` this store uses; injectable for tests. */
 export interface SafeStorageLike {

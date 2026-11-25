@@ -9,7 +9,7 @@ import { treeListingQuery } from "./tree-listing-query.js";
 import type { ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { extname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { listConversations } from "../agent/chat-store.js";
 import { isGeneratedImageId } from "../agent/generated-image-store.js";
@@ -19,15 +19,11 @@ import { searchStandardFolder } from "../folder-search.js";
 import { isStandardFolderId } from "../standard-folders.js";
 import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "../connected-folder-ignore.js";
 import {
-  createConnectedFolderFolder,
-  createConnectedFolderTextFile,
   findExistingConnectedFolderFilePaths,
   getConnectedFolder,
   getConnectedFolderEntryInfo,
   getConnectedFolderFilePreview,
-  moveConnectedFolderEntry,
   readConnectedFolderTextFile,
-  renameConnectedFolderEntry,
   resolveConnectedFolderPath,
   scanConnectedFolderTree,
   nestedRegisteredConnectedFolderPaths,
@@ -38,10 +34,14 @@ import {
 import { getClient } from "./conversation-clients.js";
 import { noteConnectedFolderDirectoryShown, noteConnectedFolderIgnoreRulesChanged, openConnectedFolderFileStream } from "./event-streams.js";
 import {
+  createConnectedFolderFolderWithHistory,
+  createConnectedFolderTextFileWithHistory,
   deleteConnectedFolderEntriesWithRecovery,
   deleteConnectedFolderEntryWithRecovery,
   moveConnectedFolderEntriesWithHistory,
+  moveConnectedFolderEntryWithHistory,
   normalizeConnectedFolderRelativePath,
+  renameConnectedFolderEntryWithHistory,
 } from "./file-changes.js";
 import {
   badRequest,
@@ -287,19 +287,11 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(moveMatch[1]);
     const body = await readJsonBody<{ sourcePath?: string; targetFolderPath?: string }>(state, req);
     if (!body.sourcePath?.trim()) throw badRequest("Select a file or folder to move.");
-    const moveSource = normalizeConnectedFolderRelativePath(body.sourcePath);
-    const moveTargetFolder = normalizeConnectedFolderRelativePath(body.targetFolderPath ?? "");
-    const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
-      reason: "pre_move",
-      label: `Before moving ${body.sourcePath}`,
-    });
-    const moved = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => moveConnectedFolderEntry(connectedFolder.connectedFolderRoot, {
-      sourcePath: moveSource,
+    const { moved, safetyCheckpointId, historySkippedPaths } = await moveConnectedFolderEntryWithHistory(connectedFolder, {
+      sourcePath: body.sourcePath,
       targetFolderPath: body.targetFolderPath ?? "",
-    }));
-    sendJson(res, { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
+    });
+    sendJson(res, { moved, safetyCheckpointId, historySkippedPaths });
     return true;
   }
 
@@ -320,16 +312,11 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(renameMatch[1]);
     const body = await readJsonBody<{ path?: string; newName?: string }>(state, req);
     if (!body.path?.trim() || !body.newName?.trim()) throw badRequest("A Connected Folder item and new name are required.");
-    const renameSource = normalizeConnectedFolderRelativePath(body.path);
-    const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
-    const renameDestination = [renameParent, body.newName].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
-      reason: "pre_rename",
-      label: `Before renaming ${body.path}`,
+    const { renamed, safetyCheckpointId, historySkippedPaths } = await renameConnectedFolderEntryWithHistory(connectedFolder, {
+      path: body.path,
+      newName: body.newName,
     });
-    const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: body.path!, newName: body.newName! }));
-    sendJson(res, { renamed, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
+    sendJson(res, { renamed, safetyCheckpointId, historySkippedPaths });
     return true;
   }
 
@@ -338,14 +325,11 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(foldersMatch[1]);
     const body = await readJsonBody<{ parentPath?: string; name?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A folder name is required.");
-    const folderTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      deleteOnRestore: [folderTarget],
-      reason: "pre_create",
-      label: `Before creating ${body.name}`,
+    const { folder, safetyCheckpointId, historySkippedPaths } = await createConnectedFolderFolderWithHistory(connectedFolder, {
+      parentPath: body.parentPath ?? "",
+      name: body.name,
     });
-    const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!));
-    sendJson(res, { folder, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
+    sendJson(res, { folder, safetyCheckpointId, historySkippedPaths }, 201);
     return true;
   }
 
@@ -354,14 +338,12 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const connectedFolder = await getConnectedFolder(filesMatch[1]);
     const body = await readJsonBody<{ parentPath?: string; name?: string; text?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A file name is required.");
-    const fileTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
-      deleteOnRestore: [fileTarget],
-      reason: "pre_create",
-      label: `Before creating ${body.name}`,
+    const { file, safetyCheckpointId, historySkippedPaths } = await createConnectedFolderTextFileWithHistory(connectedFolder, {
+      parentPath: body.parentPath ?? "",
+      name: body.name,
+      text: body.text ?? "",
     });
-    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!, body.text ?? ""));
-    sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
+    sendJson(res, { file, safetyCheckpointId, historySkippedPaths }, 201);
     return true;
   }
 

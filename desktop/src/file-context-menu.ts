@@ -1,29 +1,8 @@
 import { isAbsolute } from "node:path";
 import { fileMenuItems, type FileMenuCapabilities, type FileMenuCommand, type FileMenuItem } from "../../src/shared/file-menu.js";
+import type { NativeFileMenuRequest } from "../../src/shared/desktop-ipc.js";
 
 export type NativeFileMenuCommand = FileMenuCommand;
-
-export interface NativeFileMenuRequest {
-  /** Empty when the entry is in a standard folder instead. */
-  connectedFolderId: string;
-  /**
-   * Set instead of a Connected Folder id for an entry in Desktop, Documents, or
-   * Downloads (the file manager's Standard Folders, optional; older renderers
-   * omit it). Delete there is the system's Move to Trash.
-   */
-  standardFolderId?: string;
-  path: string;
-  kind: "file" | "folder";
-  /** What the row offers (src/shared/file-menu.ts); the optional ones are absent in older renderers. */
-  capabilities: FileMenuCapabilities;
-  /**
-   * Set when the clicked row is one of several selected together (optional;
-   * older renderers omit it). The menu then offers only the actions that apply
-   * to all of them, and the renderer applies the command to the whole selection.
-   */
-  selection?: { files: number; folders: number };
-  point: { x: number; y: number };
-}
 
 export type NativeFileMenuItem = FileMenuItem;
 

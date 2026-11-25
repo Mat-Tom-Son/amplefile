@@ -1,7 +1,9 @@
 import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { DesktopUpdateStatus, DesktopUpdates } from "./updater.js";
+import type { DesktopUpdateStatus } from "../../src/shared/desktop-ipc.js";
+import { sendToRenderer } from "./desktop-ipc-main.js";
+import type { DesktopUpdates } from "./updater.js";
 
 /**
  * Updates for an RPM installed from AmpleFile's Fedora package repository
@@ -364,7 +366,7 @@ export function createSystemPackageUpdates(options: {
       installedVersion: installedAsarVersion,
       emitStatus: (status) => {
         for (const window of options.getWindows()) {
-          if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("amplefile:updates:status-changed", status);
+          if (!window.isDestroyed() && !window.webContents.isDestroyed()) sendToRenderer(window.webContents, "amplefile:updates:status-changed", status);
         }
       },
     },

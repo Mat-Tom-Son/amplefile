@@ -41,7 +41,8 @@ import {
   type WindowOpenHandlerResponse,
 } from "electron";
 
-import { BrowserHistoryStore, type BrowserHistoryEntry } from "./browser-history.js";
+import { BrowserHistoryStore } from "./browser-history.js";
+import type { DesktopEventArgs, DesktopEventChannel } from "../../src/shared/desktop-ipc.js";
 import { pageFateOnWindowClose } from "./browser-page-homes.js";
 import { BrowserStatusBubble } from "./browser-status-bubble.js";
 import { macSpellingGuesses } from "./mac-spelling.js";
@@ -67,10 +68,12 @@ import {
   type BrowserSiteDecision,
   type BrowserSitePermission,
   type BrowserActionResult,
+  type BrowserCommand,
   type BrowserDownload,
   type BrowserDownloadRecord,
   type BrowserTarget,
   type BrowserFindResult,
+  type BrowserHistoryEntry,
   type BrowserOpenTabCommand,
   type BrowserPageState,
   type BrowserShortcut,
@@ -88,13 +91,10 @@ export const browserChannels = {
   shortcut: "amplefile:browser:shortcut",
   findResult: "amplefile:browser:find-result",
   download: "amplefile:browser:download",
-} as const;
+} as const satisfies Record<string, DesktopEventChannel>;
 
-export type BrowserCommand =
-  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" | "leave-page" | "stay-on-page" }
-  | { type: "mute"; muted: boolean }
-  | { type: "find"; text: string; forward: boolean; newSearch: boolean }
-  | { type: "forget-permission" | "open-privacy-settings"; kind: BrowserSitePermission };
+type BrowserEventChannel = (typeof browserChannels)[keyof typeof browserChannels];
+
 
 export interface BuiltInBrowserOptions {
   /** The file manager windows, most recently focused first; each page shows in the one that is its home. */
@@ -102,7 +102,7 @@ export interface BuiltInBrowserOptions {
   /** Where a Worker's page appears: the window showing that Chat's Connected Folder, else the front window. */
   workerWindow: (owner: string | null) => BrowserWindow | null;
   /** Delivers an event to one window's renderer. */
-  send: (window: BrowserWindow, channel: (typeof browserChannels)[keyof typeof browserChannels], payload: unknown) => void;
+  send: <C extends BrowserEventChannel>(window: BrowserWindow, channel: C, ...payload: DesktopEventArgs<C>) => void;
   openExternal: (url: string) => Promise<void>;
   downloadsPath: () => string;
   /** The file that keeps what the person allowed or blocked for each site. */
@@ -996,9 +996,9 @@ export class BuiltInBrowser {
   }
 
   /** A page's event goes to its own window only; an event with no page (a download it no longer has) to the front window. */
-  #send(page: BrowserPage | null, channel: (typeof browserChannels)[keyof typeof browserChannels], payload: unknown): void {
+  #send<C extends BrowserEventChannel>(page: BrowserPage | null, channel: C, ...payload: DesktopEventArgs<C>): void {
     const window = page ? this.#home(page) : this.#front();
-    if (window) this.#options.send(window, channel, payload);
+    if (window) this.#options.send(window, channel, ...payload);
   }
 
   /** The page's window, giving a page no window has to `window` (a Worker's page to the window showing its Connected Folder). */

@@ -1,5 +1,6 @@
 import type { ConfirmDialogOptions } from "../ui/feedback";
-import type { ConnectedFolderSummary, DesktopUpdateStatus } from "../types";
+import type { DesktopUpdateStatus } from "../../../src/shared/desktop-ipc";
+import type { ConnectedFolderSummary } from "../types";
 import { installedBySystem, updateCallFor, type UpdateCall } from "./update-status";
 
 /**

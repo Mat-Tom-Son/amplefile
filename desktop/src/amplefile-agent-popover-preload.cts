@@ -1,4 +1,10 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron") as typeof import("electron");
+import type { AmpleFileAgentPopoverBridge, AmpleFileAgentStagedItem, DesktopIpcRenderer } from "../../src/shared/desktop-ipc.js";
+import type { ClipboardContent } from "../../src/shared/clipboard.js";
+
+const electron = require("electron") as typeof import("electron");
+const { contextBridge, webUtils } = electron;
+// Electron's ipcRenderer, typed by the desktop IPC contract (src/shared/desktop-ipc.ts).
+const ipcRenderer: DesktopIpcRenderer = electron.ipcRenderer;
 
 function argumentValue(name: string): string {
   const prefix = `--amplefile-${name}=`;
@@ -26,7 +32,7 @@ const maxStagedValueLength = 4 * 1024 * 1024;
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
   clipboard: {
-    write: (content: { text: string; html?: string }) => ipcRenderer.invoke("amplefile:clipboard:write", content),
+    write: (content: ClipboardContent) => ipcRenderer.invoke("amplefile:clipboard:write", content),
   },
   api: {
     baseUrl: argumentValue("api-base-url"),
@@ -50,10 +56,10 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     hide: () => ipcRenderer.send("amplefile:agent:hide"),
     openMainWindow: () => ipcRenderer.invoke("amplefile:agent:open-main"),
     openAiModelsSettings: () => ipcRenderer.invoke("amplefile:agent:open-ai-models-settings"),
-    onStaged: (callback: (items: Array<{ kind: "path" | "text"; value: string }>) => void) => {
+    onStaged: (callback: (items: AmpleFileAgentStagedItem[]) => void) => {
       const listener = (_event: unknown, items: unknown) => {
         if (!Array.isArray(items)) return;
-        const safe = items.slice(0, maxStagedItems).filter((item): item is { kind: "path" | "text"; value: string } =>
+        const safe = items.slice(0, maxStagedItems).filter((item): item is AmpleFileAgentStagedItem =>
           Boolean(item) && typeof item === "object"
           && ((item as { kind?: unknown }).kind === "path" || (item as { kind?: unknown }).kind === "text")
           && typeof (item as { value?: unknown }).value === "string"
@@ -73,4 +79,4 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       return () => ipcRenderer.removeListener("amplefile:window:accent-color-changed", listener);
     },
   },
-});
+} satisfies AmpleFileAgentPopoverBridge);

@@ -11,12 +11,20 @@ const request = {
   content: "Plan the week", attachments: [], dispositions: [], actions: [], children: [], reply: null,
 };
 
-async function agentHarness(t: TestContext, transcript: unknown[] = [{ id: "ask", role: "user", content: "Plan the week", createdAt: "2026-10-11T12:00:00Z" }], latestRequest: unknown = request) {
+async function agentHarness(
+  t: TestContext,
+  transcript: unknown[] = [{ id: "ask", role: "user", content: "Plan the week", createdAt: "2026-10-11T12:00:00Z" }],
+  latestRequest: unknown = request,
+  overrideApi?: (path: string, options: { method?: string; body?: unknown }) => unknown,
+) {
   const dom = await createDomHarness();
   const realApi = await import("../web-local/src/lib/api.js");
   const streams = new Map<string, LocalEventStream>();
-  const api = async (path: string) => {
-    if (path.startsWith("/api/amplefile-agent/summary")) return { available: true, conversation: { id: conversationId, title: "Plan the week" }, state: latestRequest ? "running" : "idle", latestRequest };
+  const api = async (path: string, options: { method?: string; body?: unknown } = {}) => {
+    const overridden = overrideApi?.(path, options);
+    if (overridden !== undefined) return overridden;
+    const latest = typeof latestRequest === "function" ? latestRequest() : latestRequest;
+    if (path.startsWith("/api/amplefile-agent/summary")) return { available: true, conversation: { id: conversationId, title: "Plan the week" }, state: latest ? "running" : "idle", latestRequest: latest };
     if (path === "/api/amplefile-agent/conversations") return { conversations: [{ id: conversationId, title: "Plan the week", updatedAt: "2026-10-11T12:00:00Z", requestState: "working" }] };
     if (path === `/api/amplefile-agent/conversations/${conversationId}`) return { messages: transcript };
     if (path.endsWith("/runtime")) return { runtime: null };
@@ -57,7 +65,7 @@ async function agentHarness(t: TestContext, transcript: unknown[] = [{ id: "ask"
     await dom.act(async () => { stream.onmessage?.({ data: JSON.stringify({ conversationId, ...value }) }); await Promise.resolve(); });
     await dom.settle();
   };
-  return { dom, emit, controls };
+  return { dom, emit, controls, stream };
 }
 
 test("the AmpleFile Agent shows its thinking and tool steps as they stream, then folds them under the reply", async (t) => {
@@ -219,3 +227,72 @@ for (const phase of ["done", "needs_you", "failed", "stopped", "handed_off"] as 
     assert.equal(dom.container.querySelector(".turn-announcer")?.textContent, "");
   });
 }
+
+test("the AmpleFile Agent's streamed words wait for a frame, a reconnect snapshot replaces the reply and steps, and the whole message replaces streamed words", async (t) => {
+  const { dom, emit, stream } = await agentHarness(t);
+  const reply = () => dom.container.querySelector(".popover-message.streaming")?.textContent ?? "";
+  await emit({ type: "turn_state", running: true, turnId: "turn-1" });
+  await emit({ type: "tool", turnId: "turn-1", workTrailId: "tool:stale", toolName: "bash", message: "Running", phase: "running", order: 0 });
+  await dom.act(() => {
+    for (const text of ["Here", " is"]) stream.onmessage?.({ data: JSON.stringify({ conversationId, type: "assistant_delta", turnId: "turn-1", text, order: 1 }) });
+  });
+  assert.equal(reply(), "", "streamed words wait for the next frame");
+  await dom.settle();
+  assert.match(reply(), /Here is/);
+
+  const snapshot: Omit<ChatStreamEvent, "conversationId"> = { type: "turn_snapshot", running: true, turnId: "turn-1", text: "Here is the plan", presentation: {
+    text: "Here is the plan", truncated: false,
+    workTrail: [{ id: "tool:list", kind: "tool", toolName: "bash", text: "Ran", detail: "amplefile connected-folders list", phase: "complete", order: 0 }],
+  } };
+  await emit(snapshot);
+  await emit(snapshot);
+  assert.match(reply(), /Here is the plan/);
+  assert.equal(dom.container.querySelectorAll(".work-step.tool").length, 1, "the snapshot's steps replace the old ones, and a replay adds none");
+  assert.ok(dom.container.querySelector(".work-step.tool.complete"));
+
+  await emit({ type: "assistant_delta", turnId: "turn-1", text: " for Monday", order: 2 });
+  assert.match(reply(), /Here is the plan for Monday/);
+  await emit({ type: "assistant_message", turnId: "turn-1", text: "The final plan." });
+  assert.match(reply(), /The final plan\./);
+  assert.doesNotMatch(reply(), /Monday/);
+});
+
+test("the AmpleFile Agent's live reply and steps go once its request is no longer active", async (t) => {
+  let latest: unknown = request;
+  const { dom, emit } = await agentHarness(t, undefined, () => latest);
+  await emit({ type: "turn_state", running: true, turnId: "turn-1" });
+  await emit({ type: "tool", turnId: "turn-1", workTrailId: "tool:list", toolName: "bash", message: "Ran", phase: "complete", order: 0 });
+  await emit({ type: "assistant_delta", turnId: "turn-1", text: "Partial plan", order: 1 });
+  assert.ok(dom.container.querySelector(".popover-message.streaming"));
+  latest = { ...request, phase: "done", endedAt: new Date().toISOString() };
+  await emit({ type: "done", turnId: "turn-1" });
+  await dom.waitFor(() => !dom.container.querySelector(".popover-message.streaming") && !dom.container.querySelector(".work-step.tool"));
+});
+
+test("sending from the popover clears the last turn's steps and returns to the newest entry", async (t) => {
+  // The new request is active once the message is accepted, so the refresh
+  // that follows the send keeps whatever the send itself left on screen.
+  let latest: unknown = null;
+  const posts: unknown[] = [];
+  const { dom, emit } = await agentHarness(t, undefined, () => latest, (path, options) => {
+    if (path !== "/api/amplefile-agent/messages" || options.method !== "POST") return;
+    posts.push(options.body);
+    latest = { ...request, taskId: "task-2", content: "Plan next week" };
+    return { taskId: "task-2", conversationId };
+  });
+  const transcript = dom.container.querySelector<HTMLElement>(".popover-transcript")!;
+  const scrolls: unknown[] = [];
+  transcript.scrollTo = ((options: ScrollToOptions) => { scrolls.push(options.top); }) as typeof transcript.scrollTo;
+  await emit({ type: "tool", workTrailId: "tool:left-over", toolName: "read", message: "Read", phase: "complete", order: 0 });
+  assert.equal(dom.container.querySelectorAll(".work-step.tool").length, 1);
+  const composer = dom.container.querySelector<HTMLTextAreaElement>(".composer-input textarea")!;
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(composer, "Plan next week");
+    composer.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await dom.act(async () => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Send Message"]')!.click(); await Promise.resolve(); });
+  await dom.waitFor(() => posts.length === 1 && Boolean(dom.container.querySelector(".composer-stop")));
+  assert.equal(dom.container.querySelectorAll(".work-step.tool").length, 0, "the last turn's steps are gone");
+  await dom.settle();
+  assert.ok(scrolls.length > 0, "the transcript returns to its newest entry");
+});

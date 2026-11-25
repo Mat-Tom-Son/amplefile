@@ -1,6 +1,6 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
 import { finderOpenPaths } from "./finder-open-paths.js";
-import { FileManagerWindows, parseWindowLocation, shownConnectedFolder, type FileManagerWindowEntry, type WindowLocation, type WindowMenuState } from "./file-manager-windows.js";
+import { FileManagerWindows, parseWindowLocation, shownConnectedFolder, type FileManagerWindowEntry } from "./file-manager-windows.js";
 import {
   cascadeBounds,
   parseWindowPlacements,
@@ -28,7 +28,7 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
-  ipcMain,
+  ipcMain as electronIpcMain,
   Menu,
   net,
   nativeImage,
@@ -79,7 +79,7 @@ import {
   ampleFileInspectContextFromArgv,
   ampleFileSecondInstanceIntent,
 } from "./amplefile-cli-host.js";
-import { AmpleFileAgentPopover, type AmpleFileAgentPopoverStagedItem, type PopoverAnchor } from "./amplefile-agent-popover.js";
+import { AmpleFileAgentPopover, type PopoverAnchor } from "./amplefile-agent-popover.js";
 import {
   pruneRecentConnectedFolders,
   readRecentConnectedFolders,
@@ -101,7 +101,7 @@ import { ComputerHelperInstallation } from "./computer-helper-installation.js";
 import { leftoverChromeCleanupApplies, removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
-import { DesktopUpdater, hasPackagedDesktopUpdateFeed, type DesktopUpdateStatus, type DesktopUpdates } from "./updater.js";
+import { DesktopUpdater, hasPackagedDesktopUpdateFeed, type DesktopUpdates } from "./updater.js";
 import { createSystemPackageUpdates } from "./system-package-updates.js";
 import { HeadlessQuitSequence } from "./headless-quit.js";
 import {
@@ -115,18 +115,14 @@ import {
   nativeFileMenuItems,
   parseNativeFileMenuRequest,
   type NativeFileMenuCommand,
-  type NativeFileMenuRequest,
 } from "./file-context-menu.js";
 import {
   nativeTabMenuItems,
   parseNativeTabMenuRequest,
-  type NativeTabMenuCommand,
-  type NativeTabMenuRequest,
 } from "./tab-context-menu.js";
 import {
   nativeConnectedFolderMenuItems,
   parseNativeConnectedFolderMenuRequest,
-  type NativeConnectedFolderMenuCommand,
 } from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
 import { pickLinuxOpenWithApp } from "./open-with-linux-chooser.js";
@@ -140,20 +136,30 @@ import { fallbackWindowButtonLayout, linuxNativeThemeSource, type LinuxDesktopAp
 import { macSpellingGuesses } from "./mac-spelling.js";
 import { BuiltInBrowser, parseBrowserCommand, parseBrowserTabsSync, parseBrowserViewRequest } from "./built-in-browser.js";
 import { isBrowserPageId } from "../../src/shared/browser.js";
+import type { AutomationDetailResponse, AutomationEnableProposalResponse, AutomationProposalsResponse, AutomationsResponse } from "../../src/shared/automation-settings-view.js";
+import type { TransferAnswer } from "../../src/shared/file-transfer.js";
+import type {
+  AmpleFileAgentStagedItem,
+  ApplicationMenuId,
+  DesktopSendChannel,
+  DesktopUpdateStatus,
+  NativeConnectedFolderMenuCommand,
+  NativeFileMenuRequest,
+  NativeTabMenuCommand,
+  NativeTabMenuRequest,
+  RendererMenuCommand,
+  WindowLocation,
+  WindowMenuState,
+} from "../../src/shared/desktop-ipc.js";
+import { sendToRenderer, type DesktopIpcMain, type DesktopSendHandler } from "./desktop-ipc-main.js";
 import { productIdentity } from "../../src/shared/product-identity.js";
 import { isMacPackageName } from "../../src/shared/mac-packages.js";
-import {
-  commandLineStatus,
-  defaultCommandLineEnvironment,
-  installCommandOnPath,
-  installSkill,
-  isCommandLineSkillTarget,
-  removeCommandFromPath,
-  removeSkill,
-} from "./command-line-install.js";
-import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
+import { registerCommandLineIpc } from "./command-line-host.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
 import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
+
+/** Electron's ipcMain, typed by the desktop IPC contract (src/shared/desktop-ipc.ts): only its channels, with their answers. */
+const ipcMain: DesktopIpcMain = electronIpcMain;
 
 /** The local API's address; it listens on loopback only. */
 const localApiHost = "127.0.0.1";
@@ -531,7 +537,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
     else if (event.method === "copyText") copyTextToClipboard(event.text);
-    else if (event.method === "openSettings") frontWindow()?.webContents.send("amplefile:agent:open-settings");
+    else if (event.method === "openSettings") { const front = frontWindow(); if (front) sendToRenderer(front.webContents, "amplefile:agent:open-settings"); }
     else if (event.method === "quit") app.quit();
     });
     const bundledComputerHelper = process.platform === "linux"
@@ -1021,6 +1027,10 @@ function registerIpc(): void {
     if (result.canceled || !connectedFolderRoot) return null;
     return { path: connectedFolderRoot, folderGrantId: createFolderGrant(connectedFolderRoot) };
   });
+  // The facade's own types (src/local/api/automation-settings.ts) describe a trigger as one flat record with every
+  // field optional (AmpleFileActAutomationTriggerRef), where Settings' view (src/shared/automation-settings-view.ts)
+  // is a union by kind holding the same values. The four answers that carry a trigger are read through the view
+  // with `as`; everything else in every answer is checked against the contract.
   const automationSettings = async (event: IpcMainInvokeEvent, value?: unknown) => {
     assertTrustedMainRenderer(event);
     return {
@@ -1030,19 +1040,19 @@ function registerIpc(): void {
   };
   ipcMain.handle("amplefile:automations:list", async (event) => {
     const { facade } = await automationSettings(event);
-    return facade.list();
+    return facade.list() as Promise<AutomationsResponse>;
   });
   ipcMain.handle("amplefile:automations:proposals", async (event) => {
     const { facade } = await automationSettings(event);
-    return facade.proposals();
+    return facade.proposals() as Promise<AutomationProposalsResponse>;
   });
   ipcMain.handle("amplefile:automations:enable-proposal", async (event, value: unknown) => {
     const { facade } = await automationSettings(event);
-    return facade.enableProposal(automationProposalPath(value));
+    return facade.enableProposal(automationProposalPath(value)) as Promise<AutomationEnableProposalResponse>;
   });
   ipcMain.handle("amplefile:automations:show", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
-    return facade.show(automationId!);
+    return facade.show(automationId!) as Promise<AutomationDetailResponse>;
   });
   ipcMain.handle("amplefile:automations:history", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
@@ -1238,11 +1248,13 @@ function registerIpc(): void {
   // host's (desktop/src/file-clipboard.ts) and pastes by its place as a move in every window; what this window
   // copied pastes by place (desktop/src/file-clipboard-paste.ts); another app's files are copied in, or moved when
   // that app cut them or the person chose ⌥⌘V. The window's `operationId` shows the paste's progress, and
-  // `conflicts` asks about taken names first, then carries the person's choices.
+  // `conflicts` asks about taken names first, then carries the person's choices. The conflicts-first answer has
+  // `conflicts` and no `written` or `restorePoints`, which the window's TransferAnswer declares always there; the
+  // window reads only `conflicts` and `moved` from it, so the answer is read as a TransferAnswer with `as`.
   ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const request = parseFileClipboardPasteRequest(value);
-    return fileClipboard.paste(request, await listConnectedFolders(), (body) => transferFileEntries(body));
+    return fileClipboard.paste(request, await listConnectedFolders(), (body) => transferFileEntries(body)) as Promise<TransferAnswer>;
   });
   ipcMain.handle("amplefile:file-clipboard:write", async (event, value: unknown): Promise<boolean> => {
     assertTrustedMainRenderer(event);
@@ -1400,7 +1412,7 @@ function registerIpc(): void {
     ampleFileAgentPopover?.hide();
     const window = senderWindow(event) ?? await ensureWindow();
     showFileManagerWindow(window);
-    window.webContents.send("amplefile:agent:open-settings", "agent");
+    sendToRenderer(window.webContents, "amplefile:agent:open-settings", "agent");
     return true;
   });
   ipcMain.handle("amplefile:window:get-close-to-tray", (event) => {
@@ -1465,33 +1477,7 @@ function registerIpc(): void {
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
   // and the skill in Claude Code's and Codex's skills folders, each on a click.
-  const commandLineEnvironment = () => defaultCommandLineEnvironment({ isPackaged: app.isPackaged });
-  ipcMain.handle("amplefile:command-line:status", (event) => {
-    assertTrustedMainRenderer(event);
-    return commandLineStatus(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:install-path", (event) => {
-    assertTrustedMainRenderer(event);
-    return installCommandOnPath(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:remove-path", (event) => {
-    assertTrustedMainRenderer(event);
-    return removeCommandFromPath(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:install-skill", (event, target: unknown) => {
-    assertTrustedMainRenderer(event);
-    if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
-    return installSkill(commandLineEnvironment(), target);
-  });
-  ipcMain.handle("amplefile:command-line:remove-skill", (event, target: unknown) => {
-    assertTrustedMainRenderer(event);
-    if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
-    return removeSkill(commandLineEnvironment(), target);
-  });
-  ipcMain.handle("amplefile:command-line:skill", (event) => {
-    assertTrustedMainRenderer(event);
-    return outsideAgentSkill();
-  });
+  registerCommandLineIpc({ ipcMain, assertTrusted: assertTrustedMainRenderer, isPackaged: app.isPackaged });
   ipcMain.handle("amplefile:settings:status", (event) => {
     assertTrustedMainRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
@@ -1587,30 +1573,6 @@ function registerIpc(): void {
     return desktopUpdater?.updateNow() ?? getUpdateStatus();
   });
 }
-
-type RendererMenuCommand =
-  | "new-connected-folder"
-  | "open-local-folder"
-  | "open-terminal"
-  | "get-info"
-  | "new-chat"
-  | "close-tab"
-  | "refresh"
-  | "check-for-updates"
-  | "open-settings"
-  | "open-about"
-  | "open-capabilities"
-  | "open-skills"
-  | "open-extensions"
-  | "open-command-palette"
-  | "open-keyboard-shortcuts"
-  | "toggle-hidden-files"
-  | "new-tab"
-  | "next-tab"
-  | "previous-tab"
-  | "toggle-tab-bar";
-
-type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 /** A menu item's click: the command goes to the window the menu was used in, else the front window. */
 function menuCommand(command: RendererMenuCommand): (item: Electron.MenuItem, window: Electron.BaseWindow | undefined) => void {
@@ -1872,7 +1834,7 @@ function sendRendererMenuCommand(command: RendererMenuCommand, menuWindow?: Elec
     return;
   }
   showFileManagerWindow(window);
-  window.webContents.send("amplefile:menu-command", command);
+  sendToRenderer(window.webContents, "amplefile:menu-command", command);
 }
 
 /** The application menu's check marks and enabled items follow the front window. */
@@ -2334,7 +2296,7 @@ const fileClipboard = new FileClipboard({
   changed: (nativePaths) => {
     const cut = nativePaths ? { nativePaths: [...nativePaths] } : null;
     for (const window of fileManagerWindows.windows()) {
-      if (!window.webContents.isDestroyed()) window.webContents.send("amplefile:file-clipboard:cut-changed", cut);
+      if (!window.webContents.isDestroyed()) sendToRenderer(window.webContents, "amplefile:file-clipboard:cut-changed", cut);
     }
   },
 });
@@ -2501,7 +2463,7 @@ function handOpenLocation(window: BrowserWindow, location: FolderLocation): void
   if (location.place.kind === "connected-folder") void setWindowConnectedFolder(window, location.place.id).catch(() => undefined);
   const request = { token: randomUUID(), location };
   if (!fileManagerWindows.handOpenLocation(window, request)) return;
-  if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send("amplefile:file-manager:open-location", request);
+  if (!window.isDestroyed() && !window.webContents.isDestroyed()) sendToRenderer(window.webContents, "amplefile:file-manager:open-location", request);
 }
 
 /**
@@ -2562,8 +2524,8 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
   builtInBrowser ??= new BuiltInBrowser({
     windows: () => fileManagerWindows.windows(),
     workerWindow: (owner) => fileManagerWindows.workerWindow(owner)?.window ?? null,
-    send: (window, channel, payload) => {
-      if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
+    send: (window, channel, ...payload) => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) sendToRenderer(window.webContents, channel, ...payload);
     },
     openExternal,
     downloadsPath: () => app.getPath("downloads"),
@@ -2918,7 +2880,7 @@ async function toggleAmpleFileAgentPopover(anchor: PopoverAnchor = trayPopoverAn
   }
 }
 
-async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[], anchor: PopoverAnchor): Promise<void> {
+async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentStagedItem[], anchor: PopoverAnchor): Promise<void> {
   try {
     const popover = await ensureAmpleFileAgentPopover();
     if (!quitting && !quittingForUpdate) await popover?.stage(items, anchor);
@@ -2975,7 +2937,7 @@ function configurePowerMonitor(): void {
 function sendAccentColorToRenderers(): void {
   const accent = getSystemAccentColor();
   for (const window of fileManagerWindows.windows()) {
-    if (!window.webContents.isDestroyed()) window.webContents.send("amplefile:window:accent-color-changed", accent);
+    if (!window.webContents.isDestroyed()) sendToRenderer(window.webContents, "amplefile:window:accent-color-changed", accent);
   }
   // The menu-bar popover subscribes too, and may be open with no main window.
   ampleFileAgentPopover?.send("amplefile:window:accent-color-changed", accent);
@@ -2996,7 +2958,7 @@ function linuxWindowChromeState(window: BrowserWindow | null): LinuxWindowChrome
 
 function sendLinuxWindowChromeState(window: BrowserWindow | null): void {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
-  window.webContents.send("amplefile:window:chrome-state-changed", linuxWindowChromeState(window));
+  sendToRenderer(window.webContents, "amplefile:window:chrome-state-changed", linuxWindowChromeState(window));
 }
 
 /**
@@ -3140,7 +3102,7 @@ async function recoverRenderer(window: BrowserWindow, reason: string): Promise<v
   else {
     recovery.attempts = 0;
     recovery.failurePromptShown = false;
-    window.webContents.send("amplefile:runtime:renderer-recovered");
+    sendToRenderer(window.webContents, "amplefile:runtime:renderer-recovered");
   }
 }
 
@@ -3230,12 +3192,12 @@ function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemC
 }
 
 /** Asynchronous IPC has no rejection channel. A stale or untrusted sender must not throw into Electron. */
-function onRendererMessage<Args extends unknown[]>(
-  channel: string,
-  handle: (event: IpcMainEvent, ...args: Args) => void,
+function onRendererMessage<C extends DesktopSendChannel>(
+  channel: C,
+  handle: DesktopSendHandler<C>,
   assertSender: (event: IpcMainEvent) => void = assertTrustedMainRenderer,
 ): void {
-  ipcMain.on(channel, (event, ...args: Args) => {
+  ipcMain.on(channel, (event, ...args) => {
     try {
       assertSender(event);
       handle(event, ...args);

@@ -8,7 +8,7 @@ import {
   systemPackageUpdatesMessage,
   type InstalledFileIdentity,
 } from "../desktop/src/system-package-updates.js";
-import type { DesktopUpdateStatus } from "../desktop/src/updater.js";
+import type { DesktopUpdateStatus } from "../src/shared/desktop-ipc.js";
 import { updateActionLabel, updateCallFor, updateIndicatorFor } from "../web-local/src/lib/update-status.js";
 import { updateRestartConfirm } from "../web-local/src/lib/update-restart.js";
 

@@ -6,14 +6,13 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { useWorkRequest } from "../../hooks/useWorkRequest";
 import { WorkRequest, openWorkFile } from "./WorkRequest";
 import type * as React from "react";
-import { Add16Regular, ArrowDown20Regular, ArrowUp20Regular, Chat16Regular, ChevronDown16Regular, ChevronLeft16Regular, Desktop20Regular, Search16Regular } from "@fluentui/react-icons";
+import { ArrowDown20Regular, ArrowUp20Regular, ChevronDown16Regular } from "@fluentui/react-icons";
 import { Archive, Clock3, Loader2, Square, X } from "../chrome/icons";
 
 import { chatDraftDebounceMs, genericChatEmptyGreetings, connectedFolderPathDragType } from "../../constants";
 import { createFixtureContextAttachment, fixtureConversationSummary } from "../../fixtures/shared";
 import { ApiError, api, createEventSource, errorText, isTransientNetworkError, rawErrorMessage } from "../../lib/api";
 import { requestConnectAi } from "../../lib/connect-ai";
-import { conversationLifecycleView } from "../../lib/chat-lifecycle";
 import { createChatTurnStateGate, observeChatTurnState } from "../../lib/chat-turn-state";
 import { draggedConnectedFolderPaths, hasNativeFiles } from "../../lib/file-actions";
 import { displayModelLabel } from "../../lib/model-display";
@@ -25,7 +24,6 @@ import {
   chatDraftStorageKey,
   clearStoredChatDraft,
   clearStoredPendingChatSend,
-  formatChatListTime,
   latestTranscriptTime,
   modelConversationTitle,
   readStoredChatDraft,
@@ -36,7 +34,7 @@ import {
 import { glideFrom } from "../../lib/motion";
 import { latestAssistantMessageId as findLatestAssistantMessageId, settledTurnHasNewAssistantMessage } from "../../lib/chat-turn-artifacts";
 import { assistantTurnView } from "../../lib/chat-work-trail";
-import type { AssistantPresentation } from "../../../../src/shared/chat-presentation";
+import { useLiveReply } from "./useLiveReply";
 import { resolveFixtureConnectedFolderPathCandidates } from "../../lib/connected-folder-path-links";
 import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
 import type { AgentCatalog, AgentCommand, AgentModel, AgentStatus, ComposerState, ChatContextPathRequest,
@@ -45,7 +43,6 @@ import type { WorkRequestView } from "../../../../src/shared/request-presentatio
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
 import { Banner, FluentGlyph, ConnectedFolderIconGlyph } from "../chrome/common";
-import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";
@@ -126,7 +123,6 @@ export function ChatPanel({
   onSendRequestConsumed,
   failedSend,
   onSendFailureChange,
-  variant = "default",
   onAddPathToChatContext,
   onUploadDroppedFiles,
   onOpenConnectedFolderFile,
@@ -139,7 +135,6 @@ export function ChatPanel({
   onResumeConversation,
   onAgentFinished,
   onOpenModelSettings,
-  onOpenConversation,
   fixtureMode = false,
   fixtureConversations,
   fixtureTreeEntries = emptyFixtureTreeEntries,
@@ -157,13 +152,6 @@ export function ChatPanel({
   onSendRequestConsumed?: (id: number) => void;
   failedSend?: ChatSendFailure | null;
   onSendFailureChange?: (failure: ChatSendFailure | null) => void;
-  /**
-   * `panel`: the file manager's right panel (docs/product-model.md),
-   * drawn as the design draws it. Its composer is Reply and Send
-   * (or Stop); what to attach comes from the selection, and the model is
-   * chosen in Settings → AI Models.
-   */
-  variant?: "default" | "panel";
   onAddPathToChatContext?: (paths: readonly string[]) => void;
   onUploadDroppedFiles?: (dataTransfer: DataTransfer) => Promise<string[]>;
   onOpenConnectedFolderFile?: (path: string) => void;
@@ -176,8 +164,6 @@ export function ChatPanel({
   onResumeConversation?: () => void | Promise<void>;
   onAgentFinished: () => void | Promise<void>;
   onOpenModelSettings?: () => void;
-  /** Opens one of this Connected Folder's Chats, as its row in Chats does. */
-  onOpenConversation?: (conversation: ConversationSummary) => void;
   fixtureMode?: boolean;
   fixtureConversations?: ConnectedFolderFixtureConversation[];
   fixtureTreeEntries?: TreeEntry[];
@@ -231,12 +217,16 @@ export function ChatPanel({
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
   const [settlementPending, setSettlementPending] = useState(false);
-  const [streamingAssistant, setStreamingAssistant] = useState("");
-  const [streamingPresentation, setStreamingPresentation] = useState<{ text: string; metadata?: AssistantPresentation }>({ text: "" });
-  const [previewTruncated, setPreviewTruncated] = useState(false);
-  const pendingTextOrderRef = useRef<number | undefined>(undefined);
+  // The turn's reply, thinking, and tool steps as they stream (live-reply-model.ts).
+  const liveReply = useLiveReply();
+  const {
+    text: streamingAssistant,
+    steps: runtimePreviews,
+    canonical: streamingPresentation,
+    truncated: previewTruncated,
+    pendingOrder: pendingTextOrder,
+  } = liveReply.reply;
   const activeStreamTurnIdRef = useRef<string | null>(null);
-  const [runtimePreviews, setRuntimePreviews] = useState<RuntimePreviewEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [contextAttachments, setContextAttachments] = useState<ContextAttachment[]>([]);
   const [attachingPath, setAttachingPath] = useState<string | null>(null);
@@ -316,10 +306,6 @@ export function ChatPanel({
   // Where the composer stood under a new Chat's greeting when its first message went.
   const composerGlideFromRef = useRef<DOMRect | null>(null);
   const userPinnedToBottomRef = useRef(true);
-  const streamingBufferRef = useRef("");
-  const streamingFlushRef = useRef<number | null>(null);
-  const activeThinkingPreviewIdRef = useRef<string | null>(null);
-  const runtimePreviewIdRef = useRef(0);
   const connectedFolderIdRef = useRef(connectedFolder.id);
   const messagesLoadGenerationRef = useRef(0);
   const runtimeUpdateRevisionRef = useRef(0);
@@ -429,7 +415,6 @@ export function ChatPanel({
 
   useEffect(() => () => {
     if (!fixtureMode && activeDraftStorageKeyRef.current) writeStoredChatDraft(activeDraftStorageKeyRef.current, draftRef.current);
-    cancelStreamingFlush();
     releaseScriptPlayback();
   }, []);
 
@@ -584,17 +569,17 @@ export function ChatPanel({
       setConversation(fixtureConversationSummaryValue);
       onConversationActivated?.(fixtureConversationSummaryValue);
       setMessages(fixtureConversation.messages.filter((message) => message.role !== "system" || message.kind === "context_compaction"));
-      setStreamingAssistant(fixtureConversation.streamingAssistant ?? (fixtureRunning && !eventPreviews.length ? "I’m reading the selected files and checking the generated outputs now." : ""));
+      liveReply.show({ text: fixtureConversation.streamingAssistant ?? (fixtureRunning && !eventPreviews.length ? "I’m reading the selected files and checking the generated outputs now." : "") });
       setContextAttachments(fixtureConversation.contextAttachments ?? []);
     } else {
       setConversation(null);
       onConversationActivated?.(null);
       setMessages([]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setContextAttachments([]);
     }
     setRunning(fixtureRunning);
-    setRuntimePreviews(fixturePreviews);
+    liveReply.show({ steps: fixturePreviews });
   }, [connectedFolder.id, fixtureMode, targetConversationId, fixtureConversations]);
 
   useEffect(() => {
@@ -607,10 +592,9 @@ export function ChatPanel({
       eventStreamReadyConversationIdRef.current = null;
       setConversation(null);
       setMessages([]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setRunning(false);
       clearRuntimePreviews();
-      cancelStreamingFlush();
       setContextAttachments([]);
       userPinnedToBottomRef.current = true;
       setUserPinnedToBottom(true);
@@ -705,28 +689,12 @@ export function ChatPanel({
           // send path. Retire the last reply and any older transcript request.
           clearTurnSettlement();
           setError(null);
-          flushStreamingText();
-          setStreamingAssistant("");
+          liveReply.clearText();
           clearRuntimePreviews();
           resetTurnArtifactTracking();
           if (!sendTransitioning) void loadMessages(conversationId, false).catch(() => undefined);
         }
         if (data.running && data.turnId) activeStreamTurnIdRef.current = data.turnId;
-        if (data.type === "turn_snapshot" && typeof data.text === "string" && data.running === true) {
-          // This frame replaces state at its cursor. Replaying it must not
-          // append an older row or restart a thinking timer.
-          cancelStreamingFlush();
-          const snapshot = data.presentation;
-          const text = snapshot?.text ?? data.text;
-          setStreamingAssistant(text);
-          setStreamingPresentation({ text, metadata: snapshot?.assistantPresentation });
-          pendingTextOrderRef.current = undefined;
-          setPreviewTruncated(snapshot?.truncated === true);
-          if (snapshot) {
-            setRuntimePreviews(snapshot.workTrail);
-            activeThinkingPreviewIdRef.current = [...snapshot.workTrail].reverse().find((entry) => entry.kind === "thinking" && ["running", "streaming"].includes(entry.phase ?? ""))?.id ?? null;
-          }
-        }
         const decision = observeChatTurnState(turnStateGate, data.running === true, sendTransitioning);
         if (decision === "running") {
           beginTurnArtifactTracking();
@@ -744,46 +712,18 @@ export function ChatPanel({
           reportChatSettled(conversationId);
         }
       }
-      if (data.type === "tool") {
-        beginTurnArtifactTracking();
-        const toolPreviewId = data.workTrailId ?? (data.toolCallId?.trim()
-          ? `tool-${data.toolCallId.trim()}`
-          : `tool-${++runtimePreviewIdRef.current}`);
-        addRuntimePreview({
-          id: toolPreviewId,
-          kind: "tool",
-          text: data.message?.trim() || data.toolName?.trim() || "Tool",
-          ...(data.detail?.trim() ? { detail: data.detail.trim() } : {}),
-          ...(data.toolName?.trim() ? { toolName: data.toolName.trim() } : {}),
-          ...(data.toolTitle?.trim() ? { toolTitle: data.toolTitle.trim() } : {}),
-          ...(data.order !== undefined ? { order: data.order } : {}),
-          ...(data.durationMs !== undefined ? { durationMs: data.durationMs } : {}),
-          ...(data.edit ? { edit: data.edit } : {}),
-          phase: data.phase ?? "running",
-        });
-      }
-      if (data.type === "assistant_thinking") {
+      // The reply, its thinking, and its tool steps follow the live reply's
+      // own rules (a snapshot replaces them at its cursor; an ended turn shows
+      // its waiting text and closes its thinking). This handler keeps the
+      // turn's bookkeeping.
+      liveReply.apply(data);
+      if (data.type === "tool") beginTurnArtifactTracking();
+      if (data.type === "assistant_thinking" || (data.type === "assistant_delta" && data.text)) {
         beginTurnArtifactTracking();
         runningRef.current = true;
         setRunning(true);
-        if (data.thinkingPhase === "start") startThinkingPreview(data);
-        if (data.text) appendThinkingPreview(data.text, data);
-        if (data.thinkingPhase === "end") finishThinkingPreview(data);
       }
-      if (data.type === "assistant_delta" && data.text) {
-        beginTurnArtifactTracking();
-        runningRef.current = true;
-        setRunning(true);
-        pendingTextOrderRef.current = data.order;
-        queueStreamingText(data.text);
-      }
-      if (data.type === "assistant_message" && typeof data.text === "string") {
-        beginTurnArtifactTracking();
-        flushStreamingText();
-        setStreamingAssistant(data.text);
-        setStreamingPresentation({ text: data.text, metadata: data.assistantPresentation });
-        pendingTextOrderRef.current = undefined;
-      }
+      if (data.type === "assistant_message" && typeof data.text === "string") beginTurnArtifactTracking();
       if (data.type === "extension_ui_request" && data.request) {
         if (data.request.method === "notify") {
           showToast({ text: data.request.message ?? "Extension notification", tone: "info" });
@@ -807,8 +747,6 @@ export function ChatPanel({
         window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
       }
       if (data.type === "error") {
-        flushStreamingText();
-        finishThinkingPreview();
         setError(data.message ?? "The Worker stopped because of an error.");
         runningRef.current = false;
         setRunning(false);
@@ -818,8 +756,6 @@ export function ChatPanel({
       }
       if (data.type === "done") {
         runningRef.current = false;
-        flushStreamingText();
-        finishThinkingPreview();
         // Keep the streamed bubble on screen until the persisted transcript
         // arrives, then swap in one commit so the reply never blinks out.
         void loadMessages(conversationId, false, { settleStreamingTurn: true }).catch(() => undefined);
@@ -831,8 +767,7 @@ export function ChatPanel({
       closed = true;
       if (eventStreamReadyConversationIdRef.current === conversationId) eventStreamReadyConversationIdRef.current = null;
       source.close();
-      cancelStreamingFlush();
-      activeThinkingPreviewIdRef.current = null;
+      liveReply.streamClosed();
     };
   }, [conversation?.id, shouldKeepEventStreamOpen, connectedFolder.id]);
 
@@ -905,86 +840,9 @@ export function ChatPanel({
     setUserPinnedToBottom(isPinned);
   }
 
-  function queueStreamingText(text: string) {
-    streamingBufferRef.current += text;
-    if (streamingFlushRef.current !== null) return;
-    streamingFlushRef.current = window.requestAnimationFrame(() => {
-      streamingFlushRef.current = null;
-      flushStreamingText();
-    });
-  }
-
-  function flushStreamingText() {
-    const nextText = streamingBufferRef.current;
-    if (!nextText) return;
-    streamingBufferRef.current = "";
-    setStreamingAssistant((current) => `${current}${nextText}`);
-  }
-
-  function cancelStreamingFlush() {
-    if (streamingFlushRef.current !== null) window.cancelAnimationFrame(streamingFlushRef.current);
-    streamingFlushRef.current = null;
-    streamingBufferRef.current = "";
-  }
-
-  function addRuntimePreview(preview: RuntimePreviewEntry) {
-    setRuntimePreviews((current) => {
-      const existingIndex = current.findIndex((item) => item.id === preview.id);
-      if (existingIndex >= 0) {
-        const updated = [...current];
-        updated[existingIndex] = { ...updated[existingIndex], ...preview };
-        return updated;
-      }
-      return [...current, preview];
-    });
-  }
-
-  function startThinkingPreview(event?: ChatStreamEvent) {
-    const id = event?.workTrailId ?? `thinking-${++runtimePreviewIdRef.current}`;
-    activeThinkingPreviewIdRef.current = id;
-    addRuntimePreview({
-      id,
-      kind: "thinking",
-      text: "",
-      phase: "streaming",
-      startedAt: event?.startedAt ?? Date.now(),
-      ...(event?.order !== undefined ? { order: event.order } : {}),
-    });
-  }
-
-  function appendThinkingPreview(text: string, event?: ChatStreamEvent) {
-    let id = event?.workTrailId ?? activeThinkingPreviewIdRef.current;
-    if (!id) {
-      startThinkingPreview(event);
-      id = activeThinkingPreviewIdRef.current;
-    }
-    if (!id) return;
-    setRuntimePreviews((current) => current.map((entry) => (
-      entry.id === id
-        ? { ...entry, text: `${entry.text}${text}`, phase: "streaming" }
-        : entry
-    )));
-  }
-
-  function finishThinkingPreview(event?: ChatStreamEvent) {
-    const id = event?.workTrailId ?? activeThinkingPreviewIdRef.current;
-    if (!id) return;
-    activeThinkingPreviewIdRef.current = null;
-    const endedAt = Date.now();
-    setRuntimePreviews((current) => current.map((entry) => (
-      entry.id === id
-        ? { ...entry, phase: "complete", ...(event?.durationMs !== undefined ? { durationMs: event.durationMs } : entry.startedAt ? { durationMs: Math.max(0, endedAt - entry.startedAt) } : {}) }
-        : entry
-    )));
-  }
-
   function clearRuntimePreviews() {
-    activeThinkingPreviewIdRef.current = null;
-    setRuntimePreviews([]);
-    setStreamingPresentation({ text: "" });
-    pendingTextOrderRef.current = undefined;
+    liveReply.clearSteps();
     activeStreamTurnIdRef.current = null;
-    setPreviewTruncated(false);
   }
 
   function reportChatSettled(conversationId: string): void {
@@ -1021,9 +879,9 @@ export function ChatPanel({
     commitConversations((fixtureConversations ?? []).map(fixtureConversationSummary));
     setConversation(null);
     setMessages([]);
-    setStreamingAssistant("");
+    liveReply.clearText();
     setRunning(false);
-    setRuntimePreviews([]);
+    liveReply.show({ steps: [] });
     setContextAttachments(conversation.contextAttachments ?? []);
     setDraft("");
     userPinnedToBottomRef.current = true;
@@ -1049,9 +907,9 @@ export function ChatPanel({
 
     const finish = () => {
       setMessages([firstUser, firstAssistant]);
-      setStreamingAssistant("");
+      liveReply.clearText();
       setRunning(false);
-      setRuntimePreviews(conversation.runtimePreviews ?? []);
+      liveReply.show({ steps: conversation.runtimePreviews ?? [] });
       scriptPlaybackStateRef.current = "done";
       reportChatSettled(conversation.id);
     };
@@ -1061,12 +919,12 @@ export function ChatPanel({
         schedule(350, finish);
         return;
       }
-      setStreamingAssistant((current) => `${current}${chunks[index]}`);
+      liveReply.apply({ type: "assistant_delta", conversationId: conversation.id, text: chunks[index] });
       schedule(30 + Math.random() * 30, () => streamChunk(index + 1));
     };
 
     const startStreaming = () => {
-      if (firstPreview) setRuntimePreviews([firstPreview]);
+      if (firstPreview) liveReply.show({ steps: [firstPreview] });
       schedule(420, () => streamChunk(0));
     };
 
@@ -1112,7 +970,7 @@ export function ChatPanel({
     transientConversationIdsRef.current = new Set();
     setError(null);
     setRunning(false);
-    setStreamingAssistant("");
+    liveReply.clearText();
     clearRuntimePreviews();
     resetTurnArtifactTracking();
     setContextAttachments([]);
@@ -1136,9 +994,8 @@ export function ChatPanel({
     onConversationActivated?.(selected);
     setRunning(false);
     setError(null);
-    setStreamingAssistant("");
+    liveReply.clearText();
     clearRuntimePreviews();
-    cancelStreamingFlush();
     setContextAttachments([]);
     userPinnedToBottomRef.current = true;
     setUserPinnedToBottom(true);
@@ -1182,7 +1039,7 @@ export function ChatPanel({
   }
 
   const liveTurnView = assistantTurnView(streamingAssistant, streamingPresentation.metadata, runtimePreviews, {
-    canonicalText: streamingPresentation.text, pendingOrder: pendingTextOrderRef.current,
+    canonicalText: streamingPresentation.text, pendingOrder: pendingTextOrder,
   });
   const hasVisibleRuntimePreview = runtimePreviews.some((entry) => (
     entry.kind === "tool"
@@ -1206,12 +1063,6 @@ export function ChatPanel({
     composerGlideFromRef.current = null;
     if (!startLayout) glideFrom(composerRef.current, from);
   }, [startLayout]);
-  const recentChats = useMemo(() => startLayout
-    ? conversations
-      .filter((item) => conversationLifecycleView(item) === "active")
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .slice(0, 3)
-    : [], [conversations, startLayout]);
 
   async function loadConversationRuntime(conversationId: string): Promise<ConversationRuntime | null> {
     try {
@@ -1289,7 +1140,7 @@ export function ChatPanel({
           clearRuntimePreviews();
         }
         resetTurnArtifactTracking();
-        setStreamingAssistant("");
+        liveReply.clearText();
         setRunning(false);
       }
     } catch (error) {
@@ -1352,8 +1203,7 @@ export function ChatPanel({
     clearTurnSettlement();
     resetTurnArtifactTracking();
     beginTurnArtifactTracking();
-    cancelStreamingFlush();
-    setStreamingAssistant("");
+    liveReply.clearText();
     const sentDraftStorageKey = draftStorageKey;
     if (startLayout) composerGlideFromRef.current = composerRef.current?.getBoundingClientRect() ?? null;
     const addressedConnectedFolderIds = addressedFolderIds(content, mentionFolders);
@@ -1639,7 +1489,7 @@ export function ChatPanel({
     if (fixtureMode) {
       cancelScriptPlayback();
       setRunning(false);
-      setStreamingAssistant("");
+      liveReply.clearText();
       clearRuntimePreviews();
       resetTurnArtifactTracking();
       return;
@@ -1890,23 +1740,9 @@ export function ChatPanel({
     });
   }
 
-  function toggleComposerCommands(): void {
-    if (commandMenuOpen) {
-      setDismissedCommandDraft(draft);
-      return;
-    }
-    if (draft && commandQuery === null) {
-      composerTextareaRef.current?.focus();
-      return;
-    }
-    setDraft("/");
-    setDismissedCommandDraft(null);
-    window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-  }
-
   return (
     <section
-      className={`panel chat-panel${startLayout && variant !== "panel" ? " is-start" : ""}${variant === "panel" ? " is-in-panel" : ""}`}
+      className="panel chat-panel is-in-panel"
     >
       <div className={error ? "chat-top-chrome" : "chat-top-chrome empty"}>
         <div className="chat-top-notice">
@@ -2170,46 +2006,12 @@ export function ChatPanel({
                 void sendMessage();
               }
             }}
-            placeholder={running && !pendingSendRef.current ? steerQueuePlaceholder() : variant === "panel" ? "Reply" : "Message Worker"}
+            placeholder={running && !pendingSendRef.current ? steerQueuePlaceholder() : "Reply"}
           />
-          {/* What you add sits on the left; how the Worker runs and Send sit on
-              the right. */}
+          {/* What to attach comes from the selection and the model is chosen
+              in Settings → AI Models, so the bar holds only Send or Stop. */}
           <div className="composer-capability-bar">
-            {variant === "panel" ? null : <>
-            <ComposerAttachMenu
-              connectedFolderId={connectedFolder.id}
-              connectedFolderName={connectedFolder.name}
-              identity={connectedFolderIdentity}
-              fixtureMode={fixtureMode}
-              fixtureTreeEntries={fixtureTreeEntries}
-              attachedPaths={contextAttachments.map((attachment) => attachment.sourcePath)}
-              onAttachPath={(path) => void attachContextPath(path)}
-              onUploadFiles={onUploadDroppedFiles ? (transfer) => void attachDroppedNativeFiles(transfer) : undefined}
-            />
-            <button
-              className={commandMenuOpen ? "composer-command-trigger active" : "composer-command-trigger"}
-              type="button"
-              onClick={toggleComposerCommands}
-              aria-expanded={commandMenuOpen}
-              title="Browse Commands and Skills"
-            >
-              <span aria-hidden="true">/</span>
-              <span>Commands</span>
-            </button>
-            </>}
             <span className="composer-capability-spacer" />
-            {/* The panel's Reply field is the design's: words and Send, with
-                the model and context on a small row under it. */}
-            {variant === "panel" ? null : modelStatus?.configured && conversationRuntime ? (
-              <>
-                <ConversationContextControl runtime={conversationRuntime} busy={running || requestBusy} compacting={conversationRuntime.isCompacting || compactPending} onCompact={compactFromContextMenu} />
-                <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
-              </>
-            ) : modelStatus?.configured && composerState?.model
-                ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
-                : modelStatus && !modelStatus.configured
-                  ? <button className="composer-connect-ai" type="button" onClick={() => requestConnectAi()} title="Connect an AI provider so this Worker can start">Connect AI</button>
-                  : null}
             {running || requestBusy ? (
               <button className="send-button stop-send-button" type="button" onClick={() => void abortTurn()} aria-label="Stop Worker" title="Stop Worker">
                 <Square size={14} />
@@ -2221,7 +2023,9 @@ export function ChatPanel({
             )}
           </div>
         </div>
-        {variant === "panel" ? <div className="composer-panel-meta">
+        {/* The panel's Reply field is the design's: words and Send, with
+            the model and context on a small row under it. */}
+        <div className="composer-panel-meta">
           {modelStatus?.configured && conversationRuntime ? <>
             <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             <span className="composer-capability-spacer" />
@@ -2229,9 +2033,8 @@ export function ChatPanel({
           </> : modelStatus?.configured && composerState?.model
             ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             : modelStatus && !modelStatus.configured ? <SetUpAiButton /> : null}
-        </div> : null}
+        </div>
       </form>
-      {startLayout && variant !== "panel" && recentChats.length && onOpenConversation ? <ChatRecentChats chats={recentChats} onOpen={onOpenConversation} /> : null}
     </section>
   );
 }
@@ -2807,228 +2610,6 @@ function ConfiguredModel({ model, connectedFolderName, picker, reasoning }: { mo
   );
 }
 
-/** How deep the attach picker reads a Connected Folder, the same depth Files searches. */
-const attachPickerTreeDepth = 6;
-const attachPickerVisibleLimit = 60;
-
-type AttachPickerFile = { path: string; name: string; folder: string; updatedAt: number };
-
-/** Files a person can attach, without other Connected Folders nested inside this one. */
-function attachPickerFiles(entries: TreeEntry[], output: AttachPickerFile[] = []): AttachPickerFile[] {
-  for (const entry of entries) {
-    if (entry.nestedFolder || entry.ignored) continue;
-    if (entry.kind === "folder") {
-      attachPickerFiles(entry.children ?? [], output);
-      continue;
-    }
-    const slash = entry.path.lastIndexOf("/");
-    output.push({
-      path: entry.path,
-      name: entry.name,
-      folder: slash > 0 ? entry.path.slice(0, slash) : "",
-      updatedAt: entry.updatedAt ? Date.parse(entry.updatedAt) || 0 : 0,
-    });
-  }
-  return output;
-}
-
-/**
- * The composer's + button: attach files from this Connected Folder,
- * or copy files from the computer into its Dropped folder and attach them,
- * the same explicit act as dropping them on the composer.
- */
-function ComposerAttachMenu({
-  connectedFolderId,
-  connectedFolderName,
-  identity,
-  fixtureMode,
-  fixtureTreeEntries,
-  attachedPaths,
-  onAttachPath,
-  onUploadFiles,
-}: {
-  connectedFolderId: string;
-  connectedFolderName: string;
-  identity: ConnectedFolderIdentity;
-  fixtureMode: boolean;
-  fixtureTreeEntries: TreeEntry[];
-  attachedPaths: string[];
-  onAttachPath: (path: string) => void;
-  onUploadFiles?: (transfer: DataTransfer) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"choose" | "files">("choose");
-  const [query, setQuery] = useState("");
-  const [files, setFiles] = useState<AttachPickerFile[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const optionsRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const menuId = useId();
-  useDismissOnOutsideInteraction(open, containerRef, () => setOpen(false), triggerRef);
-  useEffect(() => {
-    if (open) return;
-    setView("choose");
-    setQuery("");
-    setError(null);
-    // Files can be created, renamed or removed between visits to the picker.
-    setFiles(null);
-  }, [open]);
-  useEffect(() => { setFiles(null); }, [connectedFolderId]);
-  useEffect(() => {
-    if (!open || view !== "files" || files) return;
-    if (fixtureMode) {
-      setFiles(attachPickerFiles(fixtureTreeEntries));
-      return;
-    }
-    const controller = new AbortController();
-    const params = new URLSearchParams({ maxDepth: String(attachPickerTreeDepth) });
-    void api<{ tree: TreeEntry[] }>(`/api/connected-folders/${connectedFolderId}/tree?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setFiles(attachPickerFiles(result.tree)); })
-      .catch((caught) => { if (!controller.signal.aborted) setError(errorText(caught)); });
-    return () => controller.abort();
-  }, [open, view, files, fixtureMode, fixtureTreeEntries, connectedFolderId]);
-
-  const matches = useMemo(() => {
-    if (!files) return [];
-    const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return [...files].sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
-    return files
-      .filter((file) => file.path.toLocaleLowerCase().includes(needle))
-      .sort((a, b) => Number(!a.name.toLocaleLowerCase().includes(needle)) - Number(!b.name.toLocaleLowerCase().includes(needle)) || a.path.localeCompare(b.path));
-  }, [files, query]);
-  const visible = matches.slice(0, attachPickerVisibleLimit);
-  const attached = new Set(attachedPaths);
-
-  function attach(path: string): void {
-    setOpen(false);
-    triggerRef.current?.focus({ preventScroll: true });
-    if (!attached.has(path)) onAttachPath(path);
-  }
-
-  function focusOption(edge: "start" | "end"): void {
-    const options = optionsRef.current?.querySelectorAll<HTMLButtonElement>("button");
-    options?.[edge === "end" ? options.length - 1 : 0]?.focus({ preventScroll: true });
-  }
-
-  return (
-    <div className="composer-attach-control" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        className={open ? "composer-attach-trigger active" : "composer-attach-trigger"}
-        type="button"
-        aria-label="Attach Files"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        title="Attach Files"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Add16Regular aria-hidden="true" />
-      </button>
-      {onUploadFiles ? (
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          tabIndex={-1}
-          onChange={(event) => {
-            const chosen = Array.from(event.currentTarget.files ?? []);
-            event.currentTarget.value = "";
-            if (!chosen.length) return;
-            const transfer = new DataTransfer();
-            chosen.forEach((file) => transfer.items.add(file));
-            onUploadFiles(transfer);
-          }}
-        />
-      ) : null}
-      {open && view === "choose" ? (
-        <div className="composer-command-menu composer-attach-menu" id={menuId} role="menu" aria-label="Attach Files">
-          <button type="button" role="menuitem" autoFocus onClick={() => setView("files")}>
-            <span className="composer-attach-option-icon" style={connectedFolderIdentityStyle(identity)}><ConnectedFolderIconGlyph icon={identity.Icon} size={18} /></span>
-            <span className="composer-attach-option-copy">
-              <strong>From {connectedFolderName}</strong>
-              <small>Pick files in this Connected Folder</small>
-            </span>
-          </button>
-          {onUploadFiles ? (
-            <button type="button" role="menuitem" onClick={() => { setOpen(false); fileInputRef.current?.click(); }}>
-              <span className="composer-attach-option-icon"><Desktop20Regular aria-hidden="true" /></span>
-              <span className="composer-attach-option-copy">
-                <strong>From This Computer</strong>
-                <small>Copies them into the Dropped folder</small>
-              </span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {open && view === "files" ? (
-        <div className="composer-command-menu composer-attach-menu composer-attach-picker" id={menuId} role="dialog" aria-label={`Attach from ${connectedFolderName}`}>
-          <div className="composer-attach-search">
-            <button type="button" className="composer-attach-back" aria-label="Back" title="Back" onClick={() => setView("choose")}>
-              <ChevronLeft16Regular aria-hidden="true" />
-            </button>
-            <Search16Regular className="composer-attach-search-icon" aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              placeholder={`Search ${connectedFolderName}`}
-              aria-label={`Search ${connectedFolderName}`}
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  // The composer is a form; Enter here attaches, never sends.
-                  event.preventDefault();
-                  if (visible[0]) attach(visible[0].path);
-                  return;
-                }
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  focusOption(event.key === "ArrowUp" ? "end" : "start");
-                }
-              }}
-            />
-          </div>
-          {error ? <div className="composer-model-error" role="alert">{error}</div>
-            : !files ? <div className="composer-model-status" role="status">Loading files</div>
-              : !visible.length ? <div className="composer-model-status" role="status">{query.trim() ? "No Matching Files" : "No Files Yet"}</div>
-                : (
-                  <div
-                    className="composer-attach-options"
-                    role="listbox"
-                    aria-label={`Files in ${connectedFolderName}`}
-                    ref={optionsRef}
-                    onKeyDown={(event) => {
-                      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                      const options = Array.from(optionsRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
-                      const next = nextMenuItemIndex(options.indexOf(document.activeElement as HTMLButtonElement), options.length, event.key as MenuNavigationKey);
-                      if (next === null) return;
-                      event.preventDefault();
-                      options[next]?.focus({ preventScroll: true });
-                      options[next]?.scrollIntoView({ block: "nearest" });
-                    }}
-                  >
-                    {visible.map((file) => (
-                      <button key={file.path} type="button" role="option" aria-selected={attached.has(file.path)} title={file.path} onClick={() => attach(file.path)}>
-                        <FileTypeIcon path={file.path} />
-                        <span className="composer-attach-file-name">{file.name}</span>
-                        {file.folder ? <span className="composer-attach-file-folder">{file.folder}</span> : null}
-                      </button>
-                    ))}
-                  </div>
-                )}
-          {matches.length > visible.length ? <div className="composer-model-status">Type to narrow {matches.length.toLocaleString()} files</div> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function commandSourceLabel(source: AgentCommand["source"]): string {
   if (source === "skill") return "Skill";
   if (source === "prompt") return "Prompt";
@@ -3061,27 +2642,6 @@ function ChatEmptyState({
         <span>{connectedFolder.name}</span>
       </span>
     </div>
-  );
-}
-
-/** Up to three of this Connected Folder's Chats, newest first, on a new Chat's start screen. */
-function ChatRecentChats({ chats, onOpen }: { chats: ConversationSummary[]; onOpen: (conversation: ConversationSummary) => void }) {
-  const headingId = useId();
-  return (
-    <section className="chat-recent" aria-labelledby={headingId}>
-      <h2 id={headingId}>Recent Chats</h2>
-      <ul>
-        {chats.map((chat) => (
-          <li key={chat.id}>
-            <button type="button" onClick={() => onOpen(chat)}>
-              <Chat16Regular className="chat-recent-icon" aria-hidden="true" />
-              <span className="chat-recent-title">{chat.title}</span>
-              <time className="chat-recent-time" dateTime={chat.updatedAt}>{formatChatListTime(chat.updatedAt)}</time>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 
