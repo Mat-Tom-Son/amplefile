@@ -7,7 +7,40 @@ short scene while it is on screen.
 On a wide screen a section shows the whole window. On a phone, a section whose
 action is in the right panel shows the whole window with a close-up of the
 panel beneath it; the page draws that view twice and plays both as one scene,
-so every step lands on both together.
+so every step lands on both together. The file manager section's close-up is
+the folder area instead: its tabs, icons, list, and search results.
+
+The first section after the headline shows the file manager itself, with
+nothing that needs a Worker: Info measuring a folder, a search that finds a
+word in names and in the text of files, a second folder tab that keeps its
+own Icons view and search, thumbnails, and a photo's Info. The sidebar of
+every window holds Recents, the Trash, and Drives.
+
+## Each visitor's system
+
+The page speaks to the visitor's system. A script in the head marks it on the
+page (`os-mac`, `os-windows`, or `os-linux`) before anything draws, and the
+page shows each system's own words and windows (`per` in `site/views.mjs`):
+
+- **Mac:** "your Mac" and Finder; the window has the Mac's window buttons,
+  iCloud Drive among the Standard Folders, Macintosh HD under Drives and at
+  the start of the path bar, ⌘ in key hints, and the names macOS gives
+  screenshots and installers.
+- **Linux:** "your computer" and "your file manager"; the window has the title
+  bar AmpleFile draws on Linux, with its menus and window buttons
+  ([Linux builds](linux-build.md#title-bar-and-desktop-appearance)), no
+  iCloud Drive, File System under Drives and over `/home` in the path bar,
+  Ctrl in key hints, the Permissions, Owner, and Group rows Info adds there,
+  and the names GNOME gives screenshots and the packages a Linux download is.
+- **Windows:** "your PC" and File Explorer, with the neutral window below:
+  this repository has no Windows window to draw from, so the page draws none.
+- **Anything else** (a phone, an unknown system, or a visit without scripts):
+  "your computer" and the neutral window, which has no window buttons, no
+  iCloud Drive, and no disk; its path bar starts at the home folder.
+
+`?os=mac`, `?os=windows`, `?os=linux`, or `?os=other` shows the page as that
+visitor sees it, for checking each one. The menu bar's note names the menu
+bar Agent on a Mac and the AmpleFile Agent elsewhere.
 
 ## Files
 
@@ -41,7 +74,11 @@ means published last (`site/linux-preview.mjs`): GitHub does not list one
 day's releases newest first, so the first match in its list can be an older
 preview. Until GitHub answers, a Linux link opens the list of releases. A visitor on Linux
 sees the Linux button as the blue one at the top of the page, and the Linux
-preview first in the menu bar's Download menu.
+preview first in the menu bar's Download menu. The footer says the preview
+comes as a DEB, an RPM, or an AppImage, and that on Fedora the RPM updates
+with the system's software updates
+([Package repository](linux-build.md#package-repository)); the DEB and
+AppImage have no update path, and the page claims none.
 
 Windows links open AmpleFile's Microsoft Store listing, which installs and
 updates the Windows build, so the page asks nothing of GitHub for them. A
@@ -67,7 +104,9 @@ python3 -m http.server 8080 --directory site/public
 ```
 
 The scenes play as each section scrolls into view and replay while it stays
-there. With Reduce Motion on, every view shows its finished state.
+there. With Reduce Motion on, every view shows its finished state. Add
+`?os=linux` (or `mac`, `windows`, `other`) to the address to see another
+system's page.
 
 ## Deploy
 
