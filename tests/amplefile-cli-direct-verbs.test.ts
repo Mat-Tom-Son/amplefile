@@ -79,6 +79,7 @@ async function directVerbHarness(prefix: string): Promise<{
       resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push(structuredClone(record));
           return true;

@@ -20,6 +20,7 @@ import {
   type AmpleFileSchedulerRunAdmission,
   type AmpleFileSchedulerRunContext,
   type AmpleFileSchedulerRunResult,
+  type AmpleFileSchedulerRunState,
 } from "../agent/amplefile-scheduler-service.js";
 import {
   ampleFileAutomationBounds,
@@ -568,6 +569,19 @@ export class AmpleFileAutomationService {
     if (this.#store.status().damaged) return [];
     const affected = await this.#store.noteConnectedFolderReRegistered(connectedFolderId);
     return affected.map((record) => record.declaration.id);
+  }
+
+  /**
+   * One run of this automation by id: queued, running, or settled with its
+   * result. Undefined for a run of another automation, one this app has not
+   * admitted since it started, or one that aged out of the bounded history;
+   * the receipts journal keeps every run's durable record either way.
+   */
+  runStatus(automationId: string, runId: string): AmpleFileSchedulerRunState | undefined {
+    const state = this.#automation.runState(runId);
+    const key = this.#jobKey(automationId);
+    if (!state || state.key.ownerId !== key.ownerId || state.key.jobId !== key.jobId) return undefined;
+    return state;
   }
 
   /** Diagnostic passthrough to the scheduler's bounded in-memory run history. */

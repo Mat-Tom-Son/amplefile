@@ -809,7 +809,7 @@ async function prepareConnectedFolderMove(
   if (!(await stat(targetFolder)).isDirectory()) throw new Error("Move items into a folder.");
   if (dirname(source) === targetFolder) throw new Error(`${basename(source)} is already in the selected folder.`);
   const destination = join(targetFolder, basename(source));
-  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${basename(source)} already exists there.`);
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw nameTaken(`A file or folder named ${basename(source)} already exists there.`);
   return { sourcePath, source, destination };
 }
 
@@ -830,7 +830,7 @@ export async function checkConnectedFolderMoves(
     const plan = await prepareConnectedFolderMove(root, { sourcePath, targetFolderPath });
     const name = basename(plan.destination);
     const other = named.get(name);
-    if (other) throw new Error(`${other} and ${plan.sourcePath} have the same name, so they cannot go into one folder.`);
+    if (other) throw nameTaken(`${other} and ${plan.sourcePath} have the same name, so they cannot go into one folder.`);
     named.set(name, plan.sourcePath);
     plans.push({ fromPath: plan.sourcePath, toPath: normalizeRelative(relative(root, plan.destination)) });
   }
@@ -885,7 +885,7 @@ export async function renameConnectedFolderEntry(
   if (basename(source) === newName) throw new Error("That item already has this name.");
   const destination = join(dirname(source), newName);
   resolveConnectedFolderPath(root, normalizeRelative(relative(root, destination)), { finalLink: true });
-  if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error(`A file or folder named ${newName} already exists there.`);
+  if (lstatSync(destination, { throwIfNoEntry: false })) throw nameTaken(`A file or folder named ${newName} already exists there.`);
   await rename(source, destination);
   const renamedInfo = await lstat(destination);
   await touchConnectedFolder(root);
@@ -909,7 +909,7 @@ export async function createConnectedFolderFolder(
   const safeName = safeFileName(name);
   const destination = join(parent, safeName);
   await assertOutsideNestedFolders(root, normalizeRelative(relative(root, destination)));
-  if (existsSync(destination)) throw new Error(`A file or folder named ${safeName} already exists there.`);
+  if (existsSync(destination)) throw nameTaken(`A file or folder named ${safeName} already exists there.`);
   await mkdir(destination, { recursive: false });
   const info = await stat(destination);
   await touchConnectedFolder(root);
@@ -2350,5 +2350,12 @@ function assertId(value: string): void {
 function notFound(message: string): Error {
   const error = new Error(message) as Error & { statusCode?: number };
   error.statusCode = 404;
+  return error;
+}
+
+/** Another item already has the name: a conflict (409), which a caller resolves by choosing another name. */
+function nameTaken(message: string): Error {
+  const error = new Error(message) as Error & { statusCode?: number };
+  error.statusCode = 409;
   return error;
 }

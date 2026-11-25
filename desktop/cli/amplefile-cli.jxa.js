@@ -48,11 +48,14 @@ function run(rawArguments) {
         $.exit(6);
       }
       const waitPlan = parseWaitCommand(argumentsList);
+      const automationWaitPlan = waitPlan ? null : parseAutomationWaitCommand(argumentsList);
       if (waitPlan) {
         exitCode = runWaitLoop(context, waitPlan, actToken);
+      } else if (automationWaitPlan) {
+        exitCode = runAutomationWaitLoop(context, automationWaitPlan, actToken);
       } else {
         const prepared = prepareActArguments(argumentsList);
-        const outcome = performRequest(context, prepared.argv, actToken, prepared.payload);
+        const outcome = performRequest(context, prepared.argv, actToken, prepared.payload, prepared.requestId);
         emitOutcome(outcome);
         exitCode = outcome.exitCode;
       }
@@ -75,7 +78,7 @@ function isActCommand(argumentsList) {
   if (argumentsList.includes("--help") || argumentsList.includes("-h")) return false;
   const positional = argumentsList.filter((token) => token !== "--json");
   const group = positional[0] || "";
-  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "automations", "recently-deleted", "requests", "jobs", "worktrees"];
+  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "automations", "recently-deleted", "requests", "jobs", "worktrees", "receipts"];
   if (actGroups.includes(group)) return true;
   return group === "connected-folders" && positional[1] !== "list";
 }
@@ -160,12 +163,86 @@ function runWaitLoop(context, plan, actToken) {
   return result.exitCode;
 }
 
-/** Rewrites --message-file <path> into a bounded payload the host can trust. */
+function parseAutomationWaitCommand(argumentsList) {
+  const positional = argumentsList.filter((token) => token !== "--json");
+  if (positional[0] !== "automations" || positional[1] !== "wait") return null;
+  const json = argumentsList.includes("--json");
+  let automation = "";
+  let run = "";
+  let timeoutSeconds = 3600;
+  for (let index = 0; index < argumentsList.length; index += 1) {
+    const token = argumentsList[index];
+    if (token === "--automation") { automation = argumentsList[index + 1] || ""; index += 1; }
+    else if (token === "--run") { run = argumentsList[index + 1] || ""; index += 1; }
+    else if (token === "--timeout") {
+      timeoutSeconds = Number(argumentsList[index + 1]);
+      index += 1;
+      if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > MAX_WAIT_SECONDS) {
+        throw usageFailure(`--timeout must be an integer between 1 and ${MAX_WAIT_SECONDS} seconds.`);
+      }
+    } else if (token === "automations" || token === "wait" || token === "--json") {
+      // command tokens
+    } else {
+      throw usageFailure(`Unknown option for automations wait: ${token}`);
+    }
+  }
+  if (!automation) throw usageFailure("Provide --automation <id>.");
+  if (!run) throw usageFailure("Provide --run <id> from automations run.");
+  return { automation, run, timeoutSeconds, json };
+}
+
+function runAutomationWaitLoop(context, plan, actToken) {
+  // Each poll is one quick status read, so nothing holds the app while the
+  // run's own steps use the amplefile command. The loop ends when the run
+  // settles and prints that status; a run that did not succeed exits 1.
+  const statusArgv = ["automations", "status", "--automation", plan.automation, "--run", plan.run, "--json"];
+  const deadline = Date.now() + plan.timeoutSeconds * 1000;
+  for (;;) {
+    const status = performRequest(context, statusArgv, actToken, null);
+    if (status.exitCode !== 0) {
+      emitOutcome(status);
+      return status.exitCode;
+    }
+    let run = null;
+    try {
+      run = JSON.parse(status.stdout).data.run;
+    } catch (error) {
+      throw new Error("AmpleFile returned an unreadable automation run status.");
+    }
+    if (run && run.state === "settled") {
+      const shown = plan.json ? status : performRequest(context, statusArgv.slice(0, -1), actToken, null);
+      emitOutcome(shown);
+      if (shown.exitCode !== 0) return shown.exitCode;
+      return run.outcome === "success" ? 0 : 1;
+    }
+    if (Date.now() >= deadline) {
+      writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: automations wait timed out after ${plan.timeoutSeconds}s.\n`);
+      return 7;
+    }
+    $.NSThread.sleepForTimeInterval(2);
+  }
+}
+
+/**
+ * Rewrites --message-file <path> into a bounded payload the host can trust,
+ * and checks the caller's own --request-id. That id names the act, not the
+ * request file: it stays in argv, where the host reads it, and every try
+ * still travels as its own request with its own answer.
+ */
 function prepareActArguments(argumentsList) {
   const argv = [];
   let payload = null;
+  let requestId = null;
   for (let index = 0; index < argumentsList.length; index += 1) {
     const token = argumentsList[index];
+    if (token === "--request-id" || token.startsWith("--request-id=")) {
+      const value = token === "--request-id" ? argumentsList[index + 1] : token.slice("--request-id=".length);
+      if (token === "--request-id") index += 1;
+      if (requestId) throw usageFailure("--request-id may be provided only once.");
+      requestId = normalizedRequestId(value);
+      argv.push("--request-id", requestId);
+      continue;
+    }
     if (token !== "--message-file") {
       argv.push(token);
       continue;
@@ -182,7 +259,16 @@ function prepareActArguments(argumentsList) {
     payload = { messageFile: text };
     argv.push("--message-from-payload");
   }
-  return { argv, payload };
+  return { argv, payload, requestId };
+}
+
+/** The broker's request id form: a UUID, lowercased (uuidgen prints capitals). */
+function normalizedRequestId(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+    throw usageFailure("--request-id must be a UUID, such as one uuidgen prints.");
+  }
+  return normalized;
 }
 
 function readActToken(cliRoot) {
@@ -198,8 +284,11 @@ function readActToken(cliRoot) {
   }
 }
 
-function performRequest(context, argv, actToken, payload) {
+function performRequest(context, argv, actToken, payload, actRequestId) {
   const fileManager = context.fileManager;
+  // Every try is its own request file with its own answer, so a caller only
+  // ever reads the answer to the request it sent. A caller's --request-id
+  // names the act inside argv instead; the host journals the act under it.
   const requestId = ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
   const requestPath = `${context.cliRoot}/requests/${requestId}.json`;
   const responsePath = `${context.cliRoot}/responses/${requestId}.json`;
@@ -229,34 +318,45 @@ function performRequest(context, argv, actToken, payload) {
       throw new Error("AmpleFile CLI request could not be committed.");
     }
     temporaryRequestPath = "";
-
-    const task = $.NSTask.alloc.init;
-    task.executableURL = $.NSURL.fileURLWithPath($(context.appPath));
-    task.arguments = $(["--amplefile-cli-request", requestId]);
-    if (!task.launchAndReturnError(null)) throw new Error("AmpleFile executable could not be launched.");
-
-    const deadline = Date.now() + context.timeoutMs;
-    while (!fileManager.fileExistsAtPath($(responsePath))) {
-      if (Date.now() >= deadline) {
-        throw transportTimeout(`AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.`);
-      }
-      $.NSThread.sleepForTimeInterval(0.05);
-    }
-
-    const response = JSON.parse(readText(responsePath));
-    if (response.protocolVersion !== 1) throw new Error(`AmpleFile returned unsupported CLI protocol version ${response.protocolVersion}.`);
-    if (response.id !== requestId) throw new Error("AmpleFile returned a CLI response with the wrong request id.");
-    if (!Number.isInteger(response.exitCode)) throw new Error("AmpleFile returned an invalid CLI exit code.");
-    return {
-      exitCode: response.exitCode,
-      stdout: typeof response.stdout === "string" ? response.stdout : "",
-      stderr: typeof response.stderr === "string" ? response.stderr : "",
-    };
+    return awaitResponse(context, requestId, responsePath, actToken ? actRequestId || requestId : null);
   } finally {
     for (const path of [temporaryRequestPath, requestPath, responsePath]) {
       if (path && fileManager.fileExistsAtPath($(path))) fileManager.removeItemAtPathError($(path), null);
     }
   }
+}
+
+/**
+ * Hands the committed request id to the app and waits for its answer.
+ * `actId` is the id an act is journaled under, named when the wait runs out.
+ */
+function awaitResponse(context, requestId, responsePath, actId) {
+  const fileManager = context.fileManager;
+  const task = $.NSTask.alloc.init;
+  task.executableURL = $.NSURL.fileURLWithPath($(context.appPath));
+  task.arguments = $(["--amplefile-cli-request", requestId]);
+  if (!task.launchAndReturnError(null)) throw new Error("AmpleFile executable could not be launched.");
+
+  const deadline = Date.now() + context.timeoutMs;
+  while (!fileManager.fileExistsAtPath($(responsePath))) {
+    if (Date.now() >= deadline) {
+      // An act may still run after this wait ends; its receipt says whether it did.
+      throw transportTimeout(actId
+        ? `AmpleFile did not answer act ${actId} within ${context.timeoutMs} ms. 'amplefile receipts show --id ${actId}' tells whether it ran.`
+        : `AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.`);
+    }
+    $.NSThread.sleepForTimeInterval(0.05);
+  }
+
+  const response = JSON.parse(readText(responsePath));
+  if (response.protocolVersion !== 1) throw new Error(`AmpleFile returned unsupported CLI protocol version ${response.protocolVersion}.`);
+  if (response.id !== requestId) throw new Error("AmpleFile returned a CLI response with the wrong request id.");
+  if (!Number.isInteger(response.exitCode)) throw new Error("AmpleFile returned an invalid CLI exit code.");
+  return {
+    exitCode: response.exitCode,
+    stdout: typeof response.stdout === "string" ? response.stdout : "",
+    stderr: typeof response.stderr === "string" ? response.stderr : "",
+  };
 }
 
 function emitOutcome(outcome) {

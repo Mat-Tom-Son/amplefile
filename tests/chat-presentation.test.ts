@@ -8,6 +8,7 @@ import test, { type TestContext } from "node:test";
 import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { appendMessage, readConversation, type ChatMessage } from "../src/local/agent/chat-store.js";
 import { PiConversationClient, PiTurnFailure, type PiChatEvent, type PiConversationClientOptions } from "../src/local/agent/pi-client.js";
+import { describeProviderFailure } from "../src/local/agent/turn-failure.js";
 import { localEditPath, parseAssistantPresentation, projectNativeEdit, turnPresentation } from "../src/local/agent/turn-presentation.js";
 import { maxAssistantPresentationSegments, maxChatToolEditDiffBytes, maxTurnToolEditDiffBytes } from "../src/shared/chat-presentation.js";
 import { AmpleFileTurnStore } from "../src/local/agent/turn-store.js";
@@ -282,7 +283,8 @@ test("native repeated input overflow stops after one compact-and-retry even at t
     }`, { enabled: true, reserveTokens: 1024, keepRecentTokens: 64 });
     await h.client.prompt("Earlier context. ".repeat(1_000));
     await h.client.prompt("More earlier context. ".repeat(1_000));
-    await assert.rejects(h.client.prompt("Recover once, then report if the input still cannot fit."), /recovery failed after one compact-and-retry/);
+    await assert.rejects(h.client.prompt("Recover once, then report if the input still cannot fit."), (error: unknown) =>
+      error instanceof PiTurnFailure && error.kind === "context_overflow" && /recovery failed after one compact-and-retry/.test(error.message));
     assert.equal(requests, 4, "two seed turns plus the original attempt and one native retry");
     assert.equal(new Set(h.events.filter(event => (event.raw as any)?.type === "compaction_end" && (event.raw as any)?.willRetry).map(event => event.raw)).size, 1);
     assert.equal(h.client.getTurnPresentation(), undefined, "no successful final is invented");
@@ -290,6 +292,27 @@ test("native repeated input overflow stops after one compact-and-retry even at t
     assert.equal(entries.findLast(entry => entry.message?.role === "assistant").message.timestamp,
       Date.parse(entries.findLast(entry => entry.type === "compaction").timestamp), "fresh retry deliberately shares the compaction timestamp");
   });
+});
+
+test("a compaction request that fails during overflow recovery is described by its own error, not as overflow", async (t) => {
+  let requests = 0;
+  const h = await harness(t, (_payload, send, response) => {
+    requests++;
+    if (requests === 3) {
+      send({ role: "assistant", content: "" });
+      response.write(`data: ${JSON.stringify({ error: { message: "prompt is too long", type: "invalid_request_error" } })}\n\n`);
+    } else if (requests === 4) {
+      // The compaction's own summary request is refused.
+      response.write(`data: ${JSON.stringify({ error: { message: "401 Incorrect API key provided", type: "invalid_request_error" } })}\n\n`);
+    } else { send({ role: "assistant", content: "Ready." }); send({}, "stop"); }
+  }, undefined, { enabled: true, reserveTokens: 1024, keepRecentTokens: 64 });
+  await h.client.prompt("Earlier context. ".repeat(1_000));
+  await h.client.prompt("More earlier context. ".repeat(1_000));
+  const failure = await h.client.prompt("Now overflow, and fail to compact.").then(() => null, (error: unknown) => error);
+  assert.ok(failure instanceof PiTurnFailure, String(failure));
+  assert.equal(failure.kind, "provider", "the compaction request's own error is the cause");
+  assert.doesNotMatch(failure.message, /^Context overflow recovery failed/);
+  assert.equal(describeProviderFailure({ message: failure.message, kind: failure.kind }).cause, "credentials");
 });
 
 test("Stop preserves partial text boundaries without inventing a final segment", async (t) => {

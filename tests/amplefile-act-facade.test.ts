@@ -465,7 +465,14 @@ test("the act facade drives file and search families with ledger safety rules", 
     assert.equal(created.path, "notes/todo.md");
     assert.equal(created.kind, "file");
     assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "notes", "todo.md"), "utf8"), "");
-    await assert.rejects(() => facade.filesCreate({ connectedFolder: connectedFolder.id, path: "notes/todo.md" }), /already exists/);
+    // A name another item has is a conflict in plain words, never the disk's
+    // raw EEXIST with a full path.
+    await assert.rejects(
+      () => facade.filesCreate({ connectedFolder: connectedFolder.id, path: "notes/todo.md" }),
+      (error: unknown) => error instanceof AmpleFileCliError && error.code === "conflict"
+        && /“todo\.md” could not take its name: an item is there already\./.test(error.message)
+        && !error.message.includes(connectedFolder.connectedFolderRoot),
+    );
 
     // Reserved metadata is never a valid endpoint, exactly as in the renderer.
     await assert.rejects(() => facade.filesCreate({ connectedFolder: connectedFolder.id, path: ".pi/hack.md" }), /reserved/);

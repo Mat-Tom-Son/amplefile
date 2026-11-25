@@ -340,7 +340,11 @@ export function describeJobState(job: Pick<AmpleFileJobRecord, "state" | "exitCo
   switch (job.state) {
     case "accepted": return "starting";
     case "running": return `running for ${took}`;
-    case "exited": return `exited with code ${job.exitCode ?? "unknown"} after ${took}`;
+    case "exited": return job.signal
+      // Ended from outside (a kill, the system running out of memory): the
+      // signal says so, where the exit code alone (137, 143) would not.
+      ? `was ended by signal ${job.signal}${job.exitCode !== null && job.exitCode !== undefined ? ` (exit code ${job.exitCode})` : ""} after ${took}`
+      : `exited with code ${job.exitCode ?? "unknown"} after ${took}`;
     case "timed_out": return `stopped by its timeout after ${took}`;
     case "stopped": {
       const by = job.stoppedBy === "request" ? " when its request was stopped"

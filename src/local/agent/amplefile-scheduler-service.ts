@@ -53,7 +53,23 @@ export interface AmpleFileSchedulerRunResult {
 export interface AmpleFileSchedulerRunAdmission {
   runId: string;
   result: Promise<AmpleFileSchedulerRunResult>;
+  /**
+   * True when the scheduler settled this admission without queuing it:
+   * closed, suspended, disabled, overlapping another run, or unregistered.
+   * Its result then follows at once, with no run work to wait for.
+   */
+  refused?: true;
 }
+
+/**
+ * Where one admitted run stands: waiting for a slot, running (including the
+ * moment its result is being recorded), or settled with its result. A run
+ * still settling reads as unsettled, so a caller that sees "settled" can
+ * rely on everything the result observer records.
+ */
+export type AmpleFileSchedulerRunState =
+  | { state: "queued" | "running"; key: AmpleFileSchedulerJobKey }
+  | { state: "settled"; key: AmpleFileSchedulerJobKey; result: AmpleFileSchedulerRunResult };
 
 export interface AmpleFileSchedulerResultCallbackError {
   runId: string;
@@ -148,6 +164,8 @@ export class AmpleFileSchedulerService {
   readonly #busyKeys = new Set<string>();
   readonly #active = new Map<string, ActiveRun>();
   readonly #runResults: AmpleFileSchedulerRunResult[] = [];
+  /** Admitted runs not yet settled, by run id; an entry leaves once its result has resolved. */
+  readonly #unsettled = new Map<string, { state: "queued" | "running"; key: AmpleFileSchedulerJobKey }>();
   readonly #resultCallbackErrors: AmpleFileSchedulerResultCallbackError[] = [];
   #activeCount = 0;
   #suspended = false;
@@ -282,6 +300,7 @@ export class AmpleFileSchedulerService {
       return {
         runId,
         result: this.#immediateResult(runId, normalizedKey, "manual", scheduledAt, "cancelled", "closed", "Automation service is closed."),
+        refused: true,
       };
     }
     const job = this.#jobs.get(automationKey(normalizedKey));
@@ -289,9 +308,25 @@ export class AmpleFileSchedulerService {
       return {
         runId,
         result: this.#immediateResult(runId, normalizedKey, "manual", scheduledAt, "cancelled", "registration-changed", "Automation is not registered."),
+        refused: true,
       };
     }
     return this.#requestRun(job, "manual", scheduledAt, runId);
+  }
+
+  /**
+   * One run by id: unsettled while it waits or runs, then its result from the
+   * bounded history. Undefined for an id this process never admitted, or one
+   * that has aged out of that history.
+   */
+  runState(runId: string): AmpleFileSchedulerRunState | undefined {
+    const unsettled = this.#unsettled.get(runId);
+    if (unsettled) return { state: unsettled.state, key: copyKey(unsettled.key) };
+    for (let index = this.#runResults.length - 1; index >= 0; index -= 1) {
+      const result = this.#runResults[index]!;
+      if (result.runId === runId) return { state: "settled", key: copyKey(result.key), result: copyRunResult(result) };
+    }
+    return undefined;
   }
 
   listRunResults(key?: AmpleFileSchedulerJobKey): AmpleFileSchedulerRunResult[] {
@@ -375,17 +410,18 @@ export class AmpleFileSchedulerService {
       scheduledAt,
       resolve: resolveResult,
     };
+    this.#unsettled.set(runId, { state: "queued", key: copyKey(pending.key) });
     if (this.#closed) {
       this.#finishWithoutLaunch(pending, "cancelled", "closed", "Automation service is closed.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (this.#suspended) {
       this.#finishWithoutLaunch(pending, "skipped", "suspended", "Automation scheduling is suspended.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (reason !== "manual" && !job.definition.enabled) {
       this.#finishWithoutLaunch(pending, "skipped", "disabled", "Automation is disabled.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     if (this.#busyKeys.has(job.encodedKey)) {
       // A manual copy must never spend a one-time slot. Keep the exact due
@@ -397,7 +433,7 @@ export class AmpleFileSchedulerService {
         job.atConsumed = false;
       }
       this.#finishWithoutLaunch(pending, "skipped", "overlap", "Another run of this automation is already pending or active.");
-      return { runId, result };
+      return { runId, result, refused: true };
     }
     this.#busyKeys.add(job.encodedKey);
     this.#pending.push(pending);
@@ -429,6 +465,7 @@ export class AmpleFileSchedulerService {
       const controller = new AbortController();
       this.#activeCount += 1;
       this.#active.set(pending.encodedKey, { registration: job.registration, controller });
+      this.#unsettled.set(pending.runId, { state: "running", key: copyKey(pending.key) });
       void this.#execute(pending, run, startedAt, controller);
     }
   }
@@ -520,13 +557,22 @@ export class AmpleFileSchedulerService {
       notLaunchedReason,
       error: boundedError(error),
     };
-    await this.#record(result);
+    this.#unsettled.set(runId, { state: "queued", key: copyKey(key) });
+    try {
+      await this.#record(result);
+    } finally {
+      this.#unsettled.delete(runId);
+    }
     return copyRunResult(result);
   }
 
   async #complete(pending: PendingRun, result: AmpleFileSchedulerRunResult): Promise<void> {
-    await this.#record(result);
-    pending.resolve(copyRunResult(result));
+    try {
+      await this.#record(result);
+      pending.resolve(copyRunResult(result));
+    } finally {
+      this.#unsettled.delete(pending.runId);
+    }
   }
 
   async #record(result: AmpleFileSchedulerRunResult): Promise<void> {

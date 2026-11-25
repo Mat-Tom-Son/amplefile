@@ -132,7 +132,7 @@ for (const fails of [true, false]) {
       const requestId = api.requests.byTaskId(root.taskId)!.requestId;
       await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
       const delivered = api.requests.get(requestId)!;
-      assert.match(delivered.content, fails ? /failed: The agent couldn’t complete this request/ : /finished without a report/);
+      assert.match(delivered.content, fails ? /failed: The turn ended on an unexpected error before it finished/ : /finished without a report/);
       assert.doesNotMatch(delivered.content, /STALE SUCCESS REPORT|old\.txt/);
       assert.deepEqual(delivered.deliveredChildTaskIds, [answer.continuation.taskId]);
       assert.equal(api.requests.byTaskId(child.taskId)!.results.length, 1, "the earlier report remains historical");
