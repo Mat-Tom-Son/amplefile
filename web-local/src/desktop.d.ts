@@ -37,6 +37,7 @@ type AmpleFileDesktopMenuCommand =
   | "new-connected-folder"
   | "open-local-folder"
   | "open-terminal"
+  | "get-info"
   | "new-chat"
   | "refresh"
   | "check-for-updates"

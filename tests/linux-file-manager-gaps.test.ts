@@ -153,3 +153,50 @@ test("Linux menus omit external reveal without querying settings, offer Terminal
   await dom.waitFor(() => requests.some((request) => request.path.includes("path=mnt%2FPhoto+Drive")));
   assert.deepEqual(requests.find((request) => request.path === "/api/volumes/mount")?.body, { volumeId: "volume-test" });
 });
+
+test("Get Info opens the panel at Info for an item, from its menu and from the File menu, even with the panel hidden", async (t) => {
+  const { dom, module } = await createFileManagerHarness(t, (path) => {
+    if (path === "/api/volumes") return { volumes: [], mountable: [] };
+    if (path === "/api/standard-folders") return { folders: [{ id: "home", name: "Home", root: "/home/ana", connectedFolderId: null }] };
+    if (path.startsWith("/api/standard-folders/home/entry-details")) return { createdAt: null, modifiedAt: "2026-11-20T15:00:00Z", permissions: "rw-r--r-- (0644)", owner: "ana", group: "staff" };
+    if (path.startsWith("/api/standard-folders/home/tree")) return { tree: [{ kind: "file", name: "plan.txt", path: "plan.txt", sizeBytes: 12 }, { kind: "file", name: "other.txt", path: "other.txt", sizeBytes: 3 }] };
+    if (path.startsWith("/api/standard-folders/computer/tree")) return { tree: [] };
+    return undefined;
+  });
+  const scope = window as unknown as { ampleFileDesktop?: unknown };
+  scope.ampleFileDesktop = { app: { platform: "linux" }, connectedFolder: {} };
+  t.after(() => { delete scope.ampleFileDesktop; });
+  const props = {
+    connectedFolder: null, connectedFolders: [], agent: { ready: true, configured: false } as never, fixture: null,
+    onSwitchConnectedFolder() {}, onOpenSettings() {}, onRefreshBootstrap: async () => {}, onCreateConnectedFolder() {}, onOpenFolder() {}, onError() {},
+  };
+  await dom.render(createElement(module.FileManagerView, props));
+  const row = (name: string) => dom.container.querySelector(`[data-fm-path="${name}"]`);
+  const panel = () => dom.container.querySelector(".fm-panel");
+  const menu = () => [...dom.container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  const rightClick = (element: Element) => dom.act(() => { element.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })); });
+  await dom.waitFor(() => Boolean(row("plan.txt")));
+
+  // With the panel hidden there is nowhere for Info to show, so Get Info brings it back.
+  await dom.act(() => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!.click(); });
+  assert.equal(panel(), null);
+  await rightClick(row("plan.txt")!);
+  await dom.waitFor(() => menu().some((item) => item.textContent === "Get Info"));
+  await dom.act(() => { menu().find((item) => item.textContent === "Get Info")!.click(); });
+  await dom.waitFor(() => (panel()?.textContent ?? "").includes("plan.txt"));
+  assert.match(panel()!.textContent!, /Permissionsrw-r--r-- \(0644\)/);
+
+  // The folder background's Get Info is the folder shown.
+  await rightClick(dom.container.querySelector(".fm-content")!);
+  await dom.waitFor(() => menu().some((item) => item.textContent === "Get Info"));
+  await dom.act(() => { menu().find((item) => item.textContent === "Get Info")!.click(); });
+  await dom.waitFor(() => !(panel()?.textContent ?? "").includes("plan.txt"));
+  assert.equal(dom.container.querySelectorAll(".fm-row.is-selected, [aria-selected='true'][data-fm-path]").length, 0);
+
+  // The File menu's Get Info (Ctrl+I) is for the selection as it stands, with the panel hidden again.
+  await dom.act(() => { (row("other.txt") as HTMLElement).click(); });
+  await dom.act(() => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!.click(); });
+  assert.equal(panel(), null);
+  await dom.render(createElement(module.FileManagerView, { ...props, desktopAction: { id: 2, command: "get-info" } }));
+  await dom.waitFor(() => (panel()?.textContent ?? "").includes("other.txt"));
+});

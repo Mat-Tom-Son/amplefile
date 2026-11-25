@@ -29,6 +29,8 @@ export interface FileManagerMenuActions {
   showOriginal: (entry: TreeEntry) => Promise<void>;
   copyPaths: (paths: readonly string[]) => Promise<void>;
   showVersionHistory: ((entry: TreeEntry) => void) | null;
+  /** Get Info: the panel, opened at Info for this item (the folder shown, for the background menu). */
+  showInfo: (entry: TreeEntry) => void;
   requestNewFolder: (parent: string) => void;
   refresh: () => Promise<unknown>;
   putToWork: (path: string, target?: FileManagerPlace) => Promise<void>;
@@ -239,6 +241,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     else if (command === "show-original") await actions.showOriginal(target);
     else if (command === "copy-path") await actions.copyPaths([target.path]);
     else if (command === "version-history" && actions.showVersionHistory) actions.showVersionHistory(target);
+    else if (command === "get-info") actions.showInfo(target);
     else if (command === "new-folder") actions.requestNewFolder(target.kind === "folder" ? target.path : parentPath(target.path));
     else if (command === "refresh") await actions.refresh();
     else if (command === "give-worker") await actions.putToWork(target.path);

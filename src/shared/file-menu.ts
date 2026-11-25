@@ -19,6 +19,7 @@ export type FileMenuCommand =
   | "copy-path"
   | "attach-chat"
   | "version-history"
+  | "get-info"
   | "new-folder"
   | "upload-here"
   | "refresh"
@@ -101,6 +102,8 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   const itemWord = request.capabilities.link ? "Link" : packaged ? "Item" : request.kind === "folder" ? "Folder" : "File";
   const deleteLabel = request.standardFolderId ? "Move to Trash" : `Delete ${itemWord}`;
   const showContents: FileMenuItem = { type: "item", label: "Show Package Contents", command: "show-package-contents" };
+  // The panel, opened at Info for this item: the one way to ask for Info when the panel is hidden or shows something else.
+  const getInfo: FileMenuItem = { type: "item", label: "Get Info", command: "get-info" };
   if (request.capabilities.link) {
     // Open and Show Original reach what the link points to; the rest act on the link itself.
     if (request.capabilities.open) items.push({ type: "item", label: request.kind === "folder" && !packaged ? "Open Folder" : "Open", command: "open" });
@@ -108,6 +111,7 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
     if (request.capabilities.original) items.push({ type: "item", label: "Show Original", command: "show-original" });
     if (platform !== "linux") items.push(reveal);
     items.push({ type: "item", label: "Copy Link Path", command: "copy-path" });
+    items.push(getInfo);
     if (request.capabilities.organize && request.path) items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.path && (request.capabilities.rename || request.capabilities.delete)) {
       items.push({ type: "separator" });
@@ -130,6 +134,7 @@ export function fileMenuItems(request: FileMenuTarget, platform: string = "darwi
   if (platform === "linux" && request.kind === "folder" && !packaged && request.capabilities.terminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
   if (platform !== "linux") items.push(reveal);
   items.push({ type: "item", label: `Copy ${itemWord} Path`, command: "copy-path" });
+  items.push(getInfo);
   if (request.capabilities.organize && request.path) {
     items.push({ type: "separator" }, ...organizeItems(`“${name}”`, false));
     if (request.kind === "file" && request.capabilities.extract) items.push({ type: "item", label: `Extract “${name}”`, command: "extract" });
