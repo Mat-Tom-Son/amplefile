@@ -20,7 +20,7 @@ import {
   type AmpleFileJobRecord,
 } from "../jobs/job-records.js";
 import { describeJobOutputRead, fenceJobOutput } from "../jobs/job-output.js";
-import { AmpleFileJobService, type AmpleFileJobShell } from "../jobs/job-service.js";
+import { AmpleFileJobService, isUndeliveredFollowUp, type AmpleFileJobShell } from "../jobs/job-service.js";
 import { AmpleFileJobStore } from "../jobs/job-store.js";
 import type { BackgroundJobToolHost } from "../agent/job-tools.js";
 import { connectedFolderTurnHistory } from "../agent/connected-folder-turn-context.js";
@@ -172,9 +172,13 @@ export async function backgroundJobsForTurn(
   if (!jobs.length) return [];
   const now = new Date();
   const ending = jobs.filter((job) => !isAmpleFileJobTerminalState(job.state) || job.settledAt === null);
-  const finished = jobs.filter((job) => isAmpleFileJobTerminalState(job.state) && job.settledAt !== null && !job.delivery
+  // A job whose follow-up could not start was claimed but reached no turn;
+  // this Chat's next turn receives it instead, once.
+  const finished = jobs.filter((job) => isAmpleFileJobTerminalState(job.state) && job.settledAt !== null
     && state.jobsSettledThisRun.has(job.jobId)
-    && !(state.requests.get(job.requestId)?.deliveredJobIds ?? []).includes(job.jobId));
+    && (job.delivery
+      ? isUndeliveredFollowUp(job.delivery)
+      : !(state.requests.get(job.requestId)?.deliveredJobIds ?? []).includes(job.jobId)));
   await deliverBackgroundJobs(state, finished, "turn_context", taskId);
   return [
     ...ending.map((job) => ({ jobId: job.jobId, name: job.name, status: describeJobState(job, now), finished: false })),

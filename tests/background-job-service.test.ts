@@ -509,3 +509,24 @@ test("what a model reads drops escape sequences and progress rewrites but keeps 
   assert.equal(sanitizeJobOutput("\u001b[32mgreen\u001b[0m\r\n10%\r50%\r100%\ndone\u0007"), "green\n100%\ndone");
   assert.equal(sanitizeJobOutput("a\n\nb").split("\n").length, 3);
 });
+
+test("a job's end that a follow-up could not deliver can still reach the Chat's next turn, once", async (t) => {
+  const h = await harness(t);
+  const job = await start(h, "exit 0");
+  await h.service.wait(job.jobId, { seconds: 10 });
+  // The follow-up claimed it but never started: no turn received it.
+  assert.deepEqual((await h.service.markDelivered(job.jobId, "follow_up", null))?.delivery?.taskId, null);
+  const received = await h.service.markDelivered(job.jobId, "turn_context", "turn-2");
+  assert.equal(received?.delivery?.by, "turn_context");
+  assert.equal(received?.delivery?.taskId, "turn-2");
+  const again = await h.service.markDelivered(job.jobId, "read", "turn-3");
+  assert.equal(again?.delivery?.taskId, "turn-2", "once a turn received it, its delivery stands");
+});
+
+test("a job ended from outside names the signal, not only its exit code", async (t) => {
+  const h = await harness(t);
+  const job = await start(h, "kill -KILL $$");
+  const ended = (await h.service.wait(job.jobId, { seconds: 10 })).job;
+  assert.equal(ended.signal, "SIGKILL");
+  assert.match(describeJobState(ended, new Date()), /^was ended by signal SIGKILL \(exit code 137\) after/);
+});

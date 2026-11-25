@@ -429,6 +429,9 @@ journal across restarts. `chat status --task` and `chat result --task` read
 it, and `chat wait --task` is a poll in the shim that finishes with that
 turn's own result: a failed or aborted turn exits non-zero instead of
 presenting an older transcript message as success (a wait timeout exits 7).
+The failure message names its cause in fixed words, never the provider's own
+text, and is followed by the report the turn filed before it ended or the
+start of its unfinished reply ([collaboration contract](collaboration-contract.md#host-environment-and-role)).
 `chat status|result --conversation` are the transcript-scoped views.
 
 On startup, an accepted turn that reached its transcript but never settled is
@@ -914,7 +917,10 @@ that is honest for a personal, local product:
   the interactive local API exposes, reusing the same route internals as the
   window: Connected Folder trust grants, capability-mutation locks,
   turn-conflict refusal, History checkpoints, and kernel task records.
-  Without the running app there is no facade and nothing changes.
+  Without the running app there is no facade and nothing changes. Errors
+  keep the window's meaning: a name another item already has is a conflict
+  (exit 5), and a disk refusal (locked, no permission, no room) reads as the
+  window says it, naming the item but never its full path.
 - **Prepared acts.** Runnable-code, standing-power, and destruction acts
   prepare a fully pinned record, recheck every pin at effect time, consume it
   journal-first, and execute at most once through a fenced kernel task,
@@ -993,6 +999,7 @@ of reaching around it.
 | Turn environment line and role preamble | `src/local/agent/turn-environment.ts`, `src/local/agent/role-preamble.ts` | `tests/turn-environment.test.ts`, `tests/role-preamble-prompt.test.ts` |
 | Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts`, `src/local/api/request-records.ts`, `src/local/api/request-routes.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
 | Bounded inference | `src/local/agent/bounded-inference.ts` | `tests/bounded-inference.test.ts` |
+| Why a turn failed, and the next turn's notice of it | `src/local/agent/turn-failure.ts`, `src/local/api/turn-run.ts`, `src/local/api/plain-file-error.ts` | `tests/turn-failure-visibility.test.ts` |
 | Automation declarations, authoring guide, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-authoring-guide.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
 | Overview composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |
 

@@ -30,6 +30,7 @@ import type {
 import type { ConnectedFolderSummary } from "../connected-folder.js";
 import { normalizeConnectedFolderRelativePath } from "./file-changes.js";
 import { automationErrorStatus, errorMessage } from "./http.js";
+import { plainTransferError } from "./plain-file-error.js";
 import type { LocalApiState } from "./state.js";
 
 export async function classifyActAmpleFileAgentAttachments(raw: string[], cwd: string | undefined): Promise<AmpleFileAgentAttachmentRef[]> {
@@ -168,8 +169,12 @@ export function appearanceCustomizationsEqual(
 export async function runActOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
-  } catch (error) {
-    if (error instanceof AmpleFileCliError) throw error;
+  } catch (thrown) {
+    if (thrown instanceof AmpleFileCliError) throw thrown;
+    // A raw disk error (EACCES, EEXIST, …) reads as the window says it, with
+    // the item's name and the status its cause deserves, never a full path.
+    // Only a failed system call counts: a package manager's "E404" is not a disk error.
+    const error = typeof (thrown as { syscall?: unknown })?.syscall === "string" ? plainTransferError(thrown) : thrown;
     // Exactly the HTTP boundary's status translation (sendError), so a
     // route error means the same thing on both surfaces.
     const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === "number"
