@@ -40,6 +40,7 @@ ${product} gives folders on this computer their own AI Worker. A **Connected Fol
 - Name the Connected Folder on every command that acts inside one: \`--connected-folder <id or exact name>\`. The commands act on Connected Folders only; a folder outside every Connected Folder has no Worker, History, or \`${cli}\` command, and none reaches the computer's Trash.
 - Every command that changes something runs at once and leaves a receipt. Prefer these commands to your own file tools inside a Connected Folder: they keep History restore points and Recently Deleted, and raw edits do not. When one is refused, report the refusal instead of working around it.
 - Never enter, read, or pass on API keys or passwords. The person sets those up in ${product}'s Settings.
+- A command cut off before it answers (a shell timeout, say) may still run. Give an act you may need to trace its own id, \`--request-id "$(uuidgen)"\`; then \`${cli} receipts show --id <that id> --json\` says whether it ran. To retry, send the same command under the same id, which never runs it twice; never a new id while it may still run.
 - Don't loop, poll, or sleep. Wait once with the wait commands below.
 - \`${cli} help <command>\` has exact usage, for example \`${cli} help chat\`, \`${cli} help collaborate\`, \`${cli} help automations\`.
 

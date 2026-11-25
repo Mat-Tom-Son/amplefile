@@ -261,7 +261,8 @@ has two parts, and nothing changes until the person clicks:
 
 The Skill (`src/shared/outside-agent-skill.ts`) is short on purpose: the
 rules (`--json`, an explicit `--connected-folder`, receipts over raw edits,
-no secrets, no polling), how to look around, handing work to a Worker and
+tracing a cut-off act by its `--request-id`, no secrets, no polling), how to
+look around, handing work to a Worker and
 waiting for its result, asking the AmpleFile Agent to work across Connected
 Folders, files and undo, and Automations, with `amplefile help <command>` for
 the rest. Its product name, command, and folder come from
@@ -336,6 +337,8 @@ amplefile tools disable --path <resource-path> --kind extensions --scope everywh
 amplefile tools enable --path <resource-path> --kind extensions --scope connected-folder --connected-folder "Home" --json
 amplefile recently-deleted list --json
 amplefile recently-deleted restore --entry <recently-deleted-id> --json
+amplefile files rename --connected-folder "Home" --path draft.md --name final.md --request-id "$(uuidgen)" --json
+amplefile receipts show --id <request-id> --json
 ```
 
 `tools enable|disable` uses Pi's resource filters for `extensions`, `skills`,
@@ -461,6 +464,50 @@ code 6.
 Deleting a Worker Chat moves its portable transcript into Recently Deleted
 and records the Connected Folder, Chat, and Recently Deleted entry identities
 in its receipt.
+
+### Following an act after the wait ends
+
+Every act request travels under a request id, and its receipts are journaled
+under that id. A caller that stops waiting (a shell timeout, a lost
+connection, a killed process) does not stop the act: the desktop host claims
+a request on arrival and can still run it after the shim is gone, as late as
+the five-minute freshness window allows behind other commands in its queue.
+So the caller names the id: every act command takes `--request-id <uuid>`
+(`uuidgen` makes one). The shim sends the request under that id, lowercased
+as the broker names request files, and leaves the flag in argv; the host runs
+a request only when its argv and its envelope name the same id, so a shim
+that does not know the flag can never leave a caller holding an id that
+traces nothing. The caller chooses the id, rather than the shim printing one,
+because then the caller holds it before anything can cut the command off: a
+harness that kills a command on timeout often drops or truncates its output,
+and the id would go with it.
+
+`amplefile receipts show --id <request-id>` reads what became of it, from the
+receipt journals and from what the host still holds:
+
+| `state` | Meaning |
+|---|---|
+| `queued` | The host holds the request (its file waits to be claimed, or it waits in line) and has not started it. By `decideBy` it will have run or been refused. |
+| `accepted` | It started. `running` says whether the host is still on it; `false` means it was interrupted or its outcome could not be written, so check what it changes before running it again. An act the window or the popover started reports `running: null`. |
+| `ok`, `error` | It ran; `receipt` is its outcome receipt. |
+| `rejected` | It was refused without running: the app's token did not match, it waited too long in line, or its `--parent-task` was no longer active. Nothing changed. |
+| `not_found` | No receipt and nothing held under the id, so it never ran. `journalSince` says how far back the journals are known to reach once one has rotated. |
+
+Every act journals `accepted` before it runs, so an id without one never ran.
+The read runs beside the host's serial queue, as `jobs output` and
+`chat compact` do, because it is usually asked while the act it names still
+waits in that queue. It journals itself in `act-reads.jsonl`.
+
+The same id also makes a retry safe. A retry while the first try's file still
+waits to be claimed joins that try; while the first is being processed, the
+broker gives both the same answer; an answer the host wrote after the caller
+left is returned to the retry; and once that answer is gone, the
+at-most-once journal refuses the id and names the command and how it ended.
+A `rejected` request never ran, so sending it again under the same id runs
+it. Every new command needs a new id. `chat wait` and `agent wait` refuse
+`--request-id`, because each of their polls is a read of its own. When the
+shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
+the request id with the `receipts show` command that answers for it.
 
 ## The AmpleFile Agent conversation
 
@@ -833,7 +880,7 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 
 1. The shim writes an atomic UUID-named request under the owning app's
    profile, with the arguments, current working directory, protocol version,
-   and timestamp. An installed production app uses
+   and timestamp. An act command sent with `--request-id` uses that id. An installed production app uses
    `~/Library/Application Support/AmpleFile/cli/requests`, and the separately
    identified local smoke app uses its own product directory. Packaged child
    commands receive that exact root through the CLI-only
@@ -846,12 +893,15 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
    atomically writes stdout, stderr, structured result, and exit code under
    `responses`. `jobs output` and `chat compact`, which can take minutes and
    are fenced by their own services, run beside that queue so they never
-   stall other commands. An act that reaches the front of the queue more
+   stall other commands; so does `receipts show`, which answers about acts
+   still waiting in it. An act that reaches the front of the queue more
    than five minutes after the shim created it is refused without running
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
 4. The shim returns that output and removes its request and response files.
-   The broker also removes stale bounded files during initialization.
+   A shim killed before then leaves the response behind, and a retry under
+   the same request id receives it. The broker also removes stale bounded
+   files during initialization.
 
 A CLI-only launch can start the host, process its queue, flush Pi state, and
 exit without showing the window. If the window is already open, the command
@@ -888,7 +938,9 @@ that is honest for a personal, local product:
   `accepted` records refuse a duplicated id outright. The broker refuses
   requests older than its freshness window, and journal rotation holds
   entries at least that long, so the two compose into a durable at-most-once
-  guarantee. The host reads the journal once, keeps the accepted ids in
+  guarantee. A caller may choose the id with `--request-id`; the host runs a
+  request only under the id its argv names, so a retry under that id is
+  answered or refused, never run twice. The host reads the journal once, keeps the accepted ids in
   memory, cuts an unfinished final line at startup, and refuses acts while
   an unreadable line could still name a request the broker would accept.
 - **Explicit scope.** Every act command names its Connected Folder; writes
@@ -899,7 +951,9 @@ that is honest for a personal, local product:
   (an unwritable journal refuses the command) and a terminal `ok` or `error`
   line after. Status, list, show, and overview reads journal the same pair
   in `cli/receipts/act-reads.jsonl` instead, so a `chat wait` poll never
-  crowds real acts out of the journal or the overview. Receipts record the
+  crowds real acts out of the journal or the overview. `receipts show`
+  reads one request id's lines back from both journals, and journals itself
+  with the reads. Receipts record the
   initiating surface (`cli`, `popover`,
   `main-window`) and typed undo references, including Recently Deleted entry
   ids: identifiers and digests only, never content. A crash can separate the
@@ -979,7 +1033,8 @@ of reaching around it.
 | Act facade over route internals | `src/local/api/act-lane.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
 | Atomic bounded file broker | `src/local/cli/broker.ts` | `tests/amplefile-cli-broker.test.ts` |
 | Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
-| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
+| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts`, `tests/desktop-cli-request-id.test.ts` |
+| `--request-id` and `receipts show` | `src/local/cli/act-commands.ts`, `src/local/cli/act-receipts.ts`, `src/local/cli/broker.ts`, `desktop/cli/amplefile-cli.jxa.js` | `tests/amplefile-cli-receipts-show.test.ts`, `tests/amplefile-cli-act-receipts.test.ts`, `tests/desktop-amplefile-cli-host.test.ts`, `tests/desktop-cli-request-id.test.ts` |
 | Real Pi turn driver | `scripts/amplefile-drive.ts` | Run against the local API when provider credentials are available. |
 | Machine-wide Automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` |
 | Prepared acts | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts`, `tests/amplefile-cli-act-receipts.test.ts` |

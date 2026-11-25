@@ -52,7 +52,7 @@ function run(rawArguments) {
         exitCode = runWaitLoop(context, waitPlan, actToken);
       } else {
         const prepared = prepareActArguments(argumentsList);
-        const outcome = performRequest(context, prepared.argv, actToken, prepared.payload);
+        const outcome = performRequest(context, prepared.argv, actToken, prepared.payload, prepared.requestId);
         emitOutcome(outcome);
         exitCode = outcome.exitCode;
       }
@@ -75,7 +75,7 @@ function isActCommand(argumentsList) {
   if (argumentsList.includes("--help") || argumentsList.includes("-h")) return false;
   const positional = argumentsList.filter((token) => token !== "--json");
   const group = positional[0] || "";
-  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "automations", "recently-deleted", "requests", "jobs", "worktrees"];
+  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "automations", "recently-deleted", "requests", "jobs", "worktrees", "receipts"];
   if (actGroups.includes(group)) return true;
   return group === "connected-folders" && positional[1] !== "list";
 }
@@ -160,12 +160,25 @@ function runWaitLoop(context, plan, actToken) {
   return result.exitCode;
 }
 
-/** Rewrites --message-file <path> into a bounded payload the host can trust. */
+/**
+ * Rewrites --message-file <path> into a bounded payload the host can trust,
+ * and takes the caller's own --request-id as the id to send the request
+ * under. That flag stays in argv so the host can check the two agree.
+ */
 function prepareActArguments(argumentsList) {
   const argv = [];
   let payload = null;
+  let requestId = null;
   for (let index = 0; index < argumentsList.length; index += 1) {
     const token = argumentsList[index];
+    if (token === "--request-id" || token.startsWith("--request-id=")) {
+      const value = token === "--request-id" ? argumentsList[index + 1] : token.slice("--request-id=".length);
+      if (token === "--request-id") index += 1;
+      if (requestId) throw usageFailure("--request-id may be provided only once.");
+      requestId = normalizedRequestId(value);
+      argv.push("--request-id", requestId);
+      continue;
+    }
     if (token !== "--message-file") {
       argv.push(token);
       continue;
@@ -182,7 +195,16 @@ function prepareActArguments(argumentsList) {
     payload = { messageFile: text };
     argv.push("--message-from-payload");
   }
-  return { argv, payload };
+  return { argv, payload, requestId };
+}
+
+/** The broker's request id form: a UUID, lowercased (uuidgen prints capitals). */
+function normalizedRequestId(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+    throw usageFailure("--request-id must be a UUID, such as one uuidgen prints.");
+  }
+  return normalized;
 }
 
 function readActToken(cliRoot) {
@@ -198,14 +220,20 @@ function readActToken(cliRoot) {
   }
 }
 
-function performRequest(context, argv, actToken, payload) {
+function performRequest(context, argv, actToken, payload, suppliedRequestId) {
   const fileManager = context.fileManager;
-  const requestId = ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
+  const requestId = suppliedRequestId || ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
   const requestPath = `${context.cliRoot}/requests/${requestId}.json`;
   const responsePath = `${context.cliRoot}/responses/${requestId}.json`;
   let temporaryRequestPath = `${context.cliRoot}/requests/${requestId}.${ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase()}.tmp`;
 
   try {
+    // A caller retrying under its own id while the first try still waits to
+    // be picked up joins that try: one request, one answer, never two runs.
+    if (suppliedRequestId && fileManager.fileExistsAtPath($(requestPath))) {
+      temporaryRequestPath = "";
+      return awaitResponse(context, requestId, responsePath, actToken);
+    }
     const request = actToken
       ? {
           protocolVersion: 3,
@@ -229,34 +257,41 @@ function performRequest(context, argv, actToken, payload) {
       throw new Error("AmpleFile CLI request could not be committed.");
     }
     temporaryRequestPath = "";
-
-    const task = $.NSTask.alloc.init;
-    task.executableURL = $.NSURL.fileURLWithPath($(context.appPath));
-    task.arguments = $(["--amplefile-cli-request", requestId]);
-    if (!task.launchAndReturnError(null)) throw new Error("AmpleFile executable could not be launched.");
-
-    const deadline = Date.now() + context.timeoutMs;
-    while (!fileManager.fileExistsAtPath($(responsePath))) {
-      if (Date.now() >= deadline) {
-        throw transportTimeout(`AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.`);
-      }
-      $.NSThread.sleepForTimeInterval(0.05);
-    }
-
-    const response = JSON.parse(readText(responsePath));
-    if (response.protocolVersion !== 1) throw new Error(`AmpleFile returned unsupported CLI protocol version ${response.protocolVersion}.`);
-    if (response.id !== requestId) throw new Error("AmpleFile returned a CLI response with the wrong request id.");
-    if (!Number.isInteger(response.exitCode)) throw new Error("AmpleFile returned an invalid CLI exit code.");
-    return {
-      exitCode: response.exitCode,
-      stdout: typeof response.stdout === "string" ? response.stdout : "",
-      stderr: typeof response.stderr === "string" ? response.stderr : "",
-    };
+    return awaitResponse(context, requestId, responsePath, actToken);
   } finally {
     for (const path of [temporaryRequestPath, requestPath, responsePath]) {
       if (path && fileManager.fileExistsAtPath($(path))) fileManager.removeItemAtPathError($(path), null);
     }
   }
+}
+
+/** Hands the committed request id to the app and waits for its answer. */
+function awaitResponse(context, requestId, responsePath, actToken) {
+  const fileManager = context.fileManager;
+  const task = $.NSTask.alloc.init;
+  task.executableURL = $.NSURL.fileURLWithPath($(context.appPath));
+  task.arguments = $(["--amplefile-cli-request", requestId]);
+  if (!task.launchAndReturnError(null)) throw new Error("AmpleFile executable could not be launched.");
+
+  const deadline = Date.now() + context.timeoutMs;
+  while (!fileManager.fileExistsAtPath($(responsePath))) {
+    if (Date.now() >= deadline) {
+      // An act may still run after this wait ends; its receipt says whether it did.
+      const followUp = actToken ? ` 'amplefile receipts show --id ${requestId}' tells whether it ran.` : "";
+      throw transportTimeout(`AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.${followUp}`);
+    }
+    $.NSThread.sleepForTimeInterval(0.05);
+  }
+
+  const response = JSON.parse(readText(responsePath));
+  if (response.protocolVersion !== 1) throw new Error(`AmpleFile returned unsupported CLI protocol version ${response.protocolVersion}.`);
+  if (response.id !== requestId) throw new Error("AmpleFile returned a CLI response with the wrong request id.");
+  if (!Number.isInteger(response.exitCode)) throw new Error("AmpleFile returned an invalid CLI exit code.");
+  return {
+    exitCode: response.exitCode,
+    stdout: typeof response.stdout === "string" ? response.stdout : "",
+    stderr: typeof response.stderr === "string" ? response.stderr : "",
+  };
 }
 
 function emitOutcome(outcome) {

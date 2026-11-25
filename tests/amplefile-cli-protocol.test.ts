@@ -132,6 +132,7 @@ test("CLI help covers every landed act family and is honest about what it runs",
     requests: ["list", "show"],
     jobs: ["start", "list", "show", "output", "stop"],
     worktrees: ["manage"],
+    receipts: ["show"],
   };
   const overview = ampleFileCliHelp("AmpleFile");
   for (const [family, verbs] of Object.entries(families)) {

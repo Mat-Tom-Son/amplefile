@@ -46,7 +46,8 @@ export interface AmpleFileDesktopCliHostOptions {
  * legitimately take minutes
  * (`ampleFileCliActRunsOutsideQueue`) run beside the queue instead of in it,
  * so one `jobs output --wait` or `chat compact` never stalls every other
- * `amplefile` command.
+ * `amplefile` command; so does `receipts show`, which a caller that stopped
+ * waiting asks about an act that may still be in line.
  */
 export class AmpleFileDesktopCliHost {
   readonly broker: AmpleFileCliFileBroker;
@@ -87,6 +88,7 @@ export class AmpleFileDesktopCliHost {
           productName: this.#productName,
           getActFacade: this.#getActFacade,
           receipts: this.receipts,
+          pendingRequest: (id) => this.pendingRequest(id),
           resolveLineageParent: this.#resolveLineageParent,
           ...(this.#now ? { now: this.#now } : {}),
           // A queued act that reaches the front after the broker's freshness
@@ -105,6 +107,19 @@ export class AmpleFileDesktopCliHost {
     this.#pending.add(operation);
     void operation.catch(() => undefined).finally(() => this.#pending.delete(operation));
     return operation;
+  }
+
+  /**
+   * A request this host has not answered yet, for `receipts show`: waiting
+   * to be claimed, or taken up and perhaps still in line. By `decideBy` it
+   * has run or been refused, whichever window applies to it — the broker's
+   * for a request not yet claimed, the queue's for one waiting in line.
+   */
+  async pendingRequest(requestId: string): Promise<{ processing: boolean; decideBy: string } | null> {
+    const pending = await this.broker.pendingRequest(requestId);
+    if (!pending) return null;
+    const windowMs = Math.max(this.broker.maxRequestAgeMs, this.#maxQueuedMs);
+    return { processing: pending.processing, decideBy: new Date(pending.writtenAt.getTime() + windowMs).toISOString() };
   }
 
   /** Resolves only after every request observed so far has completed. */

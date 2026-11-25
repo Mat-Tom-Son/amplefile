@@ -19,7 +19,7 @@ async function run(argv: string[], facade: Partial<AmpleFileActFacade>) {
     {
       version: "test",
       getActFacade: () => ({ facade: facade as AmpleFileActFacade, token }),
-      receipts: { hasAccepted: async () => false, append: async () => true },
+      receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) },
     },
   );
 }

@@ -310,6 +310,38 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "",
     ].join("\n");
   }
+  if (normalizedTopic === "receipts" || normalizedTopic?.startsWith("receipts ") || normalizedTopic === "request-id") {
+    return [
+      header,
+      "",
+      `Usage: ${executable} receipts show --id <request-id> [--json]`,
+      `       ${executable} <any act command> --request-id <uuid>`,
+      "",
+      "Every act command is sent under a request id, and AmpleFile journals a",
+      "receipt under that id: accepted before the command runs, then ok or",
+      "error. Give a command your own id with --request-id (uuidgen makes",
+      "one); any act command takes it. If your wait for it ends early — a",
+      "shell timeout, a lost connection — the command may still run, and",
+      "receipts show --id <that id> says what became of it:",
+      "",
+      "  queued     AmpleFile has it and has not started it. By decideBy it",
+      "             will have run or been refused; read the receipt again then.",
+      "  accepted   It started. running says whether it is still going; if it",
+      "             is not, it was interrupted, so check what it changes before",
+      "             running it again.",
+      "  ok, error  It ran, and this is how it ended, with its receipt.",
+      "  rejected   It was refused without running. Nothing changed.",
+      "  not_found  No receipt and nothing waiting under that id: it never ran.",
+      "",
+      "Sending the same command again under the same --request-id never runs",
+      "it twice: a try still waiting to start is joined, an answer AmpleFile",
+      "already wrote is returned, and an id that already ran is refused with",
+      "what it did. Use a new id for each new command. receipts show answers",
+      "at once, even while other commands wait in line, and is itself a read.",
+      "Needs the AmpleFile app running.",
+      "",
+    ].join("\n");
+  }
   if (normalizedTopic === "worktrees" || normalizedTopic?.startsWith("worktrees ")) {
     return ["Managed Git working copies", "", `Usage: ${executable} worktrees manage --connected-folder <source-id> --task <own-task-id> --action create|list|archive|restore [--ref <committed-ref>] [--id <copy-id>] --json`, "", "Creation pins a committed revision and registers an isolated Connected Folder. Archive retains every file and Git history; restore re-registers the same copy. Active work refuses archive. Changes are never automatically merged."].join("\n");
   }
@@ -641,9 +673,12 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "  jobs start|list|show|output|input|stop",
     "                      Run long commands in the background; their end wakes the Chat",
     "  worktrees manage    Create, archive, or restore managed Git working copies",
+    "  receipts show       What became of an act command, by its request id (--id)",
     "",
     "Every act verb runs immediately and leaves a receipt in the act",
-    "journal. Mutating act verbs accept --parent-task <id> to record which",
+    "journal, under the command's request id. Send a command under your own",
+    `id with --request-id <uuid> to read its receipt later ('${executable} help receipts').`,
+    "Mutating act verbs accept --parent-task <id> to record which",
     "AmpleFile Agent request they belong to. Act tokens and provider",
     "credentials are local setup: this CLI refuses them.",
     "",
@@ -651,6 +686,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "  --connected-folder <value>",
     "                      Select a Connected Folder by id or exact name",
     "  --json              Emit stable JSON output",
+    "  --request-id <uuid> Send an act command under your own request id",
     "  -h, --help          Show help",
     "  -v, --version       Show the version",
     "",

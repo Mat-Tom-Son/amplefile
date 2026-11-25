@@ -98,7 +98,29 @@ export const AMPLEFILE_CLI_ACT_READ_COMMANDS: ReadonlySet<string> = new Set([
   "requests.show",
   "jobs.list",
   "jobs.show",
+  "receipts.show",
 ]);
+
+/**
+ * What the journals hold for one request id, for `receipts show`. An id
+ * journals at most one `accepted` line — the at-most-once ledger refuses a
+ * second — so `accepted` and the first `ok`/`error` after it are that one
+ * execution. `rejected` is the latest refusal: an attempt that never ran, or
+ * a replay refused after the id had already run.
+ */
+export interface AmpleFileCliActReceiptLookup {
+  accepted: AmpleFileCliActReceipt | null;
+  settled: AmpleFileCliActReceipt | null;
+  rejected: AmpleFileCliActReceipt | null;
+  /**
+   * How far back the journals are known to reach: the oldest entry of a
+   * rotated generation (rotation may have dropped what came before it), the
+   * later of the two journals' when both have rotated, or null when neither
+   * has, so nothing was ever dropped. An id sent since then that has no line
+   * here never ran.
+   */
+  journalSince: string | null;
+}
 
 /**
  * How long a damaged line can still matter: the broker refuses a request
@@ -232,6 +254,38 @@ export class AmpleFileCliActReceipts {
         }
       }
       return this.#acts.has(requestId) || this.#reads.has(requestId);
+    });
+    this.#queue = operation;
+    return operation;
+  }
+
+  /**
+   * Every line both journals (live and rotated) hold for one request id. It
+   * reads the files whole, so it serves an occasional question rather than a
+   * poll; it runs in the append queue, so it never sees a rotation half done.
+   */
+  lookup(requestId: string): Promise<AmpleFileCliActReceiptLookup> {
+    const operation = this.#queue.catch(() => undefined).then(async () => {
+      const found: AmpleFileCliActReceiptLookup = { accepted: null, settled: null, rejected: null, journalSince: null };
+      for (const journal of [this.#acts, this.#reads]) {
+        for (const path of [journal.rotatedPath, journal.path]) {
+          const generation = await readJournalText(path);
+          if (generation === null) continue;
+          let oldest: string | null = null;
+          for (const record of completeRecords(generation.text)) {
+            if (oldest === null && typeof record.at === "string" && Number.isFinite(Date.parse(record.at))) oldest = record.at;
+            if (record.requestId !== requestId) continue;
+            if (record.outcome === "accepted") found.accepted ??= record;
+            else if (record.outcome === "rejected") found.rejected = record;
+            else if ((record.outcome === "ok" || record.outcome === "error") && found.accepted) found.settled ??= record;
+          }
+          if (path === journal.rotatedPath && oldest !== null
+            && (found.journalSince === null || Date.parse(oldest) > Date.parse(found.journalSince))) {
+            found.journalSince = oldest;
+          }
+        }
+      }
+      return found;
     });
     this.#queue = operation;
     return operation;
@@ -405,6 +459,22 @@ function scanLines(text: string, mtimeMs: number): { accepted: string[]; firstAt
   }
   if (pendingDamage) damagedUntil = Math.max(damagedUntil, mtimeMs + replayHorizonMs);
   return { accepted, firstAt, damagedUntil, completeBytes: Buffer.byteLength(complete, "utf8") };
+}
+
+/** The readable records among a journal chunk's complete lines; damage is skipped, as an unfinished final line is. */
+function completeRecords(text: string): AmpleFileCliActReceipt[] {
+  const lastNewline = text.lastIndexOf("\n");
+  const records: AmpleFileCliActReceipt[] = [];
+  for (const line of (lastNewline === -1 ? "" : text.slice(0, lastNewline)).split("\n")) {
+    if (!line) continue;
+    try {
+      const record = JSON.parse(line) as AmpleFileCliActReceipt;
+      if (record && typeof record === "object" && typeof record.requestId === "string") records.push(record);
+    } catch {
+      // A damaged line names nothing this lookup can report.
+    }
+  }
+  return records;
 }
 
 function scrubText(value: string): string {

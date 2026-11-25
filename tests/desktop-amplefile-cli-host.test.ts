@@ -312,6 +312,110 @@ test("an act that waited in the queue past its bound is refused, never run late"
   }
 });
 
+test("a caller that stops waiting on a queued act learns its outcome later by its own request id", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-traced-"));
+  const token = "c".repeat(64);
+  const { readFile, rm: removeFile } = await import("node:fs/promises");
+  let host: AmpleFileDesktopCliHost | null = null;
+  let releaseFirst = () => {};
+  try {
+    const held = new Promise<void>((resolveHeld) => { releaseFirst = resolveHeld; });
+    let firstStarted = false;
+    const created: string[] = [];
+    const facade = {
+      async createConversation(input: { connectedFolder: string }) {
+        if (!firstStarted) {
+          firstStarted = true;
+          await held;
+        }
+        created.push(input.connectedFolder);
+        return {
+          connectedFolder: { id: input.connectedFolder, name: "Act Connected Folder", connectedFolderRoot: join(stateRoot, "connected-folder") },
+          conversation: { id: `chat-${created.length}`, title: "New Chat", createdAt: "2026-07-31T00:00:00.000Z", updatedAt: "2026-07-31T00:00:00.000Z", archivedAt: null, snoozedUntil: null },
+        };
+      },
+    } as unknown as AmpleFileActFacade;
+    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => ({ facade, token }) });
+    await host.initialize();
+    const act = (connectedFolder: string, id = randomUUID()) => createAmpleFileCliActRequest({
+      id,
+      argv: ["chat", "create", "--connected-folder", connectedFolder, "--request-id", id, "--json"],
+      cwd: resolve("."),
+      actToken: token,
+    });
+    const show = async (id: string) => {
+      const read = createAmpleFileCliActRequest({ id: randomUUID(), argv: ["receipts", "show", "--id", id, "--json"], cwd: resolve("."), actToken: token });
+      await host!.broker.writeActRequest(read);
+      await host!.processRequest(read.id);
+      const response = await host!.broker.readResponse(read.id);
+      assert.equal(response.exitCode, 0, response.stderr);
+      return (JSON.parse(response.stdout) as { data: { state: string; running: boolean | null; decideBy: string | null; receipt: Record<string, unknown> | null; summary: string } }).data;
+    };
+
+    // One act holds the queue; the caller's act, sent under its own id, waits behind it.
+    const first = act("connected-folder-1");
+    await host.broker.writeActRequest(first);
+    const running = host.processRequest(first.id);
+    const deadline = Date.now() + 10_000;
+    while (!firstStarted) {
+      if (Date.now() > deadline) throw new Error("Timed out waiting for the first act to start.");
+      await new Promise<void>((resolveTick) => setTimeout(resolveTick, 5));
+    }
+    const callerId = randomUUID();
+    const mine = act("connected-folder-2", callerId);
+    await host.broker.writeActRequest(mine);
+    // The caller's shell gives up here: nothing ever reads this answer.
+    const abandoned = host.processRequest(mine.id);
+
+    // Asked while it waits in line, the read answers at once rather than queueing behind it.
+    const queued = await show(callerId);
+    assert.equal(queued.state, "queued");
+    assert.ok(queued.decideBy && Date.parse(queued.decideBy) > Date.parse(mine.createdAt), "it says by when the act will have run or been refused");
+    assert.deepEqual(created, [], "the held act is still holding the queue");
+    assert.equal((await show(randomUUID())).state, "not_found");
+
+    // A request written but not yet handed to the host is queued too.
+    const unclaimed = act("connected-folder-3");
+    await host.broker.writeActRequest(unclaimed);
+    assert.equal((await show(unclaimed.id)).state, "queued");
+    await removeFile(host.broker.requestPaths(unclaimed.id).request, { force: true });
+    assert.equal((await show(unclaimed.id)).state, "not_found", "a withdrawn request never ran");
+
+    releaseFirst();
+    await Promise.all([running, abandoned]);
+    assert.deepEqual(created, ["connected-folder-1", "connected-folder-2"]);
+
+    // Later, the caller asks by the id it chose and learns what happened.
+    const settled = await show(callerId);
+    assert.equal(settled.state, "ok");
+    assert.equal(settled.receipt?.command, "chat.create");
+    assert.equal(settled.receipt?.connectedFolderId, "connected-folder-2");
+    assert.equal(settled.receipt?.conversationId, "chat-2");
+
+    // Sending it again under the same id never runs it twice: the answer
+    // still waiting is returned, and once that is gone the id is refused.
+    await host.broker.writeActRequest(mine).catch(() => undefined);
+    await host.processRequest(mine.id);
+    assert.equal((await host.broker.readResponse(mine.id)).exitCode, 0);
+    await removeFile(host.broker.requestPaths(mine.id).request, { force: true });
+    await removeFile(host.broker.requestPaths(mine.id).response, { force: true });
+    await host.broker.writeActRequest(mine);
+    await host.processRequest(mine.id);
+    const replay = await host.broker.readResponse(mine.id);
+    assert.equal(replay.exitCode, 5);
+    assert.match(replay.stderr, /already executed \(chat create, ok at /);
+    assert.deepEqual(created, ["connected-folder-1", "connected-folder-2"]);
+    assert.equal((await show(callerId)).state, "ok", "a refused replay does not hide the outcome");
+
+    const reads = (await readFile(host.receipts.readsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.ok(reads.every((line) => line.command === "receipts.show"), "receipt reads journal beside the other reads");
+  } finally {
+    releaseFirst();
+    await host?.whenIdle();
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("desktop CLI host gates act requests on the per-launch authority and records receipts", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-act-"));
   const token = "d".repeat(64);

@@ -12,7 +12,7 @@ import type {
   AmpleFileActFileVersionRef,
 } from "./act-facade.js";
 import type { AmpleFileCliActRequest } from "./act-protocol.js";
-import type { AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-receipts.js";
+import type { AmpleFileCliActReceipt, AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-receipts.js";
 import { maximumWorkerInstructionsLength } from "../agent/model-preferences.js";
 // The collaboration bounds and their person-facing refusal text live with the
 // request record that enforces them, so a parse-time refusal and a store-time
@@ -27,6 +27,7 @@ import {
   AmpleFileCliError,
   AmpleFileCliExitCode,
   createAmpleFileCliResponse,
+  normalizeAmpleFileCliRequestId,
   type AmpleFileCliJson,
   type AmpleFileCliOutputMode,
   type AmpleFileCliResponseV1,
@@ -117,11 +118,22 @@ export type AmpleFileCliActCommandName =
   | "jobs.stop"
   | "chat.children"
   | "jobs.input"
-  | "worktrees.manage";
+  | "worktrees.manage"
+  // What became of one act request, by its request id: the receipt
+  // journals plus what the host still holds (docs/amplefile-agent-and-cli.md).
+  | "receipts.show";
 
 export interface AmpleFileCliActParsedCommand {
   name: AmpleFileCliActCommandName;
   output: AmpleFileCliOutputMode;
+  /**
+   * The caller's own `--request-id`, which every act verb takes: the id the
+   * shim sent this request under, so the caller knows it before waiting and
+   * can read the receipt by it however the wait ends.
+   */
+  requestId?: string;
+  /** receipts.show: the act request id to look up. */
+  receiptRequestId?: string;
   connectedFolder?: string;
   conversation?: string;
   task?: string;
@@ -238,7 +250,14 @@ export interface AmpleFileCliActExecutorOptions {
   productName?: string;
   now?: () => Date;
   getActFacade: () => AmpleFileCliActAuthority | null;
-  receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted">;
+  receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted" | "lookup">;
+  /**
+   * What the host still holds of a request it has not answered, for
+   * `receipts show`: `processing` once it has taken the request up (it may
+   * still wait in line), and `decideBy`, when it will have run or been
+   * refused. Null when it holds none.
+   */
+  pendingRequest?: (requestId: string) => Promise<{ processing: boolean; decideBy: string } | null>;
   /** Validates an explicitly named AmpleFile Agent parent while its turn is active. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
   /**
@@ -258,17 +277,21 @@ export const AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS = 600;
 
 /**
  * Act verbs the desktop host runs beside its serial CLI queue rather than in
- * it. Each may legitimately take minutes — `jobs output` waits on a job, and
+ * it. Two may legitimately take minutes — `jobs output` waits on a job, and
  * `chat compact` runs one model compaction — and both are already fenced by
  * their domain service exactly as when the window asks (the job service and
  * the Chat's compaction fence), so serializing them would only stall every
- * other `amplefile` command behind them. Replay protection does not depend on
- * the queue: the broker dedups an id in flight and claims it once, and the
- * receipts journal accepts an id at most once.
+ * other `amplefile` command behind them. `receipts show` only reads, and its
+ * question is usually about an act still waiting in that queue. Replay
+ * protection does not depend on the queue: the broker dedups an id in flight
+ * and claims it once, and the receipts journal accepts an id at most once.
  */
 const ampleFileCliActVerbsOutsideQueue: ReadonlySet<AmpleFileCliActParsedCommand["name"]> = new Set([
   "jobs.output",
   "chat.compact",
+  // A quick read of the journals, asked most often while the act it names
+  // is still in line: it must answer then rather than wait behind it.
+  "receipts.show",
 ]);
 
 /** True when the host may run this act request outside its serial queue. */
@@ -310,8 +333,36 @@ const ampleFileCliActSetupOnlyFamilies = new Map<string, string>([
 /**
  * Parses act-lane argv. Every command requires explicit selection — there is
  * deliberately no current-directory Connected Folder resolution for writes.
+ * Every verb also takes `--request-id <uuid>`: it names the request itself,
+ * not anything the verb acts on, and the executor checks that the request
+ * arrived under that id.
  */
 export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliActParsedCommand {
+  const parsed = parseAmpleFileCliActVerb(argv);
+  let requestId: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index] ?? "";
+    // The verb parser has already refused a repeated flag or a missing value.
+    if (token === "--request-id") requestId = requestIdFlag("--request-id", argv[index + 1] ?? "");
+    else if (token.startsWith("--request-id=")) requestId = requestIdFlag("--request-id", token.slice("--request-id=".length));
+  }
+  if (requestId === undefined) return parsed;
+  if (parsed.receiptRequestId === requestId) {
+    throw usageError("--id names the request to look up, so it cannot also be this read's own --request-id.");
+  }
+  return { ...parsed, requestId };
+}
+
+/** A request id flag's value, normalized as the broker names request files. */
+function requestIdFlag(flag: string, value: string): string {
+  try {
+    return normalizeAmpleFileCliRequestId(value);
+  } catch {
+    throw usageError(`${flag} must be a UUID, such as one uuidgen prints.`);
+  }
+}
+
+function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParsedCommand {
   let output: AmpleFileCliOutputMode = "human";
   const flags = new Map<string, string | true>();
   const fromPaths: string[] = [];
@@ -380,6 +431,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--text",
     "--action",
     "--ref",
+    "--request-id",
   ]);
   const booleanFlags = new Set(["--new", "--message-from-payload", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
 
@@ -445,6 +497,8 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     }
     positional.push(token);
   }
+  // Every verb takes it; parseAmpleFileCliActArgv reads its value.
+  flags.delete("--request-id");
 
   const command = positional.join(" ");
   const fromCommands = new Set(["files add", "files move", "tools import-skill"]);
@@ -1481,6 +1535,16 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       allowOnlyFlags("--connected-folder", "--task", "--job", "--text", "--eof");
       if (stringFlag("--text") === undefined) throw usageError("--text is required (it may be empty).");
       return { name: "jobs.input", output, connectedFolder: requireConnectedFolder(), task: requireBoundedFlag("--task", "task-id"), job: requireBoundedFlag("--job", "job-id"), terminalText: stringFlag("--text")!, ...(flags.has("--eof") ? { eof: true } : {}) };
+    // A read of the receipt journals by request id. Request ids sit above
+    // Connected Folders, so it takes no --connected-folder, and as a read it
+    // takes no lineage.
+    case "receipts show":
+      allowOnlyFlags("--id");
+      return {
+        name: "receipts.show",
+        output,
+        receiptRequestId: requestIdFlag("--id", requireBoundedFlag("--id", "request-id")),
+      };
     case "jobs stop":
       allowOnlyFlags("--connected-folder", "--job", "--parent-task");
       return {
@@ -1506,6 +1570,15 @@ export async function executeAmpleFileCliActRequest(
   let receiptLineage: { parentTaskId?: string } = {};
   try {
     command = parseAmpleFileCliActArgv(request.argv);
+    // A caller that named its own id relies on it to find this request
+    // later, so a request sent under any other id never runs: a shim that
+    // does not know the flag must not leave the caller holding the wrong id.
+    if (command.requestId !== undefined && command.requestId !== request.id) {
+      throw new AmpleFileCliError(
+        "protocolError",
+        "This amplefile command did not send the request under its --request-id, so nothing was run. Use the amplefile command that comes with the running AmpleFile.",
+      );
+    }
     const authority = options.getActFacade();
     if (!authority || !tokensMatch(authority.token, request.actToken)) {
       await options.receipts.append({
@@ -1546,7 +1619,7 @@ export async function executeAmpleFileCliActRequest(
         surface: "cli",
         detail: "duplicate act request id",
       });
-      throw new AmpleFileCliError("conflict", "This act request id was already executed. Submit a new request instead of replaying it.");
+      throw new AmpleFileCliError("conflict", await duplicateRequestMessage(request.id, options.receipts));
     }
     // The accepted record lands before the mutation so a crash can never
     // leave an applied action without a journal trace; an unwritable journal
@@ -1582,7 +1655,7 @@ export async function executeAmpleFileCliActRequest(
       throw new AmpleFileCliError("failure", "AmpleFile could not record the act receipt, so the command was not run.");
     }
     accepted = true;
-    const data = await runActCommand(command, request, authority.facade);
+    const data = await runActCommand(command, request, authority.facade, options);
     const outcomeRecorded = await options.receipts.append({
       requestId: request.id,
       command: command.name,
@@ -1674,12 +1747,141 @@ async function resolveActTextFiles(
   return resolved;
 }
 
+/** How a journaled command name reads as the command a person types. */
+function actVerbLabel(command: string): string {
+  return command.replaceAll(".", " ");
+}
+
+/**
+ * Refusal text for an id that already ran: what it ran and how it ended, so
+ * a caller retrying with the same id learns the outcome instead of guessing.
+ */
+async function duplicateRequestMessage(
+  requestId: string,
+  receipts: Pick<AmpleFileCliActReceipts, "lookup">,
+): Promise<string> {
+  let found: Awaited<ReturnType<AmpleFileCliActReceipts["lookup"]>> | null = null;
+  try {
+    found = await receipts.lookup(requestId);
+  } catch {
+    // The refusal stands on the accepted record alone; the detail is a courtesy.
+  }
+  const ran = found?.accepted
+    ? ` (${actVerbLabel(found.accepted.command)}, ${found.settled ? `${found.settled.outcome} at ${found.settled.at}` : `started at ${found.accepted.at}`})`
+    : "";
+  return `This act request id was already executed${ran}, so it was not run again. `
+    + `'amplefile receipts show --id ${requestId}' shows its receipt; send the command with a new --request-id to run it again.`;
+}
+
+/**
+ * `receipts show`: what became of one act request. Every act journals its
+ * `accepted` line before it runs, so an id with none never ran, and the only
+ * answers that can still change are `queued` and a running `accepted`.
+ *
+ * The host is asked what it still holds after the first look at the
+ * journals. When it holds nothing, the journals are read again: a request
+ * that left the host between the two looks wrote all of its lines before
+ * the host let go of it, so the second look has them.
+ */
+async function showActReceipt(requestId: string, options: AmpleFileCliActExecutorOptions): Promise<Record<string, unknown>> {
+  let found = await options.receipts.lookup(requestId);
+  const held = found.settled ? null : await options.pendingRequest?.(requestId) ?? null;
+  if (!found.settled && !held) found = await options.receipts.lookup(requestId);
+
+  const { accepted, settled, rejected, journalSince } = found;
+  const base = { requestId, journalSince };
+  const receiptView = (receipt: AmpleFileCliActReceipt) => {
+    const { v: _version, ...rest } = receipt;
+    return rest;
+  };
+  if (accepted && settled) {
+    const verb = actVerbLabel(settled.command);
+    return {
+      ...base,
+      state: settled.outcome,
+      command: settled.command,
+      running: false,
+      acceptedAt: accepted.at,
+      settledAt: settled.at,
+      decideBy: null,
+      summary: settled.outcome === "ok"
+        ? `${verb} ran and succeeded at ${settled.at}.`
+        : `${verb} ran and failed at ${settled.at}${settled.errorCode ? ` (${settled.errorCode})` : ""}. It is not retried on its own.`,
+      receipt: receiptView(settled),
+    };
+  }
+  if (accepted) {
+    const verb = actVerbLabel(accepted.command);
+    const fromCli = (accepted.surface ?? "cli") === "cli";
+    // Only the CLI host's own requests can be judged from what it holds; an
+    // act the window or the popover started is not the CLI host's to see.
+    const running = fromCli ? held?.processing === true : null;
+    return {
+      ...base,
+      state: "accepted",
+      command: accepted.command,
+      running,
+      acceptedAt: accepted.at,
+      settledAt: null,
+      decideBy: null,
+      summary: running === true
+        ? `${verb} is running: AmpleFile started it at ${accepted.at} and has not recorded how it ended yet.`
+        : running === false
+          ? `${verb} started at ${accepted.at}, but AmpleFile recorded no outcome and is no longer running it: it was interrupted, or its outcome could not be written. Check what it changes before running it again.`
+          : `${verb} started at ${accepted.at} from the ${accepted.surface === "popover" ? "menu-bar popover" : "window"}; no outcome is recorded yet.`,
+      receipt: receiptView(accepted),
+    };
+  }
+  if (held) {
+    return {
+      ...base,
+      state: "queued",
+      command: null,
+      running: false,
+      acceptedAt: null,
+      settledAt: null,
+      decideBy: held.decideBy,
+      summary: `AmpleFile has this request and has not started it. By ${held.decideBy} it will have run or been refused; read its receipt again then.`,
+      receipt: null,
+    };
+  }
+  if (rejected) {
+    return {
+      ...base,
+      state: "rejected",
+      command: rejected.command,
+      running: false,
+      acceptedAt: null,
+      settledAt: rejected.at,
+      decideBy: null,
+      summary: `AmpleFile refused ${actVerbLabel(rejected.command)} at ${rejected.at} without running it (${rejected.detail ?? rejected.errorCode ?? "refused"}). Nothing changed.`,
+      receipt: receiptView(rejected),
+    };
+  }
+  return {
+    ...base,
+    state: "not_found",
+    command: null,
+    running: false,
+    acceptedAt: null,
+    settledAt: null,
+    decideBy: null,
+    summary: journalSince
+      ? `No receipt for this request id since ${journalSince}, where the receipt journal begins, and nothing is waiting to run under it: if it was sent after that, it never ran.`
+      : "No receipt for this request id, and nothing is waiting to run under it: it never ran.",
+    receipt: null,
+  };
+}
+
 async function runActCommand(
   command: AmpleFileCliActParsedCommand,
   request: AmpleFileCliActRequest,
   facade: AmpleFileActFacade,
+  options: AmpleFileCliActExecutorOptions,
 ): Promise<AmpleFileCliJson> {
   switch (command.name) {
+    case "receipts.show":
+      return toTerminalSafeJson(await showActReceipt(command.receiptRequestId!, options));
     case "connected-folders.worker.show":
       return toJson(await facade.workerShow({ connectedFolder: command.connectedFolder! }));
     case "connected-folders.worker.model":
@@ -2302,6 +2504,24 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     }
     case "requests.show":
       return `${renderRequestDetail(record.request as Record<string, AmpleFileCliJson>, 0).join("\n")}\n`;
+    case "receipts.show": {
+      const receipt = (record.receipt ?? null) as {
+        connectedFolderId?: string; conversationId?: string; taskId?: string; parentTaskId?: string;
+        checkpointId?: string; errorCode?: string; detail?: string; undoRef?: { kind?: string; value?: string };
+      } | null;
+      const facts = receipt
+        ? [
+            receipt.connectedFolderId ? `Connected Folder ${terminalText(receipt.connectedFolderId)}` : "",
+            receipt.conversationId ? `Chat ${terminalText(receipt.conversationId)}` : "",
+            receipt.taskId ? `task ${terminalText(receipt.taskId)}` : "",
+            receipt.parentTaskId ? `for AmpleFile Agent task ${terminalText(receipt.parentTaskId)}` : "",
+            receipt.checkpointId ? `restore point ${terminalText(receipt.checkpointId)}` : "",
+            receipt.undoRef?.kind ? `undo: ${terminalText(receipt.undoRef.kind)} ${terminalText(receipt.undoRef.value)}` : "",
+            receipt.detail ? terminalText(receipt.detail) : "",
+          ].filter(Boolean)
+        : [];
+      return `Request ${terminalText(record.requestId)} — ${terminalText(record.state)}\n${terminalText(record.summary)}\n${facts.length ? `${facts.join("; ")}\n` : ""}`;
+    }
     case "jobs.start":
     case "jobs.show":
     case "jobs.stop": {
@@ -2994,6 +3214,10 @@ function actReceiptDetail(
   // never a summary, a question, or an answer (docs/collaboration-contract.md).
   const countOf = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
   switch (name) {
+    case "receipts.show": {
+      const shown = record as { requestId?: unknown; state?: unknown };
+      return `request ${String(shown.requestId)}; ${String(shown.state)}`;
+    }
     case "chat.report": {
       const outcome = record.result && typeof record.result === "object" ? (record.result as { outcome?: unknown; files?: unknown }) : {};
       const files = countOf(outcome.files);
