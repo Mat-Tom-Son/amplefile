@@ -15,10 +15,18 @@ import type { LocalApiState } from "../src/local/api/state.js";
 // device and inode when that turn is a running step's work. Attribution is
 // bookkeeping: it never fails an act.
 
-function fakeRuntime(client: PiConversationClient, tools: Array<{ name: string; source: string }>): void {
-  (client as unknown as { runtimeHost: unknown }).runtimeHost = {
+/**
+ * A stand-in for Pi's session that only lists its tools. Detach it as soon
+ * as the events are fed, before anything awaits: the client's deferred
+ * runtime update then sees another session and does nothing, instead of
+ * asking this stand-in for stats it does not have.
+ */
+function fakeRuntime(client: PiConversationClient, tools: Array<{ name: string; source: string }>): () => void {
+  const internals = client as unknown as { runtimeHost: unknown };
+  internals.runtimeHost = {
     session: { getAllTools: () => tools.map((tool) => ({ name: tool.name, sourceInfo: { source: tool.source } })) },
   };
+  return () => { internals.runtimeHost = undefined; };
 }
 
 function native(client: PiConversationClient, event: unknown): void {
@@ -44,7 +52,7 @@ test("Pi's own write and edit report the file at the path Pi resolved, with thei
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "Inbox"), { recursive: true });
   const client = new PiConversationClient("attribution", root);
-  fakeRuntime(client, [{ name: "write", source: "builtin" }, { name: "edit", source: "builtin" }, { name: "read", source: "builtin" }]);
+  const detach = fakeRuntime(client, [{ name: "write", source: "builtin" }, { name: "edit", source: "builtin" }, { name: "read", source: "builtin" }]);
   (client as unknown as { presentationTaskId: string }).presentationTaskId = "turn-1";
 
   // A macOS screenshot name carries a narrow no-break space before PM; Pi's
@@ -66,6 +74,7 @@ test("Pi's own write and edit report the file at the path Pi resolved, with thei
     native(client, { type: "tool_execution_end", toolCallId: "write-2", toolName: "write", isError: true, result: {} });
     native(client, { type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "Inbox/refused.md" } });
     native(client, { type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false, result: {} });
+    detach();
   });
   assert.deepEqual(seen.map((event) => event.path).sort(), [join(root, "Inbox", written), join(root, "Inbox/notes.md")].sort());
   assert.ok(seen.every((event) => event.taskId === "turn-1"));
@@ -75,11 +84,12 @@ test("a write tool an Extension provides is not taken for Pi's own", async (t) =
   const root = await mkdtemp(join(tmpdir(), "amplefile-run-attribution-extension-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const client = new PiConversationClient("attribution-extension", root);
-  fakeRuntime(client, [{ name: "write", source: "extension" }]);
+  const detach = fakeRuntime(client, [{ name: "write", source: "extension" }]);
   await writeFile(join(root, "made.md"), "made");
   const seen = await reports(client, 0, () => {
     native(client, { type: "tool_execution_start", toolCallId: "write-1", toolName: "write", args: { path: "made.md" } });
     native(client, { type: "tool_execution_end", toolCallId: "write-1", toolName: "write", isError: false, result: {} });
+    detach();
   });
   assert.deepEqual(seen, []);
 });
