@@ -8,7 +8,7 @@
  */
 
 import { lstat, rm } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint } from "../history.js";
 import {
   AmpleFileRecentlyDeletedError,
@@ -28,6 +28,7 @@ import {
   renameConnectedFolderEntry,
   resolveConnectedFolderDeleteTarget,
   resolveConnectedFolderPath,
+  safeFileName,
   touchConnectedFolderRoot,
   withConnectedFolderHistoryOperation,
   withConnectedFolderTouchBatch,
@@ -94,43 +95,45 @@ export interface AmpleFileEntryChange {
   historySkippedPaths: string[];
 }
 
+/*
+ * Rename, move, New Folder, and New File each normalize what was asked for
+ * once, before anything else: the paths, and the name through `safeFileName`,
+ * which refuses a name it cannot keep whole. The restore point, the effect,
+ * and what the caller reports are all planned from that one normalized
+ * destination, so restoring the History point finds the item where the change
+ * put it.
+ */
+
 /** One item renamed in place under a restore point that renames it back. */
 export async function renameConnectedFolderEntryWithHistory(
   connectedFolder: ConnectedFolderSummary,
   input: { path: string; newName: string },
 ): Promise<AmpleFileEntryChange & { renamed: ConnectedFolderMovedEntry }> {
   const root = connectedFolder.connectedFolderRoot;
-  const renameSource = normalizeConnectedFolderRelativePath(input.path);
-  const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
-  const renameDestination = [renameParent, input.newName].filter(Boolean).join("/");
+  const fromPath = normalizeConnectedFolderRelativePath(input.path);
+  const newName = safeFileName(input.newName);
+  const toPath = [parentOf(fromPath), newName].filter(Boolean).join("/");
   const safety = await createConnectedFolderMutationCheckpoint(root, {
-    movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
+    movesOnRestore: [{ fromPath: toPath, toPath: fromPath }],
     reason: "pre_rename",
-    label: `Before renaming ${input.path}`,
+    label: `Before renaming ${fromPath}`,
   });
-  const renamed = await runWithHistorySafety(root, safety.checkpointId, () => renameConnectedFolderEntry(root, { path: input.path, newName: input.newName }));
+  const renamed = await runWithHistorySafety(root, safety.checkpointId, () => renameConnectedFolderEntry(root, { path: fromPath, newName }));
   return { renamed, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
 }
 
-/** One item moved into another folder under a restore point that moves it back. */
+/**
+ * One item moved into another folder under a restore point that moves it
+ * back: the several-item move with one item, so it is checked before the
+ * restore point is taken and its destination comes from that check.
+ */
 export async function moveConnectedFolderEntryWithHistory(
   connectedFolder: ConnectedFolderSummary,
   input: { sourcePath: string; targetFolderPath: string },
 ): Promise<AmpleFileEntryChange & { moved: ConnectedFolderMovedEntry }> {
-  const root = connectedFolder.connectedFolderRoot;
-  const moveSource = normalizeConnectedFolderRelativePath(input.sourcePath);
-  const moveTargetFolder = normalizeConnectedFolderRelativePath(input.targetFolderPath);
-  const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-  const safety = await createConnectedFolderMutationCheckpoint(root, {
-    movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
-    reason: "pre_move",
-    label: `Before moving ${input.sourcePath}`,
-  });
-  const moved = await runWithHistorySafety(root, safety.checkpointId, () => moveConnectedFolderEntry(root, {
-    sourcePath: moveSource,
-    targetFolderPath: input.targetFolderPath,
-  }));
-  return { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
+  const result = await moveConnectedFolderEntriesWithHistory(connectedFolder, [input.sourcePath], input.targetFolderPath);
+  // With one item, a failure throws before anything moved, so the item moved.
+  return { moved: result.moved[0]!, safetyCheckpointId: result.safetyCheckpointId, historySkippedPaths: result.historySkippedPaths };
 }
 
 /** New Folder, under a restore point that removes the folder it made. */
@@ -138,8 +141,7 @@ export async function createConnectedFolderFolderWithHistory(
   connectedFolder: ConnectedFolderSummary,
   input: { parentPath: string; name: string },
 ): Promise<AmpleFileEntryChange & { folder: ConnectedFolderCreatedEntry }> {
-  const { created, ...change } = await createConnectedFolderEntryWithHistory(connectedFolder, input, (root) =>
-    createConnectedFolderFolder(root, input.parentPath, input.name));
+  const { created, ...change } = await createConnectedFolderEntryWithHistory(connectedFolder, input, createConnectedFolderFolder);
   return { folder: created, ...change };
 }
 
@@ -148,25 +150,31 @@ export async function createConnectedFolderTextFileWithHistory(
   connectedFolder: ConnectedFolderSummary,
   input: { parentPath: string; name: string; text: string },
 ): Promise<AmpleFileEntryChange & { file: ConnectedFolderCreatedEntry }> {
-  const { created, ...change } = await createConnectedFolderEntryWithHistory(connectedFolder, input, (root) =>
-    createConnectedFolderTextFile(root, input.parentPath, input.name, input.text));
+  const { created, ...change } = await createConnectedFolderEntryWithHistory(connectedFolder, input, (root, parentPath, name) =>
+    createConnectedFolderTextFile(root, parentPath, name, input.text));
   return { file: created, ...change };
 }
 
 async function createConnectedFolderEntryWithHistory(
   connectedFolder: ConnectedFolderSummary,
   input: { parentPath: string; name: string },
-  create: (root: string) => Promise<ConnectedFolderCreatedEntry>,
+  create: (root: string, parentPath: string, name: string) => Promise<ConnectedFolderCreatedEntry>,
 ): Promise<AmpleFileEntryChange & { created: ConnectedFolderCreatedEntry }> {
   const root = connectedFolder.connectedFolderRoot;
-  const target = [normalizeConnectedFolderRelativePath(input.parentPath), input.name].filter(Boolean).join("/");
+  const parentPath = normalizeConnectedFolderRelativePath(input.parentPath);
+  const name = safeFileName(input.name);
+  const path = [parentPath, name].filter(Boolean).join("/");
   const safety = await createConnectedFolderMutationCheckpoint(root, {
-    deleteOnRestore: [target],
+    deleteOnRestore: [path],
     reason: "pre_create",
-    label: `Before creating ${input.name}`,
+    label: `Before creating ${name}`,
   });
-  const created = await runWithHistorySafety(root, safety.checkpointId, () => create(root));
+  const created = await runWithHistorySafety(root, safety.checkpointId, () => create(root, parentPath, name));
   return { created, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
+}
+
+function parentOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
 export type AmpleFileDeleteRecovery =
