@@ -227,6 +227,34 @@ Apple submission.
   publication. `npm run desktop:verify:feed:mac -- --version 0.1.9` reported
   that the source repository's feed offers it; an installed update from
   `0.1.8` to `0.1.9` is not recorded here.
+- **0.2.0** was published to `Mat-Tom-Son/amplefile` on November 23, 2026,
+  from the annotated source tag `v0.2.0` (commit `fd9d82b`): Cut in one
+  window and paste as a move in another, moves and Merge that keep the
+  original when a copy across disks would lose checked metadata, Extract that
+  places a single item beside its archive and carries a download's
+  quarantine mark, Mac packages opened as one item, and Eject that checks
+  every volume leaving with the disk. An installed update from `0.1.9` to
+  `0.2.0` is not recorded here.
+- **0.2.1** was published to `Mat-Tom-Son/amplefile` on November 24, 2026,
+  from the annotated source tag `v0.2.1` (commit `5c0626b`): Pi 1.6.0 with
+  GPT‑6.2 Sol and Astra in the ChatGPT sign-in catalog, AI Models settings
+  that save a model choice at once, and fixes to moves, restoring from
+  Recently Deleted, undo, failed Chat drafts, and browser tabs' windows. An
+  installed update from `0.2.0` to `0.2.1` is not recorded here.
+- **0.2.3** was published to `Mat-Tom-Son/amplefile` on November 25, 2026,
+  from the annotated source tag `v0.2.3` (commit `da95fed`): the shared work
+  the Linux preview gained after 0.2.1 (Get Info, Undo of a Worker's changes
+  that keeps later edits, copies into a Connected Folder made as the window
+  makes them, names over 240 characters refused, and the desktop IPC
+  contract declared once). Its version matches the Linux 0.2.3 preview with
+  the same changes; there is no Mac 0.2.2. The first build stopped at app
+  notarization because the notary profile was missing from the Keychain;
+  once it was restored, `npm run desktop:make:mac:release:resume` continued
+  from packaging. Before tagging, a copy of the signed candidate launched on
+  its own profile at 0.2.3 and reported itself up to date from the source
+  repository. `npm run desktop:verify:feed:mac -- --version 0.2.3` reported
+  that the feed offers it; an installed update from `0.2.1` to `0.2.3` is not
+  recorded here.
 
 ## Release procedure
 
