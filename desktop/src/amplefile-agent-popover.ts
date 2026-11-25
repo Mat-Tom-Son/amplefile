@@ -2,6 +2,8 @@ import { BrowserWindow, screen, type WebContents } from "electron";
 
 import { linuxCursorIsReliable, popoverPlacement, type PopoverAnchor, type PopoverDisplay } from "./amplefile-agent-popover-placement.js";
 import { trayPopoverToggleAction } from "./tray-popover-toggle.js";
+import type { AmpleFileAgentStagedItem, DesktopEventArgs, DesktopEventChannel } from "../../src/shared/desktop-ipc.js";
+import { sendToRenderer } from "./desktop-ipc-main.js";
 
 export type { PopoverAnchor } from "./amplefile-agent-popover-placement.js";
 
@@ -12,11 +14,6 @@ export type { PopoverAnchor } from "./amplefile-agent-popover-placement.js";
  * the last window closes — AmpleFile stays alive in the menu bar and the
  * person can still hand it material and instructions.
  */
-export interface AmpleFileAgentPopoverStagedItem {
-  kind: "path" | "text";
-  value: string;
-}
-
 export interface AmpleFileAgentPopoverOptions {
   appProtocol: string;
   preloadPath: string;
@@ -41,7 +38,7 @@ export class AmpleFileAgentPopover {
   #window: BrowserWindow | null = null;
   #options: AmpleFileAgentPopoverOptions;
   #loaded = false;
-  #pendingStaged: AmpleFileAgentPopoverStagedItem[] = [];
+  #pendingStaged: AmpleFileAgentStagedItem[] = [];
   #destroyed = false;
   #lastBlurHiddenAt: number | null = null;
   #pendingShow: Promise<void> | null = null;
@@ -124,7 +121,7 @@ export class AmpleFileAgentPopover {
   }
 
   /** Queues dropped material for the renderer; delivered once it has loaded. */
-  async stage(items: AmpleFileAgentPopoverStagedItem[], anchor: PopoverAnchor): Promise<void> {
+  async stage(items: AmpleFileAgentStagedItem[], anchor: PopoverAnchor): Promise<void> {
     if (this.#destroyed || !items.length) return;
     const room = Math.max(0, maxStagedItems - this.#pendingStaged.length);
     const safe = items
@@ -143,10 +140,10 @@ export class AmpleFileAgentPopover {
   }
 
   /** Pushes a host notification to the loaded popover; a window not yet loaded reads current state itself. */
-  send(channel: string, payload: unknown): void {
+  send<C extends DesktopEventChannel>(channel: C, ...payload: DesktopEventArgs<C>): void {
     const window = this.#window;
     if (!this.#loaded || !window || window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(channel, payload);
+    sendToRenderer(window.webContents, channel, ...payload);
   }
 
   destroy(): void {
@@ -248,6 +245,6 @@ export class AmpleFileAgentPopover {
     const window = this.#window;
     if (!this.#loaded || !window || window.isDestroyed() || !this.#pendingStaged.length) return;
     const items = this.#pendingStaged.splice(0, this.#pendingStaged.length);
-    window.webContents.send("amplefile:agent:staged", items);
+    sendToRenderer(window.webContents, "amplefile:agent:staged", items);
   }
 }

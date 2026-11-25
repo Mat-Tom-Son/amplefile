@@ -19,7 +19,8 @@ import {
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { errorText } from "../../lib/api";
 import { nextMenuItemIndex, type MenuNavigationKey } from "../../lib/menu-navigation";
-import type { AgentStatus, DesktopUpdateStatus, ConnectedFolderSummary } from "../../types";
+import type { DesktopUpdateStatus } from "../../../../src/shared/desktop-ipc";
+import type { AgentStatus, ConnectedFolderSummary } from "../../types";
 import { buildFixtureUpdateStatus, fixtureAppVersion } from "../../fixtures/settings-fixture";
 import { updateActionLabel, updateIsBusy } from "../../lib/update-status";
 import { showToast } from "../../ui/feedback";

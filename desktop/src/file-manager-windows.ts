@@ -11,6 +11,7 @@
  * browser page appears in. It knows nothing of Electron, so it is tested on
  * its own; desktop/src/main.ts keeps the BrowserWindows in it.
  */
+import type { OpenLocationRequest, WindowLocation, WindowMenuState } from "../../src/shared/desktop-ipc.js";
 
 export interface FileManagerWindowLike {
   readonly id: number;
@@ -19,38 +20,11 @@ export interface FileManagerWindowLike {
 
 type WindowReference = Pick<FileManagerWindowLike, "id"> & Partial<Pick<FileManagerWindowLike, "isDestroyed">>;
 
-/** What the window's menus show while it is the one in front. */
-export interface WindowMenuState {
-  connectedFolderOpen: boolean;
-  /** Show Hidden Files, which the View menu checks. */
-  showHiddenFiles: boolean;
-  /** The window shows the file manager, with its folder tabs: New Tab, Close Tab, and the tab items act on it. */
-  folderTabsOpen: boolean;
-  /** On Linux, the current tab shows a folder that can be opened in a terminal. */
-  terminalFolderOpen?: boolean;
-  /** View → Show Tab Bar: the window's folder tab strip shows even with one tab. */
-  showTabBar: boolean;
-}
-
 /** The Connected Folder a window shows, as the host-owned registry names it. */
 export interface WindowConnectedFolder {
   id: string;
   name: string;
   connectedFolderRoot: string;
-}
-
-/** A place and folder a window shows: the same shape a folder handed to the app opens at. */
-export interface WindowLocation {
-  place: { kind: "connected-folder" | "standard"; id: string };
-  path: string;
-  select?: string | null;
-  /** Reported only: the tab in front shows the Trash or Recents rather than this folder. */
-  view?: "trash" | "recents";
-}
-
-export interface OpenLocationRequest<Location> {
-  token: string;
-  location: Location;
 }
 
 export interface FileManagerWindowEntry<W extends FileManagerWindowLike, Location> {

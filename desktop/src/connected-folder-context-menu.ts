@@ -1,36 +1,4 @@
-/**
- * The native right-click menu for the Connected Folder header (macOS), with the
- * same actions as the in-app menu other platforms show.
- */
-export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab" | "open-in-new-window";
-
-export interface NativeConnectedFolderMenuRequest {
-  /**
-   * Which of the header's actions this Connected Folder offers. Organize asks
-   * the Connected Folder's Worker to organize it. Manage Connected Folders
-   * is there unless `manage` is false. The file manager's Action menu
-   * adds Skills & Extensions and Settings and leaves out Manage,
-   * since its sidebar lists the Connected Folders; older renderers omit all three.
-   */
-  actions: {
-    newChat: boolean; customize: boolean; organize: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
-    /** The file manager's Standard Folders: register the folder, or take an added one off the sidebar. */
-    putToWork?: boolean; removeFromSidebar?: boolean;
-    /** The file manager's + beside Connected Folders. */
-    createConnectedFolder?: boolean; useExistingFolder?: boolean;
-    /**
-     * The file manager's Connected Folder menus: Disconnect… a linked folder
-     * (its files stay), or, with `removeDeletes`, Delete Connected Folder… a
-     * managed one (it moves to Recently Deleted).
-     */
-    remove?: boolean; removeDeletes?: boolean;
-    /** The file manager's sidebar: open the folder in a new folder tab, or in a new window. */
-    openInNewTab?: boolean;
-    openInNewWindow?: boolean;
-  };
-  point: { x: number; y: number };
-}
+import type { NativeConnectedFolderMenuCommand, NativeConnectedFolderMenuRequest } from "../../src/shared/desktop-ipc.js";
 
 export type NativeConnectedFolderMenuItem =
   | { type: "separator" }

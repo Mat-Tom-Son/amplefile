@@ -1,4 +1,22 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron") as typeof import("electron");
+import type {
+  AmpleFileDesktopBridge,
+  ApplicationMenuId,
+  DesktopIpcRenderer,
+  DesktopUpdateStatus,
+  FileClipboardPasteRequest,
+  RendererMenuCommand,
+  WindowLocation,
+  WindowMenuState,
+} from "../../src/shared/desktop-ipc.js";
+import type { BrowserCommand, BrowserDownload, BrowserFindResult, BrowserOpenTabCommand, BrowserPageState, BrowserShortcut, BrowserTabsSync, BrowserViewRequest } from "../../src/shared/browser.js";
+import type { LinuxWindowChromeState } from "../../src/shared/linux-desktop-appearance.js";
+import type { ClipboardContent } from "../../src/shared/clipboard.js";
+import type { RailTooltipRequest } from "../../src/shared/rail-tooltip.js";
+
+const electron = require("electron") as typeof import("electron");
+const { contextBridge, webUtils } = electron;
+// Electron's ipcRenderer, typed by the desktop IPC contract (src/shared/desktop-ipc.ts).
+const ipcRenderer: DesktopIpcRenderer = electron.ipcRenderer;
 
 function argumentValue(name: string): string {
   const prefix = `--amplefile-${name}=`;
@@ -21,12 +39,11 @@ const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vi
 const rawWindowSlot = Number(argumentValue("window-slot"));
 const windowSlot = Number.isInteger(rawWindowSlot) && rawWindowSlot >= 1 && rawWindowSlot <= 64 ? rawWindowSlot : 1;
 const windowFresh = argumentValue("window-fresh") === "1";
-type WindowLocation = { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select?: string | null; view?: "trash" | "recents" };
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
   clipboard: {
-    write: (content: { text: string; html?: string }) => ipcRenderer.invoke("amplefile:clipboard:write", content),
+    write: (content: ClipboardContent) => ipcRenderer.invoke("amplefile:clipboard:write", content),
   },
   api: {
     baseUrl: apiBaseUrl,
@@ -132,7 +149,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     write: (paths: string[], operation: "copy" | "cut" = "copy", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => (
       ipcRenderer.invoke("amplefile:file-clipboard:write", operation === "cut" ? { paths, operation, from } : paths)
     ),
-    paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null; operationId?: string; conflicts?: unknown; plan?: string }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
+    paste: (request: FileClipboardPasteRequest) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
     // What is cut in any window, while the pasteboard still holds it; and each change, as it happens.
     cut: () => ipcRenderer.invoke("amplefile:file-clipboard:cut"),
     cancelCut: () => ipcRenderer.invoke("amplefile:file-clipboard:cancel-cut"),
@@ -183,47 +200,47 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   // The built-in browser's tabs (docs/built-in-browser.md). Pages run in the
   // main process; this renderer only places them and shows their state.
   browser: {
-    mount: (request: unknown) => ipcRenderer.invoke("amplefile:browser:mount", request),
-    layout: (request: unknown) => ipcRenderer.send("amplefile:browser:layout", request),
+    mount: (request: BrowserViewRequest) => ipcRenderer.invoke("amplefile:browser:mount", request),
+    layout: (request: BrowserViewRequest) => ipcRenderer.send("amplefile:browser:layout", request),
     unmount: (pageId: string) => ipcRenderer.invoke("amplefile:browser:unmount", pageId),
     navigate: (pageId: string, address: string) => ipcRenderer.invoke("amplefile:browser:navigate", pageId, address),
-    command: (pageId: string, command: unknown) => ipcRenderer.invoke("amplefile:browser:command", pageId, command),
+    command: (pageId: string, command: BrowserCommand) => ipcRenderer.invoke("amplefile:browser:command", pageId, command),
     close: (pageId: string) => ipcRenderer.invoke("amplefile:browser:close", pageId),
     respondPermission: (pageId: string, requestId: string, decision: "allow" | "block") => ipcRenderer.invoke("amplefile:browser:respond-permission", pageId, requestId, decision),
-    sync: (tabs: unknown) => ipcRenderer.send("amplefile:browser:sync", tabs),
+    sync: (tabs: BrowserTabsSync) => ipcRenderer.send("amplefile:browser:sync", tabs),
     states: () => ipcRenderer.invoke("amplefile:browser:states"),
     showDownload: (path: string) => ipcRenderer.invoke("amplefile:browser:show-download", path),
     suggest: (text: string) => ipcRenderer.invoke("amplefile:browser:suggest", text),
     popupTabMenu: (pageId: string, url: string, point: { x: number; y: number }, options: { canReopen: boolean; hasOthers: boolean }) => ipcRenderer.invoke("amplefile:browser:popup-tab-menu", pageId, url, point, options),
     recent: () => ipcRenderer.invoke("amplefile:browser:recent"),
     clearHistory: () => ipcRenderer.invoke("amplefile:browser:clear-history"),
-    onState: (callback: (state: unknown) => void) => {
-      const listener = (_event: unknown, state: unknown) => callback(state);
+    onState: (callback: (state: BrowserPageState) => void) => {
+      const listener = (_event: unknown, state: BrowserPageState) => callback(state);
       ipcRenderer.on("amplefile:browser:state", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:state", listener);
     },
-    onOpenTab: (callback: (command: unknown) => void) => {
-      const listener = (_event: unknown, command: unknown) => callback(command);
+    onOpenTab: (callback: (command: BrowserOpenTabCommand) => void) => {
+      const listener = (_event: unknown, command: BrowserOpenTabCommand) => callback(command);
       ipcRenderer.on("amplefile:browser:open-tab", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:open-tab", listener);
     },
-    onCloseTab: (callback: (command: unknown) => void) => {
-      const listener = (_event: unknown, command: unknown) => callback(command);
+    onCloseTab: (callback: (command: { pageId: string }) => void) => {
+      const listener = (_event: unknown, command: { pageId: string }) => callback(command);
       ipcRenderer.on("amplefile:browser:close-tab", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:close-tab", listener);
     },
-    onShortcut: (callback: (shortcut: unknown) => void) => {
-      const listener = (_event: unknown, shortcut: unknown) => callback(shortcut);
+    onShortcut: (callback: (shortcut: BrowserShortcut) => void) => {
+      const listener = (_event: unknown, shortcut: BrowserShortcut) => callback(shortcut);
       ipcRenderer.on("amplefile:browser:shortcut", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:shortcut", listener);
     },
-    onFindResult: (callback: (result: unknown) => void) => {
-      const listener = (_event: unknown, result: unknown) => callback(result);
+    onFindResult: (callback: (result: BrowserFindResult) => void) => {
+      const listener = (_event: unknown, result: BrowserFindResult) => callback(result);
       ipcRenderer.on("amplefile:browser:find-result", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:find-result", listener);
     },
-    onDownload: (callback: (download: unknown) => void) => {
-      const listener = (_event: unknown, download: unknown) => callback(download);
+    onDownload: (callback: (download: BrowserDownload) => void) => {
+      const listener = (_event: unknown, download: BrowserDownload) => callback(download);
       ipcRenderer.on("amplefile:browser:download", listener);
       return () => ipcRenderer.removeListener("amplefile:browser:download", listener);
     },
@@ -232,7 +249,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     material: windowMaterial,
     setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system") => ipcRenderer.send("amplefile:window:set-theme", theme, source),
     railTooltip: {
-      show: (request: unknown) => ipcRenderer.send("amplefile:window:rail-tooltip-show", request),
+      show: (request: RailTooltipRequest) => ipcRenderer.send("amplefile:window:rail-tooltip-show", request),
       hide: () => ipcRenderer.send("amplefile:window:rail-tooltip-hide"),
     },
     getAccentColor: () => ipcRenderer.invoke("amplefile:window:accent-color"),
@@ -245,8 +262,8 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     },
     // Linux: the renderer draws the window buttons where the desktop's layout puts them.
     getChromeState: () => ipcRenderer.invoke("amplefile:window:chrome-state"),
-    onChromeStateChanged: (callback: (state: unknown) => void) => {
-      const listener = (_event: unknown, state: unknown) => callback(state);
+    onChromeStateChanged: (callback: (state: LinuxWindowChromeState | null) => void) => {
+      const listener = (_event: unknown, state: LinuxWindowChromeState | null) => callback(state);
       ipcRenderer.on("amplefile:window:chrome-state-changed", listener);
       return () => ipcRenderer.removeListener("amplefile:window:chrome-state-changed", listener);
     },
@@ -260,8 +277,8 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     check: () => ipcRenderer.invoke("amplefile:updates:check"),
     install: () => ipcRenderer.invoke("amplefile:updates:install"),
     updateNow: () => ipcRenderer.invoke("amplefile:updates:update-now"),
-    onStatusChanged: (callback: (status: unknown) => void) => {
-      const listener = (_event: unknown, status: unknown) => callback(status);
+    onStatusChanged: (callback: (status: DesktopUpdateStatus) => void) => {
+      const listener = (_event: unknown, status: DesktopUpdateStatus) => callback(status);
       ipcRenderer.on("amplefile:updates:status-changed", listener);
       return () => ipcRenderer.removeListener("amplefile:updates:status-changed", listener);
     },
@@ -296,12 +313,12 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     setLocation: (location: WindowLocation | null) => ipcRenderer.send("amplefile:window:set-location", location),
   },
   menu: {
-    setState: (state: unknown) => ipcRenderer.send("amplefile:menu:set-state", state),
-    popup: (menuId: unknown, bounds: unknown) => ipcRenderer.invoke("amplefile:menu:popup", menuId, bounds),
-    onCommand: (callback: (command: unknown) => void) => {
-      const listener = (_event: unknown, command: unknown) => callback(command);
+    setState: (state: Partial<WindowMenuState>) => ipcRenderer.send("amplefile:menu:set-state", state),
+    popup: (menuId: ApplicationMenuId, bounds: { x: number; y: number }) => ipcRenderer.invoke("amplefile:menu:popup", menuId, bounds),
+    onCommand: (callback: (command: RendererMenuCommand) => void) => {
+      const listener = (_event: unknown, command: RendererMenuCommand) => callback(command);
       ipcRenderer.on("amplefile:menu-command", listener);
       return () => ipcRenderer.removeListener("amplefile:menu-command", listener);
     },
   },
-});
+} satisfies AmpleFileDesktopBridge);

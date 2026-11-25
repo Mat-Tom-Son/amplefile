@@ -9,12 +9,9 @@ import {
   conflictItemLine,
   conflictPolicy,
   remainingConflicts,
-  type ConflictChoice,
   type ConflictDecision,
-  type ConflictPolicy,
-  type InsideChoice,
-  type TransferConflict,
 } from "./file-operations-model";
+import type { ConflictChoice, ConflictPolicy, InsideChoice, TransferConflict } from "../../../../src/shared/file-transfer";
 
 interface ConflictQuestion {
   conflicts: TransferConflict[];

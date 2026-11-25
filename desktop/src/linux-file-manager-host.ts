@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { IpcMain, IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 
 import { productIdentity } from "../../src/shared/product-identity.js";
 import { LinuxFileManagerIntegration, linuxFileManagerLaunchCommand } from "./linux-file-manager-integration.js";
 import type { FileManagerRequest } from "./linux-file-manager-service.js";
+import type { DesktopIpcMain } from "./desktop-ipc-main.js";
 
 /**
  * A path the system asked AmpleFile to show; `reveal` shows a folder selected in its parent rather than opened,
@@ -47,7 +48,7 @@ export function launcherOpenPaths(paths: readonly string[]): FileManagerOpenPath
 }
 
 export interface LinuxFileManagerHostOptions {
-  ipcMain: IpcMain;
+  ipcMain: DesktopIpcMain;
   assertTrusted: (event: IpcMainInvokeEvent) => void;
   userDataPath: string;
   isPackaged: boolean;

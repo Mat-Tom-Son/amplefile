@@ -20,7 +20,9 @@ process, database, public HTTP service, or mutation authority.
 
 The renderer never receives provider secrets or unrestricted filesystem
 access. Native and filesystem operations cross typed API or preload
-boundaries.
+boundaries. Every desktop IPC channel, and what each preload exposes, is
+declared once in `src/shared/desktop-ipc.ts`
+([Development](development.md#desktop-ipc)).
 
 ## Shared management plane
 
