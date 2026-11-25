@@ -1039,7 +1039,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "refresh") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "open-terminal" && terminalFolderOpen) void openTerminal(location);
-    else if (command === "get-info") showInfo();
+    // Get Info (⌘I): nothing behind a dialog, as Close Tab, so the panel behind Settings or a question stays as it was.
+    else if (command === "get-info") {
+      if (!document.querySelector('[role="dialog"], .modal-backdrop')) showInfo();
+    }
     else if (command === "toggle-hidden-files") toggleShowHiddenRef.current();
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
     // Close Tab (⌘W): nothing behind a dialog. While the Browser pane has the keyboard it closes the browser tab in

@@ -168,6 +168,14 @@ test("Get Info opens the panel at Info for an item, from its menu and from the F
   await dom.act(() => { (row("other.txt") as HTMLElement).click(); });
   await dom.act(() => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!.click(); });
   assert.equal(panel(), null);
+  // Behind a dialog it does nothing: the panel stays hidden.
+  const dialog = window.document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  window.document.body.append(dialog);
   await dom.render(createElement(module.FileManagerView, { ...props, desktopAction: { id: 2, command: "get-info" } }));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(panel(), null);
+  dialog.remove();
+  await dom.render(createElement(module.FileManagerView, { ...props, desktopAction: { id: 3, command: "get-info" } }));
   await dom.waitFor(() => (panel()?.textContent ?? "").includes("other.txt"));
 });

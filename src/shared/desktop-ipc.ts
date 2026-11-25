@@ -45,7 +45,7 @@ export type DesktopUpdatePhase =
   | "installing"
   | "error";
 
-/** Where an update stands, from the app's own updater (desktop/src/updater.ts) or the system's packages (desktop/src/system-package-updates.ts). */
+/** Where an update stands, from the app's own updater (desktop/src/updater.ts) or, in the Linux build, the system's packages. */
 export interface DesktopUpdateStatus {
   supported: boolean;
   phase: DesktopUpdatePhase;
@@ -57,7 +57,7 @@ export interface DesktopUpdateStatus {
   error: string | null;
   /**
    * "system" when the computer's package manager installs AmpleFile's
-   * updates (a repository-managed Linux RPM, desktop/src/system-package-updates.ts):
+   * updates (a repository-managed Linux RPM; that source is in the Linux build only):
    * "ready" then means the update is already installed and only a restart is
    * left. Absent for the app's own updater.
    */
