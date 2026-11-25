@@ -11,7 +11,6 @@ export interface LiveReplyHandle {
   clearText: () => void;
   clearSteps: () => void;
   show: (next: { text?: string; steps?: RuntimePreviewEntry[] }) => void;
-  end: () => void;
 }
 
 /** A Chat surface's live reply (live-reply-model.ts), with streamed text batched to animation frames. */
@@ -42,7 +41,6 @@ export function useLiveReply(): LiveReplyHandle {
       clearText: () => dispatch({ type: "clearText" }),
       clearSteps: () => dispatch({ type: "clearSteps" }),
       show: (next: { text?: string; steps?: RuntimePreviewEntry[] }) => dispatch({ type: "show", ...next }),
-      end: () => dispatch({ type: "end", now: Date.now() }),
     };
   }, []);
 

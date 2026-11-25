@@ -39,9 +39,7 @@ export type LiveReplyAction =
   /** Clears the steps and what places text among them; the reply text stays. */
   | { type: "clearSteps" }
   /** Puts a known reply and steps on screen, as a sample Chat does. */
-  | { type: "show"; text?: string; steps?: RuntimePreviewEntry[] }
-  /** The turn ended, seen at `now`: shows the waiting text and closes the open thinking step. */
-  | { type: "end"; now: number };
+  | { type: "show"; text?: string; steps?: RuntimePreviewEntry[] };
 
 export const emptyLiveReply: LiveReply = {
   text: "",
@@ -70,8 +68,6 @@ export function liveReplyReducer(reply: LiveReply, action: LiveReplyAction): Liv
         ...(action.text !== undefined ? { text: action.text, pendingText: "" } : {}),
         ...(action.steps !== undefined ? { steps: action.steps } : {}),
       };
-    case "end":
-      return endReply(reply, action.now);
     case "event":
       return applyEvent(reply, action.event, action.now);
   }
@@ -92,8 +88,11 @@ function applyEvent(reply: LiveReply, event: ChatStreamEvent, now: number): Live
       return event.text ? { ...reply, pendingText: `${reply.pendingText}${event.text}`, pendingOrder: event.order } : reply;
     case "assistant_message":
       return typeof event.text === "string" ? authoritativeText(reply, event.text, event.assistantPresentation) : reply;
+    case "turn_state":
     case "turn_snapshot":
-      return event.running === true && typeof event.text === "string" ? applySnapshot(reply, event) : reply;
+      if (event.running === false) return endReply(reply, now);
+      if (event.type === "turn_snapshot" && event.running === true && typeof event.text === "string") return applySnapshot(reply, event);
+      return reply;
     case "done":
     case "error":
       return endReply(reply, now);

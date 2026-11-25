@@ -127,7 +127,7 @@ test("a reconnect snapshot replaces the reply at its cursor, and replaying it re
   assert.equal(continued.steps[1]!.text, "Comparing the quotes.", "the open thinking row keeps streaming");
 });
 
-test("a snapshot without a presentation replaces only the text, and an idle turn frame replaces nothing", () => {
+test("a snapshot without a presentation replaces only the text; an idle one ends the reply instead", () => {
   const before = play([
     { type: "tool", workTrailId: "tool:a", phase: "running" },
     { type: "assistant_thinking", thinkingPhase: "start", workTrailId: "thinking:1", startedAt: 100 },
@@ -137,19 +137,11 @@ test("a snapshot without a presentation replaces only the text, and an idle turn
   assert.equal(textOnly.text, "From the cursor");
   assert.equal(textOnly.steps, before.steps);
   for (const type of ["turn_snapshot", "turn_state"] as const) {
-    assert.equal(play([{ type, running: false, text: "older text" }], before), before, `an idle ${type} is not a reply`);
-    assert.equal(play([{ type, running: true }], before), before, `a running ${type} without text changes nothing by itself`);
+    const idle = play([{ type, running: false, text: "older text" }], before, 600);
+    assert.equal(idle.text, "waiting", `an idle ${type} shows the waiting text and replaces nothing`);
+    assert.deepEqual(idle.steps.map((step) => [step.id, step.phase, step.durationMs]), [["tool:a", "running", undefined], ["thinking:1", "complete", 500]]);
   }
-});
-
-test("a surface that sees its turn end shows the waiting text and closes the open thinking row", () => {
-  const before = play([
-    { type: "assistant_thinking", thinkingPhase: "start", workTrailId: "thinking:1", startedAt: 100 },
-    { type: "assistant_delta", text: "waiting" },
-  ]);
-  const ended = liveReplyReducer(before, { type: "end", now: 600 });
-  assert.equal(ended.text, "waiting");
-  assert.deepEqual(ended.steps.map((step) => [step.id, step.phase, step.durationMs]), [["thinking:1", "complete", 500]]);
+  assert.equal(play([{ type: "turn_state", running: true }], before), before, "a running state frame changes nothing by itself");
 });
 
 test("done and error show the waiting text and close the open thinking row", () => {

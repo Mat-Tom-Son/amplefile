@@ -447,3 +447,18 @@ test("sending clears the last reply by the time the Worker shows as running", as
   assert.equal(dom.container.querySelectorAll(".streaming > .message-body").length, 0, "and the last reply is already gone");
   assert.doesNotMatch(dom.container.textContent!, /Old reply\./);
 });
+
+test("a turn that ends without its done frame keeps the hidden reasoning's real duration", async (t) => {
+  let messages: ChatMessage[] = [userMessage];
+  const { dom, emit } = await chatHarness(t, async () => ({ messages }));
+  await dom.waitFor(() => dom.container.textContent!.includes(userMessage.content));
+  await emit({ type: "turn_state", running: true, turnId: "turn-one" });
+  await emit({ type: "assistant_thinking", turnId: "turn-one", thinkingPhase: "start", workTrailId: "thinking:1", startedAt: Date.now() - 30_000, order: 0 });
+  // A reconnect missed `done`; the saved reply has no trail of its own, so the live steps stay.
+  messages = [userMessage, { id: "reply", role: "assistant", content: "Done.", createdAt: "2026-09-27T12:00:05Z" }];
+  await emit({ type: "turn_state", running: false, turnId: "turn-one" });
+  await dom.waitFor(() => dom.container.querySelectorAll('[aria-label="Stop Worker"]').length === 0 && /Done\./.test(dom.container.textContent!));
+  const thought = [...dom.container.querySelectorAll(".work-step.thinking")].map((row) => row.textContent);
+  assert.equal(thought.length, 1);
+  assert.match(thought[0]!, /^Thought for 3[0-2]s$/);
+});

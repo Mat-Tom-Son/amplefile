@@ -213,7 +213,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   // The current turn's reply and steps, as the main window's Chat shows them (live-reply-model.ts).
   const liveReply = useLiveReply();
   const { text: streamingAssistant, steps: liveSteps } = liveReply.reply;
-  const { apply: applyLiveEvent, clear: clearLiveReply, clearText: clearReplyText, end: endLiveReply } = liveReply;
+  const { apply: applyLiveEvent, clear: clearLiveReply, clearText: clearReplyText } = liveReply;
   const [ampleFileAgentComposer, setAmpleFileAgentComposer] = useState<ComposerState | null>(popoverFixtureRequested ? popoverFixtureComposer : null);
   const [conversationRuntime, setConversationRuntime] = useState<ConversationRuntime | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -397,17 +397,16 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         observedRunning = event.running === true;
       }
       // The reply, its thinking, and its tool steps follow the live reply's
-      // own rules (a snapshot replaces them at its cursor; done and error show
-      // the waiting text and close the open thinking).
+      // own rules (a snapshot replaces them at its cursor; an ended turn shows
+      // its waiting text and closes its thinking).
       applyLiveEvent(event);
-      if (event.type === "turn_state" && event.running === false) endLiveReply();
       if (event.type === "turn_state" || event.type === "done" || event.type === "error") {
         if (event.type === "done" || event.type === "error" || event.running === false) void refreshConversationRuntime(conversationId);
         void refreshConversation();
       }
     };
     return () => stream.close();
-  }, [conversationId, refreshConversation, refreshConversationRuntime, applyLiveEvent, clearLiveReply, endLiveReply]);
+  }, [conversationId, refreshConversation, refreshConversationRuntime, applyLiveEvent, clearLiveReply]);
 
   useEffect(() => {
     if (popoverFixtureRequested) return;
