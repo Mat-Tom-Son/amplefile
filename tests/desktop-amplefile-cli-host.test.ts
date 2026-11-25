@@ -416,6 +416,91 @@ test("a caller that stops waiting on a queued act learns its outcome later by it
   }
 });
 
+test("an answer left for a try that never ran is not handed to a retry under the same id, which runs", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-stale-"));
+  const token = "e".repeat(64);
+  const { readFile, rename, writeFile } = await import("node:fs/promises");
+  try {
+    let authority: { facade: AmpleFileActFacade; token: string } | null = null;
+    const created: string[] = [];
+    const facade = {
+      async createConversation(input: { connectedFolder: string }) {
+        created.push(input.connectedFolder);
+        return {
+          connectedFolder: { id: input.connectedFolder, name: "Act Connected Folder", connectedFolderRoot: join(stateRoot, "connected-folder") },
+          conversation: { id: "chat-1", title: "New Chat", createdAt: "2026-07-31T00:00:00.000Z", updatedAt: "2026-07-31T00:00:00.000Z", archivedAt: null, snoozedUntil: null },
+        };
+      },
+    } as unknown as AmpleFileActFacade;
+    const host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => authority });
+    await host.initialize();
+    const id = randomUUID();
+    const send = async () => {
+      // As a shim does: write the request file itself, then hand the id over.
+      const request = createAmpleFileCliActRequest({ id, argv: ["chat", "create", "--connected-folder", "connected-folder-1", "--request-id", id], cwd: resolve("."), actToken: token });
+      const paths = host.broker.requestPaths(id);
+      await writeFile(`${paths.request}.tmp`, JSON.stringify(request));
+      await rename(`${paths.request}.tmp`, paths.request);
+      await host.processRequest(id);
+      return host.broker.readResponse(id);
+    };
+
+    // The first try is refused (the app's act authority is not up), and its
+    // caller is gone before reading the refusal.
+    assert.equal((await send()).exitCode, 6);
+    assert.deepEqual(created, []);
+
+    // A retry under the same id runs: the refusal named a try that never ran.
+    authority = { facade, token };
+    const retry = await send();
+    assert.equal(retry.exitCode, 0, retry.stderr);
+    assert.deepEqual(created, ["connected-folder-1"]);
+
+    // An answer for a try that did run is handed to the next caller as it is.
+    const again = await send();
+    assert.equal(again.exitCode, 0, again.stderr);
+    assert.equal(again.stdout, retry.stdout);
+    assert.deepEqual(created, ["connected-folder-1"], "the act ran once");
+    const outcomes = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => (JSON.parse(line) as { outcome: string }).outcome);
+    assert.deepEqual(outcomes, ["rejected", "accepted", "ok"]);
+  } finally {
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("the host removes an answer once it has been kept for its window, and at startup", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-kept-"));
+  const { access, utimes, writeFile } = await import("node:fs/promises");
+  const exists = (path: string) => access(path).then(() => true, () => false);
+  let host: AmpleFileDesktopCliHost | null = null;
+  try {
+    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", keepAnswersMs: 100 });
+    await host.initialize();
+    const request = createAmpleFileCliRequest({ id: randomUUID(), argv: ["version", "--json"], cwd: resolve(".") });
+    await host.broker.writeRequest(request);
+    await host.processRequest(request.id);
+    const answer = host.broker.requestPaths(request.id).response;
+    assert.equal(await exists(answer), true, "every caller waiting on the id can still read it");
+    const deadline = Date.now() + 10_000;
+    while (await exists(answer)) {
+      if (Date.now() > deadline) throw new Error("The kept answer was never removed.");
+      await new Promise<void>((resolveTick) => setTimeout(resolveTick, 20));
+    }
+
+    // An answer left from before a restart is removed when the host starts.
+    const leftover = host.broker.requestPaths(randomUUID()).response;
+    await writeFile(leftover, "{}");
+    const old = new Date(Date.now() - 1_000);
+    await utimes(leftover, old, old);
+    const restarted = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", keepAnswersMs: 100 });
+    await restarted.initialize();
+    assert.equal(await exists(leftover), false);
+  } finally {
+    await host?.whenIdle();
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("desktop CLI host gates act requests on the per-launch authority and records receipts", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-act-"));
   const token = "d".repeat(64);

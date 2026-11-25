@@ -69,6 +69,15 @@ export interface AmpleFileCliCleanupResult {
 
 export type AmpleFileCliRequestExecutor = (request: AmpleFileCliBrokeredRequest) => Promise<AmpleFileCliResponseV1>;
 
+export interface AmpleFileCliProcessOptions {
+  /**
+   * Whether an answer already written under this id goes to this caller.
+   * When it does not, the answer is dropped and the request is claimed and
+   * run instead. Without it, an existing answer is always reused.
+   */
+  reuseAnswer?: (answer: AmpleFileCliResponseV1) => Promise<boolean>;
+}
+
 export class AmpleFileCliFileBroker {
   readonly paths: AmpleFileCliBrokerPaths;
   private readonly stateRoot: string;
@@ -213,11 +222,11 @@ export class AmpleFileCliFileBroker {
     return path;
   }
 
-  processRequest(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
+  processRequest(id: string, executor: AmpleFileCliRequestExecutor, options: AmpleFileCliProcessOptions = {}): Promise<AmpleFileCliResponseV1> {
     const normalized = normalizeAmpleFileCliRequestId(id);
     const existing = this.inFlight.get(normalized);
     if (existing) return existing;
-    const operation = this.processRequestOnce(normalized, executor).finally(() => {
+    const operation = this.processRequestOnce(normalized, executor, options).finally(() => {
       if (this.inFlight.get(normalized) === operation) this.inFlight.delete(normalized);
     });
     this.inFlight.set(normalized, operation);
@@ -244,13 +253,29 @@ export class AmpleFileCliFileBroker {
     return { writtenAt: submitted, processing: false };
   }
 
-  async cleanup(options: { olderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
+  /**
+   * Removes the answer written under this id once it is older than
+   * `olderThanMs`. A newer answer written under the same id is left for its
+   * own turn. It never creates the broker's folders.
+   */
+  async removeAnswer(id: string, olderThanMs: number): Promise<boolean> {
+    const path = this.requestPaths(id).response;
+    const info = await lstat(path).catch(() => null);
+    if (!info?.isFile() || this.now().getTime() - info.mtimeMs < olderThanMs) return false;
+    await rm(path, { force: true });
+    return true;
+  }
+
+  async cleanup(options: { olderThanMs?: number; answersOlderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
     await this.initialize();
     const olderThanMs = positiveLimit(options.olderThanMs, AMPLEFILE_CLI_DEFAULT_CLEANUP_AGE_MS, "olderThanMs");
-    const threshold = this.now().getTime() - olderThanMs;
+    // Answers can go sooner than requests and claims: the callers they were
+    // kept for read them within moments.
+    const answersOlderThanMs = positiveLimit(options.answersOlderThanMs, olderThanMs, "answersOlderThanMs");
     const removed: string[] = [];
     const skippedUnsafe: string[] = [];
     for (const directory of [this.paths.requests, this.paths.claims, this.paths.responses]) {
+      const threshold = this.now().getTime() - (directory === this.paths.responses ? answersOlderThanMs : olderThanMs);
       await assertSafeDirectory(this.paths.root, directory, "CLI broker directory");
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         if (!/^[0-9a-f-]{36}\.(?:json|lock)$|^[0-9a-f-]{36}\.[0-9a-f-]{36}\.tmp$/i.test(entry.name)) continue;
@@ -272,12 +297,19 @@ export class AmpleFileCliFileBroker {
     return { removed, skippedUnsafe };
   }
 
-  private async processRequestOnce(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
+  private async processRequestOnce(
+    id: string,
+    executor: AmpleFileCliRequestExecutor,
+    options: AmpleFileCliProcessOptions,
+  ): Promise<AmpleFileCliResponseV1> {
     await this.initialize();
     const paths = this.requestPaths(id);
     try {
       const existing = await fileExists(paths.response) ? await this.readResponse(id) : null;
-      if (existing) return existing;
+      if (existing) {
+        if (!options.reuseAnswer || await options.reuseAnswer(existing)) return existing;
+        await rm(paths.response, { force: true });
+      }
       const request = await this.claimRequest(id);
       let response: AmpleFileCliResponseV1;
       try {

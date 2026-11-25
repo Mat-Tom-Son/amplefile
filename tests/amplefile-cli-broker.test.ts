@@ -270,6 +270,41 @@ test("CLI broker cleanup removes only stale recognized regular files and reports
   });
 });
 
+test("CLI broker drops an answer its caller should not reuse, and removes answers by their own age", async () => {
+  await withBroker(async ({ broker, root }) => {
+    const id = randomUUID();
+    const request = () => JSON.stringify(createAmpleFileCliRequest({ id, argv: ["version"], cwd: root, createdAt: fixedNow.toISOString() }));
+    let runs = 0;
+    const executor = async (brokered: AmpleFileCliBrokeredRequest) => {
+      runs += 1;
+      return createAmpleFileCliResponse({ id: brokered.id, exitCode: 0, stdout: `run ${runs}\n`, stderr: "", completedAt: fixedNow.toISOString() });
+    };
+    await writeFile(broker.requestPaths(id).request, request());
+    assert.equal((await broker.processRequest(id, executor)).stdout, "run 1\n");
+    assert.equal((await broker.processRequest(id, executor, { reuseAnswer: async () => true })).stdout, "run 1\n");
+    // A retrying caller's own request file runs when the answer left is not one to reuse.
+    await writeFile(broker.requestPaths(id).request, request());
+    assert.equal((await broker.processRequest(id, executor, { reuseAnswer: async () => false })).stdout, "run 2\n");
+    assert.equal(runs, 2);
+
+    const answer = broker.requestPaths(id).response;
+    assert.equal(await broker.removeAnswer(id, 60_000), false, "an answer younger than the window stays");
+    const old = new Date(fixedNow.getTime() - 120_000);
+    await utimes(answer, old, old);
+    assert.equal(await broker.removeAnswer(id, 60_000), true);
+    assert.equal(existsSync(answer), false);
+    assert.equal(await broker.removeAnswer(id, 60_000), false, "nothing is left to remove");
+
+    const leftoverAnswer = broker.requestPaths(randomUUID()).response;
+    const leftoverRequest = broker.requestPaths(randomUUID()).request;
+    for (const path of [leftoverAnswer, leftoverRequest]) {
+      await writeFile(path, "{}", "utf8");
+      await utimes(path, old, old);
+    }
+    assert.deepEqual((await broker.cleanup({ answersOlderThanMs: 60_000 })).removed, [leftoverAnswer], "requests keep the longer age");
+  });
+});
+
 test("CLI response writer validates schema, bounds output, and refuses overwrite", async () => {
   await withBroker(async ({ broker }) => {
     const id = randomUUID();

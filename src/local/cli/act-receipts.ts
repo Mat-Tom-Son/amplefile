@@ -15,7 +15,11 @@ export const AMPLEFILE_CLI_ACT_RECEIPTS_MAX_BYTES = 8 * 1024 * 1024;
  * without a trace. `accepted` lines are also the at-most-once ledger: a
  * request id that already has one is refused instead of re-executed, which is
  * what makes a replayed mutation safe even after the broker's response file
- * has been cleaned up. Terminal appends stay best-effort (an applied mutation
+ * has been cleaned up — for as long as the journal still holds that line.
+ * The freshness window bounds how long one request file can be replayed; a
+ * caller retrying under its own `--request-id` sends a new file, so its
+ * protection ends when rotation drops the id (`journalSince` in a lookup
+ * says how far back that is). Terminal appends stay best-effort (an applied mutation
  * must not be failed retroactively); the executor surfaces a warning when one
  * cannot be written.
  */
@@ -124,10 +128,12 @@ export interface AmpleFileCliActReceiptLookup {
 }
 
 /**
- * How long a damaged line can still matter: the broker refuses a request
- * older than its freshness window (allowing for future clock skew), so an
- * accepted id written before time T can no longer be replayed after
- * T + window + skew.
+ * How long a damaged line keeps the journal refusing acts: the broker
+ * refuses a request file older than its freshness window (allowing for
+ * future clock skew), so a request file whose accepted id was written before
+ * time T can no longer be replayed after T + window + skew. A new request
+ * file under the same caller-chosen `--request-id` is not bounded by that,
+ * and an id the damaged line hid can run again after it.
  */
 const replayHorizonMs = AMPLEFILE_CLI_REQUEST_MAX_AGE_MS + AMPLEFILE_CLI_REQUEST_FUTURE_SKEW_MS;
 
@@ -398,11 +404,13 @@ export class AmpleFileCliActReceipts {
   async #rotateIfNeeded(journal: ReceiptJournal): Promise<void> {
     if (!journal.live || journal.live.size <= this.#maxBytes) return;
     // Accepted records are the at-most-once ledger, and the broker refuses
-    // requests older than its freshness window, so the ledger only needs to
-    // stay findable for that long. While the live file still holds an entry
-    // younger than the window, rotating (which discards the previous rotated
-    // file) could drop a gate-relevant accepted id — so rotation waits and
-    // the file temporarily overgrows instead.
+    // request files older than its freshness window, so for one request file
+    // the ledger only needs to stay findable for that long. While the live
+    // file still holds an entry younger than the window, rotating (which
+    // discards the previous rotated file) could drop a gate-relevant accepted
+    // id — so rotation waits and the file temporarily overgrows instead. A
+    // retry under a caller-chosen id is protected only while its line stays,
+    // which is what `journalSince` reports.
     const firstAt = journal.liveFirstAt;
     if (firstAt !== null && Number.isFinite(firstAt) && this.#now().getTime() - firstAt < AMPLEFILE_CLI_REQUEST_MAX_AGE_MS) return;
     await rm(journal.rotatedPath, { force: true });

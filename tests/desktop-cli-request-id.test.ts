@@ -86,6 +86,55 @@ test("a retry under the same --request-id joins a first try that is still waitin
   assert.deepEqual(JSON.parse(retry.stdout), { id, argv: first.argv });
 });
 
+/**
+ * A stand-in that behaves as the broker does for one id: the first launch
+ * claims the request and answers 1.5 s later; a launch that finds the id
+ * already claimed or answered leaves it to that answer.
+ */
+const slowApp = `#!${process.execPath}
+const fs = require("node:fs");
+const path = require("node:path");
+const id = process.argv[process.argv.indexOf("--amplefile-cli-request") + 1];
+const root = path.join(process.env.FAKE_STATE, "cli");
+const request = path.join(root, "requests", id + ".json");
+const claim = path.join(root, "claims", id + ".json");
+const answer = path.join(root, "responses", id + ".json");
+fs.mkdirSync(path.dirname(claim), { recursive: true });
+if (fs.existsSync(answer) || fs.existsSync(claim)) process.exit(0);
+try { fs.renameSync(request, claim); } catch { process.exit(0); }
+const argv = JSON.parse(fs.readFileSync(claim, "utf8")).argv;
+fs.appendFileSync(path.join(process.env.FAKE_STATE, "requests.log"), JSON.stringify({ launchedWith: id, id, lane: "act", argv }) + "\\n");
+setTimeout(() => {
+  const temporary = answer.replace(/\\.json$/, ".tmp");
+  fs.writeFileSync(temporary, JSON.stringify({ protocolVersion: 1, id, exitCode: 0, stdout: "renamed\\n", stderr: "" }));
+  fs.renameSync(temporary, answer);
+  fs.rmSync(claim, { force: true });
+}, 1500);
+`;
+
+test("two callers waiting under one --request-id both get its one answer", onMac, async (t) => {
+  const state = await stateFolder(t);
+  await writeFile(join(state, "fake-app"), slowApp, "utf8");
+  const id = randomUUID();
+  const argv = ["files", "rename", "--connected-folder", "home", "--path", "a.txt", "--name", "b.txt", "--request-id", id];
+  const env = { AMPLEFILE_CLI_TIMEOUT_MS: "8000" };
+  const first = runShim(state, argv, env);
+  const claim = join(state, "cli", "claims", `${id}.json`);
+  const deadline = Date.now() + 10_000;
+  while (!await readFile(claim).then(() => true, () => false)) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for the first try to be claimed.");
+    await new Promise<void>((resolveTick) => setTimeout(resolveTick, 20));
+  }
+  // The second caller starts while the first is still waiting on the same id.
+  const second = runShim(state, argv, env);
+  const [one, two] = await Promise.all([first, second]);
+  assert.deepEqual([one.code, one.stdout], [0, "renamed\n"], one.stderr);
+  assert.deepEqual([two.code, two.stdout], [0, "renamed\n"], two.stderr);
+  assert.equal(two.log.length, 1, "the act ran once");
+  assert.deepEqual(await readdir(join(state, "cli", "requests")), [], "each caller removed only the request file it wrote");
+  assert.deepEqual(await readdir(join(state, "cli", "responses")), [`${id}.json`], "the answer stays for AmpleFile to remove");
+});
+
 test("a malformed --request-id is refused before anything is sent", onMac, async (t) => {
   const state = await stateFolder(t);
   const run = await runShim(state, ["agent", "status", "--request-id", "req-1"]);
