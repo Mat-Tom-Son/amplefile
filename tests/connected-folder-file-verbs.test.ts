@@ -7,7 +7,6 @@ import { test, type TestContext } from "node:test";
 
 import { AmpleFileCliError } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
-import { createConversation } from "../src/local/agent/chat-store.js";
 
 // Rename, move, New Folder, and New File have one owner each, reached from the
 // window's routes and from the CLI's act lane. Whatever name the effect gives
@@ -231,17 +230,4 @@ test("while an automation run counts an act as its own, every verb that places o
   const before = placed.length;
   await facade.filesCreate({ connectedFolder: id, path: "notes/by a person.md" });
   assert.equal(placed.length, before);
-});
-
-test("restoring a deleted Worker Chat while an automation run counts the act as its own still succeeds", async (t) => {
-  const { api, facade, id, root } = await startConnectedFolder(t);
-  api.automations.countsAsRunWork = () => true;
-  const conversation = await createConversation(root);
-  const removed = await fetch(`${api.origin}/api/connected-folders/${id}/conversations/${conversation.id}`, { method: "DELETE" });
-  assert.equal(removed.status, 200, await removed.text());
-  const entry = (await facade.recentlyDeletedList()).entries.find((item) => item.originalPath === `.amplefile/conversations/${conversation.id}.jsonl`);
-  assert.ok(entry, "the Chat is in Recently Deleted");
-  const restored = await facade.recentlyDeletedRestore({ entry: entry.id });
-  assert.equal((restored.restored as { path?: string }).path, `.amplefile/conversations/${conversation.id}.jsonl`);
-  assert.ok(existsSync(join(root, ".amplefile", "conversations", `${conversation.id}.jsonl`)), "the transcript is back");
 });

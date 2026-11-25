@@ -8,6 +8,7 @@ import { createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
 import { PiConversationClient, type PiFileToolWrite } from "../src/local/agent/pi-client.js";
 import { connectedFolderFileIds, noteAutomationRunFiles, notePiFileToolWrite } from "../src/local/api/automation-attribution.js";
 import type { LocalApiState } from "../src/local/api/state.js";
+import { getClient } from "../src/local/api/conversation-clients.js";
 
 // An automation run's own files (docs/automations.md): Pi's built-in write
 // and edit tools report each file they finished touching, with the turn
@@ -134,4 +135,46 @@ test("attribution never fails an act: reserved paths are skipped and a throw is 
   const throwing = { automations: { countsAsRunWork: () => true, notePlacedFiles: () => { throw new Error("bookkeeping broke"); } } } as unknown as LocalApiState;
   await noteAutomationRunFiles(throwing, { connectedFolderId: "space-aaaaaaaaaaaaaaaa" }, { root, placed: ["kept.md"] });
   await notePiFileToolWrite(throwing, { path: join(root, "kept.md"), taskId: "step-turn" });
+});
+
+test("a picture generate_image saved into the folder is reported as its turn's file; a quick picture is not", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-run-attribution-image-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = new PiConversationClient("attribution-image", root);
+  (client as unknown as { presentationTaskId: string }).presentationTaskId = "turn-image";
+  const details = (path?: string) => ({ id: "a".repeat(32), name: "chart.png", mimeType: "image/png", width: 10, height: 10, ...(path ? { path } : {}) });
+  const seen = await reports(client, 1, () => {
+    native(client, { type: "tool_execution_start", toolCallId: "image-1", toolName: "generate_image", args: { prompt: "a chart", path: "Charts/chart.png" } });
+    native(client, { type: "tool_execution_end", toolCallId: "image-1", toolName: "generate_image", isError: false, result: { details: details("Charts/chart.png") } });
+    native(client, { type: "tool_execution_start", toolCallId: "image-2", toolName: "generate_image", args: { prompt: "a sketch" } });
+    native(client, { type: "tool_execution_end", toolCallId: "image-2", toolName: "generate_image", isError: false, result: { details: details() } });
+  });
+  assert.deepEqual(seen, [{ path: join(root, "Charts/chart.png"), taskId: "turn-image" }]);
+});
+
+test("every Chat client sends its Pi writes to the automation executor under their turn", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-run-attribution-client-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "summary.md"), "summary");
+  const { state: base, asked, noted } = fakeState((act) => act.taskId === "step-turn");
+  const state = Object.assign(base, {
+    clients: new Map(),
+    connectedFolderIdsByRoot: new Map(),
+    imageModelPreference: { get: () => undefined },
+    requests: {},
+    // What the Chat's own event stream needs; nobody is listening here.
+    activeTurnIdsByKey: new Map(),
+    chatEventLogs: new Map(),
+    chatEventListeners: new Map(),
+    chatStreams: new Map(),
+  });
+  const client = await getClient(state, "space-aaaaaaaaaaaaaaaa", root, "worker-chat");
+  const detach = fakeRuntime(client, [{ name: "write", source: "builtin" }]);
+  (client as unknown as { presentationTaskId: string }).presentationTaskId = "step-turn";
+  native(client, { type: "tool_execution_start", toolCallId: "write-1", toolName: "write", args: { path: "summary.md" } });
+  native(client, { type: "tool_execution_end", toolCallId: "write-1", toolName: "write", isError: false, result: {} });
+  detach();
+  for (let attempt = 0; attempt < 200 && !noted.length; attempt += 1) await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(asked, [{ taskId: "step-turn" }]);
+  assert.deepEqual(noted, [{ taskId: "step-turn", fileIds: [await fileId(join(root, "summary.md"))] }]);
 });

@@ -105,14 +105,16 @@ pause join it. Edits made during the pause are absorbed, including one a tool
 saved as a new file at the same path (`sed -i`, an app's safe-save), and so
 are renames, because either may be a run's own work. A name is vacated, and a
 new file there is owed, when the file before it now sits at another path the
-watch sees or a run's own verb moved or deleted it; when something AmpleFile
-cannot see removed that file, a new file at its name reads as an edit. The
-files a run placed itself are absorbed too, matched by device and inode as
+watch sees or a run's own verb moved or deleted it. When anything else removed
+that file — a person deleting it in the window, a run's `history restore`, or
+something AmpleFile does not see — a new file at its name reads as an edit.
+The files a run placed itself are absorbed too, matched by device and inode as
 each was placed, so a later rename or a differently typed name still matches.
 A run's work is each running step's whole request lineage: the request its
 turn joined, every turn of it, every request handed work from it, and the
 Connected Folders where those still have work. In it, what Pi's own `write`
-and `edit` tools touched counts, as does what a files step copied (everything
+and `edit` tools touched counts, and a picture AmpleFile's `generate_image`
+saved into a Connected Folder, as does what a files step copied (everything
 inside a copied folder too) and what an AmpleFile verb placed —
 `amplefile files` `add`, `move`, `rename`, `create`, and `mkdir`,
 `chat handoff --file`, `recently-deleted restore`, and `history restore` or
@@ -123,13 +125,14 @@ AmpleFile Agent does. A verb aimed at any other Connected Folder — by a
 person, an outside agent, or a Chat no step started — is an ordinary change
 and can start a follow-up run. The one exception: a verb an outside caller
 aims at a folder where a step's work is running, while it runs, counts as that
-work. AmpleFile cannot see what a raw shell command makes, or an Extension's
-own tool, such as the Documents tool's `document_run` scripts, so such a file
-counts as new: it can start one follow-up run of any Automation watching that
+work. A file placed by anything AmpleFile does not record as the run's work —
+a raw shell command, an Extension's own tool such as the Documents tool's
+`document_run` scripts, or a built-in browser download, for example — counts
+as new: it can start one follow-up run of each Automation watching that
 folder, its own or another's. Whatever arrives while a follow-up run works is
-absorbed, so nothing chains beyond that one hop, and so is whatever arrived
-while a run that was stopped — by Stop, disable, removal, or quit — worked: a
-stopped run owes no follow-up. A follow-up's cause adds
+absorbed, so nothing chains beyond that one hop. A run that was stopped — by
+Stop, disable, removal, or quit — owes no follow-up of its own Automation;
+other watches compare as usual. A follow-up's cause adds
 `followUp: {"count": n}`, where `count` of `changedCount` paths arrived during
 a run; `{{trigger.summary}}`, `amplefile automations receipts`, and Settings'
 run history say so, naming a catch-up too when the run is both, and Settings
@@ -236,11 +239,12 @@ behavior).
 
 **Automation-caused settles never fire triggers.** A folder change a run makes
 starts nothing when AmpleFile can tell it is the run's own (above). A file
-made by a raw shell command or an Extension's own tool it cannot tell apart,
-so that file can start one follow-up run of each Automation watching its
-folder — one run can fan out that far — and nothing that arrives while a
-follow-up run works starts another, so there are no cycles and no chains.
-Composition belongs inside one automation's ordered steps.
+placed by anything it does not record as the run's work — a raw shell command,
+an Extension's own tool, a browser download — it cannot tell apart, so that
+file can start one follow-up run of each Automation watching its folder — one
+run can fan out that far — and nothing that arrives while a follow-up run
+works starts another, so there are no cycles and no chains. Composition
+belongs inside one automation's ordered steps.
 
 **The recurring schedule trigger** is
 `{"kind": "interval", "intervalMinutes": N}` with bounds of 1 minute to 366
@@ -706,10 +710,10 @@ machine-wide count, step-count, or exact-path-count quota.
 
 - **Automation chains.** Automation-caused settles never fire triggers. A
   folder change a run makes starts nothing when AmpleFile can tell it is the
-  run's own; a file a raw shell command or an Extension's own tool makes can
-  start one follow-up run of each Automation watching its folder, and nothing
-  that arrives while a follow-up run works starts another. There is no other
-  multi-hop behavior across automations.
+  run's own; a file placed by anything it does not record as the run's work
+  can start one follow-up run of each Automation watching its folder, and
+  nothing that arrives while a follow-up run works starts another. There is no
+  other multi-hop behavior across automations.
 - **Worker-turn, compaction, and AmpleFile Agent request triggers**, for the
   reasons given under Triggers.
 - **Ambient or durable file watching.** Only the explicitly reviewed, bounded

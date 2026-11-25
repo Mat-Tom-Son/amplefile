@@ -1329,8 +1329,8 @@ export class PiConversationClient extends EventEmitter {
       // resolved exactly as the tool resolved it; never the content.
       const target = this.fileToolTargets.get(toolCallId);
       this.fileToolTargets.delete(toolCallId);
+      const taskId = this.extensionTurn.getStore()?.taskId ?? this.presentationTaskId ?? null;
       if (target !== undefined && !raw.isError) {
-        const taskId = this.extensionTurn.getStore()?.taskId ?? this.presentationTaskId ?? null;
         void piFileToolPath(this.connectedFolderRoot, target).then((path) => {
           if (path) this.emit("file-tool-wrote", { path, taskId } satisfies PiFileToolWrite);
         });
@@ -1348,6 +1348,8 @@ export class PiConversationClient extends EventEmitter {
       if (!raw.isError && event.toolName === "generate_image") {
         const image = parseChatToolImage(raw.result?.details);
         if (image) event.image = image;
+        // A picture it saved into the Connected Folder is that turn's own file too.
+        if (image?.path) this.emit("file-tool-wrote", { path: resolve(this.connectedFolderRoot, image.path), taskId } satisfies PiFileToolWrite);
       }
     }
     const previous = this.turnActivities.get(toolCallId);

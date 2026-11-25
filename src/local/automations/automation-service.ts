@@ -322,9 +322,10 @@ export class AmpleFileAutomationService {
    * Folder observation's pause for automation runs, from the first run
    * starting to the last one ending: the device and inode of each file the
    * runs placed, and whether a follow-up run was among the runs, which makes
-   * the watches absorb what arrived.
+   * every watch absorb what arrived. A stopped run absorbs it for its own
+   * Automation's watch only.
    */
-  #runPause: { placed: Set<string>; vacated: Set<string>; absorb: boolean } | null = null;
+  #runPause: { placed: Set<string>; vacated: Set<string>; absorb: boolean; stoppedAutomationIds: Set<string> } | null = null;
   readonly #requestLineage: AmpleFileAutomationServiceOptions["requestLineage"];
   readonly #store: AmpleFileAutomationStore;
   readonly #receipts: AmpleFileAutomationReceipts;
@@ -864,7 +865,7 @@ export class AmpleFileAutomationService {
    */
   #pauseFileWatchesForRun(cause: AmpleFileAutomationRunCause): void {
     this.#fileEpoch += 1;
-    this.#runPause ??= { placed: new Set(), vacated: new Set(), absorb: false };
+    this.#runPause ??= { placed: new Set(), vacated: new Set(), absorb: false, stoppedAutomationIds: new Set() };
     if (cause.kind === "files-changed" && cause.followUp) this.#runPause.absorb = true;
     for (const watch of this.#fileWatches.values()) watch.pauseForRun();
   }
@@ -882,7 +883,9 @@ export class AmpleFileAutomationService {
     this.#runPause = null;
     if (this.#suspensionDesired) return;
     const runFiles = { placed: pause?.placed ?? [], vacated: pause?.vacated ?? [] };
-    for (const watch of this.#fileWatches.values()) watch.resumeAfterRuns(runFiles, pause?.absorb ?? true);
+    for (const [automationId, watch] of this.#fileWatches) {
+      watch.resumeAfterRuns(runFiles, (pause?.absorb ?? true) || pause!.stoppedAutomationIds.has(automationId));
+    }
   }
 
   /**
@@ -1279,8 +1282,8 @@ export class AmpleFileAutomationService {
     } finally {
       releaseOuterAbort();
       // Stop means stop: nothing that arrived while a stopped run worked
-      // starts a follow-up of it, or of anything else.
-      if (active.stopRequested && this.#runPause) this.#runPause.absorb = true;
+      // starts a follow-up of that Automation. Other watches still compare.
+      if (active.stopRequested && this.#runPause) this.#runPause.stoppedAutomationIds.add(automationId);
       this.#activeRuns.delete(runId);
       this.#resumeFileWatchesAfterRun();
       if (taskId !== null) {

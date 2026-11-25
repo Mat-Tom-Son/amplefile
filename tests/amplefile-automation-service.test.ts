@@ -2239,3 +2239,39 @@ test("a look a run's start took before a sleep is never compared after it", asyn
   const causes = await acceptedCauses(harness, id);
   assert.ok(causes.every((cause) => (cause as { kind: string }).kind === "run-now"), "a screenshot taken while asleep is not replayed");
 });
+
+test("stopping one Automation's run absorbs only its own watch; another watch still gets its follow-up", async (t) => {
+  const folders = new FakeFolders();
+  const harness = await createHarness(t, { observeFiles: folders.observe });
+  const shots = "automation-name-screenshots";
+  const inbox = "automation-file-inbox";
+  await harness.enable(screenshotsDeclaration(shots));
+  await harness.enable(declarationInput(inbox, {
+    version: 4,
+    trigger: { ...screenshotsTrigger, connectedFolder: connectedFolderB, watch: { kind: "tree", path: "Inbox", recursive: false, extensions: [".md"] } },
+    steps: [{ id: "file", kind: "chat", connectedFolder: connectedFolderB, message: "File:\n{{trigger.changedFiles}}" }],
+  }));
+  let stopped = false;
+  harness.ports.chatImpl = async (step, context) => {
+    if (context.automationId === shots && !stopped) {
+      stopped = true;
+      // The screenshots run makes a file with a shell command, a note lands
+      // in the Inbox meanwhile, and then the person stops the screenshots run.
+      folders.write(connectedFolderA, "Screenshots/half-made by a shell.png");
+      folders.write(connectedFolderB, "Inbox/note.md");
+      harness.service.stopRun(shots);
+      return harness.ports.abortableChat(step, context);
+    }
+    return harness.ports.defaultChat(step, context);
+  };
+  await screenshotRun(harness, folders, "Screenshots/shot.png", 1);
+  await pollAt(harness, 1_000);
+  await pollAt(harness, 2_000);
+  await settledRuns(harness, 2);
+  for (let step = 0; step < 4; step += 1) await pollAndSettle(harness, 70_000);
+  assert.equal((await acceptedCauses(harness, shots)).length, 1, "the stopped Automation owes nothing");
+  const causes = await acceptedCauses(harness, inbox);
+  assert.equal(causes.length, 1);
+  assert.deepEqual((causes[0] as { changedPaths?: string[] }).changedPaths, ["Inbox/note.md"]);
+  assert.deepEqual((causes[0] as { followUp?: unknown }).followUp, { count: 1 });
+});
