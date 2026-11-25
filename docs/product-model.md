@@ -56,7 +56,10 @@ other surface.
   it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
-  list keeps 360px.
+  list keeps 360px. **Open Terminal Here** opens a new Terminal window in the
+  folder shown, from **File** or the folder background menu, and in a folder
+  from that folder's own menu or its sidebar menu. Terminal is always the app
+  used; the folder is checked again just before it opens.
 - **Sidebar:** flush with the window's edges and square like the rest of the
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
@@ -70,7 +73,7 @@ other surface.
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
   Folder…** and **Connect Folder…**. Right-clicking a Standard Folder offers
-  Show in Finder, **Connect This Folder**, and, for one added with +, Remove
+  **Open Terminal Here**, Show in Finder, **Connect This Folder**, and, for one added with +, Remove
   from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.

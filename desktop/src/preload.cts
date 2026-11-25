@@ -142,6 +142,10 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   placeLink: {
     open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => ipcRenderer.invoke("amplefile:place:open-link", { place, path, action }),
   },
+  // Open Terminal Here: a new Terminal window in the folder (the host's handler is Mac only).
+  ...(process.platform === "darwin" ? {
+    openTerminal: (location: Pick<WindowLocation, "place" | "path">) => ipcRenderer.invoke("amplefile:place:open-terminal", location),
+  } : {}),
   fileClipboard: {
     // A Copy, or with "cut" a Cut, which the host remembers for every window by the place the items are in.
     write: (paths: string[], operation: "copy" | "cut" = "copy", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => (

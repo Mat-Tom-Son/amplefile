@@ -149,7 +149,7 @@ export interface WindowMenuState {
   showHiddenFiles: boolean;
   /** The window shows the file manager, with its folder tabs: New Tab, Close Tab, and the tab items act on it. */
   folderTabsOpen: boolean;
-  /** On Linux, the current tab shows a folder that can be opened in a terminal. */
+  /** On Linux and the Mac, the current tab shows a folder that can be opened in a terminal. */
   terminalFolderOpen?: boolean;
   /** View → Show Tab Bar: the window's folder tab strip shows even with one tab. */
   showTabBar: boolean;
@@ -284,7 +284,8 @@ export interface NativeTabMenuRequest {
  * same actions as the in-app menu other platforms show.
  */
 export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "organize" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab" | "open-in-new-window";
+  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder" | "open-in-new-tab" | "open-in-new-window"
+  | "open-terminal";
 
 export interface NativeConnectedFolderMenuRequest {
   /**
@@ -309,6 +310,8 @@ export interface NativeConnectedFolderMenuRequest {
     /** The file manager's sidebar: open the folder in a new folder tab, or in a new window. */
     openInNewTab?: boolean;
     openInNewWindow?: boolean;
+    /** The file manager's sidebar on a Mac: open the folder in a new Terminal window. */
+    openTerminal?: boolean;
   };
   point: { x: number; y: number };
 }
@@ -537,7 +540,7 @@ export interface AmpleFileDesktopBridge {
   placeLink?: {
     open: (place: FileManagerPlace, path: string, action: "open" | "reveal") => Answer<"amplefile:place:open-link">;
   };
-  /** Linux only. */
+  /** Open Terminal Here; Linux and the Mac. */
   openTerminal?: Invoke<"amplefile:place:open-terminal">;
   /**
    * Files on the system pasteboard, to and from Finder. The window never reads

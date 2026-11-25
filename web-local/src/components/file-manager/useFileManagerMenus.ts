@@ -83,7 +83,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   const terminal = !fixtureMode && Boolean(desktop?.openTerminal);
 
   /** A small menu at the pointer: the native one on the Mac, the in-window one elsewhere. */
-  async function popupMenu(event: MouseEvent<HTMLElement>, menuActions: Partial<Record<"reveal" | "putToWork" | "removeFromSidebar" | "createConnectedFolder" | "useExistingFolder" | "openInNewTab" | "openInNewWindow", boolean>>, fallback: QuickMenuItem[], run: (command: string | null) => void) {
+  async function popupMenu(event: MouseEvent<HTMLElement>, menuActions: Partial<Record<"reveal" | "putToWork" | "removeFromSidebar" | "createConnectedFolder" | "useExistingFolder" | "openInNewTab" | "openInNewWindow" | "openTerminal", boolean>>, fallback: QuickMenuItem[], run: (command: string | null) => void) {
     event.preventDefault();
     event.stopPropagation();
     const anchor = event.currentTarget.getBoundingClientRect();
@@ -103,7 +103,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
   function openStandardFolderMenu(folder: StandardFolderSummary, event: MouseEvent<HTMLElement>) {
     const target: FileManagerPlace = { kind: "standard", id: folder.id };
     const revealLabel = revealInFileManagerLabel();
-    void popupMenu(event, { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow), reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
+    void popupMenu(event, { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow), ...(terminal ? { openTerminal: true } : {}), reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
       { label: "Open in New Tab", command: "open-in-new-tab" },
       ...(actions.openInNewWindow ? [{ label: "Open in New Window", command: "open-in-new-window" }] : []),
       ...(terminal ? [{ label: "Open Terminal Here", command: "open-terminal" }] : []),
@@ -148,7 +148,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     if (mac && popup) {
       try {
         const command = await popup({
-          actions: { ...(sidebar ? { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow) } : {}), newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
+          actions: { ...(sidebar ? { openInNewTab: true, openInNewWindow: Boolean(actions.openInNewWindow), ...(terminal ? { openTerminal: true } : {}) } : {}), newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
           point,
         });
         runActionCommand(command, target);

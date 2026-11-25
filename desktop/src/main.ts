@@ -107,6 +107,7 @@ import {
   parseNativeConnectedFolderMenuRequest,
 } from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
+import { macTerminalLaunchPlan } from "./open-terminal.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
@@ -957,6 +958,28 @@ function registerIpc(): void {
     const error = await shell.openPath(connectedFolder.connectedFolderRoot);
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
+  // Open Terminal Here: a new Terminal window in a folder of a Connected Folder or of the computer, resolved under
+  // that place's path policy. The folder is checked again just before Terminal is asked to open it.
+  if (process.platform === "darwin") {
+    ipcMain.handle("amplefile:place:open-terminal", async (event, value: unknown) => {
+      assertTrustedMainRenderer(event);
+      const location = parseWindowLocation(value);
+      if (!location) throw new Error("Choose a folder to open in a terminal.");
+      const { place, path } = location;
+      const resolveFolder = async () => place.kind === "connected-folder"
+        ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
+        : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null;
+      const folder = await resolveFolder();
+      const original = folder ? await lstat(folder) : null;
+      if (!folder || !original?.isDirectory()) throw new Error("Choose a folder to open in a terminal.");
+      const plan = macTerminalLaunchPlan(folder);
+      const current = await resolveFolder() === folder ? await lstat(folder) : null;
+      if (!current?.isDirectory() || current.dev !== original.dev || current.ino !== original.ino) {
+        throw new Error("That folder changed. Try opening it in a terminal again.");
+      }
+      await launchOpenWith(plan);
+    });
+  }
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
     assertMainOrAgentPopoverRenderer(event);
     const request = connectedFolderPathRequest(value);
@@ -1443,6 +1466,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         role: "recentDocuments" as const,
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
+      // The folder shown, in a new Terminal window.
+      ...(process.platform === "darwin" ? [{ id: "open-terminal", label: "Open Terminal Here", enabled: state.terminalFolderOpen === true, click: menuCommand("open-terminal") }] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
       // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.
@@ -1656,6 +1681,7 @@ function refreshApplicationMenuState(): void {
   setMenuItemEnabled(menu, "new-chat", state.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh", state.folderTabsOpen);
   setMenuItemEnabled(menu, "get-info", state.folderTabsOpen);
+  setMenuItemEnabled(menu, "open-terminal", state.terminalFolderOpen === true);
   setMenuItemEnabled(menu, "close-tab", state.folderTabsOpen);
   const showTabBar = menu?.getMenuItemById("show-tab-bar");
   if (showTabBar) showTabBar.checked = state.showTabBar;
