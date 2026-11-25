@@ -127,7 +127,16 @@ export interface PiTurnActivity {
 
 export type PiTurnWorkTrailEntry = ChatWorkTrailEntry;
 
+/**
+ * Why a turn ended without an answer: the provider returned an error (its own
+ * text, which may carry account data and is never shown as is), the reply hit
+ * its length limit, or the conversation outgrew the model's context window
+ * even after Pi compacted it once.
+ */
+export type PiTurnFailureKind = "provider" | "length" | "context_overflow";
+
 export class PiTurnFailure extends Error {
+  readonly kind: PiTurnFailureKind;
   readonly partialText: string;
   readonly retryAttempts: number;
   readonly provider: string | null;
@@ -136,6 +145,7 @@ export class PiTurnFailure extends Error {
 
   constructor(input: {
     message: string;
+    kind?: PiTurnFailureKind;
     partialText: string;
     retryAttempts: number;
     provider: string | null;
@@ -144,6 +154,7 @@ export class PiTurnFailure extends Error {
   }) {
     super(input.message);
     this.name = "PiTurnFailure";
+    this.kind = input.kind ?? "provider";
     this.partialText = input.partialText;
     this.retryAttempts = input.retryAttempts;
     this.provider = input.provider;
@@ -184,9 +195,26 @@ export interface PiTurnContext {
   backgroundJobs?: Array<{ jobId: string; name: string; status: string; finished: boolean }>;
   /** The checklist this request already keeps, handed back at the start of a later turn. */
   checklist?: Array<{ text: string; status: "todo" | "doing" | "done" }>;
+  /**
+   * How this Chat's previous turn ended, when it ended without an answer.
+   * Pi leaves a failed or stopped reply out of the next request, so without
+   * this the model would not know the turn before it broke off.
+   */
+  previousTurn?: PiPreviousTurnEnding;
   /** The host's clock, time zone, and platform; `prompt` reads them when a turn starts. */
   environment?: PiTurnEnvironment;
 }
+
+export interface PiPreviousTurnEnding {
+  outcome: "failed" | "stopped" | "interrupted";
+  /** The turn's recorded error: fixed words, never provider text. */
+  detail: string;
+  /** The start of the reply it was writing, bounded. */
+  partialText?: string;
+}
+
+/** The most of a broken-off reply the next turn is shown. */
+export const previousTurnPartialTextMaxChars = 1_500;
 
 export interface PiConversationClientOptions {
   /** Saves a presentation-only notice after Pi has actually compacted the session. */
@@ -296,6 +324,8 @@ export class PiConversationClient extends EventEmitter {
   private cancellationRequested: Error | null = null;
   private turnError: Error | null = null;
   private pendingAssistantError: string | null = null;
+  /** Why `pendingAssistantError` was set when it is not a provider error. */
+  private pendingAssistantErrorKind: PiTurnFailureKind = "provider";
   private retryAttempts = 0;
   private turnActivities = new Map<string, PiTurnActivity>();
   private turnWorkTrail = new Map<string, PiTurnWorkTrailEntry>();
@@ -412,6 +442,7 @@ export class PiConversationClient extends EventEmitter {
       if (this.pendingAssistantError) {
         throw new PiTurnFailure({
           message: this.pendingAssistantError,
+          kind: this.pendingAssistantErrorKind,
           partialText: this.assistantText(),
           retryAttempts: this.retryAttempts,
           provider: session.model?.provider ?? null,
@@ -1199,6 +1230,7 @@ export class PiConversationClient extends EventEmitter {
         // Pi discards the failed attempt and resumes from the last completed
         // tool result, so the text that attempt streamed is withdrawn too.
         this.pendingAssistantError = null;
+        this.pendingAssistantErrorKind = "provider";
         this.assistantSegments.length = Math.min(this.assistantAttemptStartSegment, this.assistantSegments.length);
         this.assistantSegmentOrders.length = this.assistantSegments.length;
         this.finalAssistantSegment = null;
@@ -1211,8 +1243,9 @@ export class PiConversationClient extends EventEmitter {
         ? [...raw.messages].reverse().find((message) => message?.role === "assistant")
         : undefined;
       this.pendingAssistantError ??= assistantError(finalAssistant);
-      if (finalAssistant?.stopReason === "length") {
-        this.pendingAssistantError ??= "The model reached its response length limit before finishing. Its partial response and completed tool effects have been preserved; continue this Chat to finish the request.";
+      if (finalAssistant?.stopReason === "length" && this.pendingAssistantError === null) {
+        this.pendingAssistantError = "The model reached its response length limit before finishing. Its partial response and completed tool effects have been preserved; continue this Chat to finish the request.";
+        this.pendingAssistantErrorKind = "length";
       }
       const text = assistantText(finalAssistant);
       if (text) this.setCurrentAssistantSegment(text);
@@ -1242,6 +1275,7 @@ export class PiConversationClient extends EventEmitter {
       // transient-provider retry flag. Its discarded attempt must not poison
       // the successful continuation or remain in the saved presentation.
       this.pendingAssistantError = null;
+      this.pendingAssistantErrorKind = "provider";
       this.assistantSegments.length = Math.min(this.assistantAttemptStartSegment, this.assistantSegments.length);
       this.assistantSegmentOrders.length = this.assistantSegments.length;
       this.finalAssistantSegment = null;
@@ -1251,7 +1285,18 @@ export class PiConversationClient extends EventEmitter {
       return;
     }
     if (raw.type === "compaction_end" && raw.errorMessage) {
-      if (raw.reason === "overflow") this.pendingAssistantError = String(raw.errorMessage);
+      if (raw.reason === "overflow") {
+        const text = String(raw.errorMessage);
+        // "Context overflow recovery failed: <error>" means the compaction
+        // request itself failed (a rejected key, an unreachable provider):
+        // that error is the cause. Otherwise Pi's own words say its one
+        // compact-and-retry attempt could not make the reply or context fit.
+        const compactionCallFailed = /^Context overflow recovery failed: ([\s\S]+)$/.exec(text);
+        this.pendingAssistantError = compactionCallFailed ? compactionCallFailed[1]! : text;
+        this.pendingAssistantErrorKind = compactionCallFailed
+          ? "provider"
+          : /^Context overflow recovery failed after/i.test(text) ? "context_overflow" : "length";
+      }
       this.emitEvent({ type: "status", message: `Compaction warning: ${compactText(String(raw.errorMessage))}`, raw });
       return;
     }
@@ -1652,6 +1697,7 @@ export class PiConversationClient extends EventEmitter {
     this.commandPresentation = false;
     this.turnError = null;
     this.pendingAssistantError = null;
+    this.pendingAssistantErrorKind = "provider";
     this.retryAttempts = 0;
     this.turnActivities.clear();
     this.turnWorkTrail.clear();
@@ -1799,6 +1845,24 @@ function lastFinishedReplyEntryId(branch: readonly { id: string; type: string; m
   return null;
 }
 
+function previousTurnLines(previous: PiPreviousTurnEnding): string[] {
+  const how = previous.outcome === "stopped"
+    ? "was stopped before it finished"
+    : previous.outcome === "interrupted"
+      ? "was cut off because AmpleFile closed while it ran"
+      : "failed before it finished";
+  const partial = previous.partialText?.trim();
+  return [
+    `This Chat's previous turn ${how} (host-owned): ${previous.detail}`,
+    ...(partial
+      ? ["Its unfinished reply is not in your context. It began:", partial.length > previousTurnPartialTextMaxChars
+        ? `${partial.slice(0, previousTurnPartialTextMaxChars)}…`
+        : partial]
+      : []),
+    "Tools it finished may already have changed files. Check before redoing work, and do not repeat a request that failed for a reason that has not changed.",
+  ];
+}
+
 export function buildTurnContextMessage(context: PiTurnContext): string {
   const lines: string[] = [];
   if (context.environment) lines.push(describeTurnEnvironment(context.environment));
@@ -1878,6 +1942,9 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
         ? "When you finish, report with chat report: --summary saying what you did, --file for each file you made or changed, and --outcome succeeded, partial, or failed. If you cannot do the work, report failed and say why. The Automation's run history shows your summary and that outcome. Then give your final reply."
         : "Your final reply is this step's record in the Automation's run history: say what you did, and say plainly if you could not do it and why.",
     );
+  }
+  if (context.previousTurn) {
+    lines.push(...previousTurnLines(context.previousTurn));
   }
   if (context.backgroundJobs?.length) {
     lines.push(

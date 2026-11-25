@@ -102,7 +102,7 @@ test("desktop agent shells inherit the exact running profile in development and 
 function assertActLaneShimContract(shim: string): void {
   const routedFamilies = [
     "chat", "chats", "files", "agent", "connected-folders", "history", "search",
-    "tools", "automations", "recently-deleted", "requests", "jobs",
+    "tools", "automations", "recently-deleted", "requests", "jobs", "receipts",
   ];
   for (const routed of [...routedFamilies, "list", "status", "wait", "result"]) {
     assert.match(shim, new RegExp(`["']${routed}["']`), `act routing must reference ${routed}`);
@@ -124,6 +124,11 @@ function assertActLaneShimContract(shim: string): void {
   assert.match(shim, /messageFile/);
   assert.match(shim, /--message-file/);
   assert.match(shim, /--message-from-payload/);
+  // The caller's own --request-id names the act inside argv; every try still
+  // travels under a request id of its own, so a caller reads only its answer.
+  assert.match(shim, /--request-id/);
+  assert.match(shim, /const requestId = ObjC\.unwrap\(\$\.NSUUID\.UUID\.UUIDString\)/);
+  assert.match(shim, /receipts show --id/);
   assert.match(shim, /16777216/, "the --message-file payload bound matches AMPLEFILE_CLI_ACT_MAX_PAYLOAD_BYTES");
   assert.match(shim, /Open AmpleFile to run this command/);
   assert.match(shim, /exit\s*\(?6\)?/);

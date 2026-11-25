@@ -116,6 +116,23 @@ Folder, so the AmpleFile Agent can split a request by owner.
   prompt, so it stays current and the cached prompt prefix is unchanged. The
   AmpleFile Agent resolves the absolute times `at` Automations and
   `chat snooze --until` take from it.
+- **How the last turn ended.** When the Chat's previous turn ended without an
+  answer — it failed, was stopped, or was cut off when AmpleFile closed — the
+  next turn context says so in one host-owned line with the turn's recorded
+  reason, plus the start of the reply it was writing (at most 1,500
+  characters). Pi leaves a failed or stopped reply out of the next request, so
+  without this the model would not know. After a turn that answered, nothing
+  is said.
+- **Why a turn failed.** A failed turn records its reason in fixed words that
+  name the cause and what helps: the provider refused the model for this
+  account, rejected the key, limited requests, rejected an image, rejected the
+  request, could not be reached, ran out of credit, the conversation outgrew
+  the model's context window, or the reply hit its length limit
+  (`src/local/agent/turn-failure.ts`). The provider's own error text is never
+  copied, since it can carry account data and a Chat's transcript travels with
+  its Connected Folder. That reason is what `chat status`, `chat wait`,
+  `chat result`, `requests show`, a parent's follow-up turn, and Automation
+  receipts carry.
 - **Role.** Each request opens with the session's role — this Connected
   Folder's Worker, or the AmpleFile Agent — in place of Pi's coding-assistant
   sentence. Only that sentence changes, and only in the request: Pi's tool
@@ -273,7 +290,12 @@ recorded as failed, without redispatch.
 
 `chat result --connected-folder <id> --task <id>` and `agent result --task <id>`
 return `request` and the completed request's selected `result` envelope
-alongside its latest reply. They refuse while work remains outstanding. A
+alongside its latest reply. They refuse while work remains outstanding. For a
+turn that failed or was stopped they exit non-zero with the turn's reason,
+followed by what it left: the report it filed before it ended, with the files
+it named, or else the start of its unfinished reply, and the request to read
+with `requests show`. A parent's follow-up turn names a failed child the same
+way, keeping that child's report. A
 Connected Folder can read a named child's released result through that child's
 Connected Folder and task id; it cannot read the machine-wide request graph.
 The latest turn's latest report describes its outcome; old partial reports

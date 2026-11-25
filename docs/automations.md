@@ -263,7 +263,20 @@ and claim by consuming the same deterministic occurrence and recording the run
 interrupted. Completed records stay visible until a person deletes them.
 
 **Manual run-now** (`amplefile automations run`) is a direct verb: available
-for every *enabled* automation, receipted, never a schedule mutation. Run-now
+for every *enabled* automation, receipted, never a schedule mutation. It
+returns the run id as soon as the run is admitted, as Settings does, and never
+waits for the run: a run's steps start turns that use the same `amplefile`
+command, and a command waiting on them would hold them up.
+A run-now refused at admission, because another run of the same automation is
+pending or active or scheduling is suspended, starts nothing: the command
+reports that run settled `skipped` with the reason, and its receipt says it did
+not start.
+`automations status --automation <id> --run <run-id>` reads that run as
+`queued`, `running`, or `settled` with its outcome, and
+`automations wait --automation <id> --run <run-id>` repeats that read in the
+shim until the run settles, exiting 1 when it did not succeed. A run the app
+has not seen since it started is not found there; the receipts journal keeps
+its record. Run-now
 on a merely proposed automation is refused: enablement is what binds the
 person's review to the exact declaration digest, and the executor must never
 run an unreviewed standing declaration, even once. For a one-time automation,
@@ -281,6 +294,12 @@ declaration's contract version, with the `.amplefile-automation.json` suffix)
 at the top level of its own working folder — never inside a Connected Folder,
 because the proposal names multiple Connected Folders and their folders travel.
 `src/local/automations/automation-declarations.ts` is the schema authority.
+`src/local/automations/automation-authoring-guide.ts` sits beside it and says
+what each contract version adds, with one copyable shape for every trigger and
+a complete example. `amplefile help automations` renders from it, the
+AmpleFile Agent's instructions take the version to write from the validator
+and send the agent to that help for shapes, and tests parse every shape
+through the validator, so the guidance cannot fall behind the contract.
 Connected Folders are pinned by stable Connected Folder id; duplicate names are
 rejected as ambiguous, and `automations show` resolves ids to current names and
 folders so the declaration reads as something a person can check.
@@ -625,7 +644,7 @@ Connected Folder's files and History, the new conversation in the source
 Connected Folder's Chats.
 
 The CLI act-lane group is `amplefile automations
-enable|list|show|run|stop|disable|delete|receipts|models` — per-launch token,
+enable|list|show|run|status|wait|stop|disable|delete|receipts|models` — per-launch token,
 journal-first, and like the `agent` group it sits above Connected Folders and
 takes no `--connected-folder`. `list`/`show`/`receipts` are content-bearing
 (Connected Folder names, paths, messages) and therefore act-lane, because only

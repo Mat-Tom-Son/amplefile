@@ -84,7 +84,7 @@ async function skillHarness(t: test.TestContext): Promise<{
         version: "test",
         getActFacade: () => ({ facade: api.actFacade, token }),
         resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
-        receipts: { hasAccepted: async () => false, append: async () => true },
+        receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) },
       },
     ),
   };

@@ -151,6 +151,7 @@ test("act results are terminal-scrubbed in structured and human output without b
       getActFacade: () => ({ facade, token }),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           outcomes.push(record.outcome);
           return true;
@@ -599,6 +600,7 @@ test("formerly gated verbs execute through the facade and receipt without a deci
       getActFacade: () => ({ facade, token }),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push({ ...record });
           return true;
@@ -700,6 +702,7 @@ test("agent overview parses strictly, dispatches to the facade, journals, and re
       getActFacade: () => ({ facade, token }),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push({ command: record.command, outcome: record.outcome });
           return true;
@@ -745,7 +748,7 @@ test("automation receipt JSON stays chronological and human output shows its new
     {
       version: "test",
       getActFacade: () => ({ facade, token }),
-      receipts: { hasAccepted: async () => false, append: async () => true },
+      receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) },
     },
   );
 
@@ -884,6 +887,7 @@ test("Chat lifecycle and History acts dispatch to the facade, stamp undo referen
       resolveLineageParent: (taskId) => (taskId === "task-9" ? { taskId } : null),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push({
             outcome: record.outcome,
@@ -1098,6 +1102,7 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
       resolveLineageParent: (taskId) => (taskId === "task-9" ? { taskId } : null),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push({ ...record });
           return true;
@@ -1291,6 +1296,7 @@ test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp
       resolveLineageParent: (taskId) => (taskId === "task-9" ? { taskId } : null),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push({ ...record });
           return true;
@@ -1429,7 +1435,7 @@ test("--summary-file, --question-file, --answer-file, and --instructions-file ca
     } as unknown as AmpleFileActFacade;
     const execute = (argv: string[]) => executeAmpleFileCliActRequest(
       createAmpleFileCliActRequest({ id: randomUUID(), argv: [...argv, "--json"], cwd: directory, actToken: token }),
-      { version: "test", getActFacade: () => ({ facade, token }), receipts: { hasAccepted: async () => false, append: async () => true } },
+      { version: "test", getActFacade: () => ({ facade, token }), receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) } },
     );
 
     for (const [argv, method, field, file] of [

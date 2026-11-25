@@ -391,14 +391,24 @@ export interface AmpleFileActJobOutput {
 /** Registered Connected Folder storage kind, mirrored from the Connected Folder registry. */
 export type AmpleFileActConnectedFolderStorage = "managed" | "linked";
 
-/** Bounded projection of one automation run receipt. */
+/** A settled automation run: how it ended, when, and the run's error text when it did not succeed. */
 export interface AmpleFileActAutomationRunRef {
   runId: string;
+  state: "settled";
   outcome: "success" | "failure" | "skipped" | "cancelled" | "interrupted";
   startedAt: string;
   finishedAt: string;
   error?: string;
 }
+
+/**
+ * Where one automation run stands. A run is queued while it waits for a free
+ * slot, running while its steps execute, and settled once its outcome and
+ * receipts are recorded.
+ */
+export type AmpleFileActAutomationRunStatus =
+  | { runId: string; state: "queued" | "running" }
+  | AmpleFileActAutomationRunRef;
 
 /** Bounded projection of an automation's reviewed trigger (docs/automations.md). */
 export interface AmpleFileActAutomationTriggerRef {
@@ -1208,14 +1218,28 @@ export interface AmpleFileActFacade {
   automationsShow(input: { automation: string }): Promise<{ automation: AmpleFileActAutomationDetail }>;
   /**
    * Manual run-now for an enabled automation: receipted, never a schedule
-   * mutation, refused for proposed/disabled/suspended health. The result is
-   * the settled scheduler run — the executor's own journal keeps the per-hop
-   * evidence, inspectable through `automationsReceipts`.
+   * mutation, refused for proposed/disabled/suspended health. It returns as
+   * soon as the run is admitted, as Settings does, and never waits for the
+   * run: a run's steps can start turns that use these same act verbs, and a
+   * caller waiting here would hold them up. `automationsStatus` follows the
+   * run by id, and the executor's own journal keeps the per-hop evidence,
+   * inspectable through `automationsReceipts`.
    */
   automationsRun(input: { automation: string; parentTaskId?: string; requestId?: string }): Promise<{
     automationId: string;
     title: string;
-    run: AmpleFileActAutomationRunRef;
+    run: AmpleFileActAutomationRunStatus;
+  }>;
+  /**
+   * One run by id: queued, running, or settled with its outcome. A run the
+   * running app does not know — from before it started, or aged out of its
+   * bounded history — is not found; its durable record stays in
+   * `automationsReceipts`.
+   */
+  automationsStatus(input: { automation: string; run: string }): Promise<{
+    automationId: string;
+    title: string;
+    run: AmpleFileActAutomationRunStatus;
   }>;
   /** Stops this automation's active run; an automation with no active run refuses with its settled truth. */
   automationsStop(input: { automation: string; parentTaskId?: string }): Promise<{

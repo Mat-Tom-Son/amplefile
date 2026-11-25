@@ -430,7 +430,9 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
     console.error(`Request ${requestId} could not start its follow-up turn: ${errorMessage(error)}`);
   }
   // Reserved above whether or not the turn started: an end is delivered at
-  // most once, and a follow-up that could not start is not retried.
+  // most once, and a follow-up that could not start is not retried. The job
+  // journal records that such an end reached no turn, so the Chat's next
+  // turn receives it instead (backgroundJobsForTurn).
   await deliverBackgroundJobs(state, jobs, "follow_up", followUpTaskId);
 }
 
@@ -462,8 +464,12 @@ export async function composeContinuationMessage(
     if (ref && newest?.state !== "ok") throw new Error("The selected child result is unavailable; its receipt remains on record.");
     const unsuccessful = turn.state === "failed" || turn.state === "aborted"
       || child.state === "failed" || child.state === "stopped" || child.state === "expired";
+    // A child that filed a report and then failed keeps its report here.
+    const reportedFirst = unsuccessful && newest?.state === "ok"
+      ? ` It reported before it ended (${newest.record.envelope.outcome}): ${newest.record.envelope.summary}`
+      : "";
     const outcome = unsuccessful
-      ? `${child.state === "waiting" ? turn.state : child.state}${turn.error ? `: ${turn.error}` : ""}`
+      ? `${child.state === "waiting" ? turn.state : child.state}${turn.error ? `: ${turn.error}` : ""}${reportedFirst}`
       : newest?.state === "ok"
       ? `${child.state === "partial" ? "partial" : newest.record.envelope.outcome}: ${newest.record.envelope.summary}`
       : turn.state === "succeeded"

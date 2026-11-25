@@ -59,8 +59,13 @@ export async function turnResultForScope(
   if (task.state === "unknown") {
     throw new AmpleFileCliError("notFound", "Task not found. Recent turn outcomes are kept in a bounded durable journal.");
   }
-  if (task.state === "aborted") throw new AmpleFileCliError("conflict", "The turn was aborted before it finished.");
-  if (task.state === "failed") throw new AmpleFileCliError("failure", task.error ?? "The turn failed.");
+  if (task.state === "aborted" || task.state === "failed") {
+    // A turn that ended without an answer still says why, and hands back
+    // whatever it left: the report it filed before failing, or the start of
+    // the reply it was writing.
+    const reason = task.error ?? (task.state === "aborted" ? "The turn was stopped before it finished." : "The turn failed.");
+    throw new AmpleFileCliError(task.state === "aborted" ? "conflict" : "failure", `${reason}${await unfinishedTurnLeftovers(state, taskId)}`);
+  }
   const conversationId = task.conversationId!;
   const messages = await runActOperation(() => readConversation(rootPath, conversationId));
   const message = messages.find((item) => item.id === task.messageId);
@@ -74,6 +79,28 @@ export async function turnResultForScope(
     request: state.requests.byTaskId(taskId) ? toActRequestRefForConnectedFolder(state, state.requests.byTaskId(taskId)!) : null,
     result,
   };
+}
+
+/** The most of a broken-off reply `chat result --task` quotes. */
+const unfinishedReplyExcerptChars = 600;
+
+/** What a turn that ended without an answer left behind, as sentences to append to its error. */
+async function unfinishedTurnLeftovers(state: LocalApiState, taskId: string): Promise<string> {
+  const request = state.requests.byTaskId(taskId);
+  const ref = request ? [...request.results].reverse().find((item) => item.taskId === taskId) : undefined;
+  const read = ref ? await state.requests.result(ref.resultId).catch(() => null) : null;
+  let left = "";
+  if (read?.state === "ok") {
+    const { envelope } = read.record;
+    const files = envelope.files?.length ? ` Files it named: ${envelope.files.map((file) => file.path).join(", ")}.` : "";
+    left = ` Before it ended it filed a report (${envelope.outcome}): ${envelope.summary}${files}`;
+  } else {
+    const partial = state.turnStore.get(taskId)?.assistantText.trim() ?? "";
+    if (partial) {
+      left = ` Its unfinished reply began: ${partial.length > unfinishedReplyExcerptChars ? `${partial.slice(0, unfinishedReplyExcerptChars)}…` : partial}`;
+    }
+  }
+  return request ? `${left} 'requests show --request ${request.requestId}' has the whole record.` : left;
 }
 
 /**
