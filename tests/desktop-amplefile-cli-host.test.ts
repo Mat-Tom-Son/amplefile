@@ -502,6 +502,19 @@ test("the host removes an answer nobody read once it is old enough, and at start
   }
 });
 
+test("the privacy and security notes say exactly what becomes of an answer nobody read", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const read = (path: string) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+  const privacy = await read("PRIVACY.md");
+  assert.match(privacy, /A command stopped before it reads its answer leaves that answer behind: the app that wrote it removes it once it is five minutes old, if that app is still running then, and any later start of AmpleFile removes answers older than that\./);
+  assert.match(privacy, /The shim removes its request and response after completion; for a command stopped before then, see the answer rule above\./);
+  assert.match(await read("SECURITY.md"), /an answer whose command was stopped before reading it is removed once it is five minutes old by the app that wrote it, if still running, or by any later start of AmpleFile; until then it stays on disk under the app profile/);
+  assert.match(await read("docs/amplefile-agent-and-cli.md"), /When a command is stopped before it reads its response, the app that\n   wrote the response removes it once it is five minutes old/);
+  for (const path of ["PRIVACY.md", "SECURITY.md", "docs/amplefile-agent-and-cli.md"]) {
+    assert.doesNotMatch(await read(path), /stays up to five minutes/, `${path} must not promise a removal that a quit can skip`);
+  }
+});
+
 test("desktop CLI host gates act requests on the per-launch authority and records receipts", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-act-"));
   const token = "d".repeat(64);
