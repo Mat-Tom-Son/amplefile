@@ -47,6 +47,11 @@ test("provider failures are sorted into fixed causes that say what helps, withou
   assert.equal(describeProviderFailure({ message: "anything", kind: "length" }).cause, "response_length");
   assert.equal(providerHttpStatus("HTTP/1.1 418 teapot"), 418);
   assert.equal(providerHttpStatus("no status here, 200 tokens"), undefined);
+  assert.equal(providerHttpStatus("max_tokens: 500 is above this model's limit"), undefined, "a field name is no wrapper label");
+  assert.equal(providerHttpStatus("Summarization failed: 401 Incorrect API key"), 401);
+  // A rate limit that points at billing details is still a rate limit.
+  assert.equal(describeProviderFailure({ message: "429 Quota exceeded for requests per minute. Please check your plan and billing details." }).cause, "rate_limit");
+  assert.equal(describeProviderFailure({ message: `429 {"error":{"message":"You exceeded your current quota","type":"insufficient_quota"}}` }).cause, "billing");
 });
 
 test("a turn is told how this Chat's previous turn ended, bounded", () => {
