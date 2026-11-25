@@ -69,13 +69,14 @@ export interface AmpleFileCliCleanupResult {
 
 export type AmpleFileCliRequestExecutor = (request: AmpleFileCliBrokeredRequest) => Promise<AmpleFileCliResponseV1>;
 
-export interface AmpleFileCliProcessOptions {
-  /**
-   * Whether an answer already written under this id goes to this caller.
-   * When it does not, the answer is dropped and the request is claimed and
-   * run instead. Without it, an existing answer is always reused.
-   */
-  reuseAnswer?: (answer: AmpleFileCliResponseV1) => Promise<boolean>;
+/** A request the broker holds and has not answered, as `heldRequests` lists it. */
+export interface AmpleFileCliHeldRequest {
+  id: string;
+  argv: string[];
+  /** When the shim wrote the request file, no earlier than its own creation time. */
+  writtenAt: Date;
+  /** True once the broker has taken it up; it may still wait in line. */
+  processing: boolean;
 }
 
 export class AmpleFileCliFileBroker {
@@ -222,11 +223,11 @@ export class AmpleFileCliFileBroker {
     return path;
   }
 
-  processRequest(id: string, executor: AmpleFileCliRequestExecutor, options: AmpleFileCliProcessOptions = {}): Promise<AmpleFileCliResponseV1> {
+  processRequest(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
     const normalized = normalizeAmpleFileCliRequestId(id);
     const existing = this.inFlight.get(normalized);
     if (existing) return existing;
-    const operation = this.processRequestOnce(normalized, executor, options).finally(() => {
+    const operation = this.processRequestOnce(normalized, executor).finally(() => {
       if (this.inFlight.get(normalized) === operation) this.inFlight.delete(normalized);
     });
     this.inFlight.set(normalized, operation);
@@ -234,29 +235,39 @@ export class AmpleFileCliFileBroker {
   }
 
   /**
-   * A request this broker holds and has not answered: its file is waiting to
-   * be claimed, or it is being processed (claimed, perhaps still in line).
-   * `writtenAt` is when the shim wrote the file, which is no earlier than the
-   * request's own creation time. An unclaimed file already too old to claim
-   * is not pending: it can never run. The file is looked for before the
-   * in-flight set because processing starts before the claim moves the
-   * file, so a request between the two is never missed.
+   * Every request this broker holds and has not answered: files waiting to
+   * be claimed, unless already too old ever to be claimed, and claimed
+   * requests still being processed. A claim nothing is processing is residue
+   * of a host that stopped, and is left out. Waiting files are listed before
+   * claims because a claim moves a file from one to the other, so a request
+   * moving between them is still listed. Each file is read for its id and
+   * argv; one that cannot be read is left out.
    */
-  async pendingRequest(id: string): Promise<{ writtenAt: Date; processing: boolean } | null> {
-    const normalized = normalizeAmpleFileCliRequestId(id);
-    const paths = this.requestPaths(normalized);
-    const submitted = await modifiedAt(paths.request);
-    if (this.inFlight.has(normalized)) {
-      return { writtenAt: submitted ?? await modifiedAt(paths.claim) ?? this.now(), processing: true };
+  async heldRequests(): Promise<AmpleFileCliHeldRequest[]> {
+    await this.initialize();
+    const held: AmpleFileCliHeldRequest[] = [];
+    for (const [directory, claimed] of [[this.paths.requests, false], [this.paths.claims, true]] as const) {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const match = /^([0-9a-f-]{36})\.json$/i.exec(entry.name);
+        if (!match || !entry.isFile()) continue;
+        const id = match[1]!.toLowerCase();
+        const processing = this.inFlight.has(id);
+        if (claimed && !processing) continue;
+        const path = safeChild(directory, entry.name);
+        const info = await lstat(path).catch(() => null);
+        if (!info?.isFile()) continue;
+        if (!processing && this.now().getTime() - info.mtimeMs > this.maxRequestAgeMs) continue;
+        const argv = await readHeldArgv(path, this.claimReadBytes);
+        if (argv) held.push({ id, argv, writtenAt: info.mtime, processing });
+      }
     }
-    if (!submitted || this.now().getTime() - submitted.getTime() > this.maxRequestAgeMs) return null;
-    return { writtenAt: submitted, processing: false };
+    return held;
   }
 
   /**
    * Removes the answer written under this id once it is older than
-   * `olderThanMs`. A newer answer written under the same id is left for its
-   * own turn. It never creates the broker's folders.
+   * `olderThanMs`, the age past which no live command could still be about
+   * to read it. It never creates the broker's folders.
    */
   async removeAnswer(id: string, olderThanMs: number): Promise<boolean> {
     const path = this.requestPaths(id).response;
@@ -269,8 +280,8 @@ export class AmpleFileCliFileBroker {
   async cleanup(options: { olderThanMs?: number; answersOlderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
     await this.initialize();
     const olderThanMs = positiveLimit(options.olderThanMs, AMPLEFILE_CLI_DEFAULT_CLEANUP_AGE_MS, "olderThanMs");
-    // Answers can go sooner than requests and claims: the callers they were
-    // kept for read them within moments.
+    // Answers can go sooner than requests and claims: the command waiting on
+    // one reads and removes it within moments, so an old one was never read.
     const answersOlderThanMs = positiveLimit(options.answersOlderThanMs, olderThanMs, "answersOlderThanMs");
     const removed: string[] = [];
     const skippedUnsafe: string[] = [];
@@ -297,19 +308,12 @@ export class AmpleFileCliFileBroker {
     return { removed, skippedUnsafe };
   }
 
-  private async processRequestOnce(
-    id: string,
-    executor: AmpleFileCliRequestExecutor,
-    options: AmpleFileCliProcessOptions,
-  ): Promise<AmpleFileCliResponseV1> {
+  private async processRequestOnce(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
     await this.initialize();
     const paths = this.requestPaths(id);
     try {
       const existing = await fileExists(paths.response) ? await this.readResponse(id) : null;
-      if (existing) {
-        if (!options.reuseAnswer || await options.reuseAnswer(existing)) return existing;
-        await rm(paths.response, { force: true });
-      }
+      if (existing) return existing;
       const request = await this.claimRequest(id);
       let response: AmpleFileCliResponseV1;
       try {
@@ -448,10 +452,14 @@ function assertWithin(root: string, path: string): void {
   throw new AmpleFileCliError("permissionDenied", "CLI broker path escapes its state root.");
 }
 
-/** A regular file's modification time, or null when there is none to read. */
-async function modifiedAt(path: string): Promise<Date | null> {
-  const info = await lstat(path).catch(() => null);
-  return info?.isFile() ? info.mtime : null;
+/** A held request file's argv, or null when it cannot be read as a request. */
+async function readHeldArgv(path: string, maxBytes: number): Promise<string[] | null> {
+  try {
+    const record = JSON.parse((await readBoundedFile(path, maxBytes, "CLI request")).toString("utf8")) as { argv?: unknown };
+    return Array.isArray(record.argv) && record.argv.every((item) => typeof item === "string") ? record.argv as string[] : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fileExists(path: string): Promise<boolean> {

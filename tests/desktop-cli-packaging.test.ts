@@ -124,10 +124,10 @@ function assertActLaneShimContract(shim: string): void {
   assert.match(shim, /messageFile/);
   assert.match(shim, /--message-file/);
   assert.match(shim, /--message-from-payload/);
-  // The caller's own --request-id is the id the request travels under, so
-  // the caller holds it before the wait begins, and the host can check it.
+  // The caller's own --request-id names the act inside argv; every try still
+  // travels under a request id of its own, so a caller reads only its answer.
   assert.match(shim, /--request-id/);
-  assert.match(shim, /suppliedRequestId \|\| /);
+  assert.match(shim, /const requestId = ObjC\.unwrap\(\$\.NSUUID\.UUID\.UUIDString\)/);
   assert.match(shim, /receipts show --id/);
   assert.match(shim, /16777216/, "the --message-file payload bound matches AMPLEFILE_CLI_ACT_MAX_PAYLOAD_BYTES");
   assert.match(shim, /Open AmpleFile to run this command/);

@@ -70,7 +70,7 @@ test("receipts show parses strictly, reads beside the queue, and journals with t
   assert.equal(AMPLEFILE_CLI_ACT_READ_COMMANDS.has("receipts.show"), true);
 });
 
-test("an act sent under any id but its own --request-id is refused before anything runs", async (t) => {
+test("an act is journaled under its --request-id whatever request carries it, and runs once under that id", async (t) => {
   const receipts = await journal(t);
   const created: string[] = [];
   const facade = {
@@ -83,33 +83,48 @@ test("an act sent under any id but its own --request-id is refused before anythi
     },
   } as unknown as AmpleFileActFacade;
   const callerId = randomUUID();
-  const mismatched = await executeAmpleFileCliActRequest(
-    createAmpleFileCliActRequest({ id: randomUUID(), argv: ["chat", "create", "--connected-folder", "home", "--request-id", callerId], cwd, actToken: token }),
-    options(receipts, facade),
-  );
-  assert.equal(mismatched.exitCode, 8);
-  assert.match(mismatched.stderr, /did not send the request under its --request-id/);
-  assert.deepEqual(created, []);
-  assert.deepEqual(await journalLines(receipts.path), [], "a refused envelope journals nothing");
+  const send = (connectedFolder: string, receiptsFor = options(receipts, facade)) => {
+    const transportId = randomUUID();
+    return executeAmpleFileCliActRequest(
+      createAmpleFileCliActRequest({ id: transportId, argv: ["chat", "create", "--connected-folder", connectedFolder, "--request-id", callerId.toUpperCase()], cwd, actToken: token }),
+      receiptsFor,
+    ).then((response) => ({ response, transportId }));
+  };
 
-  const matched = await executeAmpleFileCliActRequest(
-    createAmpleFileCliActRequest({ id: callerId, argv: ["chat", "create", "--connected-folder", "home", "--request-id", callerId.toUpperCase()], cwd, actToken: token }),
-    options(receipts, facade),
-  );
-  assert.equal(matched.exitCode, 0, matched.stderr);
+  const first = await send("home");
+  assert.equal(first.response.exitCode, 0, first.response.stderr);
+  assert.equal(first.response.id, first.transportId, "each try is answered under its own request id");
   assert.deepEqual(created, ["home"]);
   assert.deepEqual((await journalLines(receipts.path)).map((line) => [line.requestId, line.outcome]), [[callerId, "accepted"], [callerId, "ok"]]);
 
-  // Sent again under the same id after its answer was cleaned up: refused,
-  // and the refusal says what the id already did.
-  const replay = await executeAmpleFileCliActRequest(
-    createAmpleFileCliActRequest({ id: callerId, argv: ["chat", "create", "--connected-folder", "home", "--request-id", callerId], cwd, actToken: token }),
-    options(receipts, facade),
+  // Another try under the same id, for this command or another, is refused
+  // and told what the id already did.
+  for (const connectedFolder of ["home", "elsewhere"]) {
+    const again = await send(connectedFolder);
+    assert.equal(again.response.exitCode, 5);
+    assert.equal(again.response.id, again.transportId);
+    assert.match(again.response.stderr, /already executed \(chat create, ok at [^)]+\), so it was not run again/);
+    assert.match(again.response.stderr, new RegExp(`receipts show --id ${callerId}`));
+  }
+  assert.deepEqual(created, ["home"], "the act ran once");
+
+  // Two tries that pass the check together: the journal accepts one, and
+  // the other is refused the same way rather than told the journal failed.
+  const raced = randomUUID();
+  await receipts.append({ requestId: raced, command: "chat.create", outcome: "accepted", surface: "cli" });
+  let looked = 0;
+  const racing = {
+    append: receipts.append.bind(receipts),
+    lookup: receipts.lookup.bind(receipts),
+    hasAccepted: async (id: string) => (looked++ === 0 ? false : receipts.hasAccepted(id)),
+  };
+  const lost = await executeAmpleFileCliActRequest(
+    createAmpleFileCliActRequest({ id: randomUUID(), argv: ["chat", "create", "--connected-folder", "home", "--request-id", raced], cwd, actToken: token }),
+    { version: "test", getActFacade: () => ({ facade, token }), receipts: racing },
   );
-  assert.equal(replay.exitCode, 5);
-  assert.match(replay.stderr, /already executed \(chat create, ok at [^)]+\), so it was not run again/);
-  assert.match(replay.stderr, new RegExp(`receipts show --id ${callerId}`));
-  assert.deepEqual(created, ["home"], "the replay never reaches the facade");
+  assert.equal(lost.exitCode, 5, lost.stderr);
+  assert.match(lost.stderr, /already executed \(chat create, started at /);
+  assert.deepEqual(created, ["home"]);
 });
 
 test("receipts show reports every state an act request id can be in", async (t) => {
@@ -254,12 +269,12 @@ test("every promise that a retry never runs twice says how far back it holds", a
   const instructions = await source("src/local/amplefile-agent-instructions.ts");
   assert.match(instructions, /it never runs twice while the receipt journal still holds that id/);
   assert.match(instructions, /it is safe while the journal still holds that id/);
-  assert.match(ampleFileCliHelp("AmpleFile", "receipts"), /That holds as far back as the\nreceipt journal still holds the id/);
+  assert.match(ampleFileCliHelp("AmpleFile", "receipts"), /That holds as\nfar back as the receipt journal still holds the id/);
   assert.match(await source("SECURITY.md"), /it is refused only while the journals still hold that id's `accepted` line/);
   assert.match(await source("docs/act-ledger.md"), /it is refused only while the\n   journals still hold the id's `accepted` line/);
   const guide = await source("docs/amplefile-agent-and-cli.md");
-  assert.match(guide, /A retry under an id older than that runs again\./);
-  assert.match(guide, /never run twice, for\n  as long as the journals still hold the id's `accepted` line/);
+  assert.match(guide, /A retry under an id\s+older than that runs again\./);
+  assert.match(guide, /never run twice, for as long as\n  the journals still hold the id's `accepted` line/);
 });
 
 function options(
