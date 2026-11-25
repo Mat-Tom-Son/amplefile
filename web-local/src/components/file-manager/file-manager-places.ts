@@ -1,3 +1,4 @@
+import type { FileManagerPlace } from "../../../../src/shared/file-transfer";
 import { nativePathParts } from "./file-manager-model";
 
 /**
@@ -9,9 +10,7 @@ import { nativePathParts } from "./file-manager-model";
  * ("Other folders"). The host resolves each; the window names a place only
  * by its id and a path inside it.
  */
-export type FileManagerPlace =
-  | { kind: "connected-folder"; id: string }
-  | { kind: "standard"; id: string };
+export type { FileManagerPlace };
 
 export interface FileManagerLocation { place: FileManagerPlace; path: string }
 

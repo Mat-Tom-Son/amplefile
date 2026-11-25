@@ -1,4 +1,4 @@
-import type { DesktopUpdateStatus } from "../types";
+import type { DesktopUpdateStatus } from "../../../src/shared/desktop-ipc";
 
 /**
  * What a person's click does in each update phase, and how the two places

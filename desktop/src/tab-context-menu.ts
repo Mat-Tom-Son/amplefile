@@ -1,35 +1,6 @@
-/**
- * The native right-click menu for a Connected Folder tab, or for a Chat in the
- * Chats list: the Chat's own actions, then the tab strip's. Browser tabs have
- * their own menu in built-in-browser.ts.
- */
-export type NativeTabMenuCommand =
-  | "rename"
-  | "copy"
-  | "resume"
-  | "archive"
-  | "restore"
-  | "delete"
-  | "close"
-  | "close-others"
-  | "close-right"
-  | "reopen"
-  | `snooze:${string}`;
+import type { NativeTabMenuCommand, NativeTabMenuRequest, NativeTabMenuSnoozePreset } from "../../src/shared/desktop-ipc.js";
 
-export interface NativeTabMenuSnoozePreset {
-  id: string;
-  label: string;
-  detail: string;
-}
-
-export interface NativeTabMenuRequest {
-  /** The Chat's actions; absent for a tab that holds no saved Chat. */
-  chat?: { lifecycle: "active" | "snoozed" | "archived"; snooze: NativeTabMenuSnoozePreset[] };
-  /** The tab strip's actions; absent when the menu opens from the Chats list. */
-  tab?: { hasOthers: boolean; hasRight: boolean; canReopen: boolean };
-  point: { x: number; y: number };
-}
-
+/** The native right-click menu for a Connected Folder tab or a Chat; its request and commands are in the desktop IPC contract. */
 export type NativeTabMenuItem =
   | { type: "separator" }
   | { type: "item"; label: string; command: NativeTabMenuCommand; sublabel?: string; enabled?: false }

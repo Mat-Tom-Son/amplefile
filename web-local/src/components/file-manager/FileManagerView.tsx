@@ -27,7 +27,8 @@ import { useConnectedFolderIdentityResolver } from "../../lib/connected-folder-a
 import { requestConfirm, showToast } from "../../ui/feedback";
 import type { ConnectedFolderAppearanceState } from "../../../../src/shared/connected-folder-appearance";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
-import type { AgentStatus, ConversationSummary, DesktopUpdateStatus, TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { DesktopUpdateStatus } from "../../../../src/shared/desktop-ipc";
+import type { AgentStatus, ConversationSummary, TreeEntry, ConnectedFolderSummary } from "../../types";
 import {
   defaultFileManagerSort,
   fileKindLabel,

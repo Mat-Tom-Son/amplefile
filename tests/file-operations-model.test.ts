@@ -19,9 +19,9 @@ import {
   undoCovers,
   visibleOperations,
   type FileOperationProgress,
-  type TransferConflict,
   type WindowOperation,
 } from "../web-local/src/components/file-manager/file-operations-model.js";
+import type { TransferConflict } from "../src/shared/file-transfer.js";
 
 function operation(id: string, startedAt: number, progress: Partial<FileOperationProgress> | null = null): WindowOperation {
   return {
