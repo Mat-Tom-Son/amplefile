@@ -497,6 +497,14 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "Version 0.2.3 matches the Linux preview with the same changes; there is no 0.2.2 for macOS.",
     );
   }
+  if (version === "0.2.4") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Open Terminal Here.** Choose it from the File menu, a folder’s menu, the folder background, or the menu of a Standard Folder or Connected Folder in the sidebar, and a new Terminal window opens in that folder.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",
