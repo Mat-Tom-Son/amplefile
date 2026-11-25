@@ -3833,19 +3833,6 @@ button.context-chip.message-attachment:focus-visible {
   pointer-events: none;
 }
 
-.composer-command-trigger {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 7px;
-  color: var(--ui-text-muted, #5c6460);
-  font-size: var(--amplefile-type-xs);
-  font-weight: 700;
-  pointer-events: auto;
-}
-
 .composer-model-chip {
   min-width: 0;
   display: inline-flex;
@@ -3858,24 +3845,6 @@ button.context-chip.message-attachment:focus-visible {
   color: var(--ui-text-muted, #5c6460);
   background: transparent;
   pointer-events: auto;
-}
-
-.composer-command-trigger:hover,
-.composer-command-trigger.active {
-  color: var(--surface-tab-accent, var(--connected-folder-selection-accent, var(--amplefile-blue-700)));
-}
-
-.composer-command-trigger > span:first-child {
-  display: grid;
-  width: 17px;
-  height: 17px;
-  place-items: center;
-  border-radius: 5px;
-  color: #ffffff;
-  background: var(--surface-tab-accent, var(--connected-folder-selection-accent, var(--amplefile-blue-700)));
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: var(--amplefile-type-xs);
-  font-weight: 700;
 }
 
 .composer-model-chip {
@@ -4631,7 +4600,6 @@ to {
 
 .app-shell[data-theme="dark"] .composer-command-menu-heading,
 .app-shell[data-theme="dark"] .composer-command-description,
-.app-shell[data-theme="dark"] .composer-command-trigger,
 .app-shell[data-theme="dark"] .composer-model-chip {
   color: #94a3b8;
 }
@@ -4648,11 +4616,6 @@ to {
 
 .app-shell[data-theme="dark"] .composer-command-menu > button.active {
   border-color: rgba(96, 165, 250, 0.2);
-}
-
-.app-shell[data-theme="dark"] .composer-command-trigger:hover,
-.app-shell[data-theme="dark"] .composer-command-trigger.active {
-  color: #dbeafe;
 }
 
 .app-shell[data-theme="dark"] .composer-model-chip:hover,
@@ -12011,16 +11974,6 @@ textarea:focus-visible,
   border: 0;
 }
 
-.composer-command-trigger {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.composer-command-trigger:is(:hover,.active) {
-  background: var(--ui-surface-hover);
-}
-
 .file-history-row {
   background: transparent;
   box-shadow: none;
@@ -12086,7 +12039,7 @@ textarea:focus-visible,
   color: var(--ui-accent);
 }
 
-:root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.composer-command-trigger,.chat-connected-folder-row-actions,.message-copy-button,
+:root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.chat-connected-folder-row-actions,.message-copy-button,
   .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):hover:not(:disabled) {
   background: var(--ui-control-hover,var(--ui-surface-hover));
   color: var(--ui-control-foreground,var(--ui-text));
@@ -12100,7 +12053,7 @@ textarea:focus-visible,
   box-shadow: none;
 }
 
-:root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.composer-command-trigger,.chat-connected-folder-row-actions,.message-copy-button,
+:root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.chat-connected-folder-row-actions,.message-copy-button,
   .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):active:not(:disabled) {
   background: var(--ui-control-pressed);
 }
@@ -12251,191 +12204,6 @@ textarea:focus-visible,
   pointer-events: auto;
 }
 
-.composer-attach-control {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-  pointer-events: auto;
-}
-
-.composer-attach-trigger {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--ui-border-strong, var(--ui-border));
-  border-radius: 999px;
-  color: var(--ui-text-muted);
-  background: var(--ui-surface);
-  transition: background-color 110ms, color 110ms;
-}
-
-.composer-attach-trigger:is(:hover, .active) {
-  color: var(--ui-text);
-  background: var(--ui-surface-hover);
-}
-
-.composer-attach-trigger.active {
-  border-color: var(--connected-folder-accent-border-state, var(--ui-accent));
-}
-
-.composer-attach-trigger svg {
-  width: 16px;
-  height: 16px;
-}
-
-.composer-command-menu.composer-attach-menu {
-  width: 300px;
-  max-width: calc(100vw - 32px);
-}
-
-.composer-command-menu.composer-attach-menu > button {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 10px;
-}
-
-.composer-attach-option-icon {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--connected-folder-accent-glyph, var(--ui-text-muted));
-  background: var(--ui-surface-subtle);
-}
-
-.composer-attach-option-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.composer-attach-option-copy {
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
-.composer-attach-option-copy strong {
-  overflow: hidden;
-  color: var(--ui-text);
-  font-size: var(--amplefile-type-xs);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-attach-option-copy small {
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-xs);
-}
-
-.composer-command-menu.composer-attach-picker {
-  width: 380px;
-  max-height: min(420px, 60vh, var(--composer-menu-available-height, 100vh));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.composer-attach-search {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 4px;
-  padding: 0 4px 6px 0;
-  border-bottom: 1px solid var(--ui-border);
-  color: var(--ui-text-muted);
-}
-
-.composer-attach-back {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: inherit;
-  background: transparent;
-}
-
-.composer-attach-back:hover {
-  color: var(--ui-text);
-  background: var(--ui-surface-hover);
-}
-
-.composer-attach-search-icon {
-  flex: 0 0 auto;
-}
-
-.composer-attach-search input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 4px 0;
-  border: 0;
-  outline: 0;
-  color: var(--ui-text);
-  background: transparent;
-  font: inherit;
-  font-size: var(--amplefile-type-xs);
-}
-
-:root[data-theme] .app-shell .composer-attach-search input:focus-visible {
-  outline: 0;
-}
-
-.composer-attach-options {
-  flex: 0 1 auto;
-  min-height: 0;
-  display: grid;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.composer-attach-options button {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 7px;
-  color: var(--ui-text);
-  background: transparent;
-  font: inherit;
-  font-size: var(--amplefile-type-xs);
-  text-align: left;
-}
-
-.composer-attach-options button[aria-selected="true"] {
-  color: var(--ui-text-muted);
-}
-
-.composer-attach-file-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-attach-file-folder {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-xs);
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* The files a reply wrote or edited close the reply as one bounded list, each
    row opening its file. */
 
@@ -12516,86 +12284,6 @@ textarea:focus-visible,
   font-weight: 600;
 }
 
-/* A new Chat starts with its composer under the greeting and the Connected Folder's
-   recent Chats below; the first message settles it at the bottom. */
-
-.chat-panel.is-start {
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(min-content, 1.25fr);
-}
-
-.chat-panel.is-start .chat-empty-state {
-  margin: auto 0 0;
-  padding-bottom: 12px;
-}
-
-.chat-recent {
-  width: calc(100% - 28px);
-  max-width: var(--amplefile-chat-measure, 760px);
-  align-self: start;
-  justify-self: center;
-  padding: 18px 0 24px;
-}
-
-.chat-recent h2 {
-  margin: 0 0 8px 4px;
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-xs);
-  font-weight: 600;
-}
-
-.chat-recent ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: 10px;
-}
-
-.chat-recent li + li {
-  border-top: 1px solid var(--ui-border);
-}
-
-.chat-recent button {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 0;
-  color: var(--ui-text);
-  background: transparent;
-  font: inherit;
-  font-size: var(--amplefile-type-md);
-  text-align: left;
-  transition: background-color 110ms;
-}
-
-.chat-recent button:hover {
-  background: var(--ui-surface-hover);
-}
-
-.chat-recent-icon {
-  flex: 0 0 auto;
-  color: var(--ui-text-muted);
-}
-
-.chat-recent-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-recent-time {
-  flex: 0 0 auto;
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 /* The model chip carries the reasoning level, and its menu opens toward the
    composer's middle from the right side. */
 
@@ -12604,7 +12292,7 @@ textarea:focus-visible,
   right: 0;
 }
 
-:is(.composer-model-control, .composer-attach-control)[data-menu-placement="below"] .composer-command-menu {
+.composer-model-control[data-menu-placement="below"] .composer-command-menu {
   top: calc(100% + 9px);
   bottom: auto;
 }
@@ -12874,7 +12562,7 @@ textarea:focus-visible,
   font-size: var(--amplefile-type-sm);
 }
 
-:root[data-theme] .app-shell :is(.composer-capability-bar .composer-attach-trigger, .composer-capability-bar .send-button, .composer-attach-trigger, .surface-tab-new-chat > .surface-tab-action, .window-chrome .window-chrome-button) {
+:root[data-theme] .app-shell :is(.composer-capability-bar .send-button, .surface-tab-new-chat > .surface-tab-action, .window-chrome .window-chrome-button) {
   width: var(--amplefile-control-md);
   height: var(--amplefile-control-md);
   min-height: var(--amplefile-control-md);
@@ -13581,9 +13269,9 @@ textarea:focus-visible,
 
 /* ---------- Files multiple selection ---------- */
 
-/* The composer's text controls, Commands and the model chip, share one
-   height, type, and rounded hover with the round buttons beside them. */
-:root[data-theme] .app-shell .composer-capability-bar :is(.composer-command-trigger, .composer-model-chip) {
+/* The composer's model chip shares one height, type, and rounded hover with
+   the round buttons beside it. */
+:root[data-theme] .app-shell .composer-capability-bar .composer-model-chip {
   height: var(--amplefile-control-md);
   min-height: var(--amplefile-control-md);
   padding: 0 9px;
