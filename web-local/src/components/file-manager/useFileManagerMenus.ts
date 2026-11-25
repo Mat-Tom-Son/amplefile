@@ -68,6 +68,8 @@ export interface FileManagerMenusContext {
   select: (paths: string[]) => void;
   actions: FileManagerMenuActions;
   onError: (message: string | null) => void;
+  /** The tab shows a folder, not the Trash or Recents: only then does its background menu stand for that folder. */
+  folderShown?: boolean;
 }
 
 /**
@@ -76,7 +78,7 @@ export interface FileManagerMenusContext {
  * the window draws its own with the same items (FileManagerMenus.tsx).
  */
 export function useFileManagerMenus(context: FileManagerMenusContext) {
-  const { mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, actions, onError } = context;
+  const { mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, actions, onError, folderShown = true } = context;
   const [quickMenu, setQuickMenu] = useState<QuickMenuState | null>(null);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const desktop = window.ampleFileDesktop;
@@ -190,7 +192,7 @@ export function useFileManagerMenus(context: FileManagerMenusContext) {
     const target: TreeEntry = entry ?? { name: location.path.split("/").pop() || placeName, path: location.path, kind: "folder" };
     const several = entry && paths.length > 1 ? paths.map((path) => byPath.get(path)).filter((item): item is TreeEntry => Boolean(item)) : null;
     const owner = place.kind === "standard" ? { connectedFolderId: "", standardFolderId: place.id } : { connectedFolderId: place.id };
-    const capabilities = several ? selectionMenuCapabilities(several) : { ...itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: target.kind === "folder" && !target.link && await actions.canPaste(), newWindow: Boolean(actions.openInNewWindow) }), ...(terminal ? { terminal: true } : {}) };
+    const capabilities = several ? selectionMenuCapabilities(several) : { ...itemMenuCapabilities(target, Boolean(entry), { place, fixtureMode, canPaste: target.kind === "folder" && !target.link && await actions.canPaste(), newWindow: Boolean(actions.openInNewWindow) }), ...(terminal && folderShown ? { terminal: true } : {}) };
     const selectionCounts = several ? { files: several.filter((item) => item.kind === "file").length, folders: several.filter((item) => item.kind === "folder").length } : null;
     const run = (command: string | null) => several ? runSelectionCommand(command, several) : runMenuCommand(command, target);
     const popupFileMenu = window.ampleFileDesktop?.connectedFolder.popupFileMenu;

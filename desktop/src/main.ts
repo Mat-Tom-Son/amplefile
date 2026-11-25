@@ -107,7 +107,7 @@ import {
   parseNativeConnectedFolderMenuRequest,
 } from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
-import { macTerminalLaunchPlan } from "./open-terminal.js";
+import { openFolderInTerminal } from "./open-terminal.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
@@ -959,25 +959,19 @@ function registerIpc(): void {
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
   // Open Terminal Here: a new Terminal window in a folder of a Connected Folder or of the computer, resolved under
-  // that place's path policy. The folder is checked again just before Terminal is asked to open it.
+  // that place's path policy and checked twice before Terminal is asked to open it (desktop/src/open-terminal.ts).
   if (process.platform === "darwin") {
     ipcMain.handle("amplefile:place:open-terminal", async (event, value: unknown) => {
       assertTrustedMainRenderer(event);
       const location = parseWindowLocation(value);
       if (!location) throw new Error("Choose a folder to open in a terminal.");
       const { place, path } = location;
-      const resolveFolder = async () => place.kind === "connected-folder"
-        ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
-        : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null;
-      const folder = await resolveFolder();
-      const original = folder ? await lstat(folder) : null;
-      if (!folder || !original?.isDirectory()) throw new Error("Choose a folder to open in a terminal.");
-      const plan = macTerminalLaunchPlan(folder);
-      const current = await resolveFolder() === folder ? await lstat(folder) : null;
-      if (!current?.isDirectory() || current.dev !== original.dev || current.ino !== original.ino) {
-        throw new Error("That folder changed. Try opening it in a terminal again.");
-      }
-      await launchOpenWith(plan);
+      await openFolderInTerminal({
+        resolveFolder: async () => place.kind === "connected-folder"
+          ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
+          : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null,
+        launch: launchOpenWith,
+      });
     });
   }
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {

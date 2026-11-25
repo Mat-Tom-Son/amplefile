@@ -310,7 +310,7 @@ export interface NativeConnectedFolderMenuRequest {
     /** The file manager's sidebar: open the folder in a new folder tab, or in a new window. */
     openInNewTab?: boolean;
     openInNewWindow?: boolean;
-    /** The file manager's sidebar on a Mac: open the folder in a new Terminal window. */
+    /** The file manager's sidebar: Open Terminal Here, for the folder the menu is about. */
     openTerminal?: boolean;
   };
   point: { x: number; y: number };
