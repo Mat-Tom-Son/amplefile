@@ -124,6 +124,12 @@ test("only the channels the AmpleFile Agent popover preload uses accept the popo
   assert.match(main, /assertSender: \(event: IpcMainEvent\) => void = assertTrustedMainRenderer,/);
   assert.match(main, /ipcMain\.on\(channel,[^\n]+\n\s*try \{\s*assertSender\(event\);\s*handle\(event, \.\.\.args\);\s*\} catch/);
   for (const channel of popoverChannels) assert.ok(seen.has(channel), `${channel} has a handler`);
+  // A handler group registered from its own module (desktop/src/command-line-host.ts,
+  // linux-file-manager-host.ts) gets its sender check from main.ts: always the main renderer's.
+  // Each group's own tests show every one of its handlers starts with that check.
+  const groupChecks = [...main.matchAll(/assertTrusted: (\w+)/g)].map((match) => match[1]);
+  assert.ok(groupChecks.length >= 2);
+  for (const check of groupChecks) assert.equal(check, "assertTrustedMainRenderer");
   assert.match(main, /const automationSettings = async \(event: IpcMainInvokeEvent, value\?: unknown\) => \{\n\s*assertTrustedMainRenderer\(event\);/);
   // The sender-scoped popover check is tied to the popover's own webContents.
   assert.match(main, /if \(ampleFileAgentPopover\?\.owns\(event\.sender\)\) \{/);

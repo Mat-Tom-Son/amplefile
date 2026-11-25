@@ -154,16 +154,7 @@ import type {
 import { sendToRenderer, type DesktopIpcMain, type DesktopSendHandler } from "./desktop-ipc-main.js";
 import { productIdentity } from "../../src/shared/product-identity.js";
 import { isMacPackageName } from "../../src/shared/mac-packages.js";
-import {
-  commandLineStatus,
-  defaultCommandLineEnvironment,
-  installCommandOnPath,
-  installSkill,
-  isCommandLineSkillTarget,
-  removeCommandFromPath,
-  removeSkill,
-} from "./command-line-install.js";
-import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
+import { registerCommandLineIpc } from "./command-line-host.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
 import { handleRendererRequest, rendererBuildDirectory } from "./renderer-protocol.js";
 
@@ -1486,33 +1477,7 @@ function registerIpc(): void {
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
   // and the skill in Claude Code's and Codex's skills folders, each on a click.
-  const commandLineEnvironment = () => defaultCommandLineEnvironment({ isPackaged: app.isPackaged });
-  ipcMain.handle("amplefile:command-line:status", (event) => {
-    assertTrustedMainRenderer(event);
-    return commandLineStatus(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:install-path", (event) => {
-    assertTrustedMainRenderer(event);
-    return installCommandOnPath(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:remove-path", (event) => {
-    assertTrustedMainRenderer(event);
-    return removeCommandFromPath(commandLineEnvironment());
-  });
-  ipcMain.handle("amplefile:command-line:install-skill", (event, target: unknown) => {
-    assertTrustedMainRenderer(event);
-    if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
-    return installSkill(commandLineEnvironment(), target);
-  });
-  ipcMain.handle("amplefile:command-line:remove-skill", (event, target: unknown) => {
-    assertTrustedMainRenderer(event);
-    if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
-    return removeSkill(commandLineEnvironment(), target);
-  });
-  ipcMain.handle("amplefile:command-line:skill", (event) => {
-    assertTrustedMainRenderer(event);
-    return outsideAgentSkill();
-  });
+  registerCommandLineIpc({ ipcMain, assertTrusted: assertTrustedMainRenderer, isPackaged: app.isPackaged });
   ipcMain.handle("amplefile:settings:status", (event) => {
     assertTrustedMainRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
