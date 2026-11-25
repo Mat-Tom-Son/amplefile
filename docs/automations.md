@@ -96,46 +96,55 @@ starting/watching/paused/error state and errors in Settings → Automations.
 
 All folder observers pause while any automation run works. When the last run
 ends, each watch compares its first look with the look it had before the runs.
-**New files** that arrived meanwhile — a path that look did not have, holding
-a file (device and inode) it did not have either — start one **follow-up run**
-once the folder settles and the cooldown allows, listed in
+**New files** that arrived meanwhile — a file (device and inode) that look did
+not have, at a path that was free or that the file before it left — start one
+**follow-up run** once the folder settles and the cooldown allows, listed in
 `{{trigger.changedFiles}}`. It is one run per watch, never a backlog: it
 coalesces with any other change in the same window, and new files from a later
 pause join it. Edits made during the pause are absorbed, including one a tool
 saved as a new file at the same path (`sed -i`, an app's safe-save), and so
-are renames, because either may be a run's own work. So are the files a run
-placed itself, matched by device and inode as each was placed, so a later
-rename or a differently typed name still matches: what Pi's own `write` and
-`edit` tools touched in a chat or agent step's turn, what a files step copied
-(everything inside a copied folder too), and what an AmpleFile verb placed as
-that run's work — `amplefile files` `add`, `move`, `rename`, `create`, and
-`mkdir`, `chat handoff --file`, `recently-deleted restore`, and
-`history restore` or `restore-file`. A verb is a run's work when it acts in
-the Connected Folder a running chat step's Worker is working in, or names a
-running step's turn as its `--parent-task`, as the AmpleFile Agent does in an
-agent step. A verb aimed at any other Connected Folder — by a person, an
-outside agent, or a Chat that is not a step's — is an ordinary change and can
-start a follow-up run. The one exception: a verb an outside caller aims at the
-very folder a chat step is working in, while it works, counts as that step's.
-A file a step makes with a raw shell command cannot be told apart from anyone
-else's, so it counts as new: it can start one follow-up run of any Automation
-watching that folder, its own or another's. Whatever arrives while a follow-up
-run works is absorbed, so nothing chains beyond that one hop. A follow-up's
-cause adds `followUp: {"count": n}`, where `count` of `changedCount` paths
-arrived during a run; `{{trigger.summary}}`, `amplefile automations receipts`,
-and Settings' run history say so, and Settings shows a follow-up still
-waiting. A run that starts before a watch's first look after earlier runs, or
-before its first look at all after launch, wake, or Turn On, takes that look
-before its first step, so a run that begins first never hides what arrives. On
-volumes that reuse file ids — FAT, exFAT, or some network shares — a file that
-lands where one was just removed can take its device and inode and be missed.
-Changes made while asleep or quit are not replayed, unless the trigger opts
-into one catch-up (below). Either way this is an awake-app convenience
-trigger, not a durable filesystem event bus. Keep a complete cross–Connected
-Folder sequence in one automation: wait for A's Chat, copy its created files,
-then run B's Chat. There is no transcript relay or ambient context injection.
-Stop, disable, removal, shutdown, journaling, non-overlap, and FIFO limits use
-the executor paths below.
+are renames, because either may be a run's own work. A name is vacated, and a
+new file there is owed, when the file before it now sits at another path the
+watch sees or a run's own verb moved or deleted it; when something AmpleFile
+cannot see removed that file, a new file at its name reads as an edit. The
+files a run placed itself are absorbed too, matched by device and inode as
+each was placed, so a later rename or a differently typed name still matches.
+A run's work is each running step's whole request lineage: the request its
+turn joined, every turn of it, every request handed work from it, and the
+Connected Folders where those still have work. In it, what Pi's own `write`
+and `edit` tools touched counts, as does what a files step copied (everything
+inside a copied folder too) and what an AmpleFile verb placed —
+`amplefile files` `add`, `move`, `rename`, `create`, and `mkdir`,
+`chat handoff --file`, `recently-deleted restore`, and `history restore` or
+`restore-file`. A verb belongs to that work when it acts in the Connected
+Folder a running chat step's Worker or a Chat a step handed work to is working
+in, or names one of the lineage's turns as its `--parent-task`, as the
+AmpleFile Agent does. A verb aimed at any other Connected Folder — by a
+person, an outside agent, or a Chat no step started — is an ordinary change
+and can start a follow-up run. The one exception: a verb an outside caller
+aims at a folder where a step's work is running, while it runs, counts as that
+work. AmpleFile cannot see what a raw shell command makes, or an Extension's
+own tool, such as the Documents tool's `document_run` scripts, so such a file
+counts as new: it can start one follow-up run of any Automation watching that
+folder, its own or another's. Whatever arrives while a follow-up run works is
+absorbed, so nothing chains beyond that one hop, and so is whatever arrived
+while a run that was stopped — by Stop, disable, removal, or quit — worked: a
+stopped run owes no follow-up. A follow-up's cause adds
+`followUp: {"count": n}`, where `count` of `changedCount` paths arrived during
+a run; `{{trigger.summary}}`, `amplefile automations receipts`, and Settings'
+run history say so, naming a catch-up too when the run is both, and Settings
+shows a follow-up still waiting. A run that starts before a watch's first look
+after earlier runs, or before its first look at all after launch, wake, or
+Turn On, takes that look before its first step, so a run that begins first
+never hides what arrives. On volumes that reuse file ids — FAT, exFAT, or some
+network shares — a file that lands where one was just removed can take its
+device and inode and be missed. Changes made while asleep or quit are not
+replayed, unless the trigger opts into one catch-up (below). Either way this
+is an awake-app convenience trigger, not a durable filesystem event bus. Keep
+a complete cross–Connected Folder sequence in one automation: wait for A's
+Chat, copy its created files, then run B's Chat. There is no transcript relay
+or ambient context injection. Stop, disable, removal, shutdown, journaling,
+non-overlap, and FIFO limits use the executor paths below.
 
 #### Catching up after a gap (version 5)
 
@@ -225,13 +234,13 @@ AmpleFile Agent request settles (in-memory, and steps firing from AmpleFile
 agent Chat activity would blur interactive work with the agent into unattended
 behavior).
 
-**Automation-caused settles never fire triggers.** A folder change a run
-makes starts nothing when AmpleFile can tell it is the run's own (above). A
-file a step makes with a raw shell command it cannot tell apart, so that file
-can start one follow-up run of each Automation watching its folder — one run
-can fan out that far — and nothing that arrives while a follow-up run works
-starts another, so there are no cycles and no chains. Composition belongs
-inside one automation's ordered steps.
+**Automation-caused settles never fire triggers.** A folder change a run makes
+starts nothing when AmpleFile can tell it is the run's own (above). A file
+made by a raw shell command or an Extension's own tool it cannot tell apart,
+so that file can start one follow-up run of each Automation watching its
+folder — one run can fan out that far — and nothing that arrives while a
+follow-up run works starts another, so there are no cycles and no chains.
+Composition belongs inside one automation's ordered steps.
 
 **The recurring schedule trigger** is
 `{"kind": "interval", "intervalMinutes": N}` with bounds of 1 minute to 366
@@ -690,16 +699,16 @@ machine-wide count, step-count, or exact-path-count quota.
 - Settings surface and pending proposals — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/api/automation-settings.ts`, the `amplefile:automations:*` channels in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/amplefile-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
 - Per–Connected Folder view and trigger summaries — `src/shared/automation-presentation.ts` (the one trigger summary Settings, the Info panel, and the route share), `ampleFileAutomationConnectedFolderRoles` in `src/local/automations/automation-declarations.ts`, the `/api/connected-folders/:id/automations` routes in `src/local/api/automation-settings.ts`, `web-local/src/hooks/useFolderAutomations.ts`, `web-local/src/components/file-manager/file-manager-automations.ts`; `tests/folder-automations.test.ts`.
 - Ready-made Automations — `src/shared/automation-templates.ts`, `src/local/automations/automation-templates.ts`.
-- Folder watching across runs — the change rule, the comparison after runs, placed-file identities, and the follow-up set in `src/local/automations/automation-file-observer.ts`; the pause, which acts are a run's work, and the follow-up cause in `src/local/automations/automation-service.ts`; acts report what they placed from `src/local/api/act-lane.ts`, and steps from `src/local/api/automation-hops.ts` (Pi's write and edit calls reach it from `src/local/agent/pi-client.ts`); `tests/amplefile-automation-file-observer.test.ts`, `tests/amplefile-automation-service.test.ts`, `tests/connected-folder-file-verbs.test.ts`.
+- Folder watching across runs — the change rule, the comparison after runs, placed-file identities, and the follow-up set in `src/local/automations/automation-file-observer.ts`; the pause, which acts are a run's work, and the follow-up cause in `src/local/automations/automation-service.ts`; what acts and Pi's write and edit tools placed, moved, or removed is recorded through `src/local/api/automation-attribution.ts`, from `src/local/api/act-lane.ts` and every Chat client (`src/local/agent/pi-client.ts` reports each Pi write), a files step's copies from `src/local/api/automation-hops.ts`, and a step's request lineage from `src/local/server.ts`; `tests/amplefile-automation-file-observer.test.ts`, `tests/amplefile-automation-service.test.ts`, `tests/amplefile-automation-run-attribution.test.ts`, `tests/connected-folder-file-verbs.test.ts`.
 - Folder catch-up — `ifMissed` in `src/local/automations/automation-declarations.ts`, the comparison and owed set in `src/local/automations/automation-file-observer.ts`, saved snapshots and running markers in `src/local/automations/automation-file-snapshots.ts`, load/save and the pre-run comparison in `src/local/automations/automation-service.ts`; `tests/amplefile-automation-folder-catch-up.test.ts`.
 
 ## Deliberately not in this design
 
 - **Automation chains.** Automation-caused settles never fire triggers. A
   folder change a run makes starts nothing when AmpleFile can tell it is the
-  run's own; a file a step makes with a raw shell command can start one
-  follow-up run of each Automation watching its folder, and nothing that
-  arrives while a follow-up run works starts another. There is no other
+  run's own; a file a raw shell command or an Extension's own tool makes can
+  start one follow-up run of each Automation watching its folder, and nothing
+  that arrives while a follow-up run works starts another. There is no other
   multi-hop behavior across automations.
 - **Worker-turn, compaction, and AmpleFile Agent request triggers**, for the
   reasons given under Triggers.
