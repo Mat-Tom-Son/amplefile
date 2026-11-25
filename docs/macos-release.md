@@ -255,6 +255,19 @@ Apple submission.
   repository. `npm run desktop:verify:feed:mac -- --version 0.2.3` reported
   that the feed offers it; an installed update from `0.2.1` to `0.2.3` is not
   recorded here.
+- **0.2.4** was published to `Mat-Tom-Son/amplefile` on November 25, 2026,
+  from the annotated source tag `v0.2.4` (commit `bf32f95`): Open Terminal
+  Here on the Mac, which opens a new Terminal window in a folder from File,
+  the folder background menu, a folder's own menu, and the sidebar's folder
+  menus. The first build stopped in desktop preparation on an intermittent
+  check in the built-in browser smoke (a tab count one higher than expected
+  after a popup's blocked `window.open`); a fresh build passed. Before
+  tagging, a copy of the signed candidate launched on its own profile at
+  0.2.4, opened Terminal through Open Terminal Here, refused a file and a
+  `..` path, and reported itself up to date from the source repository.
+  `npm run desktop:verify:feed:mac -- --version 0.2.4` reported that the
+  feed offers it; an installed update from `0.2.3` to `0.2.4` is not recorded
+  here.
 
 ## Release procedure
 
