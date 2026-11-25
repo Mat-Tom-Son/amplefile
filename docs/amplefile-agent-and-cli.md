@@ -515,8 +515,9 @@ the command and how it ended. That refusal reaches as far back as the
 journals still hold the id's `accepted` line: at least the five-minute
 freshness window, and in practice the last 8 to 16 MB of act receipts, which
 `journalSince` reports. A retry under an id older than that runs again.
-Every new command needs a new id. `chat wait` and `agent wait` refuse
-`--request-id`, because each of their polls is a read of its own. When the
+Every new command needs a new id. `chat wait`, `agent wait`, and
+`automations wait` refuse `--request-id`, because they run in the shim and
+each of their polls is a read of its own. When the
 shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
 the request id with the `receipts show` command that answers for it.
 
