@@ -162,29 +162,6 @@ test("compaction notices appear once, survive delayed transcript reads, and reop
   assert.match(dom.container.textContent!, /Conversation context compacted/);
 });
 
-test("reopening the attachment picker reads files created since its previous visit", async (t) => {
-  let name = "Before.txt";
-  let reads = 0;
-  const { dom } = await chatHarness(t, undefined, (path) => {
-    if (!path.includes("/tree?")) return;
-    reads += 1;
-    return { tree: [{ kind: "file", path: name, name }] };
-  });
-  const open = async () => {
-    await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Attach Files"]')!.click());
-    await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
-    await dom.waitFor(() => !!dom.container.querySelector('.composer-attach-options [role="option"]'));
-  };
-  await open();
-  assert.match(dom.container.querySelector(".composer-attach-options")!.textContent!, /Before.txt/);
-  await dom.press("Escape");
-  name = "After.txt";
-  await open();
-  assert.equal(reads, 2);
-  assert.match(dom.container.querySelector(".composer-attach-options")!.textContent!, /After.txt/);
-  assert.doesNotMatch(dom.container.querySelector(".composer-attach-options")!.textContent!, /Before.txt/);
-});
-
 test("a typed /compact uses the Chat's compaction route, not a turn", async (t) => {
   const calls: Array<{ path: string; method?: string; body?: unknown }> = [];
   const { dom } = await chatHarness(t, undefined, (path, options) => {
@@ -218,18 +195,22 @@ test("a typed /compact in a new Chat does not create a conversation or send a mo
 });
 
 test("composer menus choose the available side and follow window resizing", async (t) => {
-  const { dom } = await chatHarness(t);
+  const { dom, emit } = await chatHarness(t, undefined, (path) => {
+    if (path.endsWith("/runtime")) return { runtime };
+    if (path.startsWith("/api/agent/models")) return { models: [], status: { ready: true, configured: true } };
+  });
+  await emit({ type: "runtime", runtime });
   const elementPrototype = HTMLElement.prototype;
   const original = elementPrototype.getBoundingClientRect;
   let anchorTop = 390;
   HTMLElement.prototype.getBoundingClientRect = function () {
     if (this.matches(".chat-panel")) return new window.DOMRect(0, 80, 800, 720);
-    if (this.matches(".composer-attach-control")) return new window.DOMRect(24, anchorTop, 28, 30);
+    if (this.matches(".composer-model-control")) return new window.DOMRect(24, anchorTop, 28, 30);
     return original.call(this);
   };
   t.after(() => { elementPrototype.getBoundingClientRect = original; });
-  await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Attach Files"]')!.click());
-  const control = dom.container.querySelector<HTMLElement>(".composer-attach-control")!;
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".composer-model-chip")!.click());
+  const control = dom.container.querySelector<HTMLElement>(".composer-model-control")!;
   assert.equal(control.dataset.menuPlacement, "below", "the centered composer has more room below");
   assert.equal(control.style.getPropertyValue("--composer-menu-available-height"), "371px");
   assert.equal(control.style.getPropertyValue("--composer-menu-room-rightward"), "768px", "a menu opening rightward stops short of the Chat's right edge");

@@ -6,14 +6,13 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { useWorkRequest } from "../../hooks/useWorkRequest";
 import { WorkRequest, openWorkFile } from "./WorkRequest";
 import type * as React from "react";
-import { Add16Regular, ArrowDown20Regular, ArrowUp20Regular, Chat16Regular, ChevronDown16Regular, ChevronLeft16Regular, Desktop20Regular, Search16Regular } from "@fluentui/react-icons";
+import { ArrowDown20Regular, ArrowUp20Regular, ChevronDown16Regular } from "@fluentui/react-icons";
 import { Archive, Clock3, Loader2, Square, X } from "../chrome/icons";
 
 import { chatDraftDebounceMs, genericChatEmptyGreetings, connectedFolderPathDragType } from "../../constants";
 import { createFixtureContextAttachment, fixtureConversationSummary } from "../../fixtures/shared";
 import { ApiError, api, createEventSource, errorText, isTransientNetworkError, rawErrorMessage } from "../../lib/api";
 import { requestConnectAi } from "../../lib/connect-ai";
-import { conversationLifecycleView } from "../../lib/chat-lifecycle";
 import { createChatTurnStateGate, observeChatTurnState } from "../../lib/chat-turn-state";
 import { draggedConnectedFolderPaths, hasNativeFiles } from "../../lib/file-actions";
 import { displayModelLabel } from "../../lib/model-display";
@@ -25,7 +24,6 @@ import {
   chatDraftStorageKey,
   clearStoredChatDraft,
   clearStoredPendingChatSend,
-  formatChatListTime,
   latestTranscriptTime,
   modelConversationTitle,
   readStoredChatDraft,
@@ -45,7 +43,6 @@ import type { WorkRequestView } from "../../../../src/shared/request-presentatio
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
 import { Banner, FluentGlyph, ConnectedFolderIconGlyph } from "../chrome/common";
-import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";
@@ -126,7 +123,6 @@ export function ChatPanel({
   onSendRequestConsumed,
   failedSend,
   onSendFailureChange,
-  variant = "default",
   onAddPathToChatContext,
   onUploadDroppedFiles,
   onOpenConnectedFolderFile,
@@ -139,7 +135,6 @@ export function ChatPanel({
   onResumeConversation,
   onAgentFinished,
   onOpenModelSettings,
-  onOpenConversation,
   fixtureMode = false,
   fixtureConversations,
   fixtureTreeEntries = emptyFixtureTreeEntries,
@@ -157,13 +152,6 @@ export function ChatPanel({
   onSendRequestConsumed?: (id: number) => void;
   failedSend?: ChatSendFailure | null;
   onSendFailureChange?: (failure: ChatSendFailure | null) => void;
-  /**
-   * `panel`: the file manager's right panel (docs/product-model.md),
-   * drawn as the design draws it. Its composer is Reply and Send
-   * (or Stop); what to attach comes from the selection, and the model is
-   * chosen in Settings → AI Models.
-   */
-  variant?: "default" | "panel";
   onAddPathToChatContext?: (paths: readonly string[]) => void;
   onUploadDroppedFiles?: (dataTransfer: DataTransfer) => Promise<string[]>;
   onOpenConnectedFolderFile?: (path: string) => void;
@@ -176,8 +164,6 @@ export function ChatPanel({
   onResumeConversation?: () => void | Promise<void>;
   onAgentFinished: () => void | Promise<void>;
   onOpenModelSettings?: () => void;
-  /** Opens one of this Connected Folder's Chats, as its row in Chats does. */
-  onOpenConversation?: (conversation: ConversationSummary) => void;
   fixtureMode?: boolean;
   fixtureConversations?: ConnectedFolderFixtureConversation[];
   fixtureTreeEntries?: TreeEntry[];
@@ -1206,12 +1192,6 @@ export function ChatPanel({
     composerGlideFromRef.current = null;
     if (!startLayout) glideFrom(composerRef.current, from);
   }, [startLayout]);
-  const recentChats = useMemo(() => startLayout
-    ? conversations
-      .filter((item) => conversationLifecycleView(item) === "active")
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .slice(0, 3)
-    : [], [conversations, startLayout]);
 
   async function loadConversationRuntime(conversationId: string): Promise<ConversationRuntime | null> {
     try {
@@ -1890,23 +1870,9 @@ export function ChatPanel({
     });
   }
 
-  function toggleComposerCommands(): void {
-    if (commandMenuOpen) {
-      setDismissedCommandDraft(draft);
-      return;
-    }
-    if (draft && commandQuery === null) {
-      composerTextareaRef.current?.focus();
-      return;
-    }
-    setDraft("/");
-    setDismissedCommandDraft(null);
-    window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-  }
-
   return (
     <section
-      className={`panel chat-panel${startLayout && variant !== "panel" ? " is-start" : ""}${variant === "panel" ? " is-in-panel" : ""}`}
+      className="panel chat-panel is-in-panel"
     >
       <div className={error ? "chat-top-chrome" : "chat-top-chrome empty"}>
         <div className="chat-top-notice">
@@ -2170,46 +2136,12 @@ export function ChatPanel({
                 void sendMessage();
               }
             }}
-            placeholder={running && !pendingSendRef.current ? steerQueuePlaceholder() : variant === "panel" ? "Reply" : "Message Worker"}
+            placeholder={running && !pendingSendRef.current ? steerQueuePlaceholder() : "Reply"}
           />
-          {/* What you add sits on the left; how the Worker runs and Send sit on
-              the right. */}
+          {/* What to attach comes from the selection and the model is chosen
+              in Settings → AI Models, so the bar holds only Send or Stop. */}
           <div className="composer-capability-bar">
-            {variant === "panel" ? null : <>
-            <ComposerAttachMenu
-              connectedFolderId={connectedFolder.id}
-              connectedFolderName={connectedFolder.name}
-              identity={connectedFolderIdentity}
-              fixtureMode={fixtureMode}
-              fixtureTreeEntries={fixtureTreeEntries}
-              attachedPaths={contextAttachments.map((attachment) => attachment.sourcePath)}
-              onAttachPath={(path) => void attachContextPath(path)}
-              onUploadFiles={onUploadDroppedFiles ? (transfer) => void attachDroppedNativeFiles(transfer) : undefined}
-            />
-            <button
-              className={commandMenuOpen ? "composer-command-trigger active" : "composer-command-trigger"}
-              type="button"
-              onClick={toggleComposerCommands}
-              aria-expanded={commandMenuOpen}
-              title="Browse Commands and Skills"
-            >
-              <span aria-hidden="true">/</span>
-              <span>Commands</span>
-            </button>
-            </>}
             <span className="composer-capability-spacer" />
-            {/* The panel's Reply field is the design's: words and Send, with
-                the model and context on a small row under it. */}
-            {variant === "panel" ? null : modelStatus?.configured && conversationRuntime ? (
-              <>
-                <ConversationContextControl runtime={conversationRuntime} busy={running || requestBusy} compacting={conversationRuntime.isCompacting || compactPending} onCompact={compactFromContextMenu} />
-                <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
-              </>
-            ) : modelStatus?.configured && composerState?.model
-                ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
-                : modelStatus && !modelStatus.configured
-                  ? <button className="composer-connect-ai" type="button" onClick={() => requestConnectAi()} title="Connect an AI provider so this Worker can start">Connect AI</button>
-                  : null}
             {running || requestBusy ? (
               <button className="send-button stop-send-button" type="button" onClick={() => void abortTurn()} aria-label="Stop Worker" title="Stop Worker">
                 <Square size={14} />
@@ -2221,7 +2153,9 @@ export function ChatPanel({
             )}
           </div>
         </div>
-        {variant === "panel" ? <div className="composer-panel-meta">
+        {/* The panel's Reply field is the design's: words and Send, with
+            the model and context on a small row under it. */}
+        <div className="composer-panel-meta">
           {modelStatus?.configured && conversationRuntime ? <>
             <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             <span className="composer-capability-spacer" />
@@ -2229,9 +2163,8 @@ export function ChatPanel({
           </> : modelStatus?.configured && composerState?.model
             ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             : modelStatus && !modelStatus.configured ? <SetUpAiButton /> : null}
-        </div> : null}
+        </div>
       </form>
-      {startLayout && variant !== "panel" && recentChats.length && onOpenConversation ? <ChatRecentChats chats={recentChats} onOpen={onOpenConversation} /> : null}
     </section>
   );
 }
@@ -2807,228 +2740,6 @@ function ConfiguredModel({ model, connectedFolderName, picker, reasoning }: { mo
   );
 }
 
-/** How deep the attach picker reads a Connected Folder, the same depth Files searches. */
-const attachPickerTreeDepth = 6;
-const attachPickerVisibleLimit = 60;
-
-type AttachPickerFile = { path: string; name: string; folder: string; updatedAt: number };
-
-/** Files a person can attach, without other Connected Folders nested inside this one. */
-function attachPickerFiles(entries: TreeEntry[], output: AttachPickerFile[] = []): AttachPickerFile[] {
-  for (const entry of entries) {
-    if (entry.nestedFolder || entry.ignored) continue;
-    if (entry.kind === "folder") {
-      attachPickerFiles(entry.children ?? [], output);
-      continue;
-    }
-    const slash = entry.path.lastIndexOf("/");
-    output.push({
-      path: entry.path,
-      name: entry.name,
-      folder: slash > 0 ? entry.path.slice(0, slash) : "",
-      updatedAt: entry.updatedAt ? Date.parse(entry.updatedAt) || 0 : 0,
-    });
-  }
-  return output;
-}
-
-/**
- * The composer's + button: attach files from this Connected Folder,
- * or copy files from the computer into its Dropped folder and attach them,
- * the same explicit act as dropping them on the composer.
- */
-function ComposerAttachMenu({
-  connectedFolderId,
-  connectedFolderName,
-  identity,
-  fixtureMode,
-  fixtureTreeEntries,
-  attachedPaths,
-  onAttachPath,
-  onUploadFiles,
-}: {
-  connectedFolderId: string;
-  connectedFolderName: string;
-  identity: ConnectedFolderIdentity;
-  fixtureMode: boolean;
-  fixtureTreeEntries: TreeEntry[];
-  attachedPaths: string[];
-  onAttachPath: (path: string) => void;
-  onUploadFiles?: (transfer: DataTransfer) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"choose" | "files">("choose");
-  const [query, setQuery] = useState("");
-  const [files, setFiles] = useState<AttachPickerFile[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const optionsRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const menuId = useId();
-  useDismissOnOutsideInteraction(open, containerRef, () => setOpen(false), triggerRef);
-  useEffect(() => {
-    if (open) return;
-    setView("choose");
-    setQuery("");
-    setError(null);
-    // Files can be created, renamed or removed between visits to the picker.
-    setFiles(null);
-  }, [open]);
-  useEffect(() => { setFiles(null); }, [connectedFolderId]);
-  useEffect(() => {
-    if (!open || view !== "files" || files) return;
-    if (fixtureMode) {
-      setFiles(attachPickerFiles(fixtureTreeEntries));
-      return;
-    }
-    const controller = new AbortController();
-    const params = new URLSearchParams({ maxDepth: String(attachPickerTreeDepth) });
-    void api<{ tree: TreeEntry[] }>(`/api/connected-folders/${connectedFolderId}/tree?${params}`, { signal: controller.signal })
-      .then((result) => { if (!controller.signal.aborted) setFiles(attachPickerFiles(result.tree)); })
-      .catch((caught) => { if (!controller.signal.aborted) setError(errorText(caught)); });
-    return () => controller.abort();
-  }, [open, view, files, fixtureMode, fixtureTreeEntries, connectedFolderId]);
-
-  const matches = useMemo(() => {
-    if (!files) return [];
-    const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return [...files].sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
-    return files
-      .filter((file) => file.path.toLocaleLowerCase().includes(needle))
-      .sort((a, b) => Number(!a.name.toLocaleLowerCase().includes(needle)) - Number(!b.name.toLocaleLowerCase().includes(needle)) || a.path.localeCompare(b.path));
-  }, [files, query]);
-  const visible = matches.slice(0, attachPickerVisibleLimit);
-  const attached = new Set(attachedPaths);
-
-  function attach(path: string): void {
-    setOpen(false);
-    triggerRef.current?.focus({ preventScroll: true });
-    if (!attached.has(path)) onAttachPath(path);
-  }
-
-  function focusOption(edge: "start" | "end"): void {
-    const options = optionsRef.current?.querySelectorAll<HTMLButtonElement>("button");
-    options?.[edge === "end" ? options.length - 1 : 0]?.focus({ preventScroll: true });
-  }
-
-  return (
-    <div className="composer-attach-control" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        className={open ? "composer-attach-trigger active" : "composer-attach-trigger"}
-        type="button"
-        aria-label="Attach Files"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        title="Attach Files"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Add16Regular aria-hidden="true" />
-      </button>
-      {onUploadFiles ? (
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          tabIndex={-1}
-          onChange={(event) => {
-            const chosen = Array.from(event.currentTarget.files ?? []);
-            event.currentTarget.value = "";
-            if (!chosen.length) return;
-            const transfer = new DataTransfer();
-            chosen.forEach((file) => transfer.items.add(file));
-            onUploadFiles(transfer);
-          }}
-        />
-      ) : null}
-      {open && view === "choose" ? (
-        <div className="composer-command-menu composer-attach-menu" id={menuId} role="menu" aria-label="Attach Files">
-          <button type="button" role="menuitem" autoFocus onClick={() => setView("files")}>
-            <span className="composer-attach-option-icon" style={connectedFolderIdentityStyle(identity)}><ConnectedFolderIconGlyph icon={identity.Icon} size={18} /></span>
-            <span className="composer-attach-option-copy">
-              <strong>From {connectedFolderName}</strong>
-              <small>Pick files in this Connected Folder</small>
-            </span>
-          </button>
-          {onUploadFiles ? (
-            <button type="button" role="menuitem" onClick={() => { setOpen(false); fileInputRef.current?.click(); }}>
-              <span className="composer-attach-option-icon"><Desktop20Regular aria-hidden="true" /></span>
-              <span className="composer-attach-option-copy">
-                <strong>From This Computer</strong>
-                <small>Copies them into the Dropped folder</small>
-              </span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {open && view === "files" ? (
-        <div className="composer-command-menu composer-attach-menu composer-attach-picker" id={menuId} role="dialog" aria-label={`Attach from ${connectedFolderName}`}>
-          <div className="composer-attach-search">
-            <button type="button" className="composer-attach-back" aria-label="Back" title="Back" onClick={() => setView("choose")}>
-              <ChevronLeft16Regular aria-hidden="true" />
-            </button>
-            <Search16Regular className="composer-attach-search-icon" aria-hidden="true" />
-            <input
-              type="search"
-              value={query}
-              placeholder={`Search ${connectedFolderName}`}
-              aria-label={`Search ${connectedFolderName}`}
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  // The composer is a form; Enter here attaches, never sends.
-                  event.preventDefault();
-                  if (visible[0]) attach(visible[0].path);
-                  return;
-                }
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  focusOption(event.key === "ArrowUp" ? "end" : "start");
-                }
-              }}
-            />
-          </div>
-          {error ? <div className="composer-model-error" role="alert">{error}</div>
-            : !files ? <div className="composer-model-status" role="status">Loading files</div>
-              : !visible.length ? <div className="composer-model-status" role="status">{query.trim() ? "No Matching Files" : "No Files Yet"}</div>
-                : (
-                  <div
-                    className="composer-attach-options"
-                    role="listbox"
-                    aria-label={`Files in ${connectedFolderName}`}
-                    ref={optionsRef}
-                    onKeyDown={(event) => {
-                      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                      const options = Array.from(optionsRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
-                      const next = nextMenuItemIndex(options.indexOf(document.activeElement as HTMLButtonElement), options.length, event.key as MenuNavigationKey);
-                      if (next === null) return;
-                      event.preventDefault();
-                      options[next]?.focus({ preventScroll: true });
-                      options[next]?.scrollIntoView({ block: "nearest" });
-                    }}
-                  >
-                    {visible.map((file) => (
-                      <button key={file.path} type="button" role="option" aria-selected={attached.has(file.path)} title={file.path} onClick={() => attach(file.path)}>
-                        <FileTypeIcon path={file.path} />
-                        <span className="composer-attach-file-name">{file.name}</span>
-                        {file.folder ? <span className="composer-attach-file-folder">{file.folder}</span> : null}
-                      </button>
-                    ))}
-                  </div>
-                )}
-          {matches.length > visible.length ? <div className="composer-model-status">Type to narrow {matches.length.toLocaleString()} files</div> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function commandSourceLabel(source: AgentCommand["source"]): string {
   if (source === "skill") return "Skill";
   if (source === "prompt") return "Prompt";
@@ -3061,27 +2772,6 @@ function ChatEmptyState({
         <span>{connectedFolder.name}</span>
       </span>
     </div>
-  );
-}
-
-/** Up to three of this Connected Folder's Chats, newest first, on a new Chat's start screen. */
-function ChatRecentChats({ chats, onOpen }: { chats: ConversationSummary[]; onOpen: (conversation: ConversationSummary) => void }) {
-  const headingId = useId();
-  return (
-    <section className="chat-recent" aria-labelledby={headingId}>
-      <h2 id={headingId}>Recent Chats</h2>
-      <ul>
-        {chats.map((chat) => (
-          <li key={chat.id}>
-            <button type="button" onClick={() => onOpen(chat)}>
-              <Chat16Regular className="chat-recent-icon" aria-hidden="true" />
-              <span className="chat-recent-title">{chat.title}</span>
-              <time className="chat-recent-time" dateTime={chat.updatedAt}>{formatChatListTime(chat.updatedAt)}</time>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 

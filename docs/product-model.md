@@ -842,9 +842,7 @@ with that Chat's history as of its last finished reply; the original is never
 changed. Snooze, archive, resume, rename, copy, and delete are act verbs
 ([the act ledger](act-ledger.md#chats)).
 
-A new Chat begins as **New Chat**, with up to three of the Connected Folder's
-most recent active Chats listed below as **Recent Chats**. After its first
-successful turn, AmpleFile asks that Chat's active Pi model for a short title
+A new Chat begins as **New Chat**. After its first successful turn, AmpleFile asks that Chat's active Pi model for a short title
 based on the first request and reply, then saves it so it stays stable across
 restarts and machines. The title request uses the same authenticated Pi model
 transport as the turn, including live provider catalogs and stored Azure

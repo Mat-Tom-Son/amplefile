@@ -1900,7 +1900,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
                   ? { ...current, failedSend: failure }
                   : current);
               }}
-              variant="panel"
               // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
               onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, folder.id)}
               fixtureMode={fixtureMode}
