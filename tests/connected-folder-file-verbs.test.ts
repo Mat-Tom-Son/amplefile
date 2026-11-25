@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -160,29 +160,67 @@ test("restoring a New Folder or New File History point removes the item it made,
   assert.deepEqual(await listing(), before);
 });
 
-test("every files act tells the automation executor what it placed, so an automation run's own files start no follow-up", async (t) => {
-  const { api, sandbox, facade, id } = await startConnectedFolder(t);
-  const placed: Array<[string, string[]]> = [];
-  const notePlacedFiles = api.automations.notePlacedFiles.bind(api.automations);
-  api.automations.notePlacedFiles = (connectedFolderId: string, paths: readonly string[]) => {
-    placed.push([connectedFolderId, [...paths]]);
-    notePlacedFiles(connectedFolderId, paths);
+test("while an automation run counts an act as its own, every verb that places files reports their device and inode", async (t) => {
+  const { api, sandbox, facade, id, root } = await startConnectedFolder(t);
+  const placed: Array<{ connectedFolderId?: string; parentTaskId?: string; fileIds: string[] }> = [];
+  const asked: Array<{ connectedFolderId?: string; parentTaskId?: string }> = [];
+  let counts = true;
+  api.automations.countsAsRunWork = (act) => { asked.push({ ...act }); return counts; };
+  api.automations.notePlacedFiles = (act) => { placed.push({ ...act, fileIds: [...act.fileIds] }); };
+  const fileId = async (path: string) => {
+    const info = await lstat(join(root, path), { bigint: true });
+    return `${info.dev}:${info.ino}`;
   };
+  const last = () => placed.at(-1)!;
   await writeFile(join(sandbox, "outside.md"), "from elsewhere", "utf8");
 
   await facade.filesMkdir({ connectedFolder: id, path: "notes" });
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [] }, "a new folder holds no files");
   await facade.filesCreate({ connectedFolder: id, path: "notes/new.md" });
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/new.md")] });
   await facade.filesRename({ connectedFolder: id, path: "notes/new.md", newName: "renamed.md" });
+  assert.deepEqual(last().fileIds, [await fileId("notes/renamed.md")]);
   await facade.filesMkdir({ connectedFolder: id, path: "archive" });
   await facade.filesMove({ connectedFolder: id, fromPath: "notes/renamed.md", toDir: "archive" });
+  assert.deepEqual(last().fileIds, [await fileId("archive/renamed.md")]);
   await facade.addFiles({ connectedFolder: id, fromPaths: [join(sandbox, "outside.md")], toDir: "notes", cwd: sandbox });
+  assert.deepEqual(last().fileIds, [await fileId("notes/outside.md")]);
 
-  assert.deepEqual(placed, [
-    [id, ["notes"]],
-    [id, ["notes/new.md"]],
-    [id, ["notes/renamed.md"]],
-    [id, ["archive"]],
-    [id, ["archive/renamed.md"]],
-    [id, ["notes/outside.md"]],
-  ]);
+  // A path typed in another case names the same file on a case-insensitive
+  // disk; the identity is the file's, whatever the caller typed.
+  await mkdir(join(root, "Screenshots"));
+  if (existsSync(join(root, "SCREENSHOTS"))) {
+    const created = await facade.filesCreate({ connectedFolder: id, path: "screenshots/typed.png" });
+    assert.equal(created.path, "screenshots/typed.png");
+    assert.deepEqual(last().fileIds, [await fileId("Screenshots/typed.png")]);
+  }
+
+  // Restores put files back with new inodes.
+  await writeFile(join(root, "notes", "kept.md"), "first", "utf8");
+  const checkpoint = (await facade.historySave({ connectedFolder: id, label: "before" })).checkpoint;
+  await rm(join(root, "notes", "kept.md"));
+  await facade.historyRestore({ connectedFolder: id, checkpointId: checkpoint.checkpointId });
+  assert.ok(last().fileIds.includes(await fileId("notes/kept.md")), "history restore");
+  const version = (await facade.historyVersions({ connectedFolder: id, path: "notes/kept.md" })).versions[0]!;
+  await writeFile(join(root, "notes", "kept.md"), "second", "utf8");
+  await facade.historyRestoreFile({ connectedFolder: id, path: "notes/kept.md", version: version.hashSha256 });
+  assert.deepEqual(last().fileIds, [await fileId("notes/kept.md")], "history restore-file");
+  process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "1";
+  let deleted;
+  try {
+    deleted = await facade.filesDelete({ connectedFolder: id, path: "notes/outside.md" });
+  } finally {
+    delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
+  }
+  const recovery = deleted.recovery as { kind?: string; entryId?: string };
+  assert.equal(recovery.kind, "recently-deleted");
+  await facade.recentlyDeletedRestore({ entry: recovery.entryId! });
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/outside.md")] }, "recently-deleted restore");
+  assert.ok(asked.every((act) => act.connectedFolderId === id && act.parentTaskId === undefined));
+
+  // An act that is no run's work is not even measured.
+  counts = false;
+  const before = placed.length;
+  await facade.filesCreate({ connectedFolder: id, path: "notes/by a person.md" });
+  assert.equal(placed.length, before);
 });

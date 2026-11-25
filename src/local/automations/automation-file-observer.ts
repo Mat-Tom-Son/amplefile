@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir } from "node:fs/promises";
-import { extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isAlwaysHiddenConnectedFolderEntry } from "../connected-folder-ignore.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
 import { listConnectedFolders, resolveConnectedFolderPath } from "../connected-folder.js";
@@ -185,29 +185,54 @@ export function ampleFileAutomationChangedPaths(
 }
 
 /**
- * What the first look after automation runs owes one follow-up run: the
- * changes (by the rule above) that are new files — no entry in the look
- * taken before the runs had their device and inode — and that no run placed.
- * An edit keeps its file's device and inode, and so does a rename, so
- * neither counts: either may be a run's own work that AmpleFile cannot tell
- * apart. Entries that are not the observer's form count only at a new path.
+ * What the first look after automation runs owes one follow-up run: new
+ * files — a path the look taken before the runs did not have, holding a file
+ * (device and inode) it did not have either — that no run placed. A path
+ * that existed before is an edit, even when a tool saved it as a new file
+ * in its place (`sed -i`, safe-save), and a file under a new name is a
+ * rename; neither counts, since either may be a run's own work. `placed`
+ * holds the device and inode of each file AmpleFile saw a run place.
+ * Entries that are not the observer's form count at any new path.
  */
 export function ampleFileAutomationArrivedPaths(
   beforeRuns: AmpleFileAutomationFileSnapshot,
   after: AmpleFileAutomationFileSnapshot,
-  placedByRuns: readonly string[],
+  placed: ReadonlySet<string>,
 ): string[] {
   const files = new Set<string>();
   for (const value of Object.values(beforeRuns.entries)) {
     const identity = entryIdentity(value);
     if (identity) files.add(identity.file);
   }
-  const placed = (path: string) => placedByRuns.some((item) => path === item || path.startsWith(`${item}/`));
   return ampleFileAutomationChangedPaths(beforeRuns, after).filter((path) => {
-    if (placed(path)) return false;
+    if (entryAt(beforeRuns, path) !== undefined) return false;
     const identity = entryIdentity(after.entries[path]!);
-    return identity ? !files.has(identity.file) : entryAt(beforeRuns, path) === undefined;
+    return !identity || (!files.has(identity.file) && !placed.has(identity.file));
   });
+}
+
+/**
+ * The device and inode of each ordinary file at these absolute paths, and of
+ * every file inside a folder among them: what an automation run's own verbs
+ * and tools placed, recorded right after they placed it, so a later rename or
+ * a differently typed name still matches. Links are never followed, and
+ * anything that cannot be read is left out.
+ */
+export async function ampleFileAutomationPlacedFileIds(absolutePaths: readonly string[]): Promise<string[]> {
+  const ids = new Set<string>();
+  const visit = async (path: string, depth: number): Promise<void> => {
+    if (ids.size >= ampleFileAutomationFileObserverBounds.maxFiles || depth > ampleFileAutomationFileObserverBounds.maxDepth) return;
+    const info = await lstat(path, { bigint: true }).catch(() => null);
+    if (!info || info.isSymbolicLink()) return;
+    if (info.isFile()) {
+      ids.add(`${info.dev}:${info.ino}`);
+      return;
+    }
+    if (!info.isDirectory()) return;
+    for (const entry of await readdir(path).catch(() => [] as string[])) await visit(join(path, entry), depth + 1);
+  };
+  for (const path of absolutePaths) await visit(path, 0);
+  return [...ids];
 }
 
 function comparePaths(left: string, right: string): number {
@@ -250,9 +275,11 @@ export class AmpleFileAutomationFileWatch {
   lastTriggeredAt?: string;
   /** The look this watch had when observation paused for automation runs. */
   #beforeRuns?: AmpleFileAutomationFileSnapshot;
-  /** The runs ended and the first look after them is due; the paths runs placed meanwhile. */
-  #afterRuns?: { placed: string[] };
+  /** The runs ended and the first look after them is due; the files they placed meanwhile, by device and inode. */
+  #afterRuns?: { placed: Set<string> };
   #baselineAt = 0;
+  /** Counts gaps, so a look taken before a gap is never applied after it. */
+  generation = 0;
 
   constructor(options: { catchUp?: AutomationCatchUpReason } = {}) {
     this.catchUp = options.catchUp !== undefined;
@@ -261,6 +288,7 @@ export class AmpleFileAutomationFileWatch {
 
   /** A gap, or a fresh start: the next look is a baseline, with nothing compared across automation runs. */
   reset(paused = false): void {
+    this.generation += 1;
     this.baseline = undefined;
     this.candidate = undefined;
     this.#beforeRuns = undefined;
@@ -277,17 +305,17 @@ export class AmpleFileAutomationFileWatch {
   }
 
   /**
-   * The last automation run working ended. `placed` lists the paths in this
-   * watch's Connected Folder that files acts and files steps placed during
-   * the runs. `absorb` (a follow-up run was among them) drops the look from
-   * before the runs, so the next look is a fresh baseline and nothing chains.
+   * The last automation run working ended. `placed` holds the device and
+   * inode of each file AmpleFile saw the runs place. `absorb` (a follow-up
+   * run was among them) drops the look from before the runs, so the next
+   * look is a fresh baseline and nothing chains.
    */
-  resumeAfterRuns(placed: readonly string[], absorb: boolean): void {
+  resumeAfterRuns(placed: Iterable<string>, absorb: boolean): void {
     if (absorb || !this.#beforeRuns) {
       this.#beforeRuns = undefined;
       this.#afterRuns = undefined;
     } else {
-      this.#afterRuns = { placed: [...(this.#afterRuns?.placed ?? []), ...placed] };
+      this.#afterRuns = { placed: new Set([...(this.#afterRuns?.placed ?? []), ...placed]) };
     }
     this.baseline = undefined;
     this.candidate = undefined;
@@ -297,6 +325,11 @@ export class AmpleFileAutomationFileWatch {
   /** The first look after automation runs is still due; a run about to start takes it first. */
   get lookDueAfterRuns(): boolean {
     return this.#afterRuns !== undefined;
+  }
+
+  /** Paused with no look to compare the first look after the runs with; a run about to start takes one. */
+  get needsLookBeforeRun(): boolean {
+    return this.#beforeRuns === undefined;
   }
 
   /** A gap began (sleep, an observer error): compare the next look with the saved snapshot. */
@@ -352,17 +385,18 @@ export class AmpleFileAutomationFileWatch {
 
   /**
    * An automation run is about to start before this watch made a due
-   * comparison — a catch-up, or the first look after earlier runs: compare
-   * now, before the run can edit anything, and keep what is owed for after
-   * the run. This look is then the one the first look after this run is
-   * compared with. The caller saves `snapshot` with the result.
+   * comparison — a catch-up, or the first look after earlier runs — or
+   * while it has no look at all, as after launch or wake: look now, before
+   * the run can edit anything, and keep what is owed for after the run.
+   * Unless the watch already had a look from before the runs, this look is
+   * the one the first look after them is compared with. The caller saves
+   * `snapshot` with the result.
    */
   compareBeforeRun(snapshot: AmpleFileAutomationFileSnapshot, now: number): void {
     // A catch-up compares only with a saved state that has been read.
     if (this.saved !== undefined) this.#compareWithSaved(snapshot, now);
-    if (!this.#afterRuns) return;
-    this.#compareAfterRuns(snapshot);
-    this.#beforeRuns = snapshot;
+    if (this.#afterRuns) this.#compareAfterRuns(snapshot);
+    this.#beforeRuns ??= snapshot;
   }
 
   /** What the saved state should hold for this snapshot. */

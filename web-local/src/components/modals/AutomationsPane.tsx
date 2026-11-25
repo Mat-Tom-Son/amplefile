@@ -10,6 +10,7 @@ import { showToast } from "../../ui/feedback";
 import { folderAutomations } from "../../ui-contract";
 import {
   automationCatchUpSentence,
+  automationFollowUpSentence,
   formatAutomationDateTime as formatDateTime,
   automationTriggerSummary as triggerSummary,
   type AutomationOutcome,
@@ -430,7 +431,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                   <p>{watchStateLabel(detail.fileWatch?.state)}{detail.fileWatch?.detail ? ` · ${detail.fileWatch.detail}` : ""}</p>
                   {detail.fileWatch?.followingUp ? (
                     <p className="automation-follow-up-pending">
-                      Following up on {detail.fileWatch.followingUp.count} new {detail.fileWatch.followingUp.count === 1 ? "file" : "files"} that arrived while an Automation was running.
+                      {automationFollowUpSentence(detail.fileWatch.followingUp.count, true)}.
                     </p>
                   ) : null}
                   {detail.trigger.ifMissed === "run" ? <>

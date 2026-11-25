@@ -10,6 +10,8 @@ import { createConversation } from "../agent/chat-store.js";
 import { listPiModels } from "../agent/pi-runtime-config.js";
 import { getConnectedFolderCheckpoint } from "../history.js";
 import { resolveFolderTargets } from "../automations/folder-targets.js";
+import { ampleFileAutomationPlacedFileIds } from "../automations/automation-file-observer.js";
+import type { PiConversationClient, PiFileToolWrite } from "../agent/pi-client.js";
 import { ampleFileAutomationBounds } from "../automations/automation-declarations.js";
 import type { AmpleFileAutomationHopPorts } from "../automations/automation-service.js";
 import {
@@ -41,9 +43,11 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
     async chat(step, message, context) {
       const connectedFolder = await getConnectedFolder(step.connectedFolder);
       const conversation = await createConversation(connectedFolder.connectedFolderRoot);
+      const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversation.id);
       // A step's own model applies to this new Chat only: Pi records it in the
       // session without touching the Connected Folder's or anyone's defaults.
-      if (step.model) await (await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversation.id)).setModel(step.model.provider, step.model.id);
+      if (step.model) await client.setModel(step.model.provider, step.model.id);
+      const placed = watchAutomationFileToolWrites(client);
       const checkpoints: { pre?: string; post?: string } = {};
       const observer = (event: TurnCheckpointEvent): void => {
         if (event.connectedFolderId !== connectedFolder.id || event.conversationId !== conversation.id) return;
@@ -58,8 +62,10 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
           actorKind: "system",
           automationSource: { automationId: context.automationId, title: context.title },
         });
+        context.turnAccepted(taskId);
         const settled = await waitForSettledRequest(state, connectedFolder.id, conversation.id, taskId, context.signal);
         const result = await completedRequestEnvelope(state, taskId);
+        const placedFileIds = await placed.settle();
         return {
           conversationId: conversation.id,
           turnTaskId: taskId,
@@ -69,9 +75,11 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
           ...(settled.error !== undefined ? { error: settled.error } : {}),
           ...(checkpoints.pre !== undefined ? { preCheckpointId: checkpoints.pre } : {}),
           ...(checkpoints.post !== undefined ? { postCheckpointId: checkpoints.post } : {}),
+          ...(placedFileIds.length ? { placedFileIds } : {}),
         };
       } finally {
         state.turnCheckpointListeners.delete(observer);
+        placed.stop();
       }
     },
     // An agent hop always opens a *new* thread, never the person's live
@@ -84,22 +92,32 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
       }
       const scope = ampleFileAgentScopeForRoutes(state);
       const conversation = await createConversation(scope.rootPath);
-      if (step.model) await (await getClient(state, scope.id, scope.rootPath, conversation.id)).setModel(step.model.provider, step.model.id);
-      const { taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversation.id, {
-        content: message,
-        contextPaths: [],
-        actorKind: "system",
-        ampleFileAgentAttachments: [],
-        automationSource: { automationId: context.automationId, title: context.title },
-      });
-      const settled = await waitForSettledRequest(state, scope.id, conversation.id, taskId, context.signal);
-      return {
-        conversationId: conversation.id,
-        turnTaskId: taskId,
-        outcome: settled.status,
-        result: await completedRequestEnvelope(state, taskId),
-        ...(settled.error !== undefined ? { error: settled.error } : {}),
-      };
+      const client = await getClient(state, scope.id, scope.rootPath, conversation.id);
+      if (step.model) await client.setModel(step.model.provider, step.model.id);
+      const placed = watchAutomationFileToolWrites(client);
+      try {
+        const { taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversation.id, {
+          content: message,
+          contextPaths: [],
+          actorKind: "system",
+          ampleFileAgentAttachments: [],
+          automationSource: { automationId: context.automationId, title: context.title },
+        });
+        context.turnAccepted(taskId);
+        const settled = await waitForSettledRequest(state, scope.id, conversation.id, taskId, context.signal);
+        const result = await completedRequestEnvelope(state, taskId);
+        const placedFileIds = await placed.settle();
+        return {
+          conversationId: conversation.id,
+          turnTaskId: taskId,
+          outcome: settled.status,
+          result,
+          ...(settled.error !== undefined ? { error: settled.error } : {}),
+          ...(placedFileIds.length ? { placedFileIds } : {}),
+        };
+      } finally {
+        placed.stop();
+      }
     },
     async modelProblem(model, scope) {
       const root = "connectedFolder" in scope ? (await getConnectedFolder(scope.connectedFolder)).connectedFolderRoot : ampleFileAgentScopeForRoutes(state).rootPath;
@@ -148,11 +166,13 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
             label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
           });
           const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
+          const placedFileIds = await ampleFileAutomationPlacedFileIds(copied.map((path) => resolveConnectedFolderPath(to.connectedFolderRoot, path))).catch(() => []);
           return {
             ...(safety ? { restorePointId: safety.checkpointId } : {}),
             copiedPaths: copied,
             fileCount: measured.fileCount,
             totalBytes: measured.totalBytes,
+            ...(placedFileIds.length ? { placedFileIds } : {}),
           };
         } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
       });
@@ -171,6 +191,23 @@ export function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomat
         skippedFilePaths: checkpoint.skippedFiles.map((file) => file.path),
       };
     },
+  };
+}
+
+/**
+ * Records, as each of Pi's own write and edit calls in a hop's turn finishes,
+ * the device and inode of the file it touched: the run's own files
+ * (docs/automations.md). Taken at once, so a later rename still matches.
+ */
+export function watchAutomationFileToolWrites(client: PiConversationClient): { settle(): Promise<string[]>; stop(): void } {
+  const pending: Array<Promise<string[]>> = [];
+  const listener = (event: PiFileToolWrite) => {
+    pending.push(ampleFileAutomationPlacedFileIds([event.path]).catch(() => []));
+  };
+  client.on("file-tool-wrote", listener);
+  return {
+    settle: async () => [...new Set((await Promise.all(pending)).flat())],
+    stop: () => { client.off("file-tool-wrote", listener); },
   };
 }
 

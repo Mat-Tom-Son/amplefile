@@ -9,7 +9,9 @@ import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
 import {
   observeAmpleFileAutomationFiles,
+  ampleFileAutomationArrivedPaths,
   ampleFileAutomationChangedPaths,
+  ampleFileAutomationPlacedFileIds,
   AmpleFileAutomationFileWatch,
   type AmpleFileAutomationFileSnapshot,
 } from "../src/local/automations/automation-file-observer.js";
@@ -153,29 +155,28 @@ test("on disk, a last-opened date, a mode change, a rename, and a removal start 
 test("after automation runs, only new files that no run placed are owed one follow-up; edits, renames, and metadata are absorbed", () => {
   const watch = new AmpleFileAutomationFileWatch();
   const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
-  assert.equal(watch.observe(look({ "Drafts/edited.md": "1:10:5:100:100", "Drafts/raw.md": "1:11:5:100:100", "Drafts/opened.md": "1:12:5:100:100" }), 0, draftsTrigger), null);
+  assert.equal(watch.observe(look({ "Drafts/edited.md": "1:10:5:100:100", "Drafts/raw.md": "1:11:5:100:100", "Drafts/opened.md": "1:12:5:100:100", "Drafts/saved over.md": "1:16:5:100:100" }), 0, draftsTrigger), null);
   watch.pauseForRun();
   assert.equal(watch.view().state, "paused");
-  watch.resumeAfterRuns(["Drafts/created-by-act.md", "Drafts/copied-folder"], false);
+  // What the runs placed, by device and inode: an act's file, a copied
+  // folder's files, and a file Pi's write tool made then renamed by a shell.
+  watch.resumeAfterRuns(["1:13", "1:14", "1:17"], false);
   assert.equal(watch.lookDueAfterRuns, true);
-  assert.equal(watch.observe(look({
+  const after = look({
     "Drafts/edited.md": "1:10:9:200:200",
     "Drafts/filed name.md": "1:11:5:100:300",
     "Drafts/opened.md": "1:12:5:100:400",
+    // `sed -i` or a safe-save: a new file in the old one's place is an edit.
+    "Drafts/saved over.md": "1:18:7:300:300",
     "Drafts/created-by-act.md": "1:13:5:100:100",
     "Drafts/copied-folder/one.md": "1:14:5:100:100",
+    "Drafts/Written Then Renamed.md": "1:17:5:100:500",
     "Drafts/arrived.md": "1:15:5:100:100",
-  }), 10_000, draftsTrigger), null, "the first look after the runs compares and waits for the debounce");
+  });
+  assert.equal(watch.observe(after, 10_000, draftsTrigger), null, "the first look after the runs compares and waits for the debounce");
   assert.equal(watch.lookDueAfterRuns, false);
   assert.deepEqual(watch.view().followingUp, { count: 1 });
-  const fired = watch.observe(look({
-    "Drafts/edited.md": "1:10:9:200:200",
-    "Drafts/filed name.md": "1:11:5:100:300",
-    "Drafts/opened.md": "1:12:5:100:400",
-    "Drafts/created-by-act.md": "1:13:5:100:100",
-    "Drafts/copied-folder/one.md": "1:14:5:100:100",
-    "Drafts/arrived.md": "1:15:5:100:100",
-  }), 12_000, draftsTrigger);
+  const fired = watch.observe(after, 12_000, draftsTrigger);
   assert.deepEqual(fired, { changedCount: 1, changedPaths: ["Drafts/arrived.md"], followUp: { count: 1 } });
   assert.equal(watch.view().followingUp, undefined);
 });
@@ -200,4 +201,53 @@ test("a follow-up run's pause, a gap, or a watch with no look before the runs ow
   assert.equal(unseen.lookDueAfterRuns, false);
   assert.equal(unseen.observe(arrived, 10_000, draftsTrigger), null);
   assert.equal(unseen.observe(arrived, 12_000, draftsTrigger), null);
+});
+
+test("on disk, a file saved over by a new file at the same path is an edit, never an arrival", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "amplefile-observer-replace-"));
+  configureAmpleFileStateRoot(join(dir, "state"));
+  t.after(async () => { configureAmpleFileStateRoot(undefined); await rm(dir, { recursive: true, force: true }); });
+  const root = join(dir, "connected-folder");
+  await mkdir(join(root, "Drafts"), { recursive: true });
+  const connectedFolder = await registerLinkedConnectedFolder(root);
+  await writeFile(join(root, "Drafts/notes.md"), "before");
+  await writeFile(join(root, "Drafts/caption.md"), "before");
+  const trigger: AmpleFileAutomationFilesChangedTrigger = { ...draftsTrigger, connectedFolder: connectedFolder.id };
+  const before = await observeAmpleFileAutomationFiles(trigger);
+  const inode = async (path: string) => (await lstat(join(root, path), { bigint: true })).ino;
+  const notesInode = await inode("Drafts/notes.md");
+  const captionInode = await inode("Drafts/caption.md");
+
+  // A safe-save: write a temporary file beside it and rename it over.
+  await writeFile(join(root, "Drafts/.notes.md.tmp"), "after, longer");
+  await rename(join(root, "Drafts/.notes.md.tmp"), join(root, "Drafts/notes.md"));
+  // And, on a Mac, BSD sed's in-place edit, which does the same.
+  if (process.platform === "darwin") await promisify(execFile)("sed", ["-i", "", "s/before/after/", join(root, "Drafts/caption.md")]);
+  else {
+    await writeFile(join(root, "Drafts/.caption.md.tmp"), "after");
+    await rename(join(root, "Drafts/.caption.md.tmp"), join(root, "Drafts/caption.md"));
+  }
+  assert.notEqual(await inode("Drafts/notes.md"), notesInode, "the save made a new file");
+  assert.notEqual(await inode("Drafts/caption.md"), captionInode, "the in-place edit made a new file");
+  await writeFile(join(root, "Drafts/new.md"), "new");
+
+  const after = await observeAmpleFileAutomationFiles(trigger);
+  assert.deepEqual(ampleFileAutomationChangedPaths(before, after), ["Drafts/caption.md", "Drafts/new.md", "Drafts/notes.md"], "the edits still count as live changes");
+  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, new Set()), ["Drafts/new.md"]);
+});
+
+test("placed-file ids are the device and inode of each file, inside copied folders too, never through a link", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "amplefile-observer-placed-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, "batch", "inner"), { recursive: true });
+  await writeFile(join(dir, "one.md"), "1");
+  await writeFile(join(dir, "batch", "two.md"), "2");
+  await writeFile(join(dir, "batch", "inner", "three.md"), "3");
+  await symlink(join(dir, "one.md"), join(dir, "batch", "link.md"));
+  const id = async (path: string) => {
+    const info = await lstat(join(dir, path), { bigint: true });
+    return `${info.dev}:${info.ino}`;
+  };
+  const ids = await ampleFileAutomationPlacedFileIds([join(dir, "one.md"), join(dir, "batch"), join(dir, "missing.md")]);
+  assert.deepEqual(ids.sort(), [await id("one.md"), await id("batch/two.md"), await id("batch/inner/three.md")].sort());
 });

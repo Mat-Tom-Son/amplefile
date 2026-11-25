@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -1286,5 +1286,29 @@ test("a reconnect during turn reservation waits for accepted-message persistence
   } finally {
     releaseAcceptance?.(); controller.abort(); await reader?.cancel().catch(() => undefined); reader?.releaseLock();
     await sending; h.releaseAll(); await api.close();
+  }
+});
+
+test("a handoff's copies are reported to the automation executor as the calling Chat's act", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: parentFolder } = await api.actFacade.createConnectedFolder({ name: "Handoff caller" });
+    const { connectedFolder: childFolder } = await api.actFacade.createConnectedFolder({ name: "Handoff receiver" });
+    h.held.add(parentFolder.id); h.held.add(childFolder.id);
+    await writeFile(join(parentFolder.connectedFolderRoot, "brief.md"), "# Brief\n");
+    const asked: Array<{ connectedFolderId?: string; parentTaskId?: string }> = [];
+    const placed: Array<{ connectedFolderId?: string; fileIds: string[] }> = [];
+    api.automations.countsAsRunWork = (act) => { asked.push({ ...act }); return true; };
+    api.automations.notePlacedFiles = (act) => { placed.push({ connectedFolderId: act.connectedFolderId, fileIds: [...act.fileIds] }); };
+    const parent = await api.actFacade.sendMessage({ connectedFolder: parentFolder.id, newConversation: true, content: "/hold" });
+    const child = await api.actFacade.chatHandoff({ connectedFolder: parentFolder.id, taskId: parent.taskId, toConnectedFolder: childFolder.id, message: "/hold", files: ["brief.md"] });
+    assert.deepEqual(child.copied, ["brief.md"]);
+    const info = await lstat(join(childFolder.connectedFolderRoot, "brief.md"), { bigint: true });
+    assert.deepEqual(asked, [{ connectedFolderId: parentFolder.id }], "the handoff is the caller's act, in the caller's Connected Folder");
+    assert.deepEqual(placed, [{ connectedFolderId: parentFolder.id, fileIds: [`${info.dev}:${info.ino}`] }]);
+  } finally {
+    h.releaseAll();
+    await api.close();
   }
 });

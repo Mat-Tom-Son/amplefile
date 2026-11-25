@@ -106,6 +106,12 @@ class FakeFolder {
     this.files.delete(path);
   }
 
+  /** The device and inode AmpleFile records for a file a run placed. */
+  id(path: string): string {
+    const file = this.files.get(path)!;
+    return `${file.dev}:${file.ino}`;
+  }
+
   /** A rename keeps the file: device, inode, size, and modification time; only the change time moves. */
   rename(from: string, to: string): void {
     const file = this.files.get(from)!;
@@ -136,13 +142,18 @@ class FakeFolder {
 
 class FakePorts implements AmpleFileAutomationHopPorts {
   readonly messages: Array<{ automationId: string; message: string }> = [];
-  /** Runs inside the chat hop, before it settles; a test can edit the folder here. */
-  onChat: (context: AmpleFileAutomationHopContext) => Promise<void> | void = () => undefined;
+  /**
+   * Runs inside the chat hop, before it settles; a test can edit the folder
+   * here, and return the device and inode of files the turn's own write tool
+   * placed.
+   */
+  onChat: (context: AmpleFileAutomationHopContext) => Promise<string[] | void> | string[] | void = () => undefined;
 
   async chat(_step: AmpleFileAutomationChatStep, message: string, context: AmpleFileAutomationHopContext): Promise<AmpleFileAutomationChatHopResult> {
     this.messages.push({ automationId: context.automationId, message });
-    await this.onChat(context);
+    const placed = await this.onChat(context);
     return {
+      ...(placed?.length ? { placedFileIds: placed } : {}),
       conversationId: `conversation-${context.runId}`,
       turnTaskId: `turn-${context.runId}`,
       outcome: context.signal.aborted ? "aborted" : "succeeded",
@@ -641,7 +652,10 @@ test("a run that starts before the first look still leaves the catch-up owed, wi
     steps: [{ id: "write", kind: "chat", connectedFolder: connectedFolderA, message: "Put a chart in Screenshots." }],
   });
   harness.ports.onChat = (context) => {
-    if (context.automationId === "automation-other-writer") harness.folder.write("Screenshots/chart-from-another-run.png");
+    if (context.automationId !== "automation-other-writer") return;
+    // Pi's write tool: the step reports the file as its own.
+    harness.folder.write("Screenshots/chart-from-another-run.png");
+    return [harness.folder.id("Screenshots/chart-from-another-run.png")];
   };
 
   harness.quit();

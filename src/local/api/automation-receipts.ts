@@ -257,6 +257,7 @@ function projectAutomationReceiptCause(value: unknown): unknown {
   if (cause.kind === "files-changed" && typeof cause.snapshotDigest === "string" && /^[a-f0-9]{64}$/.test(cause.snapshotDigest) && Number.isSafeInteger(cause.changedCount) && (cause.changedCount as number) > 0 && (cause.changedCount as number) <= 2 * ampleFileAutomationFileObserverBounds.maxFiles && automationReceiptText(cause.connectedFolderId)) {
     const changedPaths = automationReceiptTextList(cause.changedPaths);
     const catchUp = automationReceiptCatchUp(cause.catchUp, cause.changedCount as number);
+    const followUp = automationReceiptFollowUp(cause.followUp, cause.changedCount as number);
     return {
       kind: cause.kind,
       connectedFolderId: automationReceiptText(cause.connectedFolderId),
@@ -264,6 +265,7 @@ function projectAutomationReceiptCause(value: unknown): unknown {
       changedCount: cause.changedCount,
       ...(changedPaths?.length ? { changedPaths } : {}),
       ...(catchUp ? { catchUp } : {}),
+      ...(followUp ? { followUp } : {}),
     };
   }
   if (cause.kind === "run-now") {
@@ -299,6 +301,14 @@ export function automationReceiptCatchUp(value: unknown, changedCount: number): 
   if (typeof reason !== "string" || !(automationCatchUpReasons as readonly string[]).includes(reason)) return undefined;
   if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > changedCount) return undefined;
   return { reason: reason as AutomationCatchUpReason, count: count as number };
+}
+
+/** A recorded follow-up, or undefined when the field is absent or not the closed shape. */
+export function automationReceiptFollowUp(value: unknown, changedCount: number): { count: number } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const { count } = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > changedCount) return undefined;
+  return { count: count as number };
 }
 
 function automationReceiptTextList(value: unknown): string[] | undefined {

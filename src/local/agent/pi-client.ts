@@ -8,6 +8,7 @@ import { currentTurnEnvironment, describeTurnEnvironment, type PiTurnEnvironment
 import { promptTokensOf } from "./usage-tokens.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import {
@@ -304,6 +305,8 @@ export class PiConversationClient extends EventEmitter {
   private thinkingTrailSequence = 0;
   private lastToolEventKey = "";
   private nativeEditPaths = new Map<string, string>();
+  /** Absolute targets of Pi's built-in write and edit calls still running, by tool call. */
+  private fileToolTargets = new Map<string, string>();
   private turnEditDiffBytes = 0;
   /** In-flight bounded inference calls; `stop()` aborts them so a runtime rebuild interrupts them honestly. */
   private readonly boundedCalls = new Set<AbortController>();
@@ -1269,7 +1272,18 @@ export class PiConversationClient extends EventEmitter {
       const path = localEditPath(this.connectedFolderRoot, raw.args?.path);
       if (path) this.nativeEditPaths.set(toolCallId, path);
     }
+    if (raw.type === "tool_execution_start" && (event.toolName === "write" || event.toolName === "edit")
+      && this.runtimeHost?.session.getAllTools().some((tool) => tool.name === event.toolName && tool.sourceInfo.source === "builtin")) {
+      const target = fileToolTarget(this.connectedFolderRoot, raw.args?.path);
+      if (target) this.fileToolTargets.set(toolCallId, target);
+    }
     if (raw.type === "tool_execution_end") {
+      // A file Pi's own write or edit tool touched, so an Automation run can
+      // tell it apart from files that arrived from elsewhere
+      // (docs/automations.md). Only the path leaves; never the content.
+      const target = this.fileToolTargets.get(toolCallId);
+      this.fileToolTargets.delete(toolCallId);
+      if (target && !raw.isError) this.emit("file-tool-wrote", { path: target } satisfies PiFileToolWrite);
       const path = this.nativeEditPaths.get(toolCallId);
       this.nativeEditPaths.delete(toolCallId);
       if (!raw.isError && event.toolName === "edit" && path && localEditPath(this.connectedFolderRoot, path) === path) {
@@ -1641,6 +1655,7 @@ export class PiConversationClient extends EventEmitter {
     this.thinkingTrailSequence = 0;
     this.lastToolEventKey = "";
     this.nativeEditPaths.clear();
+    this.fileToolTargets.clear();
     this.turnEditDiffBytes = 0;
   }
 
@@ -2074,6 +2089,20 @@ function lastAssistantText(messages: any[]): string {
     if (text.trim() && !assistantError(message)) return text;
   }
   return "";
+}
+
+/** A file Pi's built-in write or edit tool finished touching: its absolute path. */
+export interface PiFileToolWrite { path: string }
+
+/**
+ * Where Pi's write and edit tools put a path: an `@` prefix dropped, `~`
+ * expanded, and the rest resolved against the session folder.
+ */
+function fileToolTarget(cwd: string, value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim() || value.length > 4_096 || /[\u0000-\u001f\u007f]/u.test(value)) return undefined;
+  const path = value.trim().replace(/^@/, "");
+  if (path === "~" || path.startsWith("~/")) return resolve(homedir(), path.slice(2));
+  return resolve(cwd, path);
 }
 
 function toolEvent(raw: any): Omit<PiChatEvent, "conversationId" | "raw"> | null {
