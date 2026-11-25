@@ -452,8 +452,8 @@ test("the act facade drives file and search families with ledger safety rules", 
     const facade = api.actFacade;
     const { connectedFolder } = await facade.createConnectedFolder({ name: "Files Connected Folder" });
 
-    // Creation runs the desktop create internals: additive, name-collision
-    // refused, and undone by files delete rather than a restore point.
+    // Creation runs the window's New Folder and New File: additive,
+    // name-collision refused, and undone by its restore point or files delete.
     const folder = await facade.filesMkdir({ connectedFolder: connectedFolder.id, path: "notes" });
     assert.equal(folder.path, "notes");
     assert.equal(folder.kind, "folder");
