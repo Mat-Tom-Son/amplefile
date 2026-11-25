@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import { outsideAgentSkill } from "../src/shared/outside-agent-skill.js";
 import {
   AMPLEFILE_CLI_ACT_READ_COMMANDS,
   AmpleFileCliActReceipts,
+  ampleFileCliHelp,
   ampleFileCliActRunsOutsideQueue,
   createAmpleFileCliActRequest,
   executeAmpleFileCliActRequest,
@@ -220,6 +222,44 @@ test("receipts show renders a person's view with the receipt's identifiers", asy
   assert.equal(heading, `Request ${id} — ok`);
   assert.match(summary ?? "", /^files delete ran and succeeded at /);
   assert.equal(facts, "Connected Folder connected-folder-1; restore point checkpoint-9; undo: recently-deleted-entry entry-1; recently-deleted entry-1");
+});
+
+test("a caller's own id is refused again only as far back as the journal holds it, and the lookup says how far", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-receipts-bound-"));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  const start = Date.parse("2026-07-31T12:00:00.000Z");
+  let current = start;
+  const receipts = new AmpleFileCliActReceipts({ stateRoot: sandbox, maxBytes: 256, now: () => new Date(current) });
+  const id = randomUUID();
+  await receipts.append({ requestId: id, command: "files.rename", outcome: "accepted", surface: "cli" });
+  await receipts.append({ requestId: id, command: "files.rename", outcome: "ok", surface: "cli" });
+  assert.equal(await receipts.hasAccepted(id), true);
+  // Two rotations, each once the live file's oldest entry is past the
+  // freshness window, drop the generation that held the id.
+  for (const step of [10, 20]) {
+    current = start + step * 60 * 1000;
+    for (let index = 0; index < 4; index += 1) {
+      await receipts.append({ requestId: randomUUID(), command: "files.add", outcome: "ok", detail: "x".repeat(64) });
+    }
+  }
+  assert.equal(await receipts.hasAccepted(id), false, "a retry under this id would run again");
+  const found = await receipts.lookup(id);
+  assert.equal(found.accepted, null);
+  assert.ok(found.journalSince && Date.parse(found.journalSince) > start, "the lookup says the journal no longer reaches the id");
+});
+
+test("every promise that a retry never runs twice says how far back it holds", async () => {
+  const source = (path: string) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+  assert.match(outsideAgentSkill(), /never runs twice while the receipt journal still holds that id/);
+  const instructions = await source("src/local/amplefile-agent-instructions.ts");
+  assert.match(instructions, /it never runs twice while the receipt journal still holds that id/);
+  assert.match(instructions, /it is safe while the journal still holds that id/);
+  assert.match(ampleFileCliHelp("AmpleFile", "receipts"), /That holds as far back as the\nreceipt journal still holds the id/);
+  assert.match(await source("SECURITY.md"), /it is refused only while the journals still hold that id's `accepted` line/);
+  assert.match(await source("docs/act-ledger.md"), /it is refused only while the\n   journals still hold the id's `accepted` line/);
+  const guide = await source("docs/amplefile-agent-and-cli.md");
+  assert.match(guide, /A retry under an id older than that runs again\./);
+  assert.match(guide, /never run twice, for\n  as long as the journals still hold the id's `accepted` line/);
 });
 
 function options(

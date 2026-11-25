@@ -112,6 +112,10 @@ record only per-verb additions.
    unreadable file always, an unreadable line until the freshness window
    and clock-skew allowance have passed since the line written after it.
    Journal rotation holds entries at least as long as the freshness window.
+   That bounds replays of one request file. A retry under a caller-chosen
+   `--request-id` is a new request file, so it is refused only while the
+   journals still hold the id's `accepted` line (`journalSince` in
+   `receipts show`); past that, it runs again.
 
 Act-protocol conventions: the versioned act envelope
 (`src/local/cli/act-protocol.ts`), the per-launch act token, an optional

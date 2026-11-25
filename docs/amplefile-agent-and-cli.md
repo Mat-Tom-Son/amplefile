@@ -508,7 +508,11 @@ time a caller that comes back under the id is handed the answer as it was,
 as long as the id ran. An answer for a try that never ran (`rejected`, or
 refused before it was journaled) is dropped instead, and the retry runs.
 Once the answer is gone, the at-most-once journal refuses the id and names
-the command and how it ended. Every new command needs a new id. `chat wait` and `agent wait` refuse
+the command and how it ended. That refusal reaches as far back as the
+journals still hold the id's `accepted` line: at least the five-minute
+freshness window, and in practice the last 8 to 16 MB of act receipts, which
+`journalSince` reports. A retry under an id older than that runs again.
+Every new command needs a new id. `chat wait` and `agent wait` refuse
 `--request-id`, because each of their polls is a read of its own. When the
 shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
 the request id with the `receipts show` command that answers for it.
@@ -944,12 +948,18 @@ that is honest for a personal, local product:
   its recorded response, and after the shim cleans up, the journal's
   `accepted` records refuse a duplicated id outright. The broker refuses
   requests older than its freshness window, and journal rotation holds
-  entries at least that long, so the two compose into a durable at-most-once
-  guarantee. A caller may choose the id with `--request-id`; the host runs a
-  request only under the id its argv names, so a retry under that id is
-  answered or refused, never run twice. The host reads the journal once, keeps the accepted ids in
-  memory, cuts an unfinished final line at startup, and refuses acts while
-  an unreadable line could still name a request the broker would accept.
+  entries at least that long, so for one request file the two compose into a
+  durable at-most-once guarantee. The host reads the journal once, keeps the
+  accepted ids in memory, cuts an unfinished final line at startup, and
+  refuses acts while an unreadable line could still name a request file the
+  broker would accept. A caller may choose the id with `--request-id`, and
+  the host runs a request only under the id its argv names. A retry under
+  that id is a new request file with a new creation time, so the freshness
+  window no longer bounds it: it is answered or refused, never run twice, for
+  as long as the journals still hold the id's `accepted` line, and an id
+  whose line has rotated out, or sits in an unreadable line past that line's
+  window, runs again. `receipts show` reports how far back the journals
+  reach as `journalSince`.
 - **Explicit scope.** Every act command names its Connected Folder; writes
   never resolve from the working directory. Chat commands also name their
   conversation or task.
