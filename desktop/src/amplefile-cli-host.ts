@@ -89,6 +89,13 @@ export class AmpleFileDesktopCliHost {
     // Unread answers an earlier run of the app left behind go now, once they
     // are past the age a live command could still be about to read them.
     await this.broker.cleanup({ answersOlderThanMs: this.#unreadAnswerMaxAgeMs });
+    // An answer still younger than that at start (a quick restart, such as
+    // an update's) goes once it reaches that age in this run, not at some
+    // later start.
+    const later = setTimeout(() => {
+      void this.broker.cleanup({ answersOlderThanMs: this.#unreadAnswerMaxAgeMs }).catch(() => undefined);
+    }, this.#unreadAnswerMaxAgeMs + 1_000);
+    later.unref?.();
   }
 
   processRequest(requestId: string): Promise<void> {

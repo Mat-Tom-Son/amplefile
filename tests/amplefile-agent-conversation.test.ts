@@ -148,6 +148,7 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     // command that started it.
     assert.match(ampleFileAgentContext, /`automations run` returns the run's id as soon as the run starts and never waits for it/);
     assert.match(ampleFileAgentContext, /automations status --automation <id> --run <run-id> --json/);
+    assert.match(ampleFileAgentContext, /when another run of that automation is still going, it says it started nothing/);
     assert.match(ampleFileAgentContext, /automations wait --automation <id> --run <run-id> --json/);
     assert.match(ampleFileAgentContext, /automations sit above Connected Folders and take no `--connected-folder`/);
     assert.match(ampleFileAgentContext, /Up to 64 automation runs execute at once/);

@@ -916,11 +916,10 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
 4. The shim returns that output and removes its request and response files.
-   When a command is stopped before it reads its response, the app that
-   wrote the response removes it once it is five minutes old, if that app is
-   still running then, and any later start of AmpleFile removes responses
-   older than that. The broker also removes stale bounded files during
-   initialization.
+   When a command is stopped before it reads its response, AmpleFile removes
+   the response once it is five minutes old, if it is running then, whether
+   or not it has restarted in between, or else when it next starts. The
+   broker also removes stale bounded files during initialization.
 
 A CLI-only launch can start the host, process its queue, flush Pi state, and
 exit without showing the window. If the window is already open, the command

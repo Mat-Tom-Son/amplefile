@@ -493,9 +493,19 @@ test("the host removes an answer nobody read once it is old enough, and at start
     await writeFile(leftover, "{}");
     const old = new Date(Date.now() - 1_000);
     await utimes(leftover, old, old);
+    // One still too young at that start (a quick restart) stays only until
+    // it reaches that age in the restarted run.
+    const young = host.broker.requestPaths(randomUUID()).response;
+    await writeFile(young, "{}");
     const restarted = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", unreadAnswerMaxAgeMs: 100 });
     await restarted.initialize();
     assert.equal(await exists(leftover), false);
+    assert.equal(await exists(young), true, "a command could still be about to read it");
+    const youngDeadline = Date.now() + 10_000;
+    while (await exists(young)) {
+      if (Date.now() > youngDeadline) throw new Error("An answer too young at startup was never removed in that run.");
+      await new Promise<void>((resolveTick) => setTimeout(resolveTick, 20));
+    }
   } finally {
     await host?.whenIdle();
     await rm(stateRoot, { recursive: true, force: true });
@@ -506,10 +516,10 @@ test("the privacy and security notes say exactly what becomes of an answer nobod
   const { readFile } = await import("node:fs/promises");
   const read = (path: string) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
   const privacy = await read("PRIVACY.md");
-  assert.match(privacy, /A command stopped before it reads its answer leaves that answer behind: the app that wrote it removes it once it is five minutes old, if that app is still running then, and any later start of AmpleFile removes answers older than that\./);
+  assert.match(privacy, /A command stopped before it reads its answer leaves that answer behind until it is five minutes old: AmpleFile removes it then if it is running, whether or not it has restarted in between, or else when it next starts\./);
   assert.match(privacy, /The shim removes its request and response after completion; for a command stopped before then, see the answer rule above\./);
-  assert.match(await read("SECURITY.md"), /an answer whose command was stopped before reading it is removed once it is five minutes old by the app that wrote it, if still running, or by any later start of AmpleFile; until then it stays on disk under the app profile/);
-  assert.match(await read("docs/amplefile-agent-and-cli.md"), /When a command is stopped before it reads its response, the app that\n   wrote the response removes it once it is five minutes old/);
+  assert.match(await read("SECURITY.md"), /an answer whose command was stopped before reading it is removed once it is five minutes old by whichever run of AmpleFile is open then, or else when AmpleFile next starts; until then it stays on disk under the app profile/);
+  assert.match(await read("docs/amplefile-agent-and-cli.md"), /When a command is stopped before it reads its response, AmpleFile removes\n   the response once it is five minutes old, if it is running then/);
   for (const path of ["PRIVACY.md", "SECURITY.md", "docs/amplefile-agent-and-cli.md"]) {
     assert.doesNotMatch(await read(path), /stays up to five minutes/, `${path} must not promise a removal that a quit can skip`);
   }
