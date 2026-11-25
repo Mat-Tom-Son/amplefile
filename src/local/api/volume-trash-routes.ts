@@ -41,8 +41,9 @@ import {
 } from "../system-trash.js";
 import {
   ejectVolume,
+  listSidebarVolumes,
   listVolumeRecords,
-  listVolumes,
+  mountListedLinuxVolume,
   mountCalls,
   noteVolumesMayHaveChanged,
   subscribeVolumes,
@@ -60,7 +61,7 @@ import type { LocalApiRequest, LocalApiState } from "./state.js";
 export async function handleVolumeAndTrashRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // The drives a system file manager shows; the startup disk is the computer place, not one of them.
   if (method === "GET" && url.pathname === "/api/volumes") {
-    sendJson(res, { volumes: await listVolumes() });
+    sendJson(res, await listSidebarVolumes());
     return true;
   }
   // The list again whenever a drive appears, goes, or is renamed. The first event is the current list.
@@ -86,6 +87,12 @@ export async function handleVolumeAndTrashRoutes({ state, req, res, url, method 
     const body = await readJsonBody<{ volumeId?: unknown }>(state, req);
     if (typeof body.volumeId !== "string" || !body.volumeId) throw badRequest("Choose a drive to eject.");
     sendJson(res, await ejectListedVolume(state, body.volumeId));
+    return true;
+  }
+  if (method === "POST" && url.pathname === "/api/volumes/mount" && process.platform === "linux") {
+    const body = await readJsonBody<{ volumeId?: unknown } | null>(state, req);
+    if (typeof body?.volumeId !== "string" || !/^volume-[a-f0-9]{20}$/.test(body.volumeId)) throw badRequest("Choose a drive to mount.");
+    sendJson(res, await mountListedLinuxVolume(body.volumeId));
     return true;
   }
   // What the system Trash holds; Put Back where the system's records allow it.

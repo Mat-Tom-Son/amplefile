@@ -145,7 +145,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
   const executable = "amplefile";
   const normalizedTopic = topic?.trim().toLocaleLowerCase();
   const header = `${terminalText(productName)} CLI`;
-  if (normalizedTopic === "context") return `${header}\n\nUsage: ${executable} context [--connected-folder <id-or-name>] [--json]\n\nShow the resolved Connected Folder and host context for this working directory.\n`;
+  if (normalizedTopic === "context") return `${header}\n\nUsage: ${executable} context [--connected-folder <id-or-name>] [--json]\n\nShow the resolved Connected Folder and host context for this working directory.\nselectedPath and activeSurface are always null: no command reports what a\nperson is looking at in AmpleFile's windows.\n`;
   if (normalizedTopic === "tasks" || normalizedTopic === "tasks list") return `${header}\n\nUsage: ${executable} tasks list [--connected-folder <id-or-name>] [--json]\n\nList host-managed tasks, optionally for one Connected Folder.\n`;
   if (normalizedTopic === "capabilities" || normalizedTopic === "capabilities list") return `${header}\n\nUsage: ${executable} capabilities list [--connected-folder <id-or-name>] [--json]\n\nList Skills & Extensions, everywhere and for one Connected Folder.\n`;
   if (normalizedTopic === "chat" || normalizedTopic?.startsWith("chat ")) {
@@ -407,7 +407,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "command needs the AmpleFile app running. register never moves, copies,",
       "or renames the folder's files, and unregister removes only the",
       "registration while the folder stays in place. connected-folders delete moves",
-      "a managed Connected Folder to Recently deleted and records a receipt.",
+      "a managed Connected Folder to Recently Deleted and records a receipt.",
       "appearance apply imports a typed proposal file, or changes just the",
       "banner image, icon, or color you name; reset and undo step the",
       "appearance back. worker show reports the connected model choices and",
@@ -430,11 +430,17 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       `       ${executable} files mkdir --connected-folder <id-or-name> --path <folder-in-connected-folder> [--json]`,
       `       ${executable} files create --connected-folder <id-or-name> --path <connected-folder-path> [--json]`,
       "",
-      "Work with files inside one Connected Folder. add copies outside material in,",
-      "and move, rename, and delete take a History restore point first so they",
-      "stay undoable. delete always goes through: whatever History cannot keep",
-      "a copy of moves to Recently deleted instead",
-      `(see '${executable} help recently-deleted'). Needs the AmpleFile app running.`,
+      "Work with files inside one Connected Folder, one item per command. add",
+      "copies outside material in as the window's Copy does: links inside a",
+      "folder stay links, a folder's .amplefile/ is left behind, and a name",
+      "already taken gets \" copy\". move, rename, and delete take a History",
+      "restore point first so they stay undoable. delete is refused while the",
+      "Connected Folder has unfinished work: a running turn (the caller's own",
+      "included), a question waiting on an answer, a background job, or a turn",
+      "still draining after Stop. Once it goes through, whatever History cannot",
+      "keep a copy of moves to Recently Deleted instead",
+      `(see '${executable} help recently-deleted'). A folder outside every`,
+      "Connected Folder has no files commands. Needs the AmpleFile app running.",
       "",
     ].join("\n");
   }
@@ -581,15 +587,15 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       `Usage: ${executable} recently-deleted list [--json]`,
       `       ${executable} recently-deleted restore --entry <id> [--json]`,
       "",
-      "Recently deleted holds what a delete could not leave to History: files",
+      "Recently Deleted holds what a delete could not leave to History: files",
       "and folders History could not keep a copy of, deleted managed",
       "Connected Folders, and removed imported Skills. list shows what is",
       "waiting and when it will be removed (30 days by default; change that in",
-      "Settings → Recently deleted). restore puts an item back where it came",
+      "Settings → Recently Deleted). restore puts an item back where it came",
       "from, renaming it if something else now has that name; a Skill goes back",
       "to its own scope and path, and waits while a Skill of the same name is",
       "installed there. An item that cannot be put back says why in list.",
-      "Nothing empties Recently deleted early. Needs the AmpleFile app running.",
+      "Nothing empties Recently Deleted early. Needs the AmpleFile app running.",
       "",
     ].join("\n");
   }

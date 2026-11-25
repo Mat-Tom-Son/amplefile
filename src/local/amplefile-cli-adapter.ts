@@ -39,6 +39,7 @@ export class AmpleFileCliKernelAdapter implements AmpleFileCliKernel {
     return {
       cwd: actor.cwd,
       connectedFolder: context.connectedFolder ? summarizeConnectedFolder(context.connectedFolder, true) : null,
+      // Always null, kept in the v1 shape (docs/amplefile-agent-and-cli.md, "The read lane").
       selectedPath: null,
       activeSurface: null,
     };

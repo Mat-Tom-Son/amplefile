@@ -22,6 +22,8 @@ test("the skill is a SKILL.md named for the command, with a description", () => 
   assert.equal(outsideAgentSkillName(), cli);
   // Short on purpose: recipes and pointers to help, not a copy of it.
   assert.ok(skill.split("\n").length < 120, "the skill stays short");
+  assert.doesNotMatch(skill, /this Mac/, "the skill is written on Linux too");
+  assert.match(skill, /The commands act on Connected Folders only/);
 });
 
 test("every command the skill cites is one the command line documents", () => {

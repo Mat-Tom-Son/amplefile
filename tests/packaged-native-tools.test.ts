@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { createPackage } from "@electron/asar";
-import { verifyPackagedImageSize, verifyPackagedNativeTools, verifyPackagedPiRecovery, verifyPackagedPiIdentity } from "../scripts/verify-packaged-native-tools.mjs";
+import { verifyPackagedImageSize, verifyPackagedNativeTools, verifyPackagedPiRecovery, verifyPackagedPiIdentity, verifyPackagedReviewedPatches } from "../scripts/verify-packaged-native-tools.mjs";
 
 async function copyReviewedParser(source: string, packageName = "image-size") {
   const manifest = JSON.parse(await readFile(new URL("../patches/included-tools/manifest.json", import.meta.url), "utf8"));
@@ -80,4 +80,21 @@ test("packaged Pi recovery accepts pruned declarations and refuses unpatched or 
     if (state === "reviewed") assert.match(await verifyPackagedPiRecovery(archive), /PASS packaged Pi 1\.6\.0/);
     else await assert.rejects(() => verifyPackagedPiRecovery(archive), /Packaged Pi recovery verification failed/);
   }
+});
+
+test("every platform's package is checked for the reviewed Pi and parser bytes, Linux included", async t => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-packaged-reviewed-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const state of ["reviewed", "unpatched-pi-ai"]) {
+    const source = join(root, state), archive = join(root, `${state}.asar`);
+    await mkdir(source);
+    for (const name of ["image-size", "@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"]) await copyReviewedParser(source, name);
+    if (state === "unpatched-pi-ai") await writeFile(join(source, "node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js"), "export {};\n");
+    await createPackage(source, archive);
+    if (state === "reviewed") assert.equal((await verifyPackagedReviewedPatches(archive)).length, 3);
+    else await assert.rejects(() => verifyPackagedReviewedPatches(archive), /Packaged Pi identity verification failed/);
+  }
+  // The afterPack hook checks them before its Mac-only steps, so a Linux package cannot skip them.
+  const hook = await readFile(new URL("../scripts/sign-computer-helper.cjs", import.meta.url), "utf8");
+  assert.match(hook, /if \(context\.electronPlatformName !== "darwin"\) \{[\s\S]*?verifyPackagedReviewedPatches\(join\(resources, "app\.asar"\)\)[\s\S]*?return;\s*\}/);
 });

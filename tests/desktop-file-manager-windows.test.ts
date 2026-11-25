@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { pageFateOnWindowClose } from "../desktop/src/browser-page-homes.js";
-import { FileManagerWindows, ownerConnectedFolderId, parseWindowLocation } from "../desktop/src/file-manager-windows.js";
+import { FileManagerWindows, ownerConnectedFolderId, parseWindowLocation, shownConnectedFolder } from "../desktop/src/file-manager-windows.js";
 import {
   cascadeBounds,
   maximumRestoredWindows,
@@ -113,6 +113,41 @@ test("a location handed to a window waits for that window's renderer alone, and 
   windows.acknowledgeOpenLocation(one, "t-1");
   assert.equal(windows.entry(one)?.pendingOpenLocation, null);
   assert.equal(windows.handOpenLocation({ id: 42 }, { token: "x", location: { path: "" } }), false);
+});
+
+test("a window whose tab in front is not in a Connected Folder shows none, and a Worker's page goes to one that shows it", () => {
+  const windows = new FileManagerWindows<FakeWindow>();
+  const front = new FakeWindow(1);
+  const back = new FakeWindow(2);
+  const quotes = { id: "space-aaaa", name: "Quotes", connectedFolderRoot: "/q" };
+  const showing = windows.add(back);
+  showing.connectedFolder = quotes;
+  showing.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "" };
+  // The front window was in Quotes and has gone to Downloads: it still names Quotes for Open Recent, but shows none.
+  const away = windows.add(front);
+  away.connectedFolder = quotes;
+  away.location = { place: { kind: "standard", id: "downloads" }, path: "" };
+  assert.equal(shownConnectedFolder(away), null);
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, back, "the window that shows Quotes, not the front one");
+  // The computer place, the Trash, and Recents show no Connected Folder either.
+  away.location = { place: { kind: "standard", id: "computer" }, path: "home" };
+  assert.equal(shownConnectedFolder(away), null);
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "", view: "trash" };
+  assert.equal(shownConnectedFolder(away), null);
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "", view: "recents" };
+  assert.equal(shownConnectedFolder(away), null);
+  showing.location = { place: { kind: "standard", id: "documents" }, path: "" };
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, front, "nobody shows it: the front window");
+  // Back in Quotes, the front window shows it again and comes first.
+  away.location = { place: { kind: "connected-folder", id: "space-aaaa" }, path: "Inbox" };
+  assert.deepEqual(shownConnectedFolder(away), quotes);
+  assert.equal(windows.workerWindow("space-aaaa/conversation-1")?.window, front);
+  // Before a renderer reports where it is, the Connected Folder it named counts.
+  const fresh = windows.add(new FakeWindow(3));
+  fresh.connectedFolder = quotes;
+  assert.deepEqual(shownConnectedFolder(fresh), quotes);
+  assert.deepEqual(parseWindowLocation({ place: { kind: "standard", id: "documents" }, path: "", view: "trash" }), { place: { kind: "standard", id: "documents" }, path: "", view: "trash" });
+  assert.deepEqual(parseWindowLocation({ place: { kind: "standard", id: "documents" }, path: "", view: "other" }), { place: { kind: "standard", id: "documents" }, path: "" });
 });
 
 test("a Worker's window is the one showing its Connected Folder, else the front window", () => {
@@ -383,7 +418,7 @@ test("the renderer keeps the Connected Folder shown, the folder tabs, and the Br
   assert.match(app, /const activeConnectedFolderStorageKey = windowStorageKey\("amplefile\.connected-folder\.active"\);/);
   assert.doesNotMatch(app, /localStorage\.(?:get|set|remove)Item\("amplefile\.connected-folder\.active"/);
   assert.match(view, /const browserPaneStorageKey = windowStorageKey\("amplefile\.file-manager\.browser-pane\.v1"\);/);
-  assert.match(view, /reportWindowLocation\(location\)/, "the window tells the desktop where it is, for New Window");
+  assert.match(view, /reportWindowLocation\(location, activeTab\.view\)/, "the window tells the desktop where it is, for New Window");
   assert.ok(entry.indexOf("startWindowStorage();") < entry.indexOf("<App"), "a new window forgets its slot's leftovers before the app reads them");
 });
 

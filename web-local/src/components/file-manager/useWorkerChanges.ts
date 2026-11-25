@@ -7,9 +7,16 @@ import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-f
 import type { ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
 import type { HistoryRestorePreview } from "../panes/connectedFolderPanes";
 
-/** What a Worker's last reply (or an Automation's run) changed in a Connected Folder, from its "Before turn" restore point. */
+/**
+ * What a Worker's last reply (or an Automation's Chat step) changed in a
+ * Connected Folder: its "Before turn" restore point compared with its "After
+ * turn" one, so nothing changed after the turn is counted.
+ */
 export interface WorkerChanges {
+  /** The turn's "Before turn" restore point. */
   checkpointId: string;
+  /** The turn's "After turn" restore point; absent only in the sample window. */
+  afterCheckpointId?: string;
   createdAt: string;
   added: string[];
   moved: Array<{ from: string; to: string }>;
@@ -39,16 +46,19 @@ export function useWorkerChanges(connectedFolder: ConnectedFolderSummary | null,
     setChanges(null);
     if (!connectedFolderId) return;
     void (async () => {
-      const checkpoints = fixture
-        ? fixture.checkpoints[connectedFolderId] ?? []
+      if (!fixture) {
         // History requests wait their turn: the host turns away a second one while the first runs.
-        : (await queueHistoryRequest(connectedFolderId, () => api<{ checkpoints: ConnectedFolderCheckpoint[] }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/checkpoints?limit=12`)).catch(() => ({ checkpoints: [] as ConnectedFolderCheckpoint[] }))).checkpoints;
-      const turn = checkpoints.find((checkpoint) => turnReasons.has(checkpoint.reason) || checkpoint.label === "Before turn");
+        const body = await queueHistoryRequest(connectedFolderId, () => api<{ changes: WorkerTurnChanges | null }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/worker-changes`)).catch(() => ({ changes: null }));
+        const turn = body.changes;
+        if (cancelled || !turn || dismissed[connectedFolderId] === turn.beforeCheckpointId) return;
+        if (Date.now() - Date.parse(turn.settledAt) > freshForMs) return;
+        const summary = workerChangesFromTurn(turn);
+        if (summary) setChanges(summary);
+        return;
+      }
+      const turn = (fixture.checkpoints[connectedFolderId] ?? []).find((checkpoint) => turnReasons.has(checkpoint.reason) || checkpoint.label === "Before turn");
       if (!turn || dismissed[connectedFolderId] === turn.checkpointId) return;
-      if (!fixture && Date.now() - Date.parse(turn.createdAt) > freshForMs) return;
-      const preview = fixture
-        ? fixture.restorePoints[turn.checkpointId]?.preview ?? null
-        : await queueHistoryRequest(connectedFolderId, () => api<{ preview: HistoryRestorePreview }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/checkpoints/${encodeURIComponent(turn.checkpointId)}/preview`)).then((body) => body.preview).catch(() => null);
+      const preview = fixture.restorePoints[turn.checkpointId]?.preview ?? null;
       if (cancelled || !preview) return;
       const summary = workerChangesFrom(turn, preview);
       if (summary) setChanges(summary);
@@ -64,7 +74,49 @@ export function useWorkerChanges(connectedFolder: ConnectedFolderSummary | null,
     setChanges(null);
   }, [changes, dismissed, connectedFolderId]);
 
-  return useMemo(() => ({ changes, done }), [changes, done]);
+  /** Undo puts back only what the turn changed and is still as it left; the host says what it kept. */
+  const undo = useCallback(async (): Promise<WorkerChangesUndo> => {
+    if (!connectedFolderId || !changes?.afterCheckpointId) throw new Error("There is nothing to undo.");
+    const before = changes.checkpointId;
+    const after = changes.afterCheckpointId;
+    return queueHistoryRequest(connectedFolderId, () => api<WorkerChangesUndo>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/worker-changes/undo`, { method: "POST", body: { beforeCheckpointId: before, afterCheckpointId: after } }));
+  }, [changes, connectedFolderId]);
+
+  return useMemo(() => ({ changes, done, undo }), [changes, done, undo]);
+}
+
+/** What the host says the last Worker turn here changed (src/local/history.ts, `compareConnectedFolderTurnCheckpoints`). */
+export interface WorkerTurnChanges {
+  beforeCheckpointId: string;
+  afterCheckpointId: string;
+  settledAt: string;
+  added: string[];
+  changed: string[];
+  removed: string[];
+  moved: Array<{ fromPath: string; toPath: string }>;
+}
+
+/** The Worker receipt's Undo: its own restore point (for redo), what it put back, and what it kept because it changed again. */
+export interface WorkerChangesUndo {
+  safetyCheckpointId: string;
+  undone: string[];
+  kept: string[];
+}
+
+/** The receipt for one turn: what it added, moved, and changed (a file it removed is listed as changed, as before). */
+export function workerChangesFromTurn(turn: WorkerTurnChanges): WorkerChanges | null {
+  const moved = turn.moved.map((move) => ({ from: move.fromPath, to: move.toPath }));
+  const changed = [...turn.changed, ...turn.removed].sort((a, b) => a.localeCompare(b));
+  if (!turn.added.length && !moved.length && !changed.length) return null;
+  return {
+    checkpointId: turn.beforeCheckpointId,
+    afterCheckpointId: turn.afterCheckpointId,
+    createdAt: turn.settledAt,
+    added: turn.added,
+    moved,
+    changed,
+    paths: new Set([...turn.added, ...moved.map((move) => move.to), ...turn.changed]),
+  };
 }
 
 /** The receipt for one restore point's preview: what is here now that was not, or was elsewhere, or was different. */

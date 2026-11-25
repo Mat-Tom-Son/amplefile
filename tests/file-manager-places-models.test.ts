@@ -69,7 +69,7 @@ test("free space joins the status line as Finder's does, and the drive list is r
   assert.equal(formatCapacity(512), "512 B");
   assert.equal(formatCapacity(3 * 1024 ** 4), "3 TB");
   assert.equal(volumeSpacePath({ kind: "standard", id: "home" }, "Notes"), "/api/volume-space?placeKind=standard&placeId=home&path=Notes");
-  assert.deepEqual(parseVolumesEvent(JSON.stringify({ type: "volumes", volumes: [usb, { id: 4 }] })), [usb]);
+  assert.deepEqual(parseVolumesEvent(JSON.stringify({ type: "volumes", volumes: [usb, { id: 4 }] })), { volumes: [usb], mountable: [] });
   assert.equal(parseVolumesEvent("{"), null);
   assert.equal(parseVolumesEvent(JSON.stringify({ type: "other" })), null);
 });

@@ -233,7 +233,7 @@ confirmation.
 
 | Verb | In the window | Target | Command shape | Receipt adds | Undo | Conflicts |
 |---|---|---|---|---|---|---|
-| Add outside material | Drag in from Finder, ⌘V, a drop on the message box | direct verb | `files add --connected-folder <id> --from <p>… [--to <folder>]` | checkpoint id, copied path count | restore the checkpoint | copy and restore point succeed or fail together |
+| Add outside material | Drag in from Finder, ⌘V, a drop on the message box | direct verb | `files add --connected-folder <id> --from <p>… [--to <folder>]` | checkpoint id, copied path count | restore the checkpoint | copy and restore point succeed or fail together; copies as the window's Copy does (links kept, `.amplefile/` left behind, a taken name gets " copy"); a link given as the source is refused |
 | Move an item | Drag onto a folder row, ⌘X then ⌘V, ⌥⌘V | direct verb | `files move --connected-folder <id> --from <path> --to <folder>` | safety checkpoint id, moved path | restore the safety checkpoint | moving into its own subtree is refused; reserved metadata folders such as `.amplefile/` and `.pi/` are never valid endpoints |
 | Rename an item | Right-click → Rename…, Return | direct verb | `files rename --connected-folder <id> --path <p> --name <n>` | safety checkpoint id, prior name | restore the safety checkpoint or rename back | same path policy |
 | Delete an item | Right-click → Delete, ⌘⌫ | direct verb | `files delete --connected-folder <id> --path <p>` | safety checkpoint id; the Recently Deleted entry id when the checkpoint could not cover every matched file | the safety checkpoint, or `recently-deleted restore --entry <id>` when the receipt names one | never refuses for coverage reasons; same path policy |

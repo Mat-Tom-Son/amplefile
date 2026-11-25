@@ -9,14 +9,18 @@
  *   GET /api/standard-folders/:id/thumbnail?path=…&size=64|128|256[&v=…]
  *   GET /api/connected-folders/:id/folder-size?path=…[&fresh=1]
  *   GET /api/standard-folders/:id/folder-size?path=…[&fresh=1]
+ *   GET /api/{connected-folders|standard-folders}/:id/entry-details?path=… (Linux)
  *
  * See thumbnails.ts and folder-size.ts for what each answers and its bounds.
  */
 
 import type { ServerResponse } from "node:http";
+import { join } from "node:path";
 import { getConnectedFolder, resolveConnectedFolderPath } from "../connected-folder.js";
+import { isAlwaysHiddenConnectedFolderEntry } from "../connected-folder-ignore.js";
 import { FolderSizes } from "../folder-size.js";
-import { accessError, isStandardFolderId, standardFolderPathBase } from "../standard-folders.js";
+import { readLinuxEntryDetails } from "../linux-entry-details.js";
+import { accessError, computerFolderId, isStandardFolderId, standardFolderPathBase, standardFolderRoot } from "../standard-folders.js";
 import { isThumbnailSize, ThumbnailRefusedError, thumbnailServiceFor } from "../thumbnails.js";
 import { badRequest, match, notFound, sendJson } from "./http.js";
 import type { LocalApiRequest } from "./state.js";
@@ -25,11 +29,21 @@ const folderSizes = new FolderSizes();
 
 export async function handleThumbnailRoutes({ req, res, url, method }: LocalApiRequest): Promise<boolean> {
   if (method !== "GET") return false;
-  const found = match(url.pathname, /^\/api\/(connected-folders|standard-folders)\/([^/]+)\/(thumbnail|folder-size)$/);
+  const found = match(url.pathname, /^\/api\/(connected-folders|standard-folders)\/([^/]+)\/(thumbnail|folder-size|entry-details)$/);
   if (!found) return false;
-  const [, placeKind, placeId, route] = found as [string, "connected-folders" | "standard-folders", string, "thumbnail" | "folder-size"];
+  const [, placeKind, placeId, route] = found as [string, "connected-folders" | "standard-folders", string, "thumbnail" | "folder-size" | "entry-details"];
+  if (route === "entry-details" && process.platform !== "linux") return false;
   const relativePath = url.searchParams.get("path") ?? "";
+  if (route === "entry-details" && !relativePath) throw badRequest("Choose an item to inspect.");
   const place = await resolvePlacePath(placeKind, placeId, relativePath, route);
+  if (route === "entry-details") {
+    try {
+      sendJson(res, await readLinuxEntryDetails(place.path));
+    } catch (error) {
+      throw accessErrorFor(placeKind, placeId, error);
+    }
+    return true;
+  }
 
   // The request going away (a tile scrolled out of view, the window moving on) stops the work.
   const controller = new AbortController();
@@ -98,18 +112,25 @@ async function resolvePlacePath(
   placeKind: "connected-folders" | "standard-folders",
   placeId: string,
   relativePath: string,
-  route: "thumbnail" | "folder-size",
+  route: "thumbnail" | "folder-size" | "entry-details",
 ): Promise<{ path: string; connectedFolderRoot?: string }> {
   if (relativePath.includes("\0")) throw badRequest("Path escapes the selected folder.");
+  // Info uses lstat, so it can read the final link's own metadata without following it.
+  const finalLink = route === "entry-details";
   if (placeKind === "connected-folders") {
     const connectedFolder = await getConnectedFolder(placeId);
-    return { path: policy(() => resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, relativePath)), connectedFolderRoot: connectedFolder.connectedFolderRoot };
+    return { path: policy(() => resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, relativePath, { finalLink })), connectedFolderRoot: connectedFolder.connectedFolderRoot };
   }
   if (!isStandardFolderId(placeId)) throw notFound("That standard folder isn’t on this computer.");
+  // The first segment in the computer place is normally the path policy's own root.
+  if (finalLink && placeId === computerFolderId && /^[^/\\]+$/.test(relativePath) && relativePath !== "." && relativePath !== ".."
+    && !isAlwaysHiddenConnectedFolderEntry(relativePath)) {
+    return { path: join(standardFolderRoot(placeId), relativePath) };
+  }
   const base = policy(() => standardFolderPathBase(placeId, relativePath));
   // The computer place's top is the whole disk: no thumbnail, and no size to walk.
   if (!base) throw badRequest(route === "thumbnail" ? "File path is required." : "Choose a folder on the disk.");
-  return { path: policy(() => resolveConnectedFolderPath(base.root, base.path)) };
+  return { path: policy(() => resolveConnectedFolderPath(base.root, base.path, { finalLink })) };
 }
 
 function policy<T>(resolve: () => T): T {
