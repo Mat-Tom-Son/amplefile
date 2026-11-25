@@ -218,12 +218,13 @@ test("the thumbnail cache never revokes a picture a tile still shows", () => {
 
 
 test("a folder size reads plainly, and says when the host's bound stopped it", () => {
-  assert.deepEqual(folderSizeText(size()), { size: "3 GB", items: "1,234 items", note: null });
+  assert.deepEqual(folderSizeText(size()), { size: "3 GB", items: "1,234 items", detail: null });
   const partial = folderSizeText(size({ stoppedBy: "time-limit", complete: false }));
   assert.equal(partial.size, "At least 3 GB");
   assert.equal(partial.items, "More than 1,234 items");
-  assert.match(partial.note!, /stopped after 10 seconds/);
-  assert.match(folderSizeText(size({ unreadable: 2, complete: false })).note!, /Some items couldn’t be read/);
+  assert.match(partial.detail!, /stopped after 10 seconds, so the size is a minimum/);
+  assert.match(folderSizeText(size({ unreadable: 2, complete: false })).detail!, /Some items couldn’t be read/);
+  assert.match(folderSizeText(size({ otherVolumes: 1 })).detail!, /Another drive attached inside this folder isn’t counted/);
   assert.equal(folderSizeColumnText(size({ stoppedBy: "item-limit" })), "≥ 3 GB");
   assert.equal(canMeasureFolder({ kind: "standard", id: "computer" }, ""), false, "the disk itself is never walked");
   assert.equal(canMeasureFolder({ kind: "standard", id: "computer" }, "srv"), true);

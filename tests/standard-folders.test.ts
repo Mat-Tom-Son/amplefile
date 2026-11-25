@@ -180,7 +180,7 @@ test("a standard folder's native menu offers Move to Trash and needs exactly one
   });
   assert.equal(request.standardFolderId, "downloads");
   assert.deepEqual(nativeFileMenuItems(request).filter((item) => item.type === "item").map((item) => item.type === "item" ? item.label : ""), [
-    "Open", "Open With", "Show in Finder", "Copy File Path", "Rename…", "Move to Trash",
+    "Open", "Open With", "Show in Finder", "Copy File Path", "Get Info", "Rename…", "Move to Trash",
   ]);
   const several = parseNativeFileMenuRequest({
     connectedFolderId: "",

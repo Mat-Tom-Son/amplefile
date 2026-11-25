@@ -7,8 +7,9 @@ import { placeApiBase, placeKey, type FileManagerPlace } from "./file-manager-pl
 /**
  * Folder sizes in the file manager window (docs/product-model.md, "The file
  * manager window"). Info asks the host to measure the folder it describes
- * (`GET …/folder-size`), shows "Calculating…" meanwhile, and says plainly when
- * the host's bound stopped the count early. A size measured in this session
+ * (`GET …/folder-size`), shows "Calculating…" meanwhile, and shows "At least"
+ * when the host's bound stopped the count early, with the reason on the Size
+ * row itself for anyone who points at it. A size measured in this session
  * also fills the list's Size column for that folder; nothing measures the
  * folders a list merely shows.
  */
@@ -36,19 +37,23 @@ export type FolderSizeState =
   | { status: "done"; size: FolderSize }
   | { status: "error"; message: string };
 
-/** What Info and the Size column say about a measurement. */
-export function folderSizeText(size: FolderSize): { size: string; items: string; note: string | null } {
+/**
+ * What Info says about a measurement. `detail` is why the figure is a minimum
+ * or leaves something out; Info shows it when the Size row is pointed at, never
+ * as text of its own.
+ */
+export function folderSizeText(size: FolderSize): { size: string; items: string; detail: string | null } {
   const partial = size.stoppedBy !== null;
   const items = size.items === 1 ? "1 item" : `${size.items.toLocaleString()} items`;
   const notes: string[] = [];
-  if (size.stoppedBy === "time-limit") notes.push("Counting stopped after 10 seconds.");
-  if (size.stoppedBy === "item-limit") notes.push(`Counting stopped after ${size.items.toLocaleString()} items.`);
-  if (size.unreadable > 0) notes.push("Some items couldn’t be read.");
-  if (size.otherVolumes > 0) notes.push(size.otherVolumes === 1 ? "A drive mounted inside isn’t counted." : "Drives mounted inside aren’t counted.");
+  if (size.stoppedBy === "time-limit") notes.push("This folder is large: counting stopped after 10 seconds, so the size is a minimum.");
+  if (size.stoppedBy === "item-limit") notes.push(`This folder is large: counting stopped after ${size.items.toLocaleString()} items, so the size is a minimum.`);
+  if (size.unreadable > 0) notes.push("Some items couldn’t be read and aren’t counted.");
+  if (size.otherVolumes > 0) notes.push(size.otherVolumes === 1 ? "Another drive attached inside this folder isn’t counted." : "Other drives attached inside this folder aren’t counted.");
   return {
     size: partial ? `At least ${formatCapacity(size.bytes)}` : formatCapacity(size.bytes),
     items: partial ? `More than ${items}` : items,
-    note: notes.length ? notes.join(" ") : null,
+    detail: notes.length ? notes.join(" ") : null,
   };
 }
 
