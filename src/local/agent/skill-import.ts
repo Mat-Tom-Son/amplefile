@@ -25,34 +25,28 @@ export function piSkillBundleContentDigest(bytes: Uint8Array): string {
 }
 
 /**
- * Digest-verified import for the prepared `capability.skills.import` act
- * (docs/act-ledger.md). The prepared act pins the exact bytes
- * that were enumerated when it was prepared; this path refuses changed
- * content before any archive parsing, so the execution can only ever run the
- * bytes the receipt names.
+ * Why these bytes are not the bundle a prepared act pinned (docs/act-ledger.md),
+ * or null when they are. Digest equality is the whole identity check: the
+ * pinned digest names the exact bytes that were inspected.
  */
-export async function importPiSkillBundleVerified(
-  connectedFolderRoot: string,
-  input: {
-    fileName: string;
-    bytes: Uint8Array;
-    scope?: "user" | "project";
-    expectedContentDigest: string;
-  },
-  runtimeProvider?: PiRuntimeProvider,
-): Promise<PiSkillBundleImportResult> {
-  const observed = piSkillBundleContentDigest(input.bytes);
-  if (observed !== input.expectedContentDigest) {
-    throw new Error("The skill bundle changed after it was reviewed. Restage the import from the current content.");
-  }
-  const { expectedContentDigest: _expected, ...importInput } = input;
-  return importPiSkillBundle(connectedFolderRoot, importInput, runtimeProvider);
+export function piSkillBundleDigestMismatch(bytes: Uint8Array, expectedContentDigest: string): string | null {
+  return piSkillBundleContentDigest(bytes) === expectedContentDigest
+    ? null
+    : "The skill bundle's content no longer matches the pinned digest; the source changed after it was inspected.";
 }
 
 /**
  * Imports Agent Skills/Anthropic skill-pack ZIPs without enabling any bundled
  * extensions, hooks, MCP servers, or agents. The complete skill directories
  * are preserved so scripts, references, assets, and templates keep working.
+ *
+ * Every entry point imports through here and says what to verify.
+ * `expectedContentDigest` is the digest a prepared act pinned when it read
+ * the bytes earlier: changed bytes are refused before any archive parsing,
+ * so the import can only install what the receipt names. It is null when
+ * the caller read the bytes in this same call and nothing was shown of them
+ * before (the window's upload and its Discover install), so there is
+ * nothing to recheck.
  */
 export async function importPiSkillBundle(
   connectedFolderRoot: string,
@@ -60,9 +54,14 @@ export async function importPiSkillBundle(
     fileName: string;
     bytes: Uint8Array;
     scope?: "user" | "project";
+    expectedContentDigest: string | null;
   },
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<PiSkillBundleImportResult> {
+  if (input.expectedContentDigest !== null) {
+    const mismatch = piSkillBundleDigestMismatch(input.bytes, input.expectedContentDigest);
+    if (mismatch) throw new Error(mismatch);
+  }
   if (input.bytes.byteLength === 0) throw new Error("The skill bundle is empty.");
   if (input.bytes.byteLength > maxArchiveBytes) throw new Error("The skill bundle exceeds the 100 MB archive limit.");
   const extension = extname(input.fileName).toLowerCase();

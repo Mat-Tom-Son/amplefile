@@ -23,7 +23,9 @@ type Call = (path: string, init?: { method?: string; body?: unknown }) => Promis
 
 const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
 
-async function sandboxApi(t: test.TestContext): Promise<{ api: Api; call: Call; sandbox: string; home: string; trash: string }> {
+type ApiOptions = Parameters<typeof startLocalApi>[0];
+
+async function sandboxApi(t: test.TestContext, more: (sandbox: string) => Promise<Partial<ApiOptions>> = async () => ({})): Promise<{ api: Api; call: Call; sandbox: string; home: string; trash: string }> {
   // The real path: a Mac's temporary folder is under /var, a link to /private/var.
   const sandbox = await realpath(await mkdtemp(join(tmpdir(), "amplefile-volume-trash-api-")));
   const home = join(sandbox, "home");
@@ -31,7 +33,7 @@ async function sandboxApi(t: test.TestContext): Promise<{ api: Api; call: Call; 
   await mkdir(join(trash, "files"), { recursive: true });
   await mkdir(join(trash, "info"), { recursive: true });
   setTrashOptionsForTests({ platform: "linux", home, xdgDataHome: join(home, ".local", "share"), uid, volumeTops: [] });
-  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false });
+  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false, ...await more(sandbox) });
   // Each drive is alone on its disk unless a test says otherwise; the system is never asked.
   setVolumeDiskSourceForTests(async (asked) => [asked.mountPath]);
   t.after(async () => {
@@ -279,6 +281,97 @@ test("Eject checks the Connected Folders on every mount that leaves with the dis
   assert.equal(maybe.status, 409, JSON.stringify(maybe.body));
   assert.equal(maybe.body!.error, "The disk holding “Camera” couldn’t be ejected. “Photos” may be on the same disk. Close the files and apps using those drives, then try again.");
 });
+
+test("Eject waits for a Connected Folder on the drive as a deletion does: a running turn, a question, a Stop still draining, a background job", async (t) => {
+  // A Worker turn holds at the prompt until this test lets it go.
+  const held = new Map<string, () => void>();
+  let draining = false;
+  const { api, call, sandbox } = await sandboxApi(t, async (root) => {
+    await mkdir(join(root, "agent", "extensions"), { recursive: true });
+    await writeFile(join(root, "agent", "extensions", "hold.ts"), `export default function (pi) {
+      pi.registerCommand("hold", { description: "Hold a test turn", handler: async () => undefined });
+    }\n`, "utf8");
+    return {
+      piRuntimeProvider: { async resolveRuntime() { return { agentDir: join(root, "agent") }; } },
+      beforeAgentPrompt: async (event) => {
+        if (draining) return;
+        await new Promise<void>((release) => held.set(event.taskId, release));
+      },
+    };
+  });
+  // A turn still held at the gate would keep the API from closing.
+  try {
+    const ran: EjectCommand[] = [];
+    setEjectRunnerForTests(async (command) => { ran.push(command); return { code: 0, stdout: "", stderr: "" }; });
+    const created = await call("/api/connected-folders", { method: "POST", body: { name: "Field Notes" } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const fieldNotes = created.body!.connectedFolder as { id: string; connectedFolderRoot: string };
+    await mkdir(join(sandbox, "camera", "Shots"), { recursive: true });
+    const linked = await call("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: join(sandbox, "camera", "Shots") } });
+    assert.equal(linked.status, 201, JSON.stringify(linked.body));
+    const fieldDrive = volume({ id: "volume-00000000000000000002", name: "Field Drive", mountPath: join(sandbox, "content"), device: "/dev/sdb1" });
+    const camera = volume({ id: "volume-00000000000000000003", name: "Camera", mountPath: join(sandbox, "camera"), device: "/dev/sdc1" });
+    setVolumeSourceForTests(async () => [fieldDrive, camera]);
+    const eject = (drive: VolumeRecord) => call("/api/volumes/eject", { method: "POST", body: { volumeId: drive.id } });
+    const refusedAsBusy = async (because: RegExp, label: string) => {
+      const refused = await eject(fieldDrive);
+      assert.equal(refused.status, 409, `${label}: ${JSON.stringify(refused.body)}`);
+      assert.equal(refused.body!.code, "busy", `${label}: the same eject can succeed later`);
+      assert.match(refused.body!.error, because, label);
+      assert.match(refused.body!.error, /“Field Drive”/, `${label}: the refusal names the drive`);
+      assert.deepEqual(ran, [], `${label}: no tool ran`);
+    };
+
+    // A Worker turn running in Field Notes.
+    const sent = await api.actFacade.sendMessage({ connectedFolder: fieldNotes.id, newConversation: true, content: "/hold" });
+    await waitFor(() => held.has(sent.taskId), "the turn to reach the prompt gate");
+    await refusedAsBusy(/Field Notes’s Worker is working/, "a running turn");
+    // Work on another drive holds nothing up: Camera has its own Connected Folder, with nothing running there.
+    const elsewhere = await eject(camera);
+    assert.equal(elsewhere.status, 200, JSON.stringify(elsewhere.body));
+    assert.deepEqual(ran, [ejectCommands(camera)[0]]);
+    ran.length = 0;
+    held.get(sent.taskId)!();
+    await waitFor(() => api.requests.list({ connectedFolderId: fieldNotes.id }).every((request) => request.turns.every((turn) => turn.state !== "accepted" && turn.state !== "running")), "the turn to settle");
+
+    // A question waiting on its answer.
+    const owner = { connectedFolderId: fieldNotes.id, connectedFolderName: "Field Notes", conversationId: "conversation-eject-question" };
+    const asking = await api.requests.beginRoot({ kind: "connected-folder", owner, surface: "renderer", taskId: "task-eject-question" });
+    await api.requests.ask({ requestId: asking.requestId, taskId: "task-eject-question", respondent: "person", text: "Which photos?" });
+    await api.requests.settleTurn("task-eject-question", { status: "succeeded" });
+    assert.equal(api.requests.get(asking.requestId)!.state, "waiting");
+    await refusedAsBusy(/outstanding work/, "a question waiting on an answer");
+    await api.requests.markStopRequested(asking.requestId);
+
+    // Stop asked for, with the turn still draining.
+    const stopping = await api.requests.beginRoot({ kind: "connected-folder", owner: { ...owner, conversationId: "conversation-eject-stop" }, surface: "renderer", taskId: "task-eject-stop" });
+    await api.requests.markStopRequested(stopping.requestId);
+    await refusedAsBusy(/outstanding work/, "a Stop still draining");
+    await api.requests.settleTurn("task-eject-stop", { status: "aborted" });
+
+    // A background job writing there.
+    api.kernel.startExperimentalJobTask({ jobId: "job-eject", name: "Sync", connectedFolderId: fieldNotes.id, conversationId: "conversation-eject-job", actor: { kind: "system" } });
+    await refusedAsBusy(/background job "Sync"/, "a background job");
+    api.kernel.finishTask("job-eject");
+
+    // Everything has settled: the drive goes.
+    const ejected = await eject(fieldDrive);
+    assert.equal(ejected.status, 200, JSON.stringify(ejected.body));
+    assert.deepEqual(ejected.body, { volumeId: fieldDrive.id, ejected: true });
+    assert.deepEqual(ran, [ejectCommands(fieldDrive)[0]]);
+  } finally {
+    draining = true;
+    for (const release of held.values()) release();
+  }
+});
+
+async function waitFor(predicate: () => boolean | Promise<boolean>, label: string, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}.`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 
 test("the Trash lists items by opaque id, and Put Back returns one without replacing what took its name", async (t) => {
   const { call, home, trash } = await sandboxApi(t);
