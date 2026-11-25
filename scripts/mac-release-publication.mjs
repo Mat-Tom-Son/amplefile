@@ -505,6 +505,18 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "- **Open Terminal Here.** Choose it from the File menu, a folder’s menu, the folder background, or the menu of a Standard Folder or Connected Folder in the sidebar, and a new Terminal window opens in that folder.",
     );
   }
+  if (version === "0.2.5") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Folder watches notice only real changes.** Opening, previewing, tagging, or renaming a file no longer starts an Automation. A file that arrives while an Automation is running now gets one follow-up run instead of being missed.",
+      "- **Run an Automation from the command line without waiting on it.** `amplefile automations run` returns as soon as the run starts, so the run’s own steps can use `amplefile` while it runs. `automations status` and `automations wait` follow it, and a run refused because another is still going says it started nothing.",
+      "- **Agents learn why work failed.** When a model provider refuses a turn, Chats, Automations, and the AmpleFile Agent say why instead of “The model stopped responding”: a model this account can’t use, a rejected key, a rate limit, an image the model can’t take, a conversation too long for the model, or a billing limit. The next turn in a Chat is told how the last one ended.",
+      "- **Trace a command after you stop waiting.** Every `amplefile` act takes `--request-id`, and `amplefile receipts show --id` says whether it ran and how it ended.",
+      "- **Writing Automations.** `amplefile help automations` says what each declaration version adds and shows a shape for every trigger, including a Connected Folder’s own top level.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",
