@@ -257,6 +257,14 @@ export interface AmpleFileAutomationServiceOptions {
    * "run"`. Defaults to `folder-snapshots/` beside the automation store.
    */
   fileSnapshots?: AmpleFileAutomationFileSnapshots;
+  /**
+   * The request a step's turn joined, and every request it handed work to:
+   * all their turns' task ids, and the Connected Folders where any of them
+   * still has work. Acts and file writes there are the step's own work.
+   * Without it only the step's first turn and a chat step's own Connected
+   * Folder count.
+   */
+  requestLineage?: (stepTurnTaskId: string) => { taskIds: Iterable<string>; connectedFolderIds: Iterable<string> } | null;
 }
 
 export interface AmpleFileAutomationProjection extends AmpleFileAutomationRecord {
@@ -315,7 +323,8 @@ export class AmpleFileAutomationService {
    * runs placed, and whether a follow-up run was among the runs, which makes
    * the watches absorb what arrived.
    */
-  #runPause: { placed: Set<string>; absorb: boolean } | null = null;
+  #runPause: { placed: Set<string>; vacated: Set<string>; absorb: boolean } | null = null;
+  readonly #requestLineage: AmpleFileAutomationServiceOptions["requestLineage"];
   readonly #store: AmpleFileAutomationStore;
   readonly #receipts: AmpleFileAutomationReceipts;
   readonly #ports: AmpleFileAutomationHopPorts;
@@ -335,6 +344,7 @@ export class AmpleFileAutomationService {
 
   private constructor(options: AmpleFileAutomationServiceOptions) {
     this.#observeFiles = options.observeFiles;
+    this.#requestLineage = options.requestLineage;
     this.#fileSnapshots = options.fileSnapshots
       ?? new AmpleFileAutomationFileSnapshots({ directory: join(dirname(options.store.path), "folder-snapshots") });
     this.#store = options.store;
@@ -840,7 +850,7 @@ export class AmpleFileAutomationService {
    */
   #pauseFileWatchesForRun(cause: AmpleFileAutomationRunCause): void {
     this.#fileEpoch += 1;
-    this.#runPause ??= { placed: new Set(), absorb: false };
+    this.#runPause ??= { placed: new Set(), vacated: new Set(), absorb: false };
     if (cause.kind === "files-changed" && cause.followUp) this.#runPause.absorb = true;
     for (const watch of this.#fileWatches.values()) watch.pauseForRun();
   }
@@ -857,37 +867,54 @@ export class AmpleFileAutomationService {
     const pause = this.#runPause;
     this.#runPause = null;
     if (this.#suspensionDesired) return;
-    for (const watch of this.#fileWatches.values()) watch.resumeAfterRuns(pause?.placed ?? [], pause?.absorb ?? true);
+    const runFiles = { placed: pause?.placed ?? [], vacated: pause?.vacated ?? [] };
+    for (const watch of this.#fileWatches.values()) watch.resumeAfterRuns(runFiles, pause?.absorb ?? true);
   }
 
   /**
-   * Whether an act counts as an automation run's own work right now: a hop
-   * of a running automation run is acting in its Connected Folder (a chat
-   * hop's Worker, which acts with an explicit `--connected-folder`), or the
-   * act names that hop's turn as its parent task (the AmpleFile Agent in an
-   * agent hop). An act into any other folder — by a person, an outside
-   * agent, or a Chat that is not a hop's — never does.
+   * Whether an act or a file write counts as an automation run's own work
+   * right now. `taskId` is the turn it belongs to: the turn whose Pi tool
+   * wrote, or the turn an act names as `--parent-task`. It counts when a
+   * running step's work is there: in the Connected Folder a running chat
+   * step's Worker works in, or anywhere in the step's request lineage — any
+   * turn of the request its turn joined, and of every request handed work
+   * from it, and the Connected Folders where those still have work. An act
+   * anywhere else — by a person, an outside agent, or a Chat no step started
+   * — never does.
    */
-  countsAsRunWork(act: { connectedFolderId?: string; parentTaskId?: string }): boolean {
+  countsAsRunWork(act: { connectedFolderId?: string; taskId?: string }): boolean {
     if (!this.#runPause) return false;
     for (const run of this.#activeRuns.values()) {
       const working = run.working;
       if (!working) continue;
       if (act.connectedFolderId !== undefined && working.connectedFolderId === act.connectedFolderId) return true;
-      if (act.parentTaskId !== undefined && working.turnTaskId === act.parentTaskId) return true;
+      if (working.turnTaskId === undefined) continue;
+      if (act.taskId !== undefined && working.turnTaskId === act.taskId) return true;
+      let lineage: ReturnType<NonNullable<AmpleFileAutomationServiceOptions["requestLineage"]>> = null;
+      try {
+        lineage = this.#requestLineage?.(working.turnTaskId) ?? null;
+      } catch {
+        lineage = null;
+      }
+      if (!lineage) continue;
+      if (act.taskId !== undefined && new Set(lineage.taskIds).has(act.taskId)) return true;
+      if (act.connectedFolderId !== undefined && new Set(lineage.connectedFolderIds).has(act.connectedFolderId)) return true;
     }
     return false;
   }
 
   /**
-   * Files an AmpleFile verb placed (`files add`, `create`, `move`, `rename`,
-   * `chat handoff --file`, a restore), by device and inode. When the act
-   * counts as a running automation run's own work (`countsAsRunWork`),
-   * they are the run's own files and never start a follow-up run; otherwise
-   * a watch sees them as ordinary changes.
+   * Files an AmpleFile verb or a Pi write placed, and files a verb moved
+   * away or removed (`vacatedFileIds`), by device and inode. When the act
+   * counts as a running automation run's own work (`countsAsRunWork`), the
+   * placed files are the run's own and never start a follow-up run, and a
+   * new file at a name the run vacated does. Otherwise a watch sees them as
+   * ordinary changes.
    */
-  notePlacedFiles(act: { connectedFolderId?: string; parentTaskId?: string; fileIds: readonly string[] }): void {
-    if (this.countsAsRunWork(act)) this.#notePlaced(act.fileIds);
+  notePlacedFiles(act: { connectedFolderId?: string; taskId?: string; fileIds: readonly string[]; vacatedFileIds?: readonly string[] }): void {
+    if (!this.countsAsRunWork(act)) return;
+    this.#notePlaced(act.fileIds);
+    this.#noteVacated(act.vacatedFileIds);
   }
 
   /** More files than a snapshot can hold make the pause absorb what arrived, as a follow-up run does. */
@@ -899,8 +926,18 @@ export class AmpleFileAutomationService {
       if (pause.placed.size > ampleFileAutomationFileObserverBounds.maxFiles) {
         pause.absorb = true;
         pause.placed.clear();
+        pause.vacated.clear();
         return;
       }
+    }
+  }
+
+  #noteVacated(fileIds: readonly string[] | undefined): void {
+    const pause = this.#runPause;
+    if (!pause || pause.absorb || !fileIds?.length) return;
+    for (const id of fileIds) {
+      if (pause.vacated.size >= ampleFileAutomationFileObserverBounds.maxFiles) return;
+      pause.vacated.add(id);
     }
   }
 
@@ -1227,6 +1264,9 @@ export class AmpleFileAutomationService {
       });
     } finally {
       releaseOuterAbort();
+      // Stop means stop: nothing that arrived while a stopped run worked
+      // starts a follow-up of it, or of anything else.
+      if (active.stopRequested && this.#runPause) this.#runPause.absorb = true;
       this.#activeRuns.delete(runId);
       this.#resumeFileWatchesAfterRun();
       if (taskId !== null) {

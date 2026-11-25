@@ -7,6 +7,7 @@ import { test, type TestContext } from "node:test";
 
 import { AmpleFileCliError } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
+import { createConversation } from "../src/local/agent/chat-store.js";
 
 // Rename, move, New Folder, and New File have one owner each, reached from the
 // window's routes and from the CLI's act lane. Whatever name the effect gives
@@ -160,13 +161,13 @@ test("restoring a New Folder or New File History point removes the item it made,
   assert.deepEqual(await listing(), before);
 });
 
-test("while an automation run counts an act as its own, every verb that places files reports their device and inode", async (t) => {
+test("while an automation run counts an act as its own, every verb that places or moves files reports their device and inode", async (t) => {
   const { api, sandbox, facade, id, root } = await startConnectedFolder(t);
-  const placed: Array<{ connectedFolderId?: string; parentTaskId?: string; fileIds: string[] }> = [];
-  const asked: Array<{ connectedFolderId?: string; parentTaskId?: string }> = [];
+  const placed: Array<{ connectedFolderId?: string; taskId?: string; fileIds: string[]; vacatedFileIds: string[] }> = [];
+  const asked: Array<{ connectedFolderId?: string; taskId?: string }> = [];
   let counts = true;
   api.automations.countsAsRunWork = (act) => { asked.push({ ...act }); return counts; };
-  api.automations.notePlacedFiles = (act) => { placed.push({ ...act, fileIds: [...act.fileIds] }); };
+  api.automations.notePlacedFiles = (act) => { placed.push({ ...act, fileIds: [...act.fileIds], vacatedFileIds: [...(act.vacatedFileIds ?? [])] }); };
   const fileId = async (path: string) => {
     const info = await lstat(join(root, path), { bigint: true });
     return `${info.dev}:${info.ino}`;
@@ -175,14 +176,15 @@ test("while an automation run counts an act as its own, every verb that places f
   await writeFile(join(sandbox, "outside.md"), "from elsewhere", "utf8");
 
   await facade.filesMkdir({ connectedFolder: id, path: "notes" });
-  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [] }, "a new folder holds no files");
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [], vacatedFileIds: [] }, "a new folder holds no files");
   await facade.filesCreate({ connectedFolder: id, path: "notes/new.md" });
-  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/new.md")] });
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/new.md")], vacatedFileIds: [] });
+  // A rename or move places the file where it went and vacates the name it left.
   await facade.filesRename({ connectedFolder: id, path: "notes/new.md", newName: "renamed.md" });
-  assert.deepEqual(last().fileIds, [await fileId("notes/renamed.md")]);
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/renamed.md")], vacatedFileIds: [await fileId("notes/renamed.md")] });
   await facade.filesMkdir({ connectedFolder: id, path: "archive" });
   await facade.filesMove({ connectedFolder: id, fromPath: "notes/renamed.md", toDir: "archive" });
-  assert.deepEqual(last().fileIds, [await fileId("archive/renamed.md")]);
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("archive/renamed.md")], vacatedFileIds: [await fileId("archive/renamed.md")] });
   await facade.addFiles({ connectedFolder: id, fromPaths: [join(sandbox, "outside.md")], toDir: "notes", cwd: sandbox });
   assert.deepEqual(last().fileIds, [await fileId("notes/outside.md")]);
 
@@ -194,6 +196,12 @@ test("while an automation run counts an act as its own, every verb that places f
     assert.equal(created.path, "screenshots/typed.png");
     assert.deepEqual(last().fileIds, [await fileId("Screenshots/typed.png")]);
   }
+
+  // A delete vacates the name, measured before the file goes.
+  await writeFile(join(root, "notes", "doomed.md"), "doomed", "utf8");
+  const doomed = await fileId("notes/doomed.md");
+  await facade.filesDelete({ connectedFolder: id, path: "notes/doomed.md" });
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [], vacatedFileIds: [doomed] });
 
   // Restores put files back with new inodes.
   await writeFile(join(root, "notes", "kept.md"), "first", "utf8");
@@ -215,12 +223,25 @@ test("while an automation run counts an act as its own, every verb that places f
   const recovery = deleted.recovery as { kind?: string; entryId?: string };
   assert.equal(recovery.kind, "recently-deleted");
   await facade.recentlyDeletedRestore({ entry: recovery.entryId! });
-  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/outside.md")] }, "recently-deleted restore");
-  assert.ok(asked.every((act) => act.connectedFolderId === id && act.parentTaskId === undefined));
+  assert.deepEqual(last(), { connectedFolderId: id, fileIds: [await fileId("notes/outside.md")], vacatedFileIds: [] }, "recently-deleted restore");
+  assert.ok(asked.every((act) => act.connectedFolderId === id && act.taskId === undefined));
 
   // An act that is no run's work is not even measured.
   counts = false;
   const before = placed.length;
   await facade.filesCreate({ connectedFolder: id, path: "notes/by a person.md" });
   assert.equal(placed.length, before);
+});
+
+test("restoring a deleted Worker Chat while an automation run counts the act as its own still succeeds", async (t) => {
+  const { api, facade, id, root } = await startConnectedFolder(t);
+  api.automations.countsAsRunWork = () => true;
+  const conversation = await createConversation(root);
+  const removed = await fetch(`${api.origin}/api/connected-folders/${id}/conversations/${conversation.id}`, { method: "DELETE" });
+  assert.equal(removed.status, 200, await removed.text());
+  const entry = (await facade.recentlyDeletedList()).entries.find((item) => item.originalPath === `.amplefile/conversations/${conversation.id}.jsonl`);
+  assert.ok(entry, "the Chat is in Recently Deleted");
+  const restored = await facade.recentlyDeletedRestore({ entry: entry.id });
+  assert.equal((restored.restored as { path?: string }).path, `.amplefile/conversations/${conversation.id}.jsonl`);
+  assert.ok(existsSync(join(root, ".amplefile", "conversations", `${conversation.id}.jsonl`)), "the transcript is back");
 });

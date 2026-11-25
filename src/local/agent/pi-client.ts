@@ -8,7 +8,6 @@ import { currentTurnEnvironment, describeTurnEnvironment, type PiTurnEnvironment
 import { promptTokensOf } from "./usage-tokens.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import {
@@ -17,6 +16,7 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createWriteToolDefinition,
   estimateTokens,
   type AgentSession,
   type AgentSessionEvent,
@@ -1274,16 +1274,22 @@ export class PiConversationClient extends EventEmitter {
     }
     if (raw.type === "tool_execution_start" && (event.toolName === "write" || event.toolName === "edit")
       && this.runtimeHost?.session.getAllTools().some((tool) => tool.name === event.toolName && tool.sourceInfo.source === "builtin")) {
-      const target = fileToolTarget(this.connectedFolderRoot, raw.args?.path);
-      if (target) this.fileToolTargets.set(toolCallId, target);
+      const target = raw.args?.path;
+      if (typeof target === "string" && target.length > 0 && target.length <= 4_096) this.fileToolTargets.set(toolCallId, target);
     }
     if (raw.type === "tool_execution_end") {
-      // A file Pi's own write or edit tool touched, so an Automation run can
-      // tell it apart from files that arrived from elsewhere
-      // (docs/automations.md). Only the path leaves; never the content.
+      // A file Pi's own write or edit tool touched, with the turn it belongs
+      // to, so an Automation run can tell its own files apart from files that
+      // arrived from elsewhere (docs/automations.md). Only the path leaves,
+      // resolved exactly as the tool resolved it; never the content.
       const target = this.fileToolTargets.get(toolCallId);
       this.fileToolTargets.delete(toolCallId);
-      if (target && !raw.isError) this.emit("file-tool-wrote", { path: target } satisfies PiFileToolWrite);
+      if (target !== undefined && !raw.isError) {
+        const taskId = this.extensionTurn.getStore()?.taskId ?? this.presentationTaskId ?? null;
+        void piFileToolPath(this.connectedFolderRoot, target).then((path) => {
+          if (path) this.emit("file-tool-wrote", { path, taskId } satisfies PiFileToolWrite);
+        });
+      }
       const path = this.nativeEditPaths.get(toolCallId);
       this.nativeEditPaths.delete(toolCallId);
       if (!raw.isError && event.toolName === "edit" && path && localEditPath(this.connectedFolderRoot, path) === path) {
@@ -2091,18 +2097,30 @@ function lastAssistantText(messages: any[]): string {
   return "";
 }
 
-/** A file Pi's built-in write or edit tool finished touching: its absolute path. */
-export interface PiFileToolWrite { path: string }
+/** A file Pi's built-in write or edit tool finished touching: its absolute path, and the turn whose tool it was. */
+export interface PiFileToolWrite { path: string; taskId: string | null }
 
 /**
- * Where Pi's write and edit tools put a path: an `@` prefix dropped, `~`
- * expanded, and the rest resolved against the session folder.
+ * The absolute path Pi's write and edit tools give `path` in `cwd`, worked
+ * out by Pi's own write tool run against operations that only note the path
+ * (both tools share Pi's one resolution: `@`, `~`, `file:` URLs, and the
+ * narrow and other Unicode spaces of macOS screenshot names), so AmpleFile
+ * and Pi can never disagree. Undefined when Pi refuses the path.
  */
-function fileToolTarget(cwd: string, value: unknown): string | undefined {
-  if (typeof value !== "string" || !value.trim() || value.length > 4_096 || /[\u0000-\u001f\u007f]/u.test(value)) return undefined;
-  const path = value.trim().replace(/^@/, "");
-  if (path === "~" || path.startsWith("~/")) return resolve(homedir(), path.slice(2));
-  return resolve(cwd, path);
+export async function piFileToolPath(cwd: string, path: string): Promise<string | undefined> {
+  let resolved: string | undefined;
+  const probe = createWriteToolDefinition(cwd, {
+    operations: {
+      mkdir: async () => undefined,
+      writeFile: async (absolutePath: string) => { resolved = absolutePath; },
+    },
+  });
+  try {
+    await probe.execute("amplefile-file-tool-path", { path, content: "" }, undefined, undefined, undefined as never);
+  } catch {
+    return undefined;
+  }
+  return resolved;
 }
 
 function toolEvent(raw: any): Omit<PiChatEvent, "conversationId" | "raw"> | null {

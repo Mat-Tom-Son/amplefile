@@ -589,9 +589,12 @@ test("a follow-up run's receipt says so in automations receipts and in Settings'
     changedPaths: ["Screenshots/second.png"],
     followUp: { count: 1 },
   };
+  const both = { ...cause, changedCount: 3, changedPaths: ["Screenshots/a.png", "Screenshots/b.png", "Screenshots/second.png"], catchUp: { reason: "closed", count: 2 } };
   const lines = [
     { ...base, at: "2026-11-02T10:00:00.000Z", scope: "run", outcome: "accepted", cause },
     { ...base, at: "2026-11-02T10:00:03.000Z", scope: "run", outcome: "succeeded", cause },
+    { ...base, runId: "run-both", at: "2026-11-03T10:00:00.000Z", scope: "run", outcome: "accepted", cause: both },
+    { ...base, runId: "run-both", at: "2026-11-03T10:00:03.000Z", scope: "run", outcome: "succeeded", cause: both },
   ];
   await appendFile(join(sandbox, "state", "automations", "receipts.jsonl"), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf8");
 
@@ -600,6 +603,12 @@ test("a follow-up run's receipt says so in automations receipts and in Settings'
   assert.deepEqual(accepted?.cause, cause);
   const history = await api.automationSettings.history(declaration.id);
   assert.equal(history.runs.find((run) => run.runId === "run-follow-up")?.cause, "Followed up on 1 new file that arrived while an Automation was running");
+  // A run that is both a catch-up and a follow-up says both.
+  assert.deepEqual(receipts.find((receipt) => receipt.runId === "run-both" && receipt.outcome === "accepted")?.cause, both);
+  assert.equal(
+    history.runs.find((run) => run.runId === "run-both")?.cause,
+    "Caught up on 2 files that changed while AmpleFile was closed · Followed up on 1 new file that arrived while an Automation was running",
+  );
 });
 
 // A wall-clock budget: the real observer polls on the real clock.

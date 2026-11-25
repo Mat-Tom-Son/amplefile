@@ -28,6 +28,7 @@ import {
   type AmpleFileAutomationHopContext,
   type AmpleFileAutomationHopPorts,
   type AmpleFileAutomationResolvedFilesSource,
+  type AmpleFileAutomationServiceOptions,
 } from "../src/local/automations/automation-service.js";
 import {
   AmpleFileAutomationReceipts,
@@ -200,7 +201,7 @@ interface Harness {
   runLines(): Promise<string[]>;
 }
 
-async function createHarness(t: TestContext, options: { maxConcurrency?: number; observeFiles?: AmpleFileAutomationFileObserver } = {}): Promise<Harness> {
+async function createHarness(t: TestContext, options: { maxConcurrency?: number; observeFiles?: AmpleFileAutomationFileObserver; requestLineage?: AmpleFileAutomationServiceOptions["requestLineage"] } = {}): Promise<Harness> {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-service-"));
   const clock = new FakeClock(startTime);
   const now = () => clock.now();
@@ -221,6 +222,7 @@ async function createHarness(t: TestContext, options: { maxConcurrency?: number;
     createRunId: () => `run-${++nextRunId}`,
     catchUpStagger: () => 0,
     ...(options.maxConcurrency !== undefined ? { maxConcurrency: options.maxConcurrency } : {}),
+    ...(options.requestLineage ? { requestLineage: options.requestLineage } : {}),
   });
   t.after(async () => {
     service.close();
@@ -1930,7 +1932,7 @@ test("files a run places itself never start another run: Pi's write and edit, a 
     context.turnAccepted("agent-turn-digest");
     // The AmpleFile Agent's `files add --parent-task <its turn>` and its own write tool.
     folders.write(connectedFolderB, "Inbox/digest.md");
-    harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, parentTaskId: "agent-turn-digest", fileIds: [folders.id(connectedFolderB, "Inbox/digest.md")] });
+    harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, taskId: "agent-turn-digest", fileIds: [folders.id(connectedFolderB, "Inbox/digest.md")] });
     folders.write(connectedFolderB, "Inbox/digest notes.md");
     return { conversationId: "agent-conversation", turnTaskId: "agent-turn-digest", outcome: "succeeded", placedFileIds: [folders.id(connectedFolderB, "Inbox/digest notes.md")] };
   };
@@ -1969,7 +1971,7 @@ test("a verb into a Connected Folder no running step works in is an ordinary cha
       harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, fileIds: [folders.id(connectedFolderA, "Screenshots/added by a person.png")] });
       // And the AmpleFile Agent, under a turn of its own that no step started.
       folders.write(connectedFolderA, "Screenshots/added by the agent.png");
-      harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, parentTaskId: "turn-in-the-popover", fileIds: [folders.id(connectedFolderA, "Screenshots/added by the agent.png")] });
+      harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, taskId: "turn-in-the-popover", fileIds: [folders.id(connectedFolderA, "Screenshots/added by the agent.png")] });
     }
     return harness.ports.defaultChat(step, context);
   };
@@ -2121,4 +2123,119 @@ test("a run that always makes files AmpleFile cannot attribute gets one follow-u
   const causes = await acceptedCauses(harness, id);
   assert.equal(causes.length, 2);
   assert.deepEqual((causes[1] as { changedPaths?: string[] }).changedPaths, ["Screenshots/made by shell 1.png"]);
+});
+
+test("a new file at a name the run's own verb moved away gets a follow-up run", async (t) => {
+  const folders = new FakeFolders();
+  const harness = await createHarness(t, { observeFiles: folders.observe });
+  const id = "automation-file-exports";
+  await harness.enable(declarationInput(id, {
+    version: 4,
+    trigger: { ...screenshotsTrigger, watch: { kind: "tree", path: "Exports", recursive: false, extensions: [".csv"] } },
+    steps: [{ id: "file", kind: "chat", connectedFolder: connectedFolderA, message: "File:\n{{trigger.changedFiles}}" }],
+  }));
+  let chats = 0;
+  harness.ports.chatImpl = async (step, context) => {
+    if (++chats === 1) {
+      // `amplefile files move --path Exports/export.csv --to Archive`, as the step's work.
+      folders.rename(connectedFolderA, "Exports/export.csv", "Archive/export.csv");
+      const moved = folders.id(connectedFolderA, "Archive/export.csv");
+      harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, fileIds: [moved], vacatedFileIds: [moved] });
+      // The app writes its next export under the same name while the run works.
+      folders.write(connectedFolderA, "Exports/export.csv", 99);
+    }
+    return harness.ports.defaultChat(step, context);
+  };
+  folders.write(connectedFolderA, "Exports/export.csv");
+  await pollAt(harness, 1_000);
+  await pollAt(harness, 2_000);
+  await settledRuns(harness, 1);
+  await pollAt(harness, 1_000);
+  await pollAt(harness, 2_000);
+  await settledRuns(harness, 2);
+  for (let step = 0; step < 3; step += 1) await pollAndSettle(harness, 70_000);
+  const causes = await acceptedCauses(harness, id);
+  assert.equal(causes.length, 2);
+  assert.deepEqual((causes[1] as { changedPaths?: string[] }).changedPaths, ["Exports/export.csv"]);
+  assert.deepEqual((causes[1] as { followUp?: unknown }).followUp, { count: 1 });
+});
+
+test("a run that was stopped owes no follow-up, even for a file it made with a shell command", async (t) => {
+  const folders = new FakeFolders();
+  const harness = await createHarness(t, { observeFiles: folders.observe });
+  const id = "automation-name-screenshots";
+  await harness.enable(screenshotsDeclaration(id));
+  harness.ports.chatImpl = async (step, context) => {
+    folders.write(connectedFolderA, "Screenshots/half-made by a shell.png");
+    harness.service.stopRun(id);
+    return harness.ports.abortableChat(step, context);
+  };
+  await screenshotRun(harness, folders, "Screenshots/shot.png", 1);
+  for (let step = 0; step < 4; step += 1) await pollAndSettle(harness, 70_000);
+  const runs = (await harness.journal()).filter((line) => line.scope === "run" && line.automationId === id);
+  assert.deepEqual(runs.map((line) => line.outcome), ["accepted", "stopped"]);
+});
+
+test("acts and writes anywhere in an agent step's request lineage are the run's own", async (t) => {
+  const folders = new FakeFolders();
+  const harness = await createHarness(t, {
+    observeFiles: folders.observe,
+    requestLineage: (taskId) => taskId === "agent-turn-1"
+      // Its own continuation turn, and a Chat it handed work to in Connected Folder A.
+      ? { taskIds: ["agent-turn-1", "agent-turn-2", "child-turn-a"], connectedFolderIds: [connectedFolderA] }
+      : null,
+  });
+  await harness.enable(screenshotsDeclaration("automation-name-screenshots"));
+  await harness.enable(declarationInput("automation-agent-digest", {
+    version: 4,
+    steps: [{ id: "digest", kind: "agent", message: "Write the digest." }],
+  }));
+  harness.ports.ampleFileAgentImpl = async (_step, context) => {
+    context.turnAccepted("agent-turn-1");
+    // The continuation turn's `files add --parent-task agent-turn-2`.
+    folders.write(connectedFolderA, "Screenshots/continuation.png");
+    harness.service.notePlacedFiles({ connectedFolderId: connectedFolderB, taskId: "agent-turn-2", fileIds: [folders.id(connectedFolderA, "Screenshots/continuation.png")] });
+    // The handed-off Chat's Worker acts in its own Connected Folder.
+    folders.write(connectedFolderA, "Screenshots/child.png");
+    harness.service.notePlacedFiles({ connectedFolderId: connectedFolderA, fileIds: [folders.id(connectedFolderA, "Screenshots/child.png")] });
+    // And its Pi write tool, reported with its turn.
+    folders.write(connectedFolderA, "Screenshots/child write.png");
+    harness.service.notePlacedFiles({ taskId: "child-turn-a", fileIds: [folders.id(connectedFolderA, "Screenshots/child write.png")] });
+    assert.equal(harness.service.countsAsRunWork({ taskId: "someone-elses-turn" }), false);
+    assert.equal(harness.service.countsAsRunWork({ connectedFolderId: connectedFolderC }), false);
+    return { conversationId: "agent-conversation", turnTaskId: "agent-turn-1", outcome: "succeeded" };
+  };
+  assert.equal((await harness.service.runNow("automation-agent-digest")).outcome, "success");
+  for (let step = 0; step < 4; step += 1) await pollAndSettle(harness, 70_000);
+  assert.equal((await acceptedCauses(harness, "automation-name-screenshots")).length, 0);
+});
+
+test("a look a run's start took before a sleep is never compared after it", async (t) => {
+  const folders = new FakeFolders();
+  let afterLook: (() => Promise<void>) | undefined;
+  const harness = await createHarness(t, { observeFiles: async (trigger) => {
+    const snapshot = await folders.observe(trigger);
+    if (afterLook) {
+      const hook = afterLook;
+      afterLook = undefined;
+      await hook();
+    }
+    return snapshot;
+  } });
+  const id = "automation-name-screenshots";
+  await harness.enable(screenshotsDeclaration(id));
+  // Wake leaves the watch without a look, so the run takes one as it starts;
+  // the Mac sleeps and wakes again while that look is under way.
+  harness.service.suspend();
+  await harness.service.resume();
+  afterLook = async () => {
+    harness.service.suspend();
+    folders.write(connectedFolderA, "Screenshots/while asleep.png");
+    await harness.service.resume();
+  };
+  await harness.service.runNow(id);
+  await waitForCondition(() => harness.service.status().activeRunCount === 0, "the interrupted run to end");
+  for (let step = 0; step < 4; step += 1) await pollAndSettle(harness, 70_000);
+  const causes = await acceptedCauses(harness, id);
+  assert.ok(causes.every((cause) => (cause as { kind: string }).kind === "run-now"), "a screenshot taken while asleep is not replayed");
 });

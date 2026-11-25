@@ -184,30 +184,47 @@ export function ampleFileAutomationChangedPaths(
     .sort(comparePaths);
 }
 
+/** The files a run placed and the files its own verbs moved away or removed, each by device and inode. */
+export interface AmpleFileAutomationRunFiles {
+  placed: ReadonlySet<string>;
+  vacated: ReadonlySet<string>;
+}
+
 /**
  * What the first look after automation runs owes one follow-up run: new
- * files — a path the look taken before the runs did not have, holding a file
- * (device and inode) it did not have either — that no run placed. A path
- * that existed before is an edit, even when a tool saved it as a new file
- * in its place (`sed -i`, safe-save), and a file under a new name is a
- * rename; neither counts, since either may be a run's own work. `placed`
- * holds the device and inode of each file AmpleFile saw a run place.
- * Entries that are not the observer's form count at any new path.
+ * files — a file (device and inode) the look taken before the runs did not
+ * have, that no run placed — at a path that was free, or that the file
+ * before it left. A file under a new name is a rename, and an edit keeps its
+ * file, so neither counts. A path whose earlier file is gone from the look
+ * is an edit even when a tool saved a new file in its place (`sed -i`,
+ * safe-save), unless a run's own verb moved or removed that earlier file:
+ * then the name was vacated and the file now there is new. A path whose
+ * earlier file now sits at another path was vacated the same way. Entries
+ * that are not the observer's form count at any new path.
  */
 export function ampleFileAutomationArrivedPaths(
   beforeRuns: AmpleFileAutomationFileSnapshot,
   after: AmpleFileAutomationFileSnapshot,
-  placed: ReadonlySet<string>,
+  runFiles: AmpleFileAutomationRunFiles,
 ): string[] {
-  const files = new Set<string>();
+  const filesBefore = new Set<string>();
   for (const value of Object.values(beforeRuns.entries)) {
     const identity = entryIdentity(value);
-    if (identity) files.add(identity.file);
+    if (identity) filesBefore.add(identity.file);
+  }
+  const filesAfter = new Set<string>();
+  for (const value of Object.values(after.entries)) {
+    const identity = entryIdentity(value);
+    if (identity) filesAfter.add(identity.file);
   }
   return ampleFileAutomationChangedPaths(beforeRuns, after).filter((path) => {
-    if (entryAt(beforeRuns, path) !== undefined) return false;
     const identity = entryIdentity(after.entries[path]!);
-    return !identity || (!files.has(identity.file) && !placed.has(identity.file));
+    const was = entryAt(beforeRuns, path);
+    if (!identity) return was === undefined;
+    if (filesBefore.has(identity.file) || runFiles.placed.has(identity.file)) return false;
+    if (was === undefined) return true;
+    const earlier = entryIdentity(was)?.file;
+    return earlier !== undefined && (filesAfter.has(earlier) || runFiles.vacated.has(earlier));
   });
 }
 
@@ -275,8 +292,8 @@ export class AmpleFileAutomationFileWatch {
   lastTriggeredAt?: string;
   /** The look this watch had when observation paused for automation runs. */
   #beforeRuns?: AmpleFileAutomationFileSnapshot;
-  /** The runs ended and the first look after them is due; the files they placed meanwhile, by device and inode. */
-  #afterRuns?: { placed: Set<string> };
+  /** The runs ended and the first look after them is due; what they placed and vacated meanwhile, by device and inode. */
+  #afterRuns?: { placed: Set<string>; vacated: Set<string> };
   #baselineAt = 0;
   /** Counts gaps, so a look taken before a gap is never applied after it. */
   generation = 0;
@@ -305,17 +322,21 @@ export class AmpleFileAutomationFileWatch {
   }
 
   /**
-   * The last automation run working ended. `placed` holds the device and
-   * inode of each file AmpleFile saw the runs place. `absorb` (a follow-up
-   * run was among them) drops the look from before the runs, so the next
-   * look is a fresh baseline and nothing chains.
+   * The last automation run working ended. `runFiles` holds the device and
+   * inode of each file AmpleFile saw the runs place, and of each file their
+   * own verbs moved away or removed. `absorb` (a follow-up run, or a run that
+   * was stopped, was among them) drops the look from before the runs, so the
+   * next look is a fresh baseline and nothing chains.
    */
-  resumeAfterRuns(placed: Iterable<string>, absorb: boolean): void {
+  resumeAfterRuns(runFiles: { placed: Iterable<string>; vacated: Iterable<string> }, absorb: boolean): void {
     if (absorb || !this.#beforeRuns) {
       this.#beforeRuns = undefined;
       this.#afterRuns = undefined;
     } else {
-      this.#afterRuns = { placed: new Set([...(this.#afterRuns?.placed ?? []), ...placed]) };
+      this.#afterRuns = {
+        placed: new Set([...(this.#afterRuns?.placed ?? []), ...runFiles.placed]),
+        vacated: new Set([...(this.#afterRuns?.vacated ?? []), ...runFiles.vacated]),
+      };
     }
     this.baseline = undefined;
     this.candidate = undefined;
@@ -456,13 +477,13 @@ export class AmpleFileAutomationFileWatch {
 
   #compareAfterRuns(snapshot: AmpleFileAutomationFileSnapshot): void {
     const before = this.#beforeRuns;
-    const placed = this.#afterRuns?.placed;
+    const runFiles = this.#afterRuns;
     this.#beforeRuns = undefined;
     this.#afterRuns = undefined;
-    if (!before || !placed) return;
+    if (!before || !runFiles) return;
     // What arrived during earlier runs stays owed while it exists.
     const stillOwed = (this.arrived ?? []).filter((path) => entryAt(snapshot, path) !== undefined);
-    const paths = mergePaths(stillOwed, ampleFileAutomationArrivedPaths(before, snapshot, placed));
+    const paths = mergePaths(stillOwed, ampleFileAutomationArrivedPaths(before, snapshot, runFiles));
     this.arrived = paths.length ? paths : undefined;
   }
 

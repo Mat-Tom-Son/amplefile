@@ -1312,3 +1312,52 @@ test("a handoff's copies are reported to the automation executor as the calling 
     await api.close();
   }
 });
+
+test("an automation step's turns, and the work they hand on, count as the run's own through the real ports", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: stepFolder } = await api.actFacade.createConnectedFolder({ name: "Step folder" });
+    const { connectedFolder: helperFolder } = await api.actFacade.createConnectedFolder({ name: "Helper folder" });
+    const { connectedFolder: elsewhere } = await api.actFacade.createConnectedFolder({ name: "Elsewhere" });
+    h.held.add(stepFolder.id); h.held.add(helperFolder.id); h.held.add(ampleFileAgentScopeId);
+    const declaration = normalizeAmpleFileAutomationDeclaration({
+      kind: "amplefile.automation",
+      version: 4,
+      id: "automation-held-steps",
+      title: "Held steps",
+      createdBy: "human",
+      createdAt: "2026-11-01T08:00:00.000Z",
+      trigger: { kind: "manual" },
+      steps: [
+        { id: "chat", kind: "chat", connectedFolder: stepFolder.id, message: "/hold" },
+        { id: "agent", kind: "agent", message: "/hold" },
+      ],
+    });
+    await api.automations.enable({ declaration, expectedDigest: ampleFileAutomationDigest(declaration), grant: { requestId: "request-held-steps", surface: "main-window" } });
+    const run = api.automations.runNow(declaration.id);
+
+    await waitFor(async () => h.pending.some((turn) => turn.connectedFolderId === stepFolder.id));
+    const chatTurn = h.pending.find((turn) => turn.connectedFolderId === stepFolder.id)!;
+    assert.equal(api.automations.countsAsRunWork({ taskId: chatTurn.taskId }), true, "the chat step's turn, as its port reported it");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: elsewhere.id }), false);
+    await h.release(chatTurn.taskId);
+
+    await waitFor(async () => h.pending.some((turn) => turn.connectedFolderId === ampleFileAgentScopeId));
+    const agentTurn = h.pending.find((turn) => turn.connectedFolderId === ampleFileAgentScopeId)!;
+    assert.equal(api.automations.countsAsRunWork({ taskId: agentTurn.taskId }), true, "the agent step's turn, as its port reported it");
+    assert.equal(api.automations.countsAsRunWork({ taskId: chatTurn.taskId }), false, "a finished step is no longer working");
+    const child = await api.actFacade.sendMessage({ connectedFolder: helperFolder.id, newConversation: true, content: "/hold", parentTaskId: agentTurn.taskId });
+    assert.equal(api.automations.countsAsRunWork({ taskId: child.taskId }), true, "a turn the step handed work to");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: helperFolder.id }), true, "the Connected Folder of that work while it runs");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: elsewhere.id }), false);
+    // The step's continuation turn needs a model this harness lacks, so how
+    // the run ends is not the point here; only that it has ended.
+    h.releaseAll();
+    await run;
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: helperFolder.id }), false, "nothing counts once the run is over");
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});

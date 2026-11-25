@@ -72,6 +72,8 @@ test("changed paths are sorted and capped, and the count stays true", () => {
   assert.equal(observed?.changedPaths[0], "note-000.md");
 });
 
+const noRunFiles = { placed: new Set<string>(), vacated: new Set<string>() };
+
 const draftsTrigger: AmpleFileAutomationFilesChangedTrigger = { kind: "files-changed", connectedFolder: "space-aaaaaaaaaaaaaaaa", watch: { kind: "tree", path: "Drafts", recursive: false, extensions: [".md"] }, debounceSeconds: 2, cooldownMinutes: 0 };
 
 /** Feeds one look to the watch and returns what fired once that look has settled for the debounce. */
@@ -160,7 +162,7 @@ test("after automation runs, only new files that no run placed are owed one foll
   assert.equal(watch.view().state, "paused");
   // What the runs placed, by device and inode: an act's file, a copied
   // folder's files, and a file Pi's write tool made then renamed by a shell.
-  watch.resumeAfterRuns(["1:13", "1:14", "1:17"], false);
+  watch.resumeAfterRuns({ placed: ["1:13", "1:14", "1:17"], vacated: [] }, false);
   assert.equal(watch.lookDueAfterRuns, true);
   const after = look({
     "Drafts/edited.md": "1:10:9:200:200",
@@ -185,8 +187,8 @@ test("a follow-up run's pause, a gap, or a watch with no look before the runs ow
   const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
   const arrived = look({ "a.md": "1:10:5:100:100", "new.md": "1:11:5:100:100" });
   const scenarios: Array<[string, (watch: AmpleFileAutomationFileWatch) => void]> = [
-    ["a follow-up run was among the runs", (watch) => { watch.pauseForRun(); watch.resumeAfterRuns([], true); }],
-    ["the computer slept during the run", (watch) => { watch.pauseForRun(); watch.reset(true); watch.resumeAfterRuns([], false); }],
+    ["a follow-up run was among the runs", (watch) => { watch.pauseForRun(); watch.resumeAfterRuns({ placed: [], vacated: [] }, true); }],
+    ["the computer slept during the run", (watch) => { watch.pauseForRun(); watch.reset(true); watch.resumeAfterRuns({ placed: [], vacated: [] }, false); }],
   ];
   for (const [label, act] of scenarios) {
     const watch = new AmpleFileAutomationFileWatch();
@@ -197,7 +199,7 @@ test("a follow-up run's pause, a gap, or a watch with no look before the runs ow
   }
   const unseen = new AmpleFileAutomationFileWatch();
   unseen.pauseForRun();
-  unseen.resumeAfterRuns([], false);
+  unseen.resumeAfterRuns({ placed: [], vacated: [] }, false);
   assert.equal(unseen.lookDueAfterRuns, false);
   assert.equal(unseen.observe(arrived, 10_000, draftsTrigger), null);
   assert.equal(unseen.observe(arrived, 12_000, draftsTrigger), null);
@@ -233,7 +235,7 @@ test("on disk, a file saved over by a new file at the same path is an edit, neve
 
   const after = await observeAmpleFileAutomationFiles(trigger);
   assert.deepEqual(ampleFileAutomationChangedPaths(before, after), ["Drafts/caption.md", "Drafts/new.md", "Drafts/notes.md"], "the edits still count as live changes");
-  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, new Set()), ["Drafts/new.md"]);
+  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, noRunFiles), ["Drafts/new.md"]);
 });
 
 test("placed-file ids are the device and inode of each file, inside copied folders too, never through a link", async (t) => {
@@ -250,4 +252,39 @@ test("placed-file ids are the device and inode of each file, inside copied folde
   };
   const ids = await ampleFileAutomationPlacedFileIds([join(dir, "one.md"), join(dir, "batch"), join(dir, "missing.md")]);
   assert.deepEqual(ids.sort(), [await id("one.md"), await id("batch/two.md"), await id("batch/inner/three.md")].sort());
+});
+
+test("a new file at a name the run moved away is owed a follow-up, unless nothing AmpleFile saw moved it", () => {
+  const look = (entries: Record<string, string>) => ({ digest: JSON.stringify(entries), entries });
+  const before = look({ "Exports/export.csv": "1:10:5:100:100", "Exports/scan.pdf": "1:11:5:100:100", "Exports/report.csv": "1:12:5:100:100" });
+  const after = look({
+    // The run filed the export into an archive the watch also sees.
+    "Exports/Archive/export.csv": "1:10:5:100:300",
+    "Exports/export.csv": "1:20:6:400:400",
+    // A run's own `files move` took the scan out of the watched folder.
+    "Exports/scan.pdf": "1:21:6:400:400",
+    // Something AmpleFile cannot see removed the report; the new one reads as an edit.
+    "Exports/report.csv": "1:22:6:400:400",
+  });
+  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, { placed: new Set(), vacated: new Set(["1:11"]) }), ["Exports/export.csv", "Exports/scan.pdf"]);
+  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, noRunFiles), ["Exports/export.csv"]);
+});
+
+test("on disk, a new file at the name a run moved away is new, and a safe-save is still an edit", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "amplefile-observer-moved-away-"));
+  configureAmpleFileStateRoot(join(dir, "state"));
+  t.after(async () => { configureAmpleFileStateRoot(undefined); await rm(dir, { recursive: true, force: true }); });
+  const root = join(dir, "connected-folder");
+  await mkdir(join(root, "Exports", "Archive"), { recursive: true });
+  const connectedFolder = await registerLinkedConnectedFolder(root);
+  await writeFile(join(root, "Exports/export.csv"), "monday");
+  await writeFile(join(root, "Exports/notes.csv"), "before");
+  const trigger: AmpleFileAutomationFilesChangedTrigger = { ...draftsTrigger, connectedFolder: connectedFolder.id, watch: { kind: "tree", path: "Exports", recursive: true, extensions: [".csv"] } };
+  const before = await observeAmpleFileAutomationFiles(trigger);
+  await rename(join(root, "Exports/export.csv"), join(root, "Exports/Archive/export.csv"));
+  await writeFile(join(root, "Exports/export.csv"), "tuesday, a new export");
+  await writeFile(join(root, "Exports/.notes.csv.tmp"), "after, saved over");
+  await rename(join(root, "Exports/.notes.csv.tmp"), join(root, "Exports/notes.csv"));
+  const after = await observeAmpleFileAutomationFiles(trigger);
+  assert.deepEqual(ampleFileAutomationArrivedPaths(before, after, noRunFiles), ["Exports/export.csv"]);
 });
