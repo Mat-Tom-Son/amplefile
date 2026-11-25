@@ -14,7 +14,6 @@ import {
 import type { PiExtensionUiBridge } from "../../src/local/agent/extension-ui.js";
 import { ModelPreferenceStore } from "../../src/local/agent/model-preferences.js";
 import { OpenRouterModelCatalog } from "../../src/local/agent/openrouter-model-catalog.js";
-import { importPiSkillBundle, type PiSkillBundleImportResult } from "../../src/local/agent/skill-import.js";
 import {
   getPiSetupStatus,
   installPiPackage,
@@ -221,13 +220,6 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     options: { onProgress?: (event: ProgressEvent) => void } = {},
   ): Promise<void> {
     return updatePiPackages(connectedFolderRoot, source, { ...options, runtimeProvider: this });
-  }
-
-  importSkillBundle(
-    connectedFolderRoot: string,
-    input: { fileName: string; bytes: Uint8Array; scope?: "user" | "project" },
-  ): Promise<PiSkillBundleImportResult> {
-    return importPiSkillBundle(connectedFolderRoot, input, this);
   }
 
   async flush(): Promise<void> {

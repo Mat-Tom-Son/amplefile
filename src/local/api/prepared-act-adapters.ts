@@ -9,7 +9,7 @@ import { resourceEnableAdapter } from "../agent/resource-enable-act.js";
 import { randomUUID } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { basename, isAbsolute } from "node:path";
-import { importPiSkillBundleVerified, piSkillBundleContentDigest, type PiSkillBundleImportResult } from "../agent/skill-import.js";
+import { importPiSkillBundle, piSkillBundleDigestMismatch, type PiSkillBundleImportResult } from "../agent/skill-import.js";
 import { installPiPackage, isPiProjectMutationTrusted, updatePiPackages } from "../agent/pi-runtime-config.js";
 import {
   PreparedActError,
@@ -174,8 +174,8 @@ export function createPreparedActAdapters(state: LocalApiState): PreparedActAdap
 }
 
 /**
- * `capability.skills.import` — the existing import path, digest-verified: the
- * pinned content digest names the exact inspected bytes, and the enumerated
+ * `capability.skills.import` — the one Skill import (importPiSkillBundle),
+ * given the pinned digest to verify: the pinned content digest names the exact inspected bytes, and the enumerated
  * skill names are derived from those bytes, so digest equality is the whole
  * identity recheck. Connected Folder scope resolves the Connected Folder's folder; Everywhere scope
  * has no Connected Folder, so it names the same app-owned neutral root the act facade's
@@ -184,34 +184,32 @@ export function createPreparedActAdapters(state: LocalApiState): PreparedActAdap
 function createSkillImportAdapter(
   state: LocalApiState,
 ): PreparedActAdapter<PreparedActOutcome<PiSkillBundleImportResult> | undefined> {
-  const loadVerified = async (act: PreparedAct): Promise<
-    { bundle: { fileName: string; bytes: Uint8Array } } | { issue: string }
-  > => {
-    let bundle: { fileName: string; bytes: Uint8Array };
+  const reload = async (act: PreparedAct): Promise<{ fileName: string; bytes: Uint8Array }> => {
     try {
-      bundle = await loadSkillBundleForAct(state, act);
+      return await loadSkillBundleForAct(state, act);
     } catch (caught) {
-      return { issue: `The skill bundle could not be re-read: ${errorMessage(caught)}` };
+      throw new Error(`The skill bundle could not be re-read: ${errorMessage(caught)}`);
     }
-    if (piSkillBundleContentDigest(bundle.bytes) !== act.pins.contentDigest) {
-      return { issue: "The skill bundle's content no longer matches the pinned digest; the source changed after it was inspected." };
-    }
-    return { bundle };
   };
   return {
     async recheckPins(act) {
-      const loaded = await loadVerified(act);
-      return "issue" in loaded ? loaded.issue : null;
+      let bundle: { fileName: string; bytes: Uint8Array };
+      try {
+        bundle = await reload(act);
+      } catch (caught) {
+        return errorMessage(caught);
+      }
+      return piSkillBundleDigestMismatch(bundle.bytes, String(act.pins.contentDigest));
     },
     async execute(act, context) {
-      const loaded = await loadVerified(act);
-      if ("issue" in loaded) throw new Error(loaded.issue);
+      // The import refuses bytes that are not the pinned ones.
+      const bundle = await reload(act);
       const root = act.parameters.scope === "connected-folder"
         ? (await getConnectedFolder(String(act.parameters.connectedFolderId))).connectedFolderRoot
         : ampleFileAgentRoot();
-      const result = await importPiSkillBundleVerified(root, {
-        fileName: loaded.bundle.fileName,
-        bytes: loaded.bundle.bytes,
+      const result = await importPiSkillBundle(root, {
+        fileName: bundle.fileName,
+        bytes: bundle.bytes,
         scope: act.parameters.scope === "connected-folder" ? "project" : "user",
         expectedContentDigest: String(act.pins.contentDigest),
       }, state.runtimeProvider);

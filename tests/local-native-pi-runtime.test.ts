@@ -14,7 +14,7 @@ import JSZip from "jszip";
 import { createPersistentPiAuthStorage, type PiAuthStorageData } from "../src/local/agent/auth-storage.js";
 import { PiConversationClient, PiTurnFailure, type PiChatEvent } from "../src/local/agent/pi-client.js";
 import { RoutedPiExtensionUiBridge, type PiExtensionUiRequest } from "../src/local/agent/extension-ui.js";
-import { importPiSkillBundle } from "../src/local/agent/skill-import.js";
+import { importPiSkillBundle, piSkillBundleContentDigest } from "../src/local/agent/skill-import.js";
 import { loadAgentSkillCatalog } from "../src/local/agent/skill-catalog.js";
 import {
   getPiComposerState,
@@ -313,6 +313,7 @@ test("Anthropic-style ZIP skill bundles preserve complete skill directories", as
   const result = await importPiSkillBundle(connectedFolderRoot, {
     fileName: "anthropic-review.skill",
     bytes,
+    expectedContentDigest: null,
   }, provider);
   assert.equal(result.scope, "user");
   assert.deepEqual(result.skills.map((item) => item.name), ["reviewer"]);
@@ -332,9 +333,28 @@ test("standalone SKILL.md imports use the declared skill name", async (t) => {
   const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
   const bytes = new TextEncoder().encode("---\nname: personal-helper\ndescription: A personal helper\n---\n\nHelp carefully.\n");
 
-  const result = await importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes }, provider);
+  const result = await importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes, expectedContentDigest: null }, provider);
   assert.deepEqual(result.skills, [{ name: "personal-helper", relativePath: "SKILL.md" }]);
   assert.match(await readFile(join(result.bundlePath, "SKILL.md"), "utf8"), /personal-helper/);
+});
+
+test("a Skill import given a pinned digest installs only those bytes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-skill-digest-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agentDir = join(root, "agent");
+  const connectedFolderRoot = join(root, "connected-folder");
+  await mkdir(connectedFolderRoot, { recursive: true });
+  const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
+  const pinned = new TextEncoder().encode("---\nname: pinned-helper\ndescription: As inspected\n---\n\nAs inspected.\n");
+  const changed = new TextEncoder().encode("---\nname: pinned-helper\ndescription: Swapped\n---\n\nSwapped in.\n");
+
+  await assert.rejects(
+    importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes: changed, expectedContentDigest: piSkillBundleContentDigest(pinned) }, provider),
+    /no longer matches the pinned digest/,
+  );
+  assert.equal(existsSync(join(agentDir, "skills", "pinned-helper")), false, "a refused import installs nothing");
+  const result = await importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes: pinned, expectedContentDigest: piSkillBundleContentDigest(pinned) }, provider);
+  assert.match(await readFile(join(result.bundlePath, "SKILL.md"), "utf8"), /As inspected/);
 });
 
 test("project skill imports require an explicit trust decision", async (t) => {
@@ -347,11 +367,11 @@ test("project skill imports require an explicit trust decision", async (t) => {
   const bytes = new TextEncoder().encode("---\nname: trusted-helper\ndescription: A trusted helper\n---\n\nHelp carefully.\n");
 
   await assert.rejects(
-    importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes, scope: "project" }, provider),
+    importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes, scope: "project", expectedContentDigest: null }, provider),
     /Trust this Connected Folder/,
   );
   new ProjectTrustStore(agentDir).set(connectedFolderRoot, true);
-  const result = await importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes, scope: "project" }, provider);
+  const result = await importPiSkillBundle(connectedFolderRoot, { fileName: "SKILL.md", bytes, scope: "project", expectedContentDigest: null }, provider);
   assert.match(result.bundlePath.replace(/\\/g, "/"), /\/\.pi\/skills\/trusted-helper$/);
 });
 
