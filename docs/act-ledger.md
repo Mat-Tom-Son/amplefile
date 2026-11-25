@@ -119,7 +119,7 @@ record only per-verb additions.
 
 Act-protocol conventions: the versioned act envelope
 (`src/local/cli/act-protocol.ts`), the per-launch act token, an optional
-caller-chosen `--request-id` that the request must travel under, explicit
+caller-chosen `--request-id` the act is journaled under, explicit
 `--connected-folder` on every Connected Folder–scoped write (never
 working-directory resolution), `--parent-task` lineage validated against an
 active AmpleFile Agent request, and `--json` output. Prepared verbs use the

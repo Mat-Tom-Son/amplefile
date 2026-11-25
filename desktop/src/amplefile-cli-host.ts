@@ -2,6 +2,7 @@ import type { AmpleFileCliKernel } from "../../src/local/cli/protocol.js";
 import { AMPLEFILE_CLI_REQUEST_MAX_AGE_MS, AmpleFileCliFileBroker } from "../../src/local/cli/broker.js";
 import { executeAmpleFileCliRequest } from "../../src/local/cli/commands.js";
 import {
+  ampleFileCliActRequestIdOf,
   ampleFileCliActRunsOutsideQueue,
   executeAmpleFileCliActRequest,
   type AmpleFileCliActAuthority,
@@ -31,12 +32,12 @@ export interface AmpleFileDesktopCliHostOptions {
   /** Validates explicit management-turn lineage for act receipts. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
   /**
-   * How long an answer stays for every caller waiting on its id; defaults to
-   * the broker freshness window. A shim that sent a command under its own
-   * --request-id leaves the answer in place, since another caller under that
-   * id may still be waiting, or may come back for it.
+   * How old an answer nobody read may get before the host removes it;
+   * defaults to the broker freshness window. A shim removes its own answer
+   * as soon as it reads it, so this only catches the answer of a command
+   * that was stopped while it waited.
    */
-  keepAnswersMs?: number;
+  unreadAnswerMaxAgeMs?: number;
 }
 
 /**
@@ -67,7 +68,7 @@ export class AmpleFileDesktopCliHost {
   #queue: Promise<unknown> = Promise.resolve();
   readonly #pending = new Set<Promise<void>>();
   readonly #maxQueuedMs: number;
-  readonly #keepAnswersMs: number;
+  readonly #unreadAnswerMaxAgeMs: number;
   readonly #now: (() => Date) | undefined;
 
   constructor(options: AmpleFileDesktopCliHostOptions) {
@@ -79,14 +80,15 @@ export class AmpleFileDesktopCliHost {
     this.#getActFacade = options.getActFacade ?? (() => null);
     this.#resolveLineageParent = options.resolveLineageParent ?? (() => null);
     this.#maxQueuedMs = options.maxQueuedMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
-    this.#keepAnswersMs = options.keepAnswersMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
+    this.#unreadAnswerMaxAgeMs = options.unreadAnswerMaxAgeMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
     this.#now = options.now;
   }
 
   async initialize(): Promise<void> {
     await this.broker.initialize();
-    // Answers kept before a quit or a CLI-only launch's exit go now.
-    await this.broker.cleanup({ answersOlderThanMs: this.#keepAnswersMs });
+    // Unread answers an earlier run of the app left behind go now, once they
+    // are past the age a live command could still be about to read them.
+    await this.broker.cleanup({ answersOlderThanMs: this.#unreadAnswerMaxAgeMs });
   }
 
   processRequest(requestId: string): Promise<void> {
@@ -113,18 +115,13 @@ export class AmpleFileDesktopCliHost {
         version: this.#version,
         productName: this.#productName,
       }));
-    }, {
-      // An answer left under this id goes to the next caller only when the
-      // id ran: then it is that run's own answer. An answer for a try that
-      // never ran (refused, or never journaled) is dropped, and this request
-      // runs. Running is still at most once: the executor checks the journal.
-      reuseAnswer: () => this.receipts.hasAccepted(id).catch(() => true),
     }).then(() => {
-      // Every caller waiting on the id reads the answer within moments; it
-      // stays a while longer for one that comes back under the same id.
+      // The waiting shim reads its answer and removes it within moments. One
+      // that was stopped first never will, so the answer goes once it is old
+      // enough that no live command could still be about to read it.
       const removal = setTimeout(() => {
-        void this.broker.removeAnswer(id, this.#keepAnswersMs).catch(() => undefined);
-      }, this.#keepAnswersMs + 1_000);
+        void this.broker.removeAnswer(id, this.#unreadAnswerMaxAgeMs).catch(() => undefined);
+      }, this.#unreadAnswerMaxAgeMs + 1_000);
       removal.unref?.();
     });
     this.#pending.add(operation);
@@ -133,16 +130,20 @@ export class AmpleFileDesktopCliHost {
   }
 
   /**
-   * A request this host has not answered yet, for `receipts show`: waiting
-   * to be claimed, or taken up and perhaps still in line. By `decideBy` it
-   * has run or been refused, whichever window applies to it — the broker's
-   * for a request not yet claimed, the queue's for one waiting in line.
+   * The tries of one act this host holds and has not answered, for
+   * `receipts show`: requests whose act id (their --request-id, else their
+   * own id) is `actId`, waiting to be claimed or taken up and perhaps still
+   * in line. By `decideBy` every one of them has run or been refused,
+   * whichever window applies — the broker's for a request not yet claimed,
+   * the queue's for one waiting in line.
    */
-  async pendingRequest(requestId: string): Promise<{ processing: boolean; decideBy: string } | null> {
-    const pending = await this.broker.pendingRequest(requestId);
-    if (!pending) return null;
+  async pendingRequest(actId: string): Promise<{ processing: boolean; decideBy: string } | null> {
+    const tries = (await this.broker.heldRequests())
+      .filter((held) => (ampleFileCliActRequestIdOf(held.argv) ?? held.id) === actId);
+    if (!tries.length) return null;
     const windowMs = Math.max(this.broker.maxRequestAgeMs, this.#maxQueuedMs);
-    return { processing: pending.processing, decideBy: new Date(pending.writtenAt.getTime() + windowMs).toISOString() };
+    const latest = Math.max(...tries.map((held) => held.writtenAt.getTime()));
+    return { processing: tries.some((held) => held.processing), decideBy: new Date(latest + windowMs).toISOString() };
   }
 
   /** Resolves only after every request observed so far has completed. */

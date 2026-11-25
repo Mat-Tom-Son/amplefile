@@ -129,8 +129,9 @@ export interface AmpleFileCliActParsedCommand {
   output: AmpleFileCliOutputMode;
   /**
    * The caller's own `--request-id`, which every act verb takes: the id the
-   * shim sent this request under, so the caller knows it before waiting and
-   * can read the receipt by it however the wait ends.
+   * act is journaled under, whatever id its request file travels under, so
+   * the caller knows it before waiting and can read the receipt by it however
+   * the wait ends.
    */
   requestId?: string;
   /** receipts.show: the act request id to look up. */
@@ -336,9 +337,8 @@ const ampleFileCliActSetupOnlyFamilies = new Map<string, string>([
 /**
  * Parses act-lane argv. Every command requires explicit selection — there is
  * deliberately no current-directory Connected Folder resolution for writes.
- * Every verb also takes `--request-id <uuid>`: it names the request itself,
- * not anything the verb acts on, and the executor checks that the request
- * arrived under that id.
+ * Every verb also takes `--request-id <uuid>`: it names the act itself, not
+ * anything the verb acts on, and the executor journals the act under it.
  */
 export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliActParsedCommand {
   const parsed = parseAmpleFileCliActVerb(argv);
@@ -354,6 +354,25 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     throw usageError("--id names the request to look up, so it cannot also be this read's own --request-id.");
   }
   return { ...parsed, requestId };
+}
+
+/**
+ * The act id an act request's argv names with `--request-id`, or null when it
+ * names none or none that parses. The host uses it to find the tries it
+ * still holds for an id.
+ */
+export function ampleFileCliActRequestIdOf(argv: readonly string[]): string | null {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index] ?? "";
+    const value = token === "--request-id" ? argv[index + 1] : token.startsWith("--request-id=") ? token.slice("--request-id=".length) : undefined;
+    if (value === undefined) continue;
+    try {
+      return normalizeAmpleFileCliRequestId(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** A request id flag's value, normalized as the broker names request files. */
@@ -1584,21 +1603,18 @@ export async function executeAmpleFileCliActRequest(
   let accepted = false;
   let receiptParentTaskId: string | undefined;
   let receiptLineage: { parentTaskId?: string } = {};
+  // The act's own id: the caller's --request-id when it gave one, else the
+  // request's. Receipts, the at-most-once check, and the domain see this id.
+  // Each try still travels as its own request file, answered under that
+  // request's id, so a caller only ever reads the answer to its own try.
+  let act: AmpleFileCliActRequest = request;
   try {
     command = parseAmpleFileCliActArgv(request.argv);
-    // A caller that named its own id relies on it to find this request
-    // later, so a request sent under any other id never runs: a shim that
-    // does not know the flag must not leave the caller holding the wrong id.
-    if (command.requestId !== undefined && command.requestId !== request.id) {
-      throw new AmpleFileCliError(
-        "protocolError",
-        "This amplefile command did not send the request under its --request-id, so nothing was run. Use the amplefile command that comes with the running AmpleFile.",
-      );
-    }
+    if (command.requestId !== undefined) act = { ...request, id: command.requestId };
     const authority = options.getActFacade();
     if (!authority || !tokensMatch(authority.token, request.actToken)) {
       await options.receipts.append({
-        requestId: request.id,
+        requestId: act.id,
         command: command.name,
         outcome: "rejected",
         errorCode: "unavailable",
@@ -1610,7 +1626,7 @@ export async function executeAmpleFileCliActRequest(
       const waitedMs = (options.now?.() ?? new Date()).getTime() - Date.parse(request.createdAt);
       if (!(waitedMs <= options.maxQueuedMs)) {
         await options.receipts.append({
-          requestId: request.id,
+          requestId: act.id,
           command: command.name,
           outcome: "rejected",
           errorCode: "timeout",
@@ -1626,16 +1642,16 @@ export async function executeAmpleFileCliActRequest(
     command = await resolveActTextFiles(command, request.cwd);
     // The broker's response-file dedup only covers a pending request; the
     // journal's accepted records are the durable at-most-once ledger.
-    if (await options.receipts.hasAccepted(request.id)) {
+    if (await options.receipts.hasAccepted(act.id)) {
       await options.receipts.append({
-        requestId: request.id,
+        requestId: act.id,
         command: command.name,
         outcome: "rejected",
         errorCode: "conflict",
         surface: "cli",
         detail: "duplicate act request id",
       });
-      throw new AmpleFileCliError("conflict", await duplicateRequestMessage(request.id, options.receipts));
+      throw new AmpleFileCliError("conflict", await duplicateRequestMessage(act.id, options.receipts));
     }
     // The accepted record lands before the mutation so a crash can never
     // leave an applied action without a journal trace; an unwritable journal
@@ -1645,7 +1661,7 @@ export async function executeAmpleFileCliActRequest(
       : null;
     if (command.parentTaskId && !lineageParent) {
       await options.receipts.append({
-        requestId: request.id,
+        requestId: act.id,
         command: command.name,
         outcome: "rejected",
         errorCode: "conflict",
@@ -1660,7 +1676,7 @@ export async function executeAmpleFileCliActRequest(
     const lineage = receiptParentTaskId ? { parentTaskId: receiptParentTaskId } : {};
     receiptLineage = lineage;
     const acceptedRecorded = await options.receipts.append({
-      requestId: request.id,
+      requestId: act.id,
       command: command.name,
       outcome: "accepted",
       surface: "cli",
@@ -1668,12 +1684,17 @@ export async function executeAmpleFileCliActRequest(
       ...(command.connectedFolder ? { detail: `Connected Folder ${command.connectedFolder}` } : {}),
     });
     if (!acceptedRecorded) {
+      // Two tries under one id can pass the check above together; the
+      // journal accepts only one of them, and the other hears what ran.
+      if (await options.receipts.hasAccepted(act.id).catch(() => false)) {
+        throw new AmpleFileCliError("conflict", await duplicateRequestMessage(act.id, options.receipts));
+      }
       throw new AmpleFileCliError("failure", "AmpleFile could not record the act receipt, so the command was not run.");
     }
     accepted = true;
-    const data = await runActCommand(command, request, authority.facade, options);
+    const data = await runActCommand(command, act, authority.facade, options);
     const outcomeRecorded = await options.receipts.append({
-      requestId: request.id,
+      requestId: act.id,
       command: command.name,
       outcome: "ok",
       surface: "cli",
@@ -1694,7 +1715,7 @@ export async function executeAmpleFileCliActRequest(
     const normalized = normalizeActError(error);
     if (accepted && command) {
       await options.receipts.append({
-        requestId: request.id,
+        requestId: act.id,
         command: command.name,
         outcome: "error",
         errorCode: normalized.code,

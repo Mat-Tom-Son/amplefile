@@ -470,20 +470,24 @@ in its receipt.
 
 ### Following an act after the wait ends
 
-Every act request travels under a request id, and its receipts are journaled
-under that id. A caller that stops waiting (a shell timeout, a lost
-connection, a killed process) does not stop the act: the desktop host claims
-a request on arrival and can still run it after the shim is gone, as late as
-the five-minute freshness window allows behind other commands in its queue.
-So the caller names the id: every act command takes `--request-id <uuid>`
-(`uuidgen` makes one). The shim sends the request under that id, lowercased
-as the broker names request files, and leaves the flag in argv; the host runs
-a request only when its argv and its envelope name the same id, so a shim
-that does not know the flag can never leave a caller holding an id that
-traces nothing. The caller chooses the id, rather than the shim printing one,
-because then the caller holds it before anything can cut the command off: a
-harness that kills a command on timeout often drops or truncates its output,
-and the id would go with it.
+Every act has a request id, and its receipts are journaled under that id. A
+caller that stops waiting (a shell timeout, a lost connection, a killed
+process) does not stop the act: the desktop host claims a request on arrival
+and can still run it after the shim is gone, as late as the five-minute
+freshness window allows behind other commands in its queue. So the caller
+names the id: every act command takes `--request-id <uuid>` (`uuidgen` makes
+one), and the host journals the act under it. Without the flag, the act's id
+is the request's own. The caller chooses the id, rather than the shim
+printing one, because then the caller holds it before anything can cut the
+command off: a harness that kills a command on timeout often drops or
+truncates its output, and the id would go with it.
+
+The id names the act, not the request file. The shim checks it, lowercases
+it, and leaves it in argv, where the host reads it, whichever shim sent it.
+Every try still travels as a request file of its own, with its own random id
+and its own answer, which the shim removes once it has read it. So a caller
+only ever reads the answer the host decided for the request it sent, never
+one decided for another caller or an earlier try.
 
 `amplefile receipts show --id <request-id>` reads what became of it, from the
 receipt journals and from what the host still holds:
@@ -501,25 +505,21 @@ The read runs beside the host's serial queue, as `jobs output` and
 `chat compact` do, because it is usually asked while the act it names still
 waits in that queue. It journals itself in `act-reads.jsonl`.
 
-The same id also makes a retry safe. Every caller waiting under one id gets
-its one answer: a retry while the first try's file still waits to be claimed
-joins that try, and one that arrives while it runs shares its result. A shim
-that sent its command under its own id therefore leaves the answer in place
-for the others and removes only the request file it wrote; the host removes
-the answer five minutes after writing it, or when it next starts. In that
-time a caller that comes back under the id is handed the answer as it was,
-as long as the id ran. An answer for a try that never ran (`rejected`, or
-refused before it was journaled) is dropped instead, and the retry runs.
-Once the answer is gone, the at-most-once journal refuses the id and names
-the command and how it ended. That refusal reaches as far back as the
-journals still hold the id's `accepted` line: at least the five-minute
-freshness window, and in practice the last 8 to 16 MB of act receipts, which
-`journalSince` reports. A retry under an id older than that runs again.
-Every new command needs a new id. `chat wait`, `agent wait`, and
-`automations wait` refuse `--request-id`, because they run in the shim and
-each of their polls is a read of its own. When the
+The same id also makes a retry safe, because the host decides each try on
+its own against the journal. A try under an id that never ran (`rejected`, or
+refused before it was journaled, such as a usage error) runs. A try under an
+id that already ran, for the same command or any other, is refused with exit
+5 and told what the id ran and how it ended; it is never run again and never
+handed that run's output. Two callers waiting under one id at once each get
+an answer: one runs the act, and the other is refused the same way. That
+refusal reaches as far back as the journals still hold the id's `accepted`
+line: at least the five-minute freshness window, and in practice the last 8
+to 16 MB of act receipts, which `journalSince` reports. A retry under an id
+older than that runs again. Every new command needs a new id. `chat wait`,
+`agent wait`, and `automations wait` refuse `--request-id`, because they run
+in the shim and each of their polls is a read of its own. When the
 shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
-the request id with the `receipts show` command that answers for it.
+the act's id with the `receipts show` command that answers for it.
 
 ## The AmpleFile Agent conversation
 
@@ -892,7 +892,8 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 
 1. The shim writes an atomic UUID-named request under the owning app's
    profile, with the arguments, current working directory, protocol version,
-   and timestamp. An act command sent with `--request-id` uses that id. An installed production app uses
+   and timestamp. Each try has its own random id; an act command's own
+   `--request-id` travels in its arguments. An installed production app uses
    `~/Library/Application Support/AmpleFile/cli/requests`, and the separately
    identified local smoke app uses its own product directory. Packaged child
    commands receive that exact root through the CLI-only
@@ -915,11 +916,10 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
 4. The shim returns that output and removes its request and response files.
-   Under a caller's own `--request-id` it removes only the request file it
-   wrote and leaves the response for other callers under that id. The host
-   removes every response five minutes after writing it, and leftover ones
-   when it starts; a retry under the same id receives it in that time if the
-   id ran. The broker also removes stale bounded files during
+   When a command is stopped before it reads its response, the app that
+   wrote the response removes it once it is five minutes old, if that app is
+   still running then, and any later start of AmpleFile removes responses
+   older than that. The broker also removes stale bounded files during
    initialization.
 
 A CLI-only launch can start the host, process its queue, flush Pi state, and
@@ -960,13 +960,13 @@ that is honest for a personal, local product:
   durable at-most-once guarantee. The host reads the journal once, keeps the
   accepted ids in memory, cuts an unfinished final line at startup, and
   refuses acts while an unreadable line could still name a request file the
-  broker would accept. A caller may choose the id with `--request-id`, and
-  the host runs a request only under the id its argv names. A retry under
+  broker would accept. A caller may name an act's id with `--request-id`,
+  which the host reads from argv and journals the act under. A retry under
   that id is a new request file with a new creation time, so the freshness
-  window no longer bounds it: it is answered or refused, never run twice, for
-  as long as the journals still hold the id's `accepted` line, and an id
-  whose line has rotated out, or sits in an unreadable line past that line's
-  window, runs again. `receipts show` reports how far back the journals
+  window no longer bounds it: it is refused, never run twice, for as long as
+  the journals still hold the id's `accepted` line, and an id whose line has
+  rotated out, or sits in an unreadable line past that line's window, runs
+  again. `receipts show` reports how far back the journals
   reach as `journalSince`.
 - **Explicit scope.** Every act command names its Connected Folder; writes
   never resolve from the working directory. Chat commands also name their

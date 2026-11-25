@@ -337,9 +337,11 @@ test("a caller that stops waiting on a queued act learns its outcome later by it
     } as unknown as AmpleFileActFacade;
     host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => ({ facade, token }) });
     await host.initialize();
-    const act = (connectedFolder: string, id = randomUUID()) => createAmpleFileCliActRequest({
-      id,
-      argv: ["chat", "create", "--connected-folder", connectedFolder, "--request-id", id, "--json"],
+    // As the shim sends it: each try is its own request, and the caller's
+    // id travels in argv.
+    const act = (connectedFolder: string, actId = randomUUID()) => createAmpleFileCliActRequest({
+      id: randomUUID(),
+      argv: ["chat", "create", "--connected-folder", connectedFolder, "--request-id", actId, "--json"],
       cwd: resolve("."),
       actToken: token,
     });
@@ -374,12 +376,15 @@ test("a caller that stops waiting on a queued act learns its outcome later by it
     assert.deepEqual(created, [], "the held act is still holding the queue");
     assert.equal((await show(randomUUID())).state, "not_found");
 
-    // A request written but not yet handed to the host is queued too.
-    const unclaimed = act("connected-folder-3");
+    // A try written but not yet handed to the host is queued too, found by
+    // the id in its argv rather than its own.
+    const unclaimedId = randomUUID();
+    const unclaimed = act("connected-folder-3", unclaimedId);
     await host.broker.writeActRequest(unclaimed);
-    assert.equal((await show(unclaimed.id)).state, "queued");
+    assert.equal((await show(unclaimedId)).state, "queued");
+    assert.equal((await show(unclaimed.id)).state, "not_found", "the request's own id is not the act's");
     await removeFile(host.broker.requestPaths(unclaimed.id).request, { force: true });
-    assert.equal((await show(unclaimed.id)).state, "not_found", "a withdrawn request never ran");
+    assert.equal((await show(unclaimedId)).state, "not_found", "a withdrawn request never ran");
 
     releaseFirst();
     await Promise.all([running, abandoned]);
@@ -392,16 +397,12 @@ test("a caller that stops waiting on a queued act learns its outcome later by it
     assert.equal(settled.receipt?.connectedFolderId, "connected-folder-2");
     assert.equal(settled.receipt?.conversationId, "chat-2");
 
-    // Sending it again under the same id never runs it twice: the answer
-    // still waiting is returned, and once that is gone the id is refused.
-    await host.broker.writeActRequest(mine).catch(() => undefined);
-    await host.processRequest(mine.id);
-    assert.equal((await host.broker.readResponse(mine.id)).exitCode, 0);
-    await removeFile(host.broker.requestPaths(mine.id).request, { force: true });
-    await removeFile(host.broker.requestPaths(mine.id).response, { force: true });
-    await host.broker.writeActRequest(mine);
-    await host.processRequest(mine.id);
-    const replay = await host.broker.readResponse(mine.id);
+    // Sending it again under the same id never runs it twice: the new try is
+    // refused and told what the id did.
+    const retry = act("connected-folder-2", callerId);
+    await host.broker.writeActRequest(retry);
+    await host.processRequest(retry.id);
+    const replay = await host.broker.readResponse(retry.id);
     assert.equal(replay.exitCode, 5);
     assert.match(replay.stderr, /already executed \(chat create, ok at /);
     assert.deepEqual(created, ["connected-folder-1", "connected-folder-2"]);
@@ -416,10 +417,10 @@ test("a caller that stops waiting on a queued act learns its outcome later by it
   }
 });
 
-test("an answer left for a try that never ran is not handed to a retry under the same id, which runs", async () => {
-  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-stale-"));
+test("each try under one act id is decided on its own: a try that never ran is retried, one that ran is refused", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-tries-"));
   const token = "e".repeat(64);
-  const { readFile, rename, writeFile } = await import("node:fs/promises");
+  const { readFile } = await import("node:fs/promises");
   try {
     let authority: { facade: AmpleFileActFacade; token: string } | null = null;
     const created: string[] = [];
@@ -434,56 +435,56 @@ test("an answer left for a try that never ran is not handed to a retry under the
     } as unknown as AmpleFileActFacade;
     const host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => authority });
     await host.initialize();
-    const id = randomUUID();
-    const send = async () => {
-      // As a shim does: write the request file itself, then hand the id over.
-      const request = createAmpleFileCliActRequest({ id, argv: ["chat", "create", "--connected-folder", "connected-folder-1", "--request-id", id], cwd: resolve("."), actToken: token });
-      const paths = host.broker.requestPaths(id);
-      await writeFile(`${paths.request}.tmp`, JSON.stringify(request));
-      await rename(`${paths.request}.tmp`, paths.request);
-      await host.processRequest(id);
-      return host.broker.readResponse(id);
+    const actId = randomUUID();
+    const send = async (connectedFolder: string, extra: string[] = []) => {
+      const request = createAmpleFileCliActRequest({ id: randomUUID(), argv: ["chat", "create", "--connected-folder", connectedFolder, ...extra, "--request-id", actId], cwd: resolve("."), actToken: token });
+      await host.broker.writeActRequest(request);
+      await host.processRequest(request.id);
+      return host.broker.readResponse(request.id);
     };
 
-    // The first try is refused (the app's act authority is not up), and its
-    // caller is gone before reading the refusal.
-    assert.equal((await send()).exitCode, 6);
+    // Refused because the act authority is not up, then a usage error: neither ran.
+    assert.equal((await send("connected-folder-1")).exitCode, 6);
+    authority = { facade, token };
+    assert.equal((await send("connected-folder-1", ["--bogus"])).exitCode, 2);
     assert.deepEqual(created, []);
 
-    // A retry under the same id runs: the refusal named a try that never ran.
-    authority = { facade, token };
-    const retry = await send();
-    assert.equal(retry.exitCode, 0, retry.stderr);
+    // So the next try under the id runs.
+    const ran = await send("connected-folder-1");
+    assert.equal(ran.exitCode, 0, ran.stderr);
     assert.deepEqual(created, ["connected-folder-1"]);
 
-    // An answer for a try that did run is handed to the next caller as it is.
-    const again = await send();
-    assert.equal(again.exitCode, 0, again.stderr);
-    assert.equal(again.stdout, retry.stdout);
-    assert.deepEqual(created, ["connected-folder-1"], "the act ran once");
-    const outcomes = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => (JSON.parse(line) as { outcome: string }).outcome);
-    assert.deepEqual(outcomes, ["rejected", "accepted", "ok"]);
+    // After that, any try under the id is refused and named, never run or answered with that run's output.
+    const different = await send("connected-folder-OTHER");
+    assert.equal(different.exitCode, 5);
+    assert.equal(different.stdout, "");
+    assert.match(different.stderr, /already executed \(chat create, ok at /);
+    assert.deepEqual(created, ["connected-folder-1"]);
+    const outcomes = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { requestId: string; outcome: string });
+    assert.ok(outcomes.every((line) => line.requestId === actId), "every try journals under the act id");
+    assert.deepEqual(outcomes.map((line) => line.outcome), ["rejected", "accepted", "ok", "rejected"]);
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }
 });
 
-test("the host removes an answer once it has been kept for its window, and at startup", async () => {
+test("the host removes an answer nobody read once it is old enough, and at startup", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-kept-"));
   const { access, utimes, writeFile } = await import("node:fs/promises");
   const exists = (path: string) => access(path).then(() => true, () => false);
   let host: AmpleFileDesktopCliHost | null = null;
   try {
-    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", keepAnswersMs: 100 });
+    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", unreadAnswerMaxAgeMs: 100 });
     await host.initialize();
     const request = createAmpleFileCliRequest({ id: randomUUID(), argv: ["version", "--json"], cwd: resolve(".") });
     await host.broker.writeRequest(request);
     await host.processRequest(request.id);
     const answer = host.broker.requestPaths(request.id).response;
-    assert.equal(await exists(answer), true, "every caller waiting on the id can still read it");
+    // Its caller was stopped before reading it, so nothing else will remove it.
+    assert.equal(await exists(answer), true, "a live caller could still be about to read it");
     const deadline = Date.now() + 10_000;
     while (await exists(answer)) {
-      if (Date.now() > deadline) throw new Error("The kept answer was never removed.");
+      if (Date.now() > deadline) throw new Error("The unread answer was never removed.");
       await new Promise<void>((resolveTick) => setTimeout(resolveTick, 20));
     }
 
@@ -492,12 +493,25 @@ test("the host removes an answer once it has been kept for its window, and at st
     await writeFile(leftover, "{}");
     const old = new Date(Date.now() - 1_000);
     await utimes(leftover, old, old);
-    const restarted = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", keepAnswersMs: 100 });
+    const restarted = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", unreadAnswerMaxAgeMs: 100 });
     await restarted.initialize();
     assert.equal(await exists(leftover), false);
   } finally {
     await host?.whenIdle();
     await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("the privacy and security notes say exactly what becomes of an answer nobody read", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const read = (path: string) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+  const privacy = await read("PRIVACY.md");
+  assert.match(privacy, /A command stopped before it reads its answer leaves that answer behind: the app that wrote it removes it once it is five minutes old, if that app is still running then, and any later start of AmpleFile removes answers older than that\./);
+  assert.match(privacy, /The shim removes its request and response after completion; for a command stopped before then, see the answer rule above\./);
+  assert.match(await read("SECURITY.md"), /an answer whose command was stopped before reading it is removed once it is five minutes old by the app that wrote it, if still running, or by any later start of AmpleFile; until then it stays on disk under the app profile/);
+  assert.match(await read("docs/amplefile-agent-and-cli.md"), /When a command is stopped before it reads its response, the app that\n   wrote the response removes it once it is five minutes old/);
+  for (const path of ["PRIVACY.md", "SECURITY.md", "docs/amplefile-agent-and-cli.md"]) {
+    assert.doesNotMatch(await read(path), /stays up to five minutes/, `${path} must not promise a removal that a quit can skip`);
   }
 });
 

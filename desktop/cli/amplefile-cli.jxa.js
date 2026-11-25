@@ -225,8 +225,9 @@ function runAutomationWaitLoop(context, plan, actToken) {
 
 /**
  * Rewrites --message-file <path> into a bounded payload the host can trust,
- * and takes the caller's own --request-id as the id to send the request
- * under. That flag stays in argv so the host can check the two agree.
+ * and checks the caller's own --request-id. That id names the act, not the
+ * request file: it stays in argv, where the host reads it, and every try
+ * still travels as its own request with its own answer.
  */
 function prepareActArguments(argumentsList) {
   const argv = [];
@@ -283,21 +284,17 @@ function readActToken(cliRoot) {
   }
 }
 
-function performRequest(context, argv, actToken, payload, suppliedRequestId) {
+function performRequest(context, argv, actToken, payload, actRequestId) {
   const fileManager = context.fileManager;
-  const requestId = suppliedRequestId || ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
+  // Every try is its own request file with its own answer, so a caller only
+  // ever reads the answer to the request it sent. A caller's --request-id
+  // names the act inside argv instead; the host journals the act under it.
+  const requestId = ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
   const requestPath = `${context.cliRoot}/requests/${requestId}.json`;
   const responsePath = `${context.cliRoot}/responses/${requestId}.json`;
   let temporaryRequestPath = `${context.cliRoot}/requests/${requestId}.${ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase()}.tmp`;
-  let writtenAt = "";
 
   try {
-    // A caller retrying under its own id while the first try still waits to
-    // be picked up joins that try: one request, one answer, never two runs.
-    if (suppliedRequestId && fileManager.fileExistsAtPath($(requestPath))) {
-      temporaryRequestPath = "";
-      return awaitResponse(context, requestId, responsePath, actToken);
-    }
     const request = actToken
       ? {
           protocolVersion: 3,
@@ -316,40 +313,24 @@ function performRequest(context, argv, actToken, payload, suppliedRequestId) {
           createdAt: new Date().toISOString(),
         };
     if (actToken && payload) request.payload = payload;
-    writtenAt = request.createdAt;
     writeText(temporaryRequestPath, JSON.stringify(request));
     if (!fileManager.moveItemAtPathToPathError($(temporaryRequestPath), $(requestPath), null)) {
       throw new Error("AmpleFile CLI request could not be committed.");
     }
     temporaryRequestPath = "";
-    return awaitResponse(context, requestId, responsePath, actToken);
+    return awaitResponse(context, requestId, responsePath, actToken ? actRequestId || requestId : null);
   } finally {
-    // An id this shim made up is its own, so it clears everything. Under a
-    // caller's own id another caller may be waiting on the same answer, or
-    // may come back for it: the shim leaves the answer, which AmpleFile
-    // removes after a few minutes, and removes a request file only if it
-    // wrote that file itself.
-    const ownFiles = suppliedRequestId
-      ? [temporaryRequestPath, writtenAt && requestFileCreatedAt(requestPath) === writtenAt ? requestPath : ""]
-      : [temporaryRequestPath, requestPath, responsePath];
-    for (const path of ownFiles) {
+    for (const path of [temporaryRequestPath, requestPath, responsePath]) {
       if (path && fileManager.fileExistsAtPath($(path))) fileManager.removeItemAtPathError($(path), null);
     }
   }
 }
 
-/** The creation time a request file records, or "" when it cannot be read. */
-function requestFileCreatedAt(path) {
-  if (!$.NSFileManager.defaultManager.fileExistsAtPath($(path))) return "";
-  try {
-    return String(JSON.parse(readText(path)).createdAt || "");
-  } catch (error) {
-    return "";
-  }
-}
-
-/** Hands the committed request id to the app and waits for its answer. */
-function awaitResponse(context, requestId, responsePath, actToken) {
+/**
+ * Hands the committed request id to the app and waits for its answer.
+ * `actId` is the id an act is journaled under, named when the wait runs out.
+ */
+function awaitResponse(context, requestId, responsePath, actId) {
   const fileManager = context.fileManager;
   const task = $.NSTask.alloc.init;
   task.executableURL = $.NSURL.fileURLWithPath($(context.appPath));
@@ -360,8 +341,9 @@ function awaitResponse(context, requestId, responsePath, actToken) {
   while (!fileManager.fileExistsAtPath($(responsePath))) {
     if (Date.now() >= deadline) {
       // An act may still run after this wait ends; its receipt says whether it did.
-      const followUp = actToken ? ` 'amplefile receipts show --id ${requestId}' tells whether it ran.` : "";
-      throw transportTimeout(`AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.${followUp}`);
+      throw transportTimeout(actId
+        ? `AmpleFile did not answer act ${actId} within ${context.timeoutMs} ms. 'amplefile receipts show --id ${actId}' tells whether it ran.`
+        : `AmpleFile did not answer CLI request ${requestId} within ${context.timeoutMs} ms.`);
     }
     $.NSThread.sleepForTimeInterval(0.05);
   }
