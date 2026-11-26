@@ -289,6 +289,31 @@ Apple submission.
   `npm audit --audit-level=high` reported two high findings, both in
   `image-size`, reached through `pptxgenjs` (used by the Documents tool);
   neither is new in this release.
+- **0.2.6** was published to `Mat-Tom-Son/amplefile` on November 26, 2026,
+  from the annotated source tag `v0.2.6` (commit `d1121b5`, PR 61). It
+  carries the fixes from the 0.2.5 end-to-end run (PR 58):
+  - names that begin or end with a space restored, renamed, moved, and
+    deleted exactly;
+  - an answer to a Worker's question accepted while the asking turn
+    finishes, continuing the Chat once;
+  - file and folder names in `amplefile search`, up to 500;
+  - `amplefile tools remove-skill`, through Recently Deleted;
+  - `--json` for the command's own errors;
+  - an owner-only credentials file and backup.
+
+  PR 61 added the command line's end-to-end tests from the Linux preview,
+  which run the real Mac command. The version matches the Linux 0.2.6
+  preview. The first release check failed on one test,
+  `tests/application-appearance-surfaces.test.ts`: headless Chrome printed
+  the complete page, then ended with its own teardown error. A second check
+  passed. The signed build, app and DMG notarization, and strict
+  verification passed on their first run. Before tagging, the signed
+  candidate's packaged `amplefile` command reported its own errors as one
+  JSON object with `--json`, and as one plain line without it, keeping the
+  exit code. `npm run desktop:verify:feed:mac -- --version 0.2.6` reported
+  that the feed offers it; an installed update from `0.2.5` to `0.2.6` is
+  not recorded here. `npm audit --audit-level=high` reported the same two
+  `image-size` findings as 0.2.5.
 
 ## Release procedure
 
