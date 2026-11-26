@@ -1664,7 +1664,7 @@ function boundaryKeys(boundaries: ReadonlySet<string>): Set<string> {
   return keys;
 }
 
-function comparableRelative(value: string): string {
+export function comparableRelative(value: string): string {
   const normalized = normalizeRelative(value).split("/").filter((part) => part && part !== ".").join("/");
   return process.platform === "darwin" || process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized;
 }
@@ -1985,7 +1985,7 @@ async function scanDirectory(
  * target's: never its contents. Null when the link vanished or now names a
  * socket, device, or pipe, which a listing leaves out like any such entry.
  */
-async function inspectSymbolicLink(path: string, limit: FilesystemLimiter): Promise<ListedLink | null> {
+export async function inspectSymbolicLink(path: string, limit: FilesystemLimiter = (operation) => operation()): Promise<ListedLink | null> {
   const linkInfo = await limit(() => lstat(path).catch(() => null));
   if (!linkInfo?.isSymbolicLink()) return null;
   // `stat` fails for a broken link and for a loop (ELOOP); both are missing.

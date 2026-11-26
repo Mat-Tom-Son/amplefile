@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -180,39 +180,114 @@ test("large match payloads continue before the response budget instead of losing
   assert.deepEqual(lines,Array.from({length:1000},(_,index)=>index+1)); assert.ok(pages>1);
 });
 
-test("search pages names and text together under the same exclusions", async (t) => {
-  const { root, dispose } = await connectedFolder("names");
+test("the first page finds a deep name beyond either text scan budget", async (t) => {
+  const { root, dispose } = await connectedFolder("large-name-walk");
+  t.after(dispose);
+  await writeFile(join(root, "000-large.txt"), "Ordinary text padding.\n".repeat(420_000));
+  for (let start = 0; start < 5_100; start += 100) {
+    await Promise.all(Array.from({ length: 100 }, (_, index) =>
+      writeFile(join(root, `a${String(start + index).padStart(4, "0")}.txt`), "")));
+  }
+  const parent = "zed/2026/November";
+  await mkdir(join(root, parent), { recursive: true });
+  const path = `${parent}/ sales & ops.txt `;
+  await writeFile(join(root, path), "unrelated");
+
+  const first = await searchConnectedFolder(root, "Sales & Ops", { includeChats: false });
+  assert.deepEqual(first.names.map((match) => match.path), [path]);
+  assert.equal(first.coverage.names?.complete, true);
+  assert.equal(first.coverage.textComplete, false);
+  assert.ok(first.nextCursor);
+  assert.ok(first.coverage.scannedBytes >= 8 * 1024 * 1024, "the first text page reached the byte budget");
+
+  const fileLimited = await searchConnectedFolder(root, "Sales & Ops", { includeChats: false, maxScannedBytes: 16 * 1024 * 1024 });
+  assert.deepEqual(fileLimited.names.map((match) => match.path), [path]);
+  assert.equal(fileLimited.coverage.names?.complete, true);
+  assert.equal(fileLimited.coverage.textComplete, false);
+  assert.ok(fileLimited.scannedFiles >= 4_999 && fileLimited.scannedFiles <= 5_000);
+  assert.ok(fileLimited.coverage.scannedBytes < 16 * 1024 * 1024);
+  assert.ok(fileLimited.nextCursor);
+});
+
+test("an entry beyond the 20,000-name budget leaves name coverage incomplete", async (t) => {
+  const { root, dispose } = await connectedFolder("name-limit");
+  t.after(dispose);
+  for (let start = 0; start < 20_000; start += 200) {
+    await Promise.all(Array.from({ length: 200 }, (_, index) =>
+      writeFile(join(root, `a${String(start + index).padStart(5, "0")}`), "")));
+  }
+  const exact = await searchConnectedFolder(root, "late", { includeChats: false, maxScannedFiles: 1 });
+  assert.deepEqual(exact.coverage.names, { visitedEntries: 20_000, complete: true });
+  await writeFile(join(root, "late.txt"), "");
+  const limited = await searchConnectedFolder(root, "late", { includeChats: false, maxScannedFiles: 1 });
+  assert.deepEqual(limited.names, []);
+  assert.deepEqual(limited.coverage.names, { visitedEntries: 20_000, complete: false });
+});
+
+test("name matches arrive once on the first page, outside the text match cap", async (t) => {
+  const { root, dispose } = await connectedFolder("name-pages");
   t.after(dispose);
   await mkdir(join(root, "Sales archive"));
-  await mkdir(join(root, ".pi"));
   await writeFile(join(root, "Sales archive", " sales & ops.txt "), "unrelated");
   await writeFile(join(root, "Sales.dat"), Buffer.alloc(32));
-  await writeFile(join(root, "report.txt"), "SALES are up");
-  await writeFile(join(root, ".pi", "Sales secret.txt"), "private");
-  await writeFile(join(root, "Sales ignored.txt"), "ignored");
-  await symlink(join(root, "report.txt"), join(root, "Sales link"));
-  await setConnectedFolderIgnoreState(root, ["Sales ignored.txt"], true);
+  await writeFile(join(root, "report.txt"), "SALES are up\nSales stayed up\n");
 
-  const names = [];
-  const lines = [];
-  let cursor: string | undefined;
-  for (let pageNumber = 0; ; pageNumber++) {
-    assert.ok(pageNumber < 16, "search advances to the end");
-    const page = await searchConnectedFolder(root, "SaLeS", { includeChats: false, maxMatches: 1, cursor });
-    assert.ok(page.names.length + page.files.length <= 1);
-    names.push(...page.names);
-    lines.push(...page.files);
-    if (!page.nextCursor) break;
-    cursor = page.nextCursor;
-  }
-  assert.deepEqual(names.map(({ path, name, kind }) => [path, name, kind]), [
+  const first = await searchConnectedFolder(root, "SaLeS", { includeChats: false, maxMatches: 1 });
+  assert.deepEqual(first.names.map(({ path, name, kind }) => [path, name, kind]), [
     ["Sales archive", "Sales archive", "folder"],
     ["Sales archive/ sales & ops.txt ", " sales & ops.txt ", "file"],
     ["Sales.dat", "Sales.dat", "file"],
   ]);
-  assert.deepEqual(lines, [{ path: "report.txt", line: 1, preview: "SALES are up" }]);
+  assert.deepEqual(first.files, [{ path: "report.txt", line: 1, preview: "SALES are up" }]);
+  assert.ok(first.nextCursor);
+  const next = await searchConnectedFolder(root, "SaLeS", { includeChats: false, maxMatches: 1, cursor: first.nextCursor! });
+  assert.deepEqual(next.names, []);
+  assert.deepEqual(next.files, [{ path: "report.txt", line: 2, preview: "Sales stayed up" }]);
   const file = await searchConnectedFolder(root, "sales & ops.txt", { path: "Sales archive/ sales & ops.txt ", includeChats: false });
   assert.deepEqual(file.names.map(({ name }) => name), [" sales & ops.txt "]);
   assert.deepEqual(file.files, []);
   assert.deepEqual((await searchConnectedFolder(root, "sales", { includeFiles: false })).names, []);
+});
+
+test("matching links keep their listing detail and their targets stay out of the search", async (t) => {
+  const { root, dispose } = await connectedFolder("name-links");
+  t.after(dispose);
+  const outside = join(root, "..", "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "report-private.txt"), "report in the link target");
+  await symlink(outside, join(root, "report-link"), "dir");
+
+  const page = await searchConnectedFolder(root, "report", { includeChats: false });
+  assert.deepEqual(page.names.map(({ path, kind, link }) => ({ path, kind, link })), [{
+    path: "report-link", kind: "folder", link: { target: "folder", targetPath: await realpath(outside) },
+  }]);
+  assert.deepEqual(page.files, []);
+  assert.equal(page.coverage.symbolicLink, 1);
+  const narrowed = await searchConnectedFolder(root, "report", { includeChats: false, path: "report-link" });
+  assert.deepEqual(narrowed.names, page.names);
+  assert.deepEqual(narrowed.files, []);
+  await assert.rejects(searchConnectedFolder(root, "report", { path: "report-link/report-private.txt" }), /symbolic links/);
+});
+
+test("name search excludes ignored, nested, reserved, and Office lock items", async (t) => {
+  const { root, dispose } = await connectedFolder("name-exclusions");
+  t.after(dispose);
+  const { registerLinkedConnectedFolder } = await import("../src/local/connected-folder.js");
+  await registerLinkedConnectedFolder(root);
+  for (const directory of ["report-ignored", "report-nested", ".amplefile", ".pi"]) {
+    await mkdir(join(root, directory), { recursive: true });
+    await writeFile(join(root, directory, "report-private.txt"), "report in excluded content");
+  }
+  await writeFile(join(root, "~$report.docx"), "report in an Office lock file");
+  await writeFile(join(root, "report-visible.txt"), "visible");
+  await setConnectedFolderIgnoreState(root, ["report-ignored"], true);
+  // On a case-insensitive volume, register the nested folder through its other spelling.
+  const alias = join(root, "REPORT-NESTED");
+  await registerLinkedConnectedFolder(await stat(alias).then(() => alias, () => join(root, "report-nested")));
+
+  const page = await searchConnectedFolder(root, "report", { includeChats: false });
+  assert.deepEqual(page.names.map(({ path }) => path), ["report-visible.txt"]);
+  assert.deepEqual(page.files, []);
+  assert.equal(page.coverage.names?.complete, true);
+  assert.equal(page.truncated, false);
 });

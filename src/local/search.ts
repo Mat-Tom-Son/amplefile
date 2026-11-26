@@ -1,27 +1,36 @@
 import { createHash } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
-import { basename, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 
 import type { FolderSearchNameMatch } from "./folder-search.js";
 import { isOfficeLockFileName } from "./office-lock-files.js";
 import { listConversations, readConversation } from "./agent/chat-store.js";
 import { decodeRetrievalCursor, encodeRetrievalCursor, retrievalError } from "./retrieval-cursor.js";
 import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
-import { assertConnectedFolderDoesNotContainState, ensureSafeConnectedFolderRoot, nestedRegisteredConnectedFolderPaths, resolveConnectedFolderPath } from "./connected-folder.js";
+import { assertConnectedFolderDoesNotContainState, comparableRelative, ensureSafeConnectedFolderRoot, inspectSymbolicLink, nestedRegisteredConnectedFolderPaths, resolveConnectedFolderPath, type TreeEntryLink } from "./connected-folder.js";
 
+export type ConnectedFolderNameMatch = FolderSearchNameMatch & { link?: TreeEntryLink };
 export interface ConnectedFolderFileMatch { path: string; line: number; preview: string; }
 export interface ConnectedFolderChatMatch { conversationId: string; title: string; role: "user" | "assistant" | "system"; createdAt: string; preview: string; }
+interface NameSearchCoverage { visitedEntries: number; complete: boolean; }
+
+const maxNameEntries = 20_000;
+
 export interface ConnectedFolderSearchCoverage {
-  /** Counters describe this page, including excluded directory roots, not their descendants. */
+  /** Text counters describe this page, including excluded directory roots, not their descendants. */
   ignored: number; internal: number; symbolicLink: number; binary: number; unreadable: number; changed: number; nonRegular: number;
   scannedBytes: number;
+  /** Coverage of the first-page name walk. Null when files were out of scope. */
+  names: NameSearchCoverage | null;
+  /** Whether the requested file text and Chat search has finished with full coverage. */
+  textComplete: boolean;
   /** Live observations, not an atomic filesystem snapshot. */
   consistency: "live";
   complete: boolean;
 }
 export interface ConnectedFolderSearchResult {
-  query: string; names: FolderSearchNameMatch[]; files: ConnectedFolderFileMatch[]; chats: ConnectedFolderChatMatch[]; truncated: boolean; scannedFiles: number;
+  query: string; names: ConnectedFolderNameMatch[]; files: ConnectedFolderFileMatch[]; chats: ConnectedFolderChatMatch[]; truncated: boolean; scannedFiles: number;
   nextCursor: string | null; coverage: ConnectedFolderSearchCoverage;
 }
 export interface ConnectedFolderSearchOptions {
@@ -33,7 +42,7 @@ export interface ConnectedFolderSearchOptions {
 }
 interface DirectoryPosition { path: string; after: string | null; version: string; }
 interface FilePosition { path: string; version: string; offset: number; line: number; tail: string; matched: boolean; sampled?: boolean; }
-interface SearchCursor { scope: string; stack: DirectoryPosition[]; current?: FilePosition; filesDone: boolean; chatIndex: number; messageIndex: number; chatVersion?: string; transcriptVersion?: string; incomplete: boolean; }
+interface SearchCursor { scope: string; nameCoverage: NameSearchCoverage | null; stack: DirectoryPosition[]; current?: FilePosition; filesDone: boolean; chatIndex: number; messageIndex: number; chatVersion?: string; transcriptVersion?: string; incomplete: boolean; }
 
 /** Fixed allocations and resumable page budgets; ordinary text files have no size ceiling. */
 export async function searchConnectedFolder(connectedFolderRoot: string, rawQuery: string, options: ConnectedFolderSearchOptions = {}): Promise<ConnectedFolderSearchResult> {
@@ -44,35 +53,42 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   assertConnectedFolderDoesNotContainState(root);
   aborted(options.signal);
   if (options.includeFiles === false && options.path) throw retrievalError("Search path narrows files; use files or all scope.");
-  const selected = options.path?.trim() ? relative(await realpath(root), await realpath(resolveConnectedFolderPath(root, options.path))).split(sep).join("/") : "";
+  const selected = await selectedSearchPath(root, options.path);
   const ignore = (await readConnectedFolderIgnoreState(root)).patterns;
-  const nested = await nestedRegisteredConnectedFolderPaths(root);
+  const nested = (await nestedRegisteredConnectedFolderPaths(root)).map(comparableRelative);
   const scope = digest(JSON.stringify([root, query, selected, options.includeFiles !== false, options.includeChats !== false, ignore, nested]));
   const cursor = options.cursor ? decodeRetrievalCursor<SearchCursor>(options.cursor) : undefined;
   if (cursor && cursor.scope !== scope) throw retrievalError("Search selection or ignore rules changed. Start the search again.", 409);
-  const state: SearchCursor = cursor ?? { scope, stack: [], filesDone: options.includeFiles === false, chatIndex: 0, messageIndex: 0, incomplete: false };
+  const state: SearchCursor = cursor ?? { scope, nameCoverage: null, stack: [], filesDone: options.includeFiles === false, chatIndex: 0, messageIndex: 0, incomplete: false };
   const needle = query.toLocaleLowerCase();
-  const names: FolderSearchNameMatch[] = [];
+  let names: ConnectedFolderNameMatch[] = [];
   const files: ConnectedFolderFileMatch[] = [];
   const chats: ConnectedFolderChatMatch[] = [];
-  const matchCount = () => names.length + files.length + chats.length;
+  const matchCount = () => files.length + chats.length;
   let resultBytes = 0; let resultBudgetReached = false;
-  const admit = (match: FolderSearchNameMatch | ConnectedFolderFileMatch | ConnectedFolderChatMatch): boolean => {
+  const admit = (match: ConnectedFolderFileMatch | ConnectedFolderChatMatch): boolean => {
     const bytes = Buffer.byteLength(JSON.stringify(match));
     if (resultBytes + bytes > 512 * 1024) { resultBudgetReached = true; return false; }
     resultBytes += bytes; return true;
   };
-  const coverage: ConnectedFolderSearchCoverage = { ignored: 0, internal: 0, symbolicLink: 0, binary: 0, unreadable: 0, changed: 0, nonRegular: 0, scannedBytes: 0, consistency: "live", complete: false };
+  const coverage: ConnectedFolderSearchCoverage = { ignored: 0, internal: 0, symbolicLink: 0, binary: 0, unreadable: 0, changed: 0, nonRegular: 0, scannedBytes: 0, names: null, textComplete: false, consistency: "live", complete: false };
   const maxMatches = count(options.maxMatches, 200, 1000);
   const maxFiles = count(options.maxScannedFiles, 5000, 50000);
   const maxBytes = count(options.maxScannedBytes ?? options.maxFileBytes, 8 * 1024 * 1024, 64 * 1024 * 1024);
   let scannedFiles = 0; let visited = 0;
   const directoryEntries = new Map<string, { entries: import("node:fs").Dirent[]; index: number }>();
+  const exclusion = (path: string): "internal" | "ignored" | null => {
+    if (path.split("/").some((name) => isAlwaysHiddenConnectedFolderEntry(name) || isOfficeLockFileName(name))) return "internal";
+    if (nested.length) {
+      const key = comparableRelative(path);
+      if (nested.some((child) => key === child || key.startsWith(`${child}/`))) return "internal";
+    }
+    return isConnectedFolderIgnored(path, ignore) ? "ignored" : null;
+  };
   const excluded = (path: string): boolean => {
-    if (path.split("/").some((name) => isAlwaysHiddenConnectedFolderEntry(name) || isOfficeLockFileName(name))) { coverage.internal++; return true; }
-    if (nested.some((child) => path === child || path.startsWith(`${child}/`))) { coverage.internal++; return true; }
-    if (isConnectedFolderIgnored(path, ignore)) { coverage.ignored++; return true; }
-    return false;
+    const reason = exclusion(path);
+    if (reason) coverage[reason]++;
+    return reason !== null;
   };
   const safe = async (path: string): Promise<BigIntStats> => {
     aborted(options.signal);
@@ -82,25 +98,22 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
     if (info.isSymbolicLink()) throw retrievalError("Search source became a symbolic link. Start the search again.", 409);
     return info;
   };
-  const matchName = (path: string, name: string, info: BigIntStats): boolean => {
-    if (!name.toLocaleLowerCase().includes(needle)) return true;
-    const kind = info.isDirectory() ? "folder" : "file";
-    const match: FolderSearchNameMatch = { path, name, kind, updatedAt: info.mtime.toISOString(),
-      ...(kind === "file" ? { sizeBytes: Number(info.size) } : {}) };
-    if (!admit(match)) return false;
-    names.push(match);
-    return true;
-  };
   if (!cursor && !state.filesDone) {
-    if (selected && excluded(selected)) state.filesDone = true;
-    else {
-      const info = await safe(selected);
+    if (selected && excluded(selected)) {
+      state.nameCoverage = { visitedEntries: 0, complete: true };
+      state.filesDone = true;
+    } else {
+      const info = await lstat(resolveConnectedFolderPath(root, selected, { finalLink: true }), { bigint: true });
+      const nameSearch = await searchNames(root, selected, info, needle, exclusion, options.signal);
+      names = nameSearch.names;
+      state.nameCoverage = nameSearch.coverage;
       if (info.isDirectory()) state.stack.push({ path: selected, after: null, version: identity(info) });
-      else if (info.isFile()) {
-        matchName(selected, basename(selected), info);
-        state.current = filePosition(selected, info);
+      else if (info.isFile()) state.current = filePosition(selected, info);
+      else {
+        if (info.isSymbolicLink()) coverage.symbolicLink++;
+        else coverage.nonRegular++;
+        state.filesDone = true;
       }
-      else { coverage.nonRegular++; state.filesDone = true; }
     }
   }
   for (const frame of state.stack) {
@@ -117,7 +130,7 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
       });
       if (initial && identity(initial) !== current.version) throw retrievalError("A searched file changed. Start the search again.", 409);
       scannedFiles++;
-      if (!initial || await scanFile(root, current, initial, needle, maxMatches - names.length, maxBytes, files, coverage, admit, options.signal)) delete state.current;
+      if (!initial || await scanFile(root, current, initial, needle, maxMatches, maxBytes, files, coverage, admit, options.signal)) delete state.current;
       if (!state.current && !state.stack.length) state.filesDone = true;
       continue;
     }
@@ -148,14 +161,18 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
     if (excluded(path)) { frame.after = entry.name; continue; }
     if (entry.isSymbolicLink()) { frame.after = entry.name; coverage.symbolicLink++; continue; }
     const info = await safe(path).catch(() => null);
-    if (info && (info.isDirectory() || info.isFile()) && !matchName(path, entry.name, info)) break;
     frame.after = entry.name;
     if (!info) { coverage.unreadable++; state.incomplete = true; continue; }
     if (info.isDirectory()) state.stack.push({ path, after: null, version: identity(info) });
     else if (info.isFile()) state.current = filePosition(path, info);
     else coverage.nonRegular++;
   }
-  // Empty stack after the final file has an exact end, not a fake extra page.
+  // Exhausted directory frames need no more search, even if the last file met a page limit.
+  while (!state.current && state.stack.length) {
+    const listing = directoryEntries.get(state.stack.at(-1)!.path);
+    if (!listing || listing.index < listing.entries.length) break;
+    state.stack.pop();
+  }
   if (!state.current && !state.stack.length) state.filesDone = true;
   let chatsDone = options.includeChats === false;
   if (state.filesDone && !chatsDone) {
@@ -190,8 +207,87 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   aborted(options.signal);
   state.incomplete ||= coverage.unreadable > 0 || coverage.changed > 0;
   const more = !state.filesDone || !chatsDone;
-  coverage.complete = !more && !state.incomplete;
+  coverage.names = state.nameCoverage;
+  coverage.textComplete = !more && !state.incomplete;
+  coverage.complete = coverage.textComplete && (coverage.names?.complete ?? true);
   return { query, names, files, chats, scannedFiles, truncated: !coverage.complete, nextCursor: more ? encodeRetrievalCursor(state) : null, coverage };
+}
+
+/** Canonicalize a selected link's parent while keeping the link itself as the selection. */
+async function selectedSearchPath(root: string, path?: string): Promise<string> {
+  if (!path?.trim()) return "";
+  const absolute = resolveConnectedFolderPath(root, path, { finalLink: true });
+  const info = await lstat(absolute);
+  const selected = info.isSymbolicLink()
+    ? join(await realpath(dirname(absolute)), basename(absolute))
+    : await realpath(absolute);
+  return relative(await realpath(root), selected).split(sep).join("/");
+}
+
+async function searchNames(
+  root: string, selected: string, initial: BigIntStats, needle: string,
+  exclusion: (path: string) => "internal" | "ignored" | null, signal?: AbortSignal,
+): Promise<{ names: ConnectedFolderNameMatch[]; coverage: NameSearchCoverage }> {
+  const names: ConnectedFolderNameMatch[] = [];
+  const coverage: NameSearchCoverage = { visitedEntries: 0, complete: true };
+
+  async function addMatch(path: string, name: string, info?: BigIntStats): Promise<void> {
+    if (!name.toLocaleLowerCase().includes(needle)) return;
+    try {
+      const absolute = resolveConnectedFolderPath(root, path, { finalLink: true });
+      info ??= await lstat(absolute, { bigint: true });
+      if (info.isSymbolicLink()) {
+        // Use the listing's target metadata for display. Neither search walk enters it.
+        const link = await inspectSymbolicLink(absolute);
+        if (link) names.push({
+          path, name, kind: link.target === "folder" ? "folder" : "file",
+          updatedAt: (link.targetInfo ?? link.linkInfo).mtime.toISOString(),
+          ...(link.target === "file" && link.targetInfo ? { sizeBytes: link.targetInfo.size } : {}),
+          link: { target: link.target, targetPath: link.targetPath },
+        });
+      } else if (info.isFile() || info.isDirectory()) {
+        names.push({
+          path, name, kind: info.isDirectory() ? "folder" : "file", updatedAt: info.mtime.toISOString(),
+          ...(info.isFile() ? { sizeBytes: Number(info.size) } : {}),
+        });
+      }
+    } catch {
+      coverage.complete = false;
+    }
+  }
+
+  async function walk(path: string): Promise<boolean> {
+    aborted(signal);
+    let entries;
+    try {
+      entries = await readdir(resolveConnectedFolderPath(root, path), { withFileTypes: true });
+    } catch {
+      coverage.complete = false;
+      return true;
+    }
+    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    for (const entry of entries) {
+      aborted(signal);
+      if (!entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink()) continue;
+      const child = path ? `${path}/${entry.name}` : entry.name;
+      if (exclusion(child)) continue;
+      if (coverage.visitedEntries === maxNameEntries) {
+        coverage.complete = false;
+        return false;
+      }
+      coverage.visitedEntries++;
+      await addMatch(child, entry.name);
+      if (entry.isDirectory() && !await walk(child)) return false;
+    }
+    return true;
+  }
+
+  if (initial.isDirectory()) await walk(selected);
+  else if (initial.isFile() || initial.isSymbolicLink()) {
+    coverage.visitedEntries++;
+    await addMatch(selected, basename(selected), initial);
+  }
+  return { names, coverage };
 }
 
 async function scanFile(root: string, current: FilePosition, initial: BigIntStats, needle: string, maxMatches: number, maxBytes: number, files: ConnectedFolderFileMatch[], coverage: ConnectedFolderSearchCoverage, admit: (match: ConnectedFolderFileMatch) => boolean, signal?: AbortSignal): Promise<boolean> {

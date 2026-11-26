@@ -21,8 +21,7 @@ import type {
   AmpleFileResultEnvelope,
   AmpleFileResultOutcome,
 } from "../requests/request-records.js";
-import type { FolderSearchNameMatch } from "../folder-search.js";
-import type { ConnectedFolderChatMatch, ConnectedFolderFileMatch, ConnectedFolderSearchCoverage } from "../search.js";
+import type { ConnectedFolderChatMatch, ConnectedFolderFileMatch, ConnectedFolderNameMatch, ConnectedFolderSearchCoverage } from "../search.js";
 import type { HistoryFileComparison, HistoryFileRead, HistoryFileReadOptions, HistoryPageOptions } from "../../shared/history-review.js";
 
 export interface AmpleFileActConnectedFolderRef {
@@ -967,7 +966,7 @@ export interface AmpleFileActFacade {
     connectedFolder: AmpleFileActConnectedFolderRef;
     scope: "files" | "chats" | "all";
     query: string;
-    names: FolderSearchNameMatch[];
+    names: ConnectedFolderNameMatch[];
     files: ConnectedFolderFileMatch[];
     chats: ConnectedFolderChatMatch[];
     truncated: boolean;

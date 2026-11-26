@@ -584,9 +584,12 @@ other surface.
 - **Search** reads names and contents. A scope bar offers **All Connected
   Folders** (while any exist) or the folder shown; results list name
   matches, then text matches with the words around them, in Name, Match, and
-  Connected Folder columns. In a Standard Folder or any other folder the
-  host's folder search reads names and file text below the folder shown, in
-  the same list with a Where column; hidden items are searched only while
+  Connected Folder columns. Connected Folder search checks up to 20,000
+  entries for names, including links, and reads a separate bounded page of
+  file text. The window says when name or text coverage is incomplete.
+  In a Standard Folder or any other folder the host's folder search reads
+  names and file text below the folder shown. That list has a Where column.
+  Hidden items are searched only while
   Show Hidden Files is on. It reads a bounded amount at a time: when it
   stops early it says so ("Search stopped after a few seconds, having read
   20,000 files.") with **Keep Searching**, and it says when some folders

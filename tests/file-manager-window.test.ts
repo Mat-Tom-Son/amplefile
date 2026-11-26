@@ -178,14 +178,24 @@ test("a selected file's Info asks for its date without hashing it", async (t) =>
   assert.equal(new URL(info.path, "http://local").searchParams.get("hash"), "0");
 });
 
-test("Connected Folder search displays the host's file and folder name matches", async (t) => {
+test("Connected Folder search shows a deep name match when only text is incomplete", async (t) => {
   const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => {
     if (path !== "/api/connected-folders/lab/search?q=Sales&scope=files") return undefined;
     return { query: "Sales", names: [
       { kind: "folder", name: "Sales Archive", path: "Sales Archive" },
-      { kind: "file", name: " sales & ops.txt ", path: "Sales Archive/ sales & ops.txt " },
-    ], files: [{ path: "a.md", line: 1, preview: "Sales report" }], truncated: false };
+      { kind: "file", name: " sales & ops.txt ", path: "deep/2026/November/Sales Archive/ sales & ops.txt " },
+      { kind: "file", name: "Sales link", path: "deep/Sales link", link: { target: "file", targetPath: "/tmp/report.txt" } },
+    ], files: [{ path: "a.md", line: 1, preview: "Sales report" }], truncated: true, nextCursor: "text-page-2",
+      coverage: { names: { visitedEntries: 5_104, complete: true }, textComplete: false, complete: false } };
   }));
+  const opened: unknown[][] = [];
+  const rendererWindow = window;
+  const originalDesktop = rendererWindow.ampleFileDesktop;
+  rendererWindow.ampleFileDesktop = {
+    ...originalDesktop,
+    placeLink: { open: async (...args: unknown[]) => { opened.push(args); } },
+  } as typeof window.ampleFileDesktop;
+  t.after(() => { rendererWindow.ampleFileDesktop = originalDesktop; });
   await dom.render(view(module));
   await dom.waitFor(() => !!dom.container.querySelector('[data-fm-path="a.md"]'));
   const before = requests.filter((item) => item.path.includes("/tree")).length;
@@ -195,8 +205,14 @@ test("Connected Folder search displays the host's file and folder name matches",
     field.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
   const rows = () => [...dom.container.querySelectorAll("[data-fm-result]")];
-  await dom.waitFor(() => rows().length === 3);
-  assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "a.md"]);
-  assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Sales report"]);
+  await dom.waitFor(() => rows().length === 4);
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "Sales link", "a.md"]);
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Name", "Sales report"]);
+  assert.equal(rows()[1]?.querySelector(".fm-row-name")?.getAttribute("title"), "deep/2026/November/Sales Archive/ sales & ops.txt ");
+  assert.ok(rows()[2]?.querySelector(".fm-link-badge"));
+  await dom.act(() => rows()[2]?.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true })));
+  assert.deepEqual(opened, [[{ kind: "connected-folder", id: lab.id }, "deep/Sales link", "open"]]);
+  assert.doesNotMatch(dom.container.textContent!, /Search stopped before checking every item/);
+  assert.match(dom.container.textContent!, /Some file text wasn’t searched/);
   assert.equal(requests.filter((item) => item.path.includes("/tree")).length, before);
 });

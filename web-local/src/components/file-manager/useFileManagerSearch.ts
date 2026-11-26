@@ -18,6 +18,7 @@ export interface FileManagerSearchResult {
   kind: "file" | "folder";
   sizeBytes?: number;
   updatedAt?: string;
+  link?: TreeEntry["link"];
   match: { kind: "name" } | { kind: "content"; pre: string; hit: string; post: string };
 }
 
@@ -25,7 +26,7 @@ const debounceMs = 250;
 interface SearchPage {
   names: TreeEntry[];
   files: Array<{ path: string; line: number; preview: string }>;
-  truncated: boolean;
+  coverage: { names: { complete: boolean } | null; textComplete: boolean };
 }
 
 /**
@@ -45,13 +46,13 @@ export function useFileManagerSearch(input: {
   const { query, scope, here, connectedFolders, enabled, fixture } = input;
   const [results, setResults] = useState<FileManagerSearchResult[]>([]);
   const [status, setStatus] = useState<"idle" | "searching" | "done">("idle");
-  const [incomplete, setIncomplete] = useState(false);
+  const [incomplete, setIncomplete] = useState<"names" | "text" | null>(null);
   const needle = query.trim();
   const targets = scope === "here" && here ? [here] : connectedFolders.map((connectedFolder) => ({ connectedFolder, path: "" }));
   const targetKey = targets.map((target) => `${target.connectedFolder.id}\0${target.path}`).join("|");
 
   useEffect(() => {
-    setIncomplete(false);
+    setIncomplete(null);
     if (!enabled || !needle) { setResults([]); setStatus("idle"); return; }
     const controller = new AbortController();
     setStatus("searching");
@@ -74,12 +75,15 @@ export function useFileManagerSearch(input: {
           const entry = { name: match.path.split("/").pop() ?? match.path, path: match.path, kind: "file" as const };
           texts.push(resultFor(connectedFolder.id, entry, { kind: "content", ...snippet(match.preview, needle) }));
         }
-        return { names, texts, incomplete: !page || page.truncated };
+        const incomplete = !page || page.coverage.names?.complete === false ? "names"
+          : !page.coverage.textComplete ? "text" : null;
+        return { names, texts, incomplete };
       })).then((perConnectedFolder) => {
         if (controller.signal.aborted) return;
         // Every name match first, then every text match, as the design lists them.
         setResults([...perConnectedFolder.flatMap((item) => item?.names ?? []), ...perConnectedFolder.flatMap((item) => item?.texts ?? [])]);
-        setIncomplete(perConnectedFolder.some((page) => page?.incomplete));
+        setIncomplete(perConnectedFolder.some((page) => page?.incomplete === "names") ? "names"
+          : perConnectedFolder.some((page) => page?.incomplete === "text") ? "text" : null);
         setStatus("done");
       });
     }, debounceMs);
@@ -98,6 +102,7 @@ function resultFor(connectedFolderId: string, entry: TreeEntry, match: FileManag
     kind: entry.kind,
     ...(typeof entry.sizeBytes === "number" ? { sizeBytes: entry.sizeBytes } : {}),
     ...(entry.updatedAt ? { updatedAt: entry.updatedAt } : {}),
+    ...(entry.link ? { link: entry.link } : {}),
     match,
   };
 }
@@ -112,7 +117,7 @@ function searchFixture(fixture: { trees: Record<string, TreeEntry[]>; fileConten
     const index = lines.findIndex((line) => line.toLocaleLowerCase().includes(lower));
     return index < 0 ? [] : [{ path: entry.path, line: index + 1, preview: lines[index]! }];
   });
-  return { names, files, truncated: false };
+  return { names, files, coverage: { names: { complete: true }, textComplete: true } };
 }
 
 function flattenTree(entries: readonly TreeEntry[]): TreeEntry[] {

@@ -2786,7 +2786,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     case "files.create":
       return `Created empty file ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
     case "search": {
-      const names = (Array.isArray(record.names) ? record.names : []) as Array<{ path?: unknown; kind?: unknown }>;
+      const names = (Array.isArray(record.names) ? record.names : []) as Array<{ path?: unknown; kind?: unknown; link?: unknown }>;
       const files = (Array.isArray(record.files) ? record.files : []) as Array<{ path?: unknown; line?: unknown; preview?: unknown }>;
       const chats = (Array.isArray(record.chats) ? record.chats : []) as Array<{ conversationId?: unknown; title?: unknown; role?: unknown; preview?: unknown }>;
       const total = names.length + files.length + chats.length;
@@ -2800,7 +2800,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       if (names.length) {
         const shown = names.slice(0, 20);
         sections.push(`Names (${names.length}):`);
-        sections.push(...shown.map((match) => `- ${terminalText(match.path)}${match.kind === "folder" ? "/" : ""}`));
+        sections.push(...shown.map((match) => `- ${terminalText(match.path)}${match.kind === "folder" ? "/" : ""}${match.link ? " (link)" : ""}`));
         if (names.length > shown.length) sections.push(`${names.length - shown.length} more name match(es) in the --json result.`);
       }
       if (files.length) {
