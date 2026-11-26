@@ -256,3 +256,42 @@ test("CLI and HTTP expose working History pages/ranges and narrowed Search conti
   const mismatch=await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}/search?${new URLSearchParams({q:"different",path:"large.txt",scope:"files",cursor:search.nextCursor})}`,{headers:{"x-amplefile-session":sessionToken}});
   assert.equal(mismatch.status,409);
 });
+
+test("History reads and per-file restore select the exact spaced name", async (t) => {
+  const { connectedFolder, request, execute, fetchReview } = await fixture(t);
+  const root = connectedFolder.connectedFolderRoot;
+  const path = " note.txt ";
+  await writeFile(join(root, path), firstText);
+  const checkpoint = await createConnectedFolderCheckpoint(root);
+  await writeFile(join(root, path), secondText);
+  const selector = ["--connected-folder", connectedFolder.id, "--path", path, "--json"];
+  const read = await execute(request(["history", "read", ...selector, "--checkpoint", checkpoint.checkpointId]));
+  assert.equal(read.exitCode, 0, read.stderr);
+  assert.equal(JSON.parse(read.stdout).data.review.observation.text, firstText);
+  const response = await fetchReview("read", { path, checkpointId: checkpoint.checkpointId });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).review.observation.text, firstText);
+  const versions = await execute(request(["history", "versions", ...selector]));
+  assert.equal(versions.exitCode, 0, versions.stderr);
+  const [version] = JSON.parse(versions.stdout).data.versions;
+  assert.equal(version.hashSha256, createHash("sha256").update(firstText).digest("hex"));
+  const restored = await execute(request(["history", "restore-file", ...selector, "--version", version.hashSha256]));
+  assert.equal(restored.exitCode, 0, restored.stderr);
+  assert.equal(await readFile(join(root, path), "utf8"), firstText);
+  assert.equal(await readFile(join(root, "note.txt"), "utf8"), currentText);
+});
+
+test("CLI and the window search endpoint share file name matches", async (t) => {
+  const { api, connectedFolder, request, execute } = await fixture(t);
+  const path = "sales & ops.txt";
+  await writeFile(join(connectedFolder.connectedFolderRoot, path), "unrelated");
+  const cli = await execute(request(["search", "--connected-folder", connectedFolder.id, "--scope", "files", "--query", "Sales & Ops", "--json"]));
+  assert.equal(cli.exitCode, 0, cli.stderr);
+  const { names, files } = JSON.parse(cli.stdout).data;
+  assert.deepEqual(files, []);
+  assert.deepEqual(names.map(({ path, name, kind }: { path: string; name: string; kind: string }) => ({ path, name, kind })), [{ path, name: path, kind: "file" }]);
+  const query = new URLSearchParams({ q: "Sales & Ops", scope: "files" });
+  const response = await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}/search?${query}`, { headers: { "x-amplefile-session": sessionToken } });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).names, names);
+});

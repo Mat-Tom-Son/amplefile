@@ -261,6 +261,7 @@ export const ampleFileRequestActionCommands = [
   "tools.enable",
   "tools.disable",
   "tools.remove",
+  "tools.remove-skill",
   "automations.enable",
   // Background jobs (docs/background-jobs.md): the tools and the CLI record the same act.
   "jobs.start",

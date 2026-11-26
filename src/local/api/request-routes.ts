@@ -11,6 +11,7 @@ import {
   isAmpleFileRequestTerminalState,
   ampleFileRequestLimitsSection,
   ampleFileAnswerMatchesRecorded,
+  type AmpleFileQuestionRecord,
   type AmpleFileRequestLimitName,
   type AmpleFileRequestRecord,
 } from "../requests/request-records.js";
@@ -105,7 +106,7 @@ export async function stopAmpleFileAgentRequest(
       await state.requests.markStopRequested(item.requestId);
       await state.requests.cancelQuestions(item.requestId, "stopped");
       for (const question of state.requests.questions(item.requestId)) {
-        state.queuedAsyncAnswers.delete(question.questionId);
+        state.queuedAnswers.delete(question.questionId);
       }
     }
   }
@@ -185,6 +186,12 @@ export function queueConversationRequestEvaluation(state: LocalApiState, connect
     });
 }
 
+/** Ordinary questions can queue only behind the turn that asked them. */
+export function canQueueAnswerWhileBusy(state: LocalApiState, key: string, question: AmpleFileQuestionRecord): boolean {
+  return question.asynchronous === true
+    || (state.activeTurnIdsByKey.get(key) === question.taskId && !state.compactingConversations.has(key));
+}
+
 export async function evaluateRequestGraphSettle(state: LocalApiState, taskId: string): Promise<void> {
   const record = state.requests.byTaskId(taskId);
   if (!record) return;
@@ -206,8 +213,8 @@ export async function evaluateRequestGraphSettle(state: LocalApiState, taskId: s
     let dispatchedAnswer = false;
     if (candidate.stopRequestedAt === null && !state.runningTurns.has(key) && !state.compactingConversations.has(key)) {
       for (const question of state.requests.questions(candidate.requestId)) {
-        if (!question.asynchronous || question.state !== "answered" || question.continuationTaskId !== null
-          || !state.queuedAsyncAnswers.delete(question.questionId)) continue;
+        if (question.state !== "answered" || question.continuationTaskId !== null
+          || !state.queuedAnswers.delete(question.questionId)) continue;
         try {
           const facade = createAmpleFileActFacade(state);
           if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: question.questionId, answer: question.answer! });
@@ -242,7 +249,8 @@ export async function requestPresentation(state: LocalApiState, record: AmpleFil
       let reason: string | undefined;
       try { state.requests.assertCanContinue(item.requestId); } catch (error) { reason = errorMessage(error); }
       const key = clientKey(item.owner.connectedFolderId ?? ampleFileAgentScopeId, item.owner.conversationId);
-      if (!question.asynchronous && (state.runningTurns.has(key) || state.compactingConversations.has(key))) reason = "The agent is finishing its current turn. You can write your answer now.";
+      if (!reason && !canQueueAnswerWhileBusy(state, key, question)
+        && (state.runningTurns.has(key) || state.compactingConversations.has(key))) reason = "The agent is finishing its current turn. You can write your answer now.";
       questions.push({ id: question.questionId, requestId: item.requestId, text: question.text,
         from: item.owner.connectedFolderName ?? (item.owner.connectedFolderId ? "Worker" : "AmpleFile"),
         state: question.state === "answered" ? "recorded" : "open",

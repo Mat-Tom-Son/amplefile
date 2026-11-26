@@ -841,6 +841,9 @@ fileevent $spawn_id readable {
 }
 vwait ended
 set status [wait]
+# Tcl 9 can crash closing stdin with its file handler still registered.
+fileevent stdin readable {}
+fileevent $spawn_id readable {}
 exit [lindex $status 3]
 `;
 

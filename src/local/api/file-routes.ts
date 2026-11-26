@@ -314,7 +314,7 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     if (!body.path?.trim() || !body.newName?.trim()) throw badRequest("A Connected Folder item and new name are required.");
     const { renamed, safetyCheckpointId, historySkippedPaths } = await renameConnectedFolderEntryWithHistory(connectedFolder, {
       path: body.path,
-      newName: body.newName,
+      newName: body.newName.trim(),
     });
     sendJson(res, { renamed, safetyCheckpointId, historySkippedPaths });
     return true;
@@ -326,8 +326,8 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const body = await readJsonBody<{ parentPath?: string; name?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A folder name is required.");
     const { folder, safetyCheckpointId, historySkippedPaths } = await createConnectedFolderFolderWithHistory(connectedFolder, {
-      parentPath: body.parentPath ?? "",
-      name: body.name,
+      parentPath: body.parentPath?.trim() ? body.parentPath : "",
+      name: body.name.trim(),
     });
     sendJson(res, { folder, safetyCheckpointId, historySkippedPaths }, 201);
     return true;
@@ -339,8 +339,8 @@ export async function handleFileRoutes({ state, req, res, url, method }: LocalAp
     const body = await readJsonBody<{ parentPath?: string; name?: string; text?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A file name is required.");
     const { file, safetyCheckpointId, historySkippedPaths } = await createConnectedFolderTextFileWithHistory(connectedFolder, {
-      parentPath: body.parentPath ?? "",
-      name: body.name,
+      parentPath: body.parentPath?.trim() ? body.parentPath : "",
+      name: body.name.trim(),
       text: body.text ?? "",
     });
     sendJson(res, { file, safetyCheckpointId, historySkippedPaths }, 201);
