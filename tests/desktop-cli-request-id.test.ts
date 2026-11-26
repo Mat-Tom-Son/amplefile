@@ -3,16 +3,12 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
 
 import { AmpleFileDesktopCliHost } from "../desktop/src/amplefile-cli-host.js";
 import type { AmpleFileActFacade } from "../src/local/cli/index.js";
-
-const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const shim = join(rootDir, "desktop", "cli", "amplefile");
-const onMac = { skip: process.platform !== "darwin" };
+import { desktopCliTest, testCli } from "./support/desktop-cli.js";
 
 /**
  * A stand-in for the AmpleFile executable: it logs each request the shim
@@ -29,7 +25,7 @@ fs.appendFileSync(path.join(process.env.FAKE_STATE, "requests.log"), JSON.string
 if (process.env.FAKE_SILENT) process.exit(0);
 const response = { protocolVersion: 1, id, exitCode: 0, stdout: JSON.stringify({ id: request.id, argv: request.argv }) + "\\n", stderr: "" };
 const temporary = path.join(root, "responses", id + ".tmp");
-fs.writeFileSync(temporary, JSON.stringify(response));
+fs.writeFileSync(temporary, JSON.stringify(response), { mode: 0o600 });
 fs.renameSync(temporary, path.join(root, "responses", id + ".json"));
 `;
 
@@ -40,7 +36,7 @@ async function stateFolder(t: TestContext): Promise<string> {
   t.after(() => rm(state, { recursive: true, force: true }));
   await mkdir(join(state, "cli", "requests"), { recursive: true });
   await mkdir(join(state, "cli", "responses"), { recursive: true });
-  await writeFile(join(state, "cli", "act-token.json"), JSON.stringify({ version: 1, actToken: "t".repeat(32) }));
+  await writeFile(join(state, "cli", "act-token.json"), JSON.stringify({ version: 1, actToken: "t".repeat(32) }), { mode: 0o600 });
   const app = join(state, "fake-app");
   await writeFile(app, fakeApp, "utf8");
   await chmod(app, 0o755);
@@ -49,7 +45,7 @@ async function stateFolder(t: TestContext): Promise<string> {
 
 async function runShim(state: string, args: string[], env: Record<string, string> = {}): Promise<Run> {
   const { code, stdout, stderr } = await new Promise<{ code: number; stdout: string; stderr: string }>((resolveRun) => {
-    execFile(shim, args, {
+    execFile(testCli!, args, {
       env: { ...process.env, FAKE_STATE: state, AMPLEFILE_CLI_APP: join(state, "fake-app"), AMPLEFILE_CLI_STATE_DIR: state, ...env },
       timeout: 30_000,
     }, (error, out, err) => resolveRun({ code: error ? Number((error as { code?: number }).code ?? 1) : 0, stdout: out, stderr: err }));
@@ -59,7 +55,7 @@ async function runShim(state: string, args: string[], env: Record<string, string
   return { code, stdout, stderr, log };
 }
 
-test("an act's --request-id travels in its arguments, and the try keeps a request file of its own", onMac, async (t) => {
+test("an act's --request-id travels in its arguments, and the try keeps a request file of its own", desktopCliTest, async (t) => {
   const state = await stateFolder(t);
   const id = randomUUID();
   const run = await runShim(state, ["files", "rename", "--connected-folder", "home", "--path", "a.txt", "--name", "b.txt", "--request-id", id.toUpperCase(), "--json"]);
@@ -142,7 +138,7 @@ async function withRealHost(t: TestContext, createDelayMs: number) {
   return { state, host, run, created, control, facade, token, journal };
 }
 
-test("through the real shim and host, every try under an id gets the answer decided for that try", onMac, async (t) => {
+test("through the real CLI and host, every try under an id gets the answer decided for that try", desktopCliTest, async (t) => {
   const { run, created, control, facade, token, journal, state } = await withRealHost(t, 0);
 
   // A try refused because the act authority is not up never ran, so a retry under its id runs.
@@ -180,7 +176,7 @@ test("through the real shim and host, every try under an id gets the answer deci
   assert.deepEqual(await readdir(join(state, "cli", "responses")), [], "every caller removed its own answer");
 });
 
-test("through the real shim and host, two callers waiting under one id each get an answer at once, and it runs once", onMac, async (t) => {
+test("through the real CLI and host, two callers waiting under one id each get an answer at once, and it runs once", desktopCliTest, async (t) => {
   const { run, created, control, facade, token, host } = await withRealHost(t, 1_500);
   control.authority = { facade, token };
   const id = randomUUID();
@@ -202,7 +198,7 @@ test("through the real shim and host, two callers waiting under one id each get 
   await host.whenIdle();
 });
 
-test("a malformed --request-id is refused before anything is sent", onMac, async (t) => {
+test("a malformed --request-id is refused before anything is sent", desktopCliTest, async (t) => {
   const state = await stateFolder(t);
   const run = await runShim(state, ["agent", "status", "--request-id", "req-1"]);
   assert.equal(run.code, 2);
@@ -213,7 +209,7 @@ test("a malformed --request-id is refused before anything is sent", onMac, async
   assert.match(twice.stderr, /--request-id may be provided only once/);
 });
 
-test("receipts show rides the act lane, and a wait that runs out says how to ask what became of the act", onMac, async (t) => {
+test("receipts show rides the act lane, and a wait that runs out says how to ask what became of the act", desktopCliTest, async (t) => {
   const state = await stateFolder(t);
   const asked = randomUUID();
   const read = await runShim(state, ["receipts", "show", "--id", asked, "--json"]);
@@ -226,4 +222,10 @@ test("receipts show rides the act lane, and a wait that runs out says how to ask
   assert.equal(silent.code, 124);
   assert.match(silent.stderr, new RegExp(`did not answer act ${id} within 300 ms\\. 'amplefile receipts show --id ${id}' tells whether it ran\\.`));
   assert.deepEqual(await readdir(join(state, "cli", "requests")), [], "a try nobody picked up is withdrawn");
+
+  const unnamed = await runShim(state, ["agent", "status"], { FAKE_SILENT: "1", AMPLEFILE_CLI_TIMEOUT_MS: "1000" });
+  assert.equal(unnamed.code, 124);
+  assert.equal(unnamed.log.length, 3);
+  const actId = unnamed.log.at(-1)!.id;
+  assert.ok(unnamed.stderr.includes(`did not answer act ${actId} within 1000 ms. 'amplefile receipts show --id ${actId}' tells whether it ran.`));
 });
