@@ -164,7 +164,8 @@ test("a browser that hangs past the timeout rejects and is stopped", async (t) =
 
 test("a browser that cannot start rejects at once", async (t) => {
   const folder = await scratchFolder(t);
-  // A monotonic clock, which does not count time the Mac spends asleep.
+  // A monotonic clock, so a wall-clock adjustment cannot move the bound. It
+  // still counts time the Mac spends asleep, as every Node timer does.
   const started = performance.now();
   await assert.rejects(
     dumpCssFixture(join(folder, "missing-browser"), join(folder, "fixture.html"), { profile: join(folder, "profile") }),
