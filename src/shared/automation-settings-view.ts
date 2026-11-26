@@ -53,6 +53,8 @@ export interface AutomationSummaryView {
     lastTriggeredAt?: string;
     /** A catch-up found and waiting for the folder to settle, its cooldown, or other automation work. */
     catchingUp?: { reason: AutomationCatchUpReason; count: number };
+    /** New files that arrived during an Automation run, waiting for their follow-up run. */
+    followingUp?: { count: number };
     lastCatchUpAt?: string;
     notice?: string;
   };

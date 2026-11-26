@@ -48,6 +48,7 @@ test("the act executor forwards attachments to the facade and stamps lineage on 
       return Promise.resolve(true);
     },
     hasAccepted: () => Promise.resolve(false),
+    lookup: () => Promise.resolve({ accepted: null, settled: null, rejected: null, journalSince: null }),
   };
   let sendInput: unknown = null;
   const facade = {

@@ -6,7 +6,7 @@ export type NativeConnectedFolderMenuItem =
 
 const requestKeys = new Set(["actions", "point"]);
 const actionKeys = new Set(["newChat", "customize", "organize", "reveal"]);
-const optionalActionKeys = new Set(["skills", "settings", "manage", "putToWork", "removeFromSidebar", "createConnectedFolder", "useExistingFolder", "remove", "removeDeletes", "openInNewTab", "openInNewWindow"]);
+const optionalActionKeys = new Set(["skills", "settings", "manage", "putToWork", "removeFromSidebar", "createConnectedFolder", "useExistingFolder", "remove", "removeDeletes", "openInNewTab", "openInNewWindow", "openTerminal"]);
 const pointKeys = new Set(["x", "y"]);
 
 export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeConnectedFolderMenuRequest {
@@ -37,6 +37,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
       ...(actions.removeDeletes === true ? { removeDeletes: true } : {}),
       ...(actions.openInNewTab === true ? { openInNewTab: true } : {}),
       ...(actions.openInNewWindow === true ? { openInNewWindow: true } : {}),
+      ...(actions.openTerminal === true ? { openTerminal: true } : {}),
     },
     point: {
       x: Math.max(0, Math.min(1_000_000, Math.round(point.x as number))),
@@ -55,6 +56,7 @@ export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMen
   if (actions.newChat) items.push({ type: "item", label: "New Chat", command: "new-chat" });
   if (actions.customize) items.push({ type: "item", label: "Customize Connected Folder", command: "customize" });
   if (actions.organize) items.push({ type: "item", label: "Organize", command: "organize" });
+  if (actions.openTerminal) items.push({ type: "item", label: "Open Terminal Here", command: "open-terminal" });
   if (actions.reveal && platform !== "linux") items.push({ type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" });
   if (actions.putToWork) items.push({ type: "item", label: "Connect This Folder", command: "put-to-work" });
   if (actions.skills) items.push({ type: "item", label: "Skills & Extensions…", command: "skills" });

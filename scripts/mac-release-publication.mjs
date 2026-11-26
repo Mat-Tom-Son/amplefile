@@ -483,6 +483,40 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "- **Chat and window fixes.** Reopening the Chat panel keeps failed drafts without sending them again. Browser tabs keep their window ownership, and quitting waits for an update that is already being prepared.",
     );
   }
+  if (version === "0.2.3") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Get Info.** Choose Get Info from the File menu, an item’s menu, or the folder background, or press ⌘I. It opens the panel at Info for the selection, or for the folder shown.",
+      "- **Undo a Worker’s changes.** After a reply that changed files, Undo puts back only what is still as the Worker left it, and keeps anything you changed since.",
+      "- **Copies into Connected Folders.** Copies made by the `amplefile` command, a handoff, or an Automation keep links as links, leave the source’s own AmpleFile records behind, and name a clash “copy” the way the window does.",
+      "- **Names and History.** A name longer than 240 characters is refused with a message rather than quietly shortened. History restores renames, moves, New Folder, and New File reliably, including names that begin or end with a space.",
+      "- **Windows, Chat, and drives.** A Worker’s browser page opens in the window whose tab in front shows its Connected Folder. “Thought for …” keeps the right length after the window reconnects to a reply. Eject refuses with the same reasons as deleting a Connected Folder while work is running or waiting on that drive. Info no longer prints a note under a folder size it could not finish counting.",
+      "",
+      "Version 0.2.3 matches the Linux preview with the same changes; there is no 0.2.2 for macOS.",
+    );
+  }
+  if (version === "0.2.4") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Open Terminal Here.** Choose it from the File menu, a folder’s menu, the folder background, or the menu of a Standard Folder or Connected Folder in the sidebar, and a new Terminal window opens in that folder.",
+    );
+  }
+  if (version === "0.2.5") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Folder watches notice only real changes.** Opening, previewing, tagging, or renaming a file no longer starts an Automation. A file that arrives while an Automation is running now gets one follow-up run instead of being missed.",
+      "- **Run an Automation from the command line without waiting on it.** `amplefile automations run` returns as soon as the run starts, so the run’s own steps can use `amplefile` while it runs. `automations status` and `automations wait` follow it, and a run refused because another is still going says it started nothing.",
+      "- **Agents learn why work failed.** When a model provider refuses a turn, Chats, Automations, and the AmpleFile Agent say why instead of “The model stopped responding”: a model this account can’t use, a rejected key, a rate limit, an image the model can’t take, a conversation too long for the model, or a billing limit. The next turn in a Chat is told how the last one ended.",
+      "- **Trace a command after you stop waiting.** Every `amplefile` act takes `--request-id`, and `amplefile receipts show --id` says whether it ran and how it ended.",
+      "- **Writing Automations.** `amplefile help automations` says what each declaration version adds and shows a shape for every trigger, including a Connected Folder’s own top level.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",

@@ -550,3 +550,128 @@ async function jsonLines<T>(path: string): Promise<T[]> {
   const text = await readFile(path, "utf8").catch(() => "");
   return text.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as T);
 }
+
+test("a follow-up run's receipt says so in automations receipts and in Settings' run history", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-follow-up-receipts-"));
+  const api = await startLocalApi({
+    port: 0,
+    stateBase: join(sandbox, "state"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
+    loadEnv: false,
+  });
+  t.after(async () => {
+    await api.close();
+    await rm(sandbox, { recursive: true, force: true });
+  });
+  const folder = await api.actFacade.createConnectedFolder({ name: "Desktop" });
+  const declaration = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
+    version: 3,
+    id: "automation-follow-up-receipts",
+    title: "Name screenshots",
+    createdBy: "human",
+    createdAt: "2026-11-01T08:00:00.000Z",
+    trigger: { kind: "files-changed", connectedFolder: folder.connectedFolder.id, watch: { kind: "tree", path: "Screenshots", recursive: false, extensions: [".png"] }, debounceSeconds: 2, cooldownMinutes: 0 },
+    steps: [{ id: "name", kind: "chat", connectedFolder: folder.connectedFolder.id, message: "Name them." }],
+  });
+  await mkdir(join(folder.connectedFolder.connectedFolderRoot, "Screenshots"), { recursive: true });
+  await api.automations.enable({
+    declaration,
+    expectedDigest: ampleFileAutomationDigest(declaration),
+    grant: { requestId: "request-follow-up-receipts", surface: "main-window" },
+  });
+  const base = { v: 1, automationId: declaration.id, runId: "run-follow-up", title: "Name screenshots", digest: "a".repeat(64) };
+  const cause = {
+    kind: "files-changed",
+    connectedFolderId: folder.connectedFolder.id,
+    snapshotDigest: "b".repeat(64),
+    changedCount: 1,
+    changedPaths: ["Screenshots/second.png"],
+    followUp: { count: 1 },
+  };
+  const both = { ...cause, changedCount: 3, changedPaths: ["Screenshots/a.png", "Screenshots/b.png", "Screenshots/second.png"], catchUp: { reason: "closed", count: 2 } };
+  const lines = [
+    { ...base, at: "2026-11-02T10:00:00.000Z", scope: "run", outcome: "accepted", cause },
+    { ...base, at: "2026-11-02T10:00:03.000Z", scope: "run", outcome: "succeeded", cause },
+    { ...base, runId: "run-both", at: "2026-11-03T10:00:00.000Z", scope: "run", outcome: "accepted", cause: both },
+    { ...base, runId: "run-both", at: "2026-11-03T10:00:03.000Z", scope: "run", outcome: "succeeded", cause: both },
+  ];
+  await appendFile(join(sandbox, "state", "automations", "receipts.jsonl"), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf8");
+
+  const receipts = (await api.actFacade.automationsReceipts({ automation: declaration.id })).receipts;
+  const accepted = receipts.find((receipt) => receipt.runId === "run-follow-up" && receipt.outcome === "accepted");
+  assert.deepEqual(accepted?.cause, cause);
+  const history = await api.automationSettings.history(declaration.id);
+  assert.equal(history.runs.find((run) => run.runId === "run-follow-up")?.cause, "Followed up on 1 new file that arrived while an Automation was running");
+  // A run that is both a catch-up and a follow-up says both.
+  assert.deepEqual(receipts.find((receipt) => receipt.runId === "run-both" && receipt.outcome === "accepted")?.cause, both);
+  assert.equal(
+    history.runs.find((run) => run.runId === "run-both")?.cause,
+    "Caught up on 2 files that changed while AmpleFile was closed · Followed up on 1 new file that arrived while an Automation was running",
+  );
+});
+
+// A wall-clock budget: the real observer polls on the real clock.
+test("a real files step's copies into another Automation's watched folder start no follow-up run there", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-files-step-attribution-"));
+  const api = await startLocalApi({
+    port: 0,
+    stateBase: join(sandbox, "state"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
+    loadEnv: false,
+  });
+  t.after(async () => {
+    await api.close();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        await rm(sandbox, { recursive: true, force: true });
+        return;
+      } catch {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  });
+  const reports = await api.actFacade.createConnectedFolder({ name: "Reports" });
+  const inbox = await api.actFacade.createConnectedFolder({ name: "Inbox" });
+  const filed = await api.actFacade.createConnectedFolder({ name: "Filed" });
+  await writeFile(join(reports.connectedFolder.connectedFolderRoot, "weekly.md"), "# Weekly\n", "utf8");
+  await mkdir(join(inbox.connectedFolder.connectedFolderRoot, "Incoming"), { recursive: true });
+  const enable = async (raw: unknown) => {
+    const declaration = normalizeAmpleFileAutomationDeclaration(raw);
+    await api.automations.enable({ declaration, expectedDigest: ampleFileAutomationDigest(declaration), grant: { requestId: `request-${declaration.id}`, surface: "main-window" } });
+    return declaration.id;
+  };
+  const fileIncoming = await enable({
+    kind: "amplefile.automation", version: 3, id: "automation-file-incoming", title: "File incoming", createdBy: "human", createdAt: "2026-11-01T08:00:00.000Z",
+    trigger: { kind: "files-changed", connectedFolder: inbox.connectedFolder.id, watch: { kind: "tree", path: "Incoming", recursive: false, extensions: [".md"] }, debounceSeconds: 1, cooldownMinutes: 0 },
+    steps: [{ id: "file", kind: "files", fromConnectedFolder: inbox.connectedFolder.id, from: { kind: "tree", path: "Incoming", recursive: false, extensions: [".md"] }, toConnectedFolder: filed.connectedFolder.id, to: "Filed" }],
+  });
+  const sendReport = await enable({
+    kind: "amplefile.automation", version: 3, id: "automation-send-report", title: "Send the report", createdBy: "human", createdAt: "2026-11-01T08:00:00.000Z",
+    trigger: { kind: "manual" },
+    steps: [{ id: "send", kind: "files", fromConnectedFolder: reports.connectedFolder.id, from: { kind: "paths", paths: ["weekly.md"] }, toConnectedFolder: inbox.connectedFolder.id, to: "Incoming" }],
+  });
+  const acceptedRuns = async (automationId: string) => (await api.actFacade.automationsReceipts({ automation: automationId })).receipts
+    .filter((receipt) => receipt.scope === "run" && receipt.outcome === "accepted");
+  const pollFor = async (milliseconds: number) => {
+    const deadline = Date.now() + milliseconds;
+    while (Date.now() < deadline) {
+      await api.automations.pollFileChanges();
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
+  };
+
+  assert.equal((await api.automations.runNow(sendReport)).outcome, "success");
+  assert.equal(await readFile(join(inbox.connectedFolder.connectedFolderRoot, "Incoming", "weekly.md"), "utf8"), "# Weekly\n");
+  await pollFor(3_000);
+  assert.equal((await acceptedRuns(fileIncoming)).length, 0, "the copy is the sending run's own file");
+
+  // The watch still works: a file a person drops in starts its run.
+  await writeFile(join(inbox.connectedFolder.connectedFolderRoot, "Incoming", "dropped.md"), "dropped", "utf8");
+  await waitFor(async () => {
+    await api.automations.pollFileChanges();
+    return (await acceptedRuns(fileIncoming)).length === 1;
+  }, "the person's file to start a run", 15_000);
+  const [run] = await acceptedRuns(fileIncoming);
+  assert.deepEqual((run?.cause as { changedPaths?: string[] }).changedPaths, ["Incoming/dropped.md"]);
+});

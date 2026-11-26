@@ -60,13 +60,19 @@ other surface.
   toolbar's **Action** button (⋯) and right-clicking a Connected Folder in
   the sidebar offer **Customize Connected Folder**, **Organize**, **Show in
   Finder** on Mac, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
-  Folder…** for a managed one), and **Settings…**. **Organize** opens the
+  Folder…** for a managed one), and **Settings…**. The sidebar menu also
+  offers **Open Terminal Here**. **Organize** opens the
   panel and starts a Chat asking that Connected Folder's Worker to organize
   it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
-  list keeps 360px. On Linux, **Open Terminal Here** opens the current folder from **File** or the
-  folder background menu, and the chosen folder from its own menu.
+  list keeps 360px. **Open Terminal Here** opens a terminal window in the
+  folder shown from **File** or the folder background menu. The Trash and
+  Recents backgrounds omit it. It also opens a folder from that folder's own
+  menu or a sidebar folder menu. Links and app packages lack the command.
+  On a Mac it uses Terminal. On Linux it uses the
+  [desktop's terminal selection](linux-build.md#sidebar-and-desktop). The host
+  checks the folder under its place's path rules and passes only that folder.
 - **Sidebar:** flush with the window's edges and square like the rest of the
   window. **Recents** sits at the top: files changed in the last 30 days
   across the Connected Folders and the top of Desktop, Documents, and
@@ -80,8 +86,8 @@ other surface.
   beside Standard Folders it adds any folder through the folder picker (kept
   on this computer only); beside Connected Folders it offers **New Connected
   Folder…** and **Connect Folder…**. Right-clicking a Standard Folder offers
-  Show in Finder on Mac, **Connect This Folder**, and, for one added with +, Remove
-  from Sidebar. A Connected Folder's dot pulses while its Worker runs and
+  **Open Terminal Here**, Show in Finder on Mac, **Connect This Folder**, and,
+  for one added with +, Remove from Sidebar. A Connected Folder's dot pulses while its Worker runs and
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
 - **Update indicator:** while an update needs the person, the foot of the
@@ -749,8 +755,8 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N (Ctrl+Al
   they did with one window, so an app that asks again and again to show a
   folder never piles windows up. When one request names several folders (a
   launcher given several, `ShowFolders` with several), the first opens in the
-  front window and each further one in a new window, as a system file
-  manager does.
+  front window and each further one in a new window. Finder requests open at
+  most eight windows, and files in one folder share that folder's window.
 - **Browser pages** belong to the window that opened them; a page a Worker
   opens appears in the window whose tab in front shows that Worker's Connected
   Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
@@ -774,8 +780,8 @@ With**, which offers Desktop, Documents, Downloads, and Pictures in one
 click beside Connect Folder and New Connected Folder. Every step has
 **Browse Files**, which leaves the welcome for good and opens the file
 manager at the home folder with nothing connected. Connecting a folder ends
-it too. A folder handed to AmpleFile (a launcher, a second launch, or the
-system's file manager request on Linux) is shown at once, first run or not.
+it too. A folder handed to AmpleFile by Finder or the Dock, a launcher, or
+the Linux file manager integration is shown at once, first run or not.
 
 With no Connected Folder the window is still a whole file manager: the
 sidebar's Recents, Trash, Standard Folders, and Drives, every other folder,

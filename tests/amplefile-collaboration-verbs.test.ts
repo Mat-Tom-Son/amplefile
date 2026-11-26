@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -132,7 +132,7 @@ for (const fails of [true, false]) {
       const requestId = api.requests.byTaskId(root.taskId)!.requestId;
       await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
       const delivered = api.requests.get(requestId)!;
-      assert.match(delivered.content, fails ? /failed: The agent couldn’t complete this request/ : /finished without a report/);
+      assert.match(delivered.content, fails ? /failed: The turn ended on an unexpected error before it finished/ : /finished without a report/);
       assert.doesNotMatch(delivered.content, /STALE SUCCESS REPORT|old\.txt/);
       assert.deepEqual(delivered.deliveredChildTaskIds, [answer.continuation.taskId]);
       assert.equal(api.requests.byTaskId(child.taskId)!.results.length, 1, "the earlier report remains historical");
@@ -1286,5 +1286,78 @@ test("a reconnect during turn reservation waits for accepted-message persistence
   } finally {
     releaseAcceptance?.(); controller.abort(); await reader?.cancel().catch(() => undefined); reader?.releaseLock();
     await sending; h.releaseAll(); await api.close();
+  }
+});
+
+test("a handoff's copies are reported to the automation executor as the calling Chat's act", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: parentFolder } = await api.actFacade.createConnectedFolder({ name: "Handoff caller" });
+    const { connectedFolder: childFolder } = await api.actFacade.createConnectedFolder({ name: "Handoff receiver" });
+    h.held.add(parentFolder.id); h.held.add(childFolder.id);
+    await writeFile(join(parentFolder.connectedFolderRoot, "brief.md"), "# Brief\n");
+    const asked: Array<{ connectedFolderId?: string; parentTaskId?: string }> = [];
+    const placed: Array<{ connectedFolderId?: string; fileIds: string[] }> = [];
+    api.automations.countsAsRunWork = (act) => { asked.push({ ...act }); return true; };
+    api.automations.notePlacedFiles = (act) => { placed.push({ connectedFolderId: act.connectedFolderId, fileIds: [...act.fileIds] }); };
+    const parent = await api.actFacade.sendMessage({ connectedFolder: parentFolder.id, newConversation: true, content: "/hold" });
+    const child = await api.actFacade.chatHandoff({ connectedFolder: parentFolder.id, taskId: parent.taskId, toConnectedFolder: childFolder.id, message: "/hold", files: ["brief.md"] });
+    assert.deepEqual(child.copied, ["brief.md"]);
+    const info = await lstat(join(childFolder.connectedFolderRoot, "brief.md"), { bigint: true });
+    assert.deepEqual(asked, [{ connectedFolderId: parentFolder.id }], "the handoff is the caller's act, in the caller's Connected Folder");
+    assert.deepEqual(placed, [{ connectedFolderId: parentFolder.id, fileIds: [`${info.dev}:${info.ino}`] }]);
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
+test("an automation step's turns, and the work they hand on, count as the run's own through the real ports", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: stepFolder } = await api.actFacade.createConnectedFolder({ name: "Step folder" });
+    const { connectedFolder: helperFolder } = await api.actFacade.createConnectedFolder({ name: "Helper folder" });
+    const { connectedFolder: elsewhere } = await api.actFacade.createConnectedFolder({ name: "Elsewhere" });
+    h.held.add(stepFolder.id); h.held.add(helperFolder.id); h.held.add(ampleFileAgentScopeId);
+    const declaration = normalizeAmpleFileAutomationDeclaration({
+      kind: "amplefile.automation",
+      version: 4,
+      id: "automation-held-steps",
+      title: "Held steps",
+      createdBy: "human",
+      createdAt: "2026-11-01T08:00:00.000Z",
+      trigger: { kind: "manual" },
+      steps: [
+        { id: "chat", kind: "chat", connectedFolder: stepFolder.id, message: "/hold" },
+        { id: "agent", kind: "agent", message: "/hold" },
+      ],
+    });
+    await api.automations.enable({ declaration, expectedDigest: ampleFileAutomationDigest(declaration), grant: { requestId: "request-held-steps", surface: "main-window" } });
+    const run = api.automations.runNow(declaration.id);
+
+    await waitFor(async () => h.pending.some((turn) => turn.connectedFolderId === stepFolder.id));
+    const chatTurn = h.pending.find((turn) => turn.connectedFolderId === stepFolder.id)!;
+    assert.equal(api.automations.countsAsRunWork({ taskId: chatTurn.taskId }), true, "the chat step's turn, as its port reported it");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: elsewhere.id }), false);
+    await h.release(chatTurn.taskId);
+
+    await waitFor(async () => h.pending.some((turn) => turn.connectedFolderId === ampleFileAgentScopeId));
+    const agentTurn = h.pending.find((turn) => turn.connectedFolderId === ampleFileAgentScopeId)!;
+    assert.equal(api.automations.countsAsRunWork({ taskId: agentTurn.taskId }), true, "the agent step's turn, as its port reported it");
+    assert.equal(api.automations.countsAsRunWork({ taskId: chatTurn.taskId }), false, "a finished step is no longer working");
+    const child = await api.actFacade.sendMessage({ connectedFolder: helperFolder.id, newConversation: true, content: "/hold", parentTaskId: agentTurn.taskId });
+    assert.equal(api.automations.countsAsRunWork({ taskId: child.taskId }), true, "a turn the step handed work to");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: helperFolder.id }), true, "the Connected Folder of that work while it runs");
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: elsewhere.id }), false);
+    // The step's continuation turn needs a model this harness lacks, so how
+    // the run ends is not the point here; only that it has ended.
+    h.releaseAll();
+    await run;
+    assert.equal(api.automations.countsAsRunWork({ connectedFolderId: helperFolder.id }), false, "nothing counts once the run is over");
+  } finally {
+    h.releaseAll();
+    await api.close();
   }
 });

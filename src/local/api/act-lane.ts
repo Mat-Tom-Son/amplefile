@@ -94,7 +94,13 @@ import {
   assertAmpleFileAgentParentAccepting,
   resolveAmpleFileAgentConversation,
 } from "./amplefile-agent-routes.js";
-import { readAutomationReceiptProjection, toActAutomationFilesSource, toActAutomationSummary } from "./automation-receipts.js";
+import {
+  readAutomationReceiptProjection,
+  toActAutomationFilesSource,
+  toActAutomationRunStatus,
+  toActAutomationSummary,
+} from "./automation-receipts.js";
+import { connectedFolderFileIds, isAutomationRunWork, noteAutomationRunFiles } from "./automation-attribution.js";
 import { enableStoredAutomationDeclaration, readAutomationStagingFile } from "./automation-settings.js";
 import {
   createBackgroundJobToolHost,
@@ -660,6 +666,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
         const copy = sources.length
           ? await addExternalFilesInternal(destination, { fromPaths: sources, cwd: destination.connectedFolderRoot })
           : { copied: [], checkpointId: null };
+        // The handoff is the calling Chat's act, wherever its copies land.
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: destination.connectedFolderRoot, placed: copy.copied });
         const conversation = followUpId ? { id: followUpId } : await createConversation(destination.connectedFolderRoot);
         const { message, taskId: childTaskId } = await acceptConversationTurn(state, destination, conversation.id, {
           content,
@@ -1034,6 +1042,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       await assertConnectedFolderQuietForHistoryRestore(connectedFolder.id);
       const result = await runActOperation(() => runHistoryRestore(state, connectedFolder, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, input.checkpointId)));
+      await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: result.restoredFiles });
       await recordFacadeAction(state, input.parentTaskId, {
         command: "history.restore",
         connectedFolder,
@@ -1080,6 +1089,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           throw new AmpleFileCliError("conflict", "The selected path is currently a folder.");
         }
         const result = await runHistoryRestore(state, connectedFolder, () => restoreFileVersion(connectedFolder.connectedFolderRoot, input.path, input.version.trim()));
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: [result.path] });
         await recordFacadeAction(state, input.parentTaskId, {
           command: "history.restore-file",
           connectedFolder,
@@ -1098,6 +1108,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           sourcePath: sourceRaw,
           targetFolderPath: input.toDir,
         });
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, moved: [moved.path] });
         await recordFacadeAction(state, input.parentTaskId, { command: "files.move", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1116,6 +1127,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
         const { renamed, safetyCheckpointId } = await renameConnectedFolderEntryWithHistory(connectedFolder, { path: sourceRaw, newName });
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, moved: [renamed.path] });
         await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1133,9 +1145,13 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const target = input.path.trim();
       if (!target) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
       return runActOperation(async () => {
+        // What a run's own delete removes vacates its name (docs/automations.md).
+        const act = { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId };
+        const removedIds = isAutomationRunWork(state, act) ? await connectedFolderFileIds(connectedFolder.connectedFolderRoot, [target]) : [];
         const deleted = await deleteConnectedFolderEntryWithRecovery(state, connectedFolder, target, {
           receiptId: input.requestId ?? null,
         });
+        await noteAutomationRunFiles(state, act, { root: connectedFolder.connectedFolderRoot, removedIds });
         await recordFacadeAction(state, input.parentTaskId, {
           command: "files.delete",
           connectedFolder,
@@ -1150,6 +1166,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const { parentPath, name } = splitActEntryPath(input.path, "A folder path is required.");
       return runActOperation(async () => {
         const { folder, safetyCheckpointId } = await createConnectedFolderFolderWithHistory(connectedFolder, { parentPath, name });
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: [folder.path] });
         await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1166,6 +1183,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const { parentPath, name } = splitActEntryPath(input.path, "A file path is required.");
       return runActOperation(async () => {
         const { file, safetyCheckpointId } = await createConnectedFolderTextFileWithHistory(connectedFolder, { parentPath, name, text: "" });
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: [file.path] });
         await recordFacadeAction(state, input.parentTaskId, { command: "files.create", connectedFolder, checkpointId: safetyCheckpointId });
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -1222,6 +1240,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const result = await runActOperation(() => addExternalFilesInternal(connectedFolder, input));
+      await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: result.copied });
       await recordLandedAction(state, input.parentTaskId, {
         command: "files.add",
         at: new Date().toISOString(),
@@ -1677,6 +1696,9 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
         receiptId: input.requestId ?? null,
       }));
       const connectedFolder = "connectedFolder" in restored && restored.connectedFolder ? await getConnectedFolder(restored.connectedFolder.id).catch(() => null) : null;
+      if (connectedFolder && (restored.kind === "file" || restored.kind === "folder")) {
+        await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, placed: [restored.path] });
+      }
       await recordFacadeAction(state, input.parentTaskId, {
         command: "recently-deleted.restore",
         ...(connectedFolder ? { connectedFolder } : {}),
@@ -1758,20 +1780,39 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const automationId = input.automation.trim();
       const projection = await runActOperation(() => state.automations.getAutomation(automationId));
       if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
-      const run = await runActOperation(() => state.automations.runNow(automationId, {
+      // Admission only, as Settings does: the run's steps may start turns
+      // that call these same act verbs, so this request must not wait on them.
+      const admission = await runActOperation(() => state.automations.runNowAdmission(automationId, {
         ...(input.requestId ? { requestId: input.requestId } : {}),
       }));
+      // A refused admission (another run of it in progress, scheduling
+      // suspended) settles at once with no run work, so its outcome is
+      // reported here instead of a run that will never start.
+      if (admission.refused) await admission.result.catch(() => undefined);
+      else void admission.result.catch(() => undefined);
+      // The scheduler marks every admission before handing it back, so the
+      // run is at least queued here.
+      const status = state.automations.runStatus(automationId, admission.runId);
       return {
         automationId,
         title: projection.declaration.title,
-        run: {
-          runId: run.runId,
-          outcome: run.outcome,
-          startedAt: run.startedAt,
-          finishedAt: run.finishedAt,
-          ...(run.error !== undefined ? { error: run.error } : {}),
-        },
+        run: status ? toActAutomationRunStatus(admission.runId, status) : { runId: admission.runId, state: "queued" as const },
       };
+    },
+    async automationsStatus(input) {
+      const automationId = input.automation.trim();
+      const runId = input.run.trim();
+      const projection = await runActOperation(() => state.automations.getAutomation(automationId));
+      if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
+      const status = state.automations.runStatus(automationId, runId);
+      if (!status) {
+        throw new AmpleFileCliError(
+          "notFound",
+          "The running app does not know this run of this automation: it may have run before AmpleFile last started, "
+            + "or be too old to keep in memory. Its record is in 'automations receipts --automation <id>'.",
+        );
+      }
+      return { automationId, title: projection.declaration.title, run: toActAutomationRunStatus(runId, status) };
     },
     async automationsStop(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);

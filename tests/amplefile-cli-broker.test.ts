@@ -270,6 +270,59 @@ test("CLI broker cleanup removes only stale recognized regular files and reports
   });
 });
 
+test("CLI broker lists the requests it holds unanswered, and removes answers nobody read by their own age", async () => {
+  await withBroker(async ({ broker, root }) => {
+    const request = (id: string, argv: string[]) => JSON.stringify(createAmpleFileCliRequest({ id, argv, cwd: root, createdAt: fixedNow.toISOString() }));
+    const waiting = randomUUID();
+    await writeFile(broker.requestPaths(waiting).request, request(waiting, ["context", "--json"]));
+    const stale = randomUUID();
+    await writeFile(broker.requestPaths(stale).request, request(stale, ["context"]));
+    const old = new Date(fixedNow.getTime() - 10 * 60 * 1000);
+    await utimes(broker.requestPaths(stale).request, old, old);
+    const residue = randomUUID();
+    await writeFile(broker.requestPaths(residue).claim, request(residue, ["context"]));
+
+    // One request is taken up and held mid-run while the list is read.
+    const running = randomUUID();
+    await writeFile(broker.requestPaths(running).request, request(running, ["version"]));
+    let release!: () => void;
+    const held = new Promise<void>((resolveHeld) => { release = resolveHeld; });
+    let started!: () => void;
+    const startedRun = new Promise<void>((resolveStarted) => { started = resolveStarted; });
+    const processing = broker.processRequest(running, async (brokered) => {
+      started();
+      await held;
+      return createAmpleFileCliResponse({ id: brokered.id, exitCode: 0, stdout: "", stderr: "", completedAt: fixedNow.toISOString() });
+    });
+    await startedRun;
+    const listed = (await broker.heldRequests()).map((entry) => [entry.id, entry.argv.join(" "), entry.processing]);
+    assert.deepEqual(
+      listed.sort(),
+      [[running, "version", true], [waiting, "context --json", false]].sort(),
+      "a file too old ever to be claimed, and a claim nothing is processing, are not held",
+    );
+    release();
+    await processing;
+    assert.deepEqual((await broker.heldRequests()).map((entry) => entry.id), [waiting]);
+
+    const answer = broker.requestPaths(running).response;
+    assert.equal(await broker.removeAnswer(running, 60_000), false, "an answer younger than the window stays");
+    await utimes(answer, old, old);
+    assert.equal(await broker.removeAnswer(running, 60_000), true);
+    assert.equal(existsSync(answer), false);
+    assert.equal(await broker.removeAnswer(running, 60_000), false, "nothing is left to remove");
+
+    const leftoverAnswer = broker.requestPaths(randomUUID()).response;
+    await writeFile(leftoverAnswer, "{}", "utf8");
+    await utimes(leftoverAnswer, old, old);
+    assert.deepEqual(
+      (await broker.cleanup({ olderThanMs: 60 * 60 * 1000, answersOlderThanMs: 60_000 })).removed,
+      [leftoverAnswer],
+      "answers go at their own, shorter age; requests and claims keep theirs",
+    );
+  });
+});
+
 test("CLI response writer validates schema, bounds output, and refuses overwrite", async () => {
   await withBroker(async ({ broker }) => {
     const id = randomUUID();

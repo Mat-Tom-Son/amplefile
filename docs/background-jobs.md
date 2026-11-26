@@ -33,7 +33,9 @@ path.
   once: to a turn in its Chat that reads it, to the next turn that starts in
   that Chat, or else in one host follow-up turn joined to the job's request
   when the Chat is idle. The follow-up carries the exit status, how long it
-  ran, its History coverage, and the end of its output. It follows Stop fences,
+  ran, its History coverage, and the end of its output. A follow-up that could
+  not start is not retried; the job journal records that its end reached no
+  turn, and the next turn in that Chat receives it instead. It follows Stop fences,
   the Limits switch that turns continuations off, and "restart never replays".
   Nothing busy-waits, holds a turn, or polls. Nothing wakes a Chat for a job
   that settled before a restart.
@@ -103,7 +105,10 @@ folder, start and end times, process id, exit code or signal, output size,
 History coverage, delivery, and state:
 
 `accepted` → `running` → `exited` | `stopped` | `timed_out` | `failed` (could
-not start) | `interrupted` (AmpleFile closed or restarted first).
+not start) | `interrupted` (AmpleFile closed or restarted first). A job that
+something outside AmpleFile ended (a kill, the system running out of memory)
+is `exited` and is described by its signal, such as "was ended by signal
+SIGKILL (exit code 137)", rather than by the exit code alone.
 
 - **Start.** The `accepted` record is written before the process is spawned;
   an unwritable journal refuses. The command runs through Pi's own shell

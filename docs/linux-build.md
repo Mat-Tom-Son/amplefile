@@ -140,7 +140,8 @@ plain folder also goes to the desktop's Trash, through Electron's
 
 **Open Terminal Here** is in **File**, the folder background menu, and a
 folder's own menu, including a Standard Folder or Connected Folder in the
-sidebar. It uses the desktop's `xdg-terminal-exec` selection, then the
+sidebar. The Trash and Recents backgrounds do not offer it.
+It uses the desktop's `xdg-terminal-exec` selection, then the
 command and optional quoted arguments in `$TERMINAL`, then the first
 installed terminal it recognizes. The host launches the terminal directly
 with the chosen folder as its working directory.

@@ -14,7 +14,10 @@ import {
   PiTurnFailure,
   PiTurnDrainingError,
   isPiTurnCancelledError,
+  previousTurnPartialTextMaxChars,
+  type PiPreviousTurnEnding,
 } from "../agent/pi-client.js";
+import { describeProviderFailure } from "../agent/turn-failure.js";
 import { parseAssistantPresentation } from "../agent/turn-presentation.js";
 import type { AmpleFileDurableTurnRecord } from "../agent/turn-store.js";
 import {
@@ -138,6 +141,7 @@ export async function runAgentTurn(
       }
     }
     const backgroundJobs = await backgroundJobsForTurn(state, connectedFolderId, conversationId, taskId);
+    const previousTurn = previousTurnEnding(state, connectedFolderId, conversationId, taskId);
     beforeCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "pre_turn");
     if (connectedFolderTurn) connectedFolderTurn.history = connectedFolderTurnHistory(beforeCheckpoint);
     const ownConnectedFolder = registeredConnectedFolders.find((item) => item.id === connectedFolderId);
@@ -161,6 +165,7 @@ export async function runAgentTurn(
       ...(addressedFolders.length ? { addressedFolders } : {}),
       ...(options.automation ? { automation: options.automation } : {}),
       ...(backgroundJobs.length ? { backgroundJobs } : {}),
+      ...(previousTurn ? { previousTurn } : {}),
       // A later turn of the same request picks up the checklist where it was left.
       ...(request?.checklist?.items.length ? { checklist: request.checklist.items } : {}),
     });
@@ -543,19 +548,58 @@ function throwIfTurnCancelled(state: LocalApiState, taskId: string): void {
   throw error;
 }
 
+/**
+ * The turn's recorded error, which agents read through `chat status`,
+ * `chat wait`, a parent's follow-up turn, and Automation receipts: the cause
+ * in fixed words, then whether anything the turn did before failing was kept.
+ */
 function assistantTurnFailureMessage(error: unknown, partialResponsePreserved: boolean): string {
-  if (isPiTurnCancelledError(error)) return "Turn cancelled.";
+  if (isPiTurnCancelledError(error)) return "The turn was stopped before it finished.";
   if (!(error instanceof PiTurnFailure)) return assistantFailurePublicDetail(error);
-  const creditFailure = providerCreditFailureDetail(error);
-  if (creditFailure) return partialResponsePreserved
-    ? `${creditFailure} AmpleFile saved the partial response and completed activity below.`
-    : `${creditFailure} AmpleFile could not save the partial response.`;
-  const retrySummary = error.retryAttempts > 0
-    ? ` after ${error.retryAttempts} automatic ${error.retryAttempts === 1 ? "retry" : "retries"}`
-    : "";
+  const description = describePiTurnFailure(error);
+  const didWork = error.partialText.trim().length > 0 || error.activities.length > 0;
+  if (!didWork || description.cause === "response_length") return description.text;
   return partialResponsePreserved
-    ? `The model stopped responding${retrySummary}. AmpleFile saved the partial response and completed activity below.`
-    : `The model stopped responding${retrySummary}, and AmpleFile could not save the partial response.`;
+    ? `${description.text} The partial response and completed tool activity before the failure were kept in the Chat.`
+    : `${description.text} AmpleFile could not save the partial response.`;
+}
+
+function describePiTurnFailure(error: PiTurnFailure) {
+  return describeProviderFailure({
+    message: error.message,
+    kind: error.kind,
+    provider: error.provider,
+    model: error.model,
+    retryAttempts: error.retryAttempts,
+  });
+}
+
+/**
+ * How this Chat's turn before `taskId` ended, when it ended without an answer,
+ * from the machine-local turn journal. A turn that answered — or one too old
+ * for the bounded journal — adds nothing.
+ */
+export function previousTurnEnding(
+  state: Pick<LocalApiState, "turnStore">,
+  connectedFolderId: string,
+  conversationId: string,
+  taskId: string,
+): PiPreviousTurnEnding | undefined {
+  const current = state.turnStore.get(taskId);
+  const previous = state.turnStore.list()
+    .filter((record) => record.connectedFolderId === connectedFolderId
+      && record.conversationId === conversationId
+      && record.turnId !== taskId
+      && (!current || record.acceptedAt <= current.acceptedAt)
+      && record.status !== "accepted" && record.status !== "running")
+    .sort((left, right) => left.acceptedAt.localeCompare(right.acceptedAt))
+    .at(-1);
+  if (!previous || previous.status === "succeeded") return undefined;
+  const outcome = previous.status === "aborted" ? "stopped" : previous.status === "interrupted" ? "interrupted" : "failed";
+  const detail = previous.error?.trim()
+    || (outcome === "stopped" ? "The turn was stopped before it finished." : outcome === "interrupted" ? appClosedTurnDetail : "The turn failed.");
+  const partialText = previous.assistantText.trim().slice(0, previousTurnPartialTextMaxChars + 1);
+  return { outcome, detail, ...(partialText ? { partialText } : {}) };
 }
 
 function assistantFailureReason(error: unknown): "provider_error" | "setup_error" | "assistant_error" {
@@ -566,7 +610,7 @@ function assistantFailureReason(error: unknown): "provider_error" | "setup_error
 function assistantFailureTranscriptContent(error: unknown, checkpointText = "", cancelled = false): string {
   const checkpoint = checkpointText.trim();
   if (error instanceof PiTurnFailure) {
-    return error.partialText || checkpoint || providerCreditFailureDetail(error) || "The model stopped responding before it could finish a response.";
+    return error.partialText || checkpoint || describePiTurnFailure(error).text;
   }
   if (checkpoint) return checkpoint;
   if (cancelled) return "The agent was stopped before it completed a response.";
@@ -575,14 +619,9 @@ function assistantFailureTranscriptContent(error: unknown, checkpointText = "", 
 
 export function assistantFailurePublicDetail(error: unknown): string {
   if (error instanceof PiTurnDrainingError) return error.message;
+  if (error instanceof PiTurnFailure) return describePiTurnFailure(error).text;
   const creditFailure = providerCreditFailureDetail(error);
   if (creditFailure) return creditFailure;
-  if (error instanceof PiTurnFailure) {
-    const retrySummary = error.retryAttempts > 0
-      ? ` after ${error.retryAttempts} automatic ${error.retryAttempts === 1 ? "retry" : "retries"}`
-      : "";
-    return `The model stopped responding${retrySummary}.`;
-  }
   if (isModelSetupError(error)) {
     return "The Worker couldn’t reach an AI model. Connect an AI provider, or check the one in Settings → AI Models, then try again.";
   }
@@ -592,7 +631,7 @@ export function assistantFailurePublicDetail(error: unknown): string {
   if (/timed?\s*out|timeout/i.test(errorMessage(error))) {
     return "The agent took too long to respond. Try again when you’re ready.";
   }
-  return "The agent couldn’t complete this request. Try again. If it keeps happening, check Settings → AI Models.";
+  return "The turn ended on an unexpected error before it finished. Trying again may work; if it keeps happening, check Settings → AI Models.";
 }
 
 /** Preserve the actionable provider status without echoing its raw body, URLs or account data. */

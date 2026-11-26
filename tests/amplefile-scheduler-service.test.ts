@@ -94,6 +94,53 @@ test("AmpleFileAutomationService enforces FIFO global concurrency, prevents same
   service.close();
 });
 
+test("a run reads by id as queued, then running, and settled only once its result observer is done", async () => {
+  const clock = new FakeClock(startTime);
+  let releaseObserver = () => {};
+  const observerHeld = new Promise<void>((resolve) => { releaseObserver = resolve; });
+  let holdObserver = false;
+  const service = new AmpleFileSchedulerService({
+    clock,
+    maxConcurrency: 1,
+    createRunId: runIds().next,
+    onResult: async () => { if (holdObserver) await observerHeld; },
+  });
+  const blocker = key("owner-a", "blocker");
+  const waiting = key("owner-b", "waiting");
+  const releases: Array<() => void> = [];
+  service.register(job(blocker, async () => { await new Promise<void>((resolve) => releases.push(resolve)); }));
+  service.register(job(waiting, async () => { await new Promise<void>((resolve) => releases.push(resolve)); }));
+
+  const first = service.runNowAdmission(blocker);
+  const second = service.runNowAdmission(waiting);
+  assert.deepEqual(service.runState(first.runId), { state: "running", key: blocker });
+  assert.deepEqual(service.runState(second.runId), { state: "queued", key: waiting }, "a run waiting for a slot reads as queued");
+  assert.equal(service.runState("run-unknown"), undefined, "an id this scheduler never admitted is unknown");
+
+  holdObserver = true;
+  releases.shift()?.();
+  await flushTasks();
+  assert.equal(service.runState(first.runId)?.state, "running", "a run whose result is still being recorded is not settled yet");
+  assert.equal(service.runState(second.runId)?.state, "running");
+  releaseObserver();
+  const settled = await first.result;
+  const state = service.runState(first.runId);
+  assert.equal(state?.state, "settled");
+  assert.deepEqual(state?.state === "settled" ? state.result : null, settled);
+
+  holdObserver = false;
+  releases.shift()?.();
+  assert.equal((await second.result).outcome, "success");
+  assert.equal(service.runState(second.runId)?.state, "settled");
+
+  // A run refused at admission settles too, with the reason.
+  const refused = service.runNowAdmission(key("owner-c", "unregistered"));
+  await refused.result;
+  const refusedState = service.runState(refused.runId);
+  assert.equal(refusedState?.state === "settled" ? refusedState.result.outcome : null, "cancelled");
+  service.close();
+});
+
 test("AmpleFileAutomationService schedules intervals, exposes the next due time, and honors explicit disabled manual runs", async () => {
   const clock = new FakeClock(startTime);
   const contexts: AmpleFileSchedulerRunContext[] = [];
