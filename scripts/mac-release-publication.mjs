@@ -517,6 +517,21 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "- **Writing Automations.** `amplefile help automations` says what each declaration version adds and shows a shape for every trigger, including a Connected Folder’s own top level.",
     );
   }
+  if (version === "0.2.6") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Names that begin or end with a space.** Restoring a save point, renaming, moving, and deleting now act on exactly that item. Before, the space was dropped, so a whole-folder restore could put a file back under a different name, and an action could reach a file with the same name minus the space.",
+      "- **Answer a Worker’s question right away.** An answer sent while the Worker is still finishing the turn that asked is no longer refused. It waits for that turn and continues the Chat once.",
+      "- **Search by name from the command line.** `amplefile search` finds files and folders by name, beside its matches in file text, and the window’s search uses the same rules. A search that matches more than 500 names stops there; narrow it to find the rest.",
+      "- **Remove a Skill you added.** `amplefile tools remove-skill` moves an imported Skill to Recently Deleted, like Remove Skill in Skills & Extensions. `tools remove` now says so when there is no such package instead of reporting success.",
+      "- **Errors for scripts.** With `--json`, the `amplefile` command reports its own errors as JSON too, with the same exit codes.",
+      "- **Saved keys stay private.** The file that holds your encrypted provider credentials, and its backup, are readable only by your account from the next time a credential is saved.",
+      "",
+      "Version 0.2.6 matches the Linux preview with the same changes.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",
