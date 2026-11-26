@@ -781,9 +781,11 @@ recovery, keyboard, and privacy behavior.
 [Worker tools](worker-tools.md) documents the structured collaboration
 adapters, `chat ask --asynchronous`, `jobs start --interactive|--service`,
 `jobs input`, and `worktrees manage`. These use this facade and explicit
-Connected Folder and task lineage. Queued asynchronous answers return
-`continuation: null` and `queued: true` until idle delivery starts the one
-linked turn.
+Connected Folder and task lineage. Answer as soon as `chat wait` or
+`agent wait` reports a question. If the asking turn is still finishing, the
+answer returns `continuation: null` and `queued: true`. The Chat starts the
+question's one continuation once the asking turn finishes. Asynchronous
+questions can also queue their answers behind other work in the Chat.
 
 ### Observed turn files
 

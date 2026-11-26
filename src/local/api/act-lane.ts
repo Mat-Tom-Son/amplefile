@@ -150,7 +150,7 @@ import {
   turnStatusFor,
   waitingRefForTask,
 } from "./request-records.js";
-import { queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
+import { canQueueAnswerWhileBusy, queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
 import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./turn-acceptance.js";
@@ -255,7 +255,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // Every other refusal is named before anything changes: a second
       // answer, an expired question, a closed request, the wrong Connected Folder, a
       // busy Chat.
-      if (question.state === "answered" && !resuming) {
+      if (question.state === "answered" && (!resuming || (!question.asynchronous && state.queuedAnswers.has(questionId)))) {
         throw new AmpleFileCliError("conflict", "That question already has an answer.");
       }
       if (question.state === "cancelled") throw new AmpleFileCliError("conflict", "That request was stopped, so its question is closed.");
@@ -277,7 +277,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // flips, so a refusal leaves it open and answerable later: a busy
       // Chat, a capability change in flight, an archived or snoozed Chat.
       const answerKey = clientKey(connectedFolder.id, record.owner.conversationId);
-      const queuesWhileBusy = () => question.asynchronous === true
+      const queuesWhileBusy = () => canQueueAnswerWhileBusy(state, answerKey, question)
         && (state.runningTurns.has(answerKey) || state.compactingConversations.has(answerKey));
       await yieldBackgroundCompaction(state, answerKey);
       if (!queuesWhileBusy()) assertChatMutable(connectedFolder.id, record.owner.conversationId);
@@ -287,6 +287,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       if (summary.snoozedUntil && Date.parse(summary.snoozedUntil) > Date.now()) {
         throw new AmpleFileCliError("conflict", "Resume this Chat before answering its question.");
       }
+      const canQueue = queuesWhileBusy();
+      if (!canQueue) assertChatMutable(connectedFolder.id, record.owner.conversationId);
       let answered: AmpleFileQuestionRecord = question;
       if (!resuming) {
         try {
@@ -295,8 +297,10 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           throw collaborationRefusal(error);
         }
       }
-      if (queuesWhileBusy()) {
-        state.queuedAsyncAnswers.add(questionId);
+      // If the asking turn was draining at admission, a later turn can take
+      // the Chat while the answer is persisting. Honor the accepted answer.
+      if (queuesWhileBusy() || (canQueue && state.runningTurns.has(answerKey))) {
+        state.queuedAnswers.add(questionId);
         await recordFacadeAction(state, input.parentTaskId, { command: "chat.answer", connectedFolder, conversationId: record.owner.conversationId });
         publishControlHint(state, "connected-folders");
         return { connectedFolder: toActConnectedFolderRef(connectedFolder), question: toActQuestionRef(answered), continuation: null, queued: true, request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record) };
@@ -309,7 +313,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // the text already on record, so the Chat and the record say the same
       // thing. Should acceptance still fail here, the answer stays recorded
       // and sending it again picks up exactly where this left off.
-      state.queuedAsyncAnswers.delete(questionId);
+      state.queuedAnswers.delete(questionId);
       const delivered = resuming ? answered.answer ?? answer : answer;
       let accepted: Awaited<ReturnType<typeof acceptConversationTurn>>;
       try {
