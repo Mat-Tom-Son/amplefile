@@ -1,24 +1,19 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import test from "node:test";
 import { applicationAppearanceVariables, applicationPalettes, defaultApplicationAppearance } from "../src/shared/application-appearance.js";
 import { accentIdentityFromHex, resolveConnectedFolderAppearance, wcagContrast } from "../src/shared/connected-folder-appearance.js";
+import { dumpCssFixture, findCssBrowser } from "./support/css-browser.js";
 
 const desktopSheets = ["brand.css", "styles.css", "components/chat/work-steps.css", "application-appearance.css"];
 const popoverSheets = ["brand.css", "components/file-manager/file-manager-tokens.css", "popover/popover.css", "popover/popover-document.css", "components/chat/work-steps.css", "application-appearance.css"];
 // The panel's Chat as the file manager draws it: the app's sheets, then the file manager's tokens and rules.
 const panelSheets = [...desktopSheets, "components/file-manager/file-manager-tokens.css", "components/file-manager/file-manager.css"];
-const exec = promisify(execFile);
 
 test("actual desktop and popover CSS honor appearance roles, reading, density and accessibility", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is required for the real cascade test; set AMPLEFILE_CSS_BROWSER."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-appearance-css-"));
   try {
@@ -155,8 +150,8 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
     </script>`;
     const path = join(scratch, "fixture.html");
     await writeFile(path, html);
-    const { stdout } = await exec(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=1000", "--disable-features=HangWatcher", `--user-data-dir=${join(scratch, "profile")}`, "--dump-dom", pathToFileURL(path).href], { timeout: 35_000, maxBuffer: 5_000_000 });
-    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1];
+    const page = await dumpCssFixture(browser, path, { profile: join(scratch, "profile"), timeoutMs: 35_000 });
+    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1];
     assert.ok(serialized && serialized !== "pending", "browser must finish the actual CSS fixture");
     const results = JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
     assert.equal(results.length, 10);

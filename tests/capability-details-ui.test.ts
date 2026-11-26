@@ -1,16 +1,14 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import test from "node:test";
 import { createElement } from "react";
 import { includedToolDefinitions } from "../src/shared/included-tools.js";
 import { applicationAppearanceVariables, defaultApplicationAppearance } from "../src/shared/application-appearance.js";
 import { createDomHarness } from "./support/dom.js";
+import { dumpCssFixture, findCssBrowser } from "./support/css-browser.js";
 
 // Only Vite's graphics/CSS imports are replaced. Components, focus management,
 // setup requests and responses all run normally.
@@ -319,9 +317,7 @@ test("late readiness responses cannot cross Connected Folders or survive a close
 });
 
 test("real detail CSS keeps long paths above tool lists and preserves scrolling at narrow and short sizes", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is needed for actual layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-capability-css-"));
@@ -344,8 +340,8 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
       document.getElementById('result').textContent=JSON.stringify(results);
     </script>`;
     const path = join(scratch, "fixture.html"); await writeFile(path, html);
-    const { stdout } = await promisify(execFile)(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=1000", "--disable-features=HangWatcher", `--user-data-dir=${join(scratch, "profile")}`, "--dump-dom", pathToFileURL(path).href], { timeout: 35_000, maxBuffer: 2_000_000 });
-    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1];
+    const page = await dumpCssFixture(browser, path, { profile: join(scratch, "profile"), timeoutMs: 35_000 });
+    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1];
     assert.ok(serialized && serialized !== "pending");
     const results = JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
     assert.equal(results.length, 3);
@@ -361,9 +357,7 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
 });
 
 test("actual catalog markup keeps one header row, one toolbar row, and openable rows in the window's style", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is needed for actual catalog layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {}, headerEnd: createElement("button", { className: "ui-control ui-control--icon skills-extensions-close", type: "button", "aria-label": "Close Skills & Extensions" }) }));
@@ -393,8 +387,8 @@ test("actual catalog markup keeps one header row, one toolbar row, and openable 
       document.getElementById('result').textContent=JSON.stringify(results);
     </script>`;
     const path = join(scratch,"fixture.html"); await writeFile(path,html);
-    const {stdout} = await promisify(execFile)(browser,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--disable-background-networking","--disable-extensions","--use-mock-keychain","--password-store=basic","--virtual-time-budget=1000","--disable-features=HangWatcher",`--user-data-dir=${join(scratch,"profile")}`,"--dump-dom",pathToFileURL(path).href],{timeout:35_000,maxBuffer:4_000_000});
-    const serialized=/<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1]; assert.ok(serialized && serialized!=="pending");
+    const page = await dumpCssFixture(browser, path, { profile: join(scratch,"profile"), timeoutMs: 35_000 });
+    const serialized=/<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1]; assert.ok(serialized && serialized!=="pending");
     const results=JSON.parse(serialized.replaceAll("&quot;",'"').replaceAll("&amp;","&")); assert.equal(results.length,6);
     assert.ok(results.filter((item: { scrolled: number }) => item.scrolled > 0).length >= 2, "the short sizes really scroll the body");
     for(const item of results) {

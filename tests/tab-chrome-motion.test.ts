@@ -1,20 +1,16 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import test from "node:test";
 import ts from "typescript";
+import { dumpCssFixture, findCssBrowser } from "./support/css-browser.js";
 
 // The Browser pane's tab strip in real Chromium, with its real stylesheet:
 // tabs share the strip, and the frame behind the tab in front slides to the
 // tab chosen (web-local/src/lib/tab-chrome-motion.ts).
 test("browser tabs share the strip, and the frame behind the tab in front slides, retargets, and honors reduced motion", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("A Chromium binary is required; set AMPLEFILE_CSS_BROWSER."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-browser-tabs-"));
   try {
@@ -92,8 +88,8 @@ test("browser tabs share the strip, and the frame behind the tab in front slides
     const path = join(scratch, "fixture.html");
     await writeFile(path, html);
     for (const systemReduce of [false, true]) {
-      const { stdout } = await promisify(execFile)(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=2000", "--disable-features=HangWatcher", ...(systemReduce ? ["--force-prefers-reduced-motion"] : []), `--user-data-dir=${join(scratch, systemReduce ? "reduced-profile" : "profile")}`, "--dump-dom", pathToFileURL(path).href], { timeout: 25_000, maxBuffer: 5_000_000 });
-      const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1];
+      const page = await dumpCssFixture(browser, path, { profile: join(scratch, systemReduce ? "reduced-profile" : "profile"), virtualTimeBudgetMs: 2000, extraArgs: systemReduce ? ["--force-prefers-reduced-motion"] : [], timeoutMs: 25_000 });
+      const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1];
       assert.ok(serialized && serialized !== "pending", "browser must finish the motion fixture");
       const result = JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
       assert.equal(result.error, undefined, result.stack);
