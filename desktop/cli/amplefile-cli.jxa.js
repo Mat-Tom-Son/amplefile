@@ -9,6 +9,7 @@ function run(rawArguments) {
   const argumentsList = Array.from(rawArguments);
   const scriptDirectory = argumentsList.shift();
   const fileManager = $.NSFileManager.defaultManager;
+  const json = argumentsList.includes("--json");
   let exitCode = 1;
 
   try {
@@ -33,7 +34,7 @@ function run(rawArguments) {
     const timeoutValue = environmentValue("AMPLEFILE_CLI_TIMEOUT_MS");
     const timeoutMs = timeoutValue ? Number(timeoutValue) : 1800000;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100) {
-      throw new Error("AMPLEFILE_CLI_TIMEOUT_MS must be an integer of at least 100.");
+      throw usageFailure("AMPLEFILE_CLI_TIMEOUT_MS must be an integer of at least 100.");
     }
 
     const context = { fileManager, appPath, cliRoot, timeoutMs };
@@ -43,10 +44,7 @@ function run(rawArguments) {
       // separately versioned act lane and requires the per-launch token the
       // running app minted.
       const actToken = readActToken(cliRoot);
-      if (!actToken) {
-        writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: ${ACT_UNAVAILABLE_MESSAGE}\n`);
-        $.exit(6);
-      }
+      if (!actToken) throw cliFailure("unavailable", 6, ACT_UNAVAILABLE_MESSAGE);
       const waitPlan = parseWaitCommand(argumentsList);
       const automationWaitPlan = waitPlan ? null : parseAutomationWaitCommand(argumentsList);
       if (waitPlan) {
@@ -66,7 +64,11 @@ function run(rawArguments) {
     }
   } catch (error) {
     if (error && typeof error.exitCode === "number") exitCode = error.exitCode;
-    writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: ${error instanceof Error ? error.message : String(error)}\n`);
+    const message = error instanceof Error ? error.message : String(error);
+    const code = error && typeof error.code === "string" ? error.code : "failure";
+    writeHandle($.NSFileHandle.fileHandleWithStandardError, json
+      ? `${JSON.stringify({ ok: false, error: { code, message } }, null, 2)}\n`
+      : `AmpleFile: ${message}\n`);
   }
 
   $.exit(exitCode);
@@ -151,8 +153,7 @@ function runWaitLoop(context, plan, actToken) {
     }
     if (requestState ? requestState !== "working" && requestState !== "handed_off" : state !== "accepted" && state !== "running") break;
     if (Date.now() >= deadline) {
-      writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: ${plan.group} wait timed out after ${plan.timeoutSeconds}s.\n`);
-      return 7;
+      throw cliFailure("timeout", 7, `${plan.group} wait timed out after ${plan.timeoutSeconds}s.`);
     }
     $.NSThread.sleepForTimeInterval(2);
   }
@@ -216,8 +217,7 @@ function runAutomationWaitLoop(context, plan, actToken) {
       return run.outcome === "success" ? 0 : 1;
     }
     if (Date.now() >= deadline) {
-      writeHandle($.NSFileHandle.fileHandleWithStandardError, `AmpleFile: automations wait timed out after ${plan.timeoutSeconds}s.\n`);
-      return 7;
+      throw cliFailure("timeout", 7, `automations wait timed out after ${plan.timeoutSeconds}s.`);
     }
     $.NSThread.sleepForTimeInterval(2);
   }
@@ -371,14 +371,17 @@ function resolvePath(path) {
 }
 
 function usageFailure(message) {
-  const error = new Error(`${message}\nRun 'amplefile help' for usage.`);
-  error.exitCode = 2;
-  return error;
+  return cliFailure("usage", 2, `${message}\nRun 'amplefile help' for usage.`);
 }
 
 function transportTimeout(message) {
+  return cliFailure("timeout", 124, message);
+}
+
+function cliFailure(code, exitCode, message) {
   const error = new Error(message);
-  error.exitCode = 124;
+  error.code = code;
+  error.exitCode = exitCode;
   return error;
 }
 

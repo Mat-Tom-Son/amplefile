@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { secureStorageAvailable } from "./secure-storage.js";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import type { PiAuthStorageData, PiAuthStorageHost } from "../../src/local/agent/auth-storage.js";
@@ -182,15 +183,29 @@ export class SecureSettingsStore implements PiAuthStorageHost {
   private async write(data: SecureSettingsFile): Promise<void> {
     this.assertEncryptionAvailable();
     await mkdir(dirname(this.filePath), { recursive: true });
-    const temporaryPath = `${this.filePath}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, this.safeStorage.encryptString(JSON.stringify(data)));
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    const temporaryBackup = `${temporaryPath}.bak`;
+    const privateFile = { mode: 0o600, flag: "wx" };
+    const backupPath = this.backupPath();
     try {
-      if (existsSync(this.filePath)) await copyFile(this.filePath, this.backupPath());
+      const previous = await readFile(this.filePath).catch((error: unknown) => {
+        if (errorCode(error) === "ENOENT") return null;
+        throw error;
+      });
+      await writeFile(temporaryPath, this.safeStorage.encryptString(JSON.stringify(data)), privateFile);
+      if (previous) {
+        await writeFile(temporaryBackup, previous, privateFile);
+        await rename(temporaryBackup, backupPath);
+      } else {
+        // A backup may be the only usable copy when the primary is missing.
+        await chmod(backupPath, 0o600).catch((error: unknown) => {
+          if (errorCode(error) !== "ENOENT") throw error;
+        });
+      }
       await rename(temporaryPath, this.filePath);
       this.cache = structuredClone(data);
-    } catch (error) {
-      await unlink(temporaryPath).catch(() => undefined);
-      throw error;
+    } finally {
+      await Promise.all([temporaryPath, temporaryBackup].map((path) => unlink(path).catch(() => undefined)));
     }
     await this.supersedeSetAsideFiles();
   }

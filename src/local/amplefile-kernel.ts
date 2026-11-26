@@ -917,7 +917,7 @@ function capabilitySourceFields(source: PiCatalogSource): {
 function normalizeActor(actor: AmpleFileActor): AmpleFileActor {
   return {
     kind: actor.kind,
-    ...(actor.cwd?.trim() ? { cwd: resolve(actor.cwd.trim()) } : {}),
+    ...(actor.cwd?.trim() ? { cwd: resolve(actor.cwd) } : {}),
     ...(actor.connectedFolderId?.trim() ? { connectedFolderId: actor.connectedFolderId.trim() } : {}),
     ...(actor.conversationId?.trim() ? { conversationId: actor.conversationId.trim() } : {}),
   };

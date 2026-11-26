@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,9 +10,10 @@ import {
   RegisteredConnectedFolderRuntimeProvider,
   RegisteredConnectedFolderTrustAuthority,
 } from "../src/local/agent/registered-connected-folder-runtime.js";
-import { createAmpleFileCliActRequest, executeAmpleFileCliActRequest } from "../src/local/cli/index.js";
+import { AmpleFileCliActReceipts, createAmpleFileCliActRequest, createAmpleFileCliRequest, executeAmpleFileCliActRequest, executeAmpleFileCliRequest } from "../src/local/cli/index.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
+import { AmpleFileCliKernelAdapter } from "../src/local/amplefile-cli-adapter.js";
 
 /**
  * Removing an imported Skill is reversible (docs/act-ledger.md):
@@ -22,6 +23,7 @@ import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
  */
 async function skillHarness(t: test.TestContext): Promise<{
   api: LocalApiHandle;
+  sandbox: string;
   agentDir: string;
   connectedFolder: { id: string; name: string; connectedFolderRoot: string };
   importSkill: (scope: "global" | "project", markdown: string) => Promise<void>;
@@ -53,8 +55,10 @@ async function skillHarness(t: test.TestContext): Promise<{
     return catalog.skills;
   };
   const token = "a".repeat(64);
+  const receipts = new AmpleFileCliActReceipts({ stateRoot: join(sandbox, "state") });
   return {
     api,
+    sandbox,
     agentDir,
     connectedFolder,
     catalogSkills,
@@ -84,7 +88,7 @@ async function skillHarness(t: test.TestContext): Promise<{
         version: "test",
         getActFacade: () => ({ facade: api.actFacade, token }),
         resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
-        receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) },
+        receipts,
       },
     ),
   };
@@ -210,3 +214,50 @@ async function json(url: string, init?: RequestInit): Promise<unknown> {
   assert.equal(response.ok, true, `${response.status} ${text}`);
   return JSON.parse(text) as unknown;
 }
+
+test("CLI Skill removal is receipted, unloads the Skill, and restores it in the same scope", async (t) => {
+  const h = await skillHarness(t);
+  const path = join(h.sandbox, "SKILL.md");
+  const markdown = "---\nname: cli-removal\ndescription: Skill removal fixture\n---\nKeep these bytes.\n";
+  await writeFile(path, markdown);
+  const kernel = new AmpleFileCliKernelAdapter(h.api.kernel);
+  const capability = async () => {
+    const reply = await executeAmpleFileCliRequest(createAmpleFileCliRequest({
+      id: randomUUID(), argv: ["capabilities", "list", "--connected-folder", h.connectedFolder.id, "--json"], cwd: h.sandbox,
+    }), kernel, { version: "test" });
+    assert.equal(reply.exitCode, 0, reply.stderr);
+    return JSON.parse(reply.stdout).data.capabilities.find((item: { name: string }) => item.name === "cli-removal");
+  };
+  for (const scope of ["connected-folder", "everywhere"]) {
+    const flags = ["--scope", scope, ...(scope === "connected-folder" ? ["--connected-folder", h.connectedFolder.id] : [])];
+    const imported = await h.execute(["tools", "import-skill", ...flags, "--from", path, "--json"]);
+    assert.equal(imported.exitCode, 0, imported.stderr);
+    const { bundlePath } = JSON.parse(imported.stdout).data;
+    const installed = await capability();
+    assert.ok(installed);
+
+    const missing = await h.execute(["tools", "remove", ...flags, "--source", bundlePath, "--json"]);
+    assert.equal(missing.exitCode, 3);
+    assert.match(JSON.parse(missing.stderr).error.message, /source of an installed package.*tools remove-skill/);
+    assert.ok(await capability());
+
+    const requestId = randomUUID();
+    const skillFile = installed.id.replace(/^skill:[^:]+:/, "");
+    assert.equal(skillFile, join(bundlePath, "SKILL.md"));
+    const installedPath = scope === "everywhere" ? bundlePath : skillFile;
+    const removed = await h.execute(["tools", "remove-skill", ...flags, "--path", installedPath, "--request-id", requestId, "--json"]);
+    assert.equal(removed.exitCode, 0, removed.stderr);
+    const { recentlyDeleted: { entryId } } = JSON.parse(removed.stdout).data;
+    assert.equal(await capability(), undefined);
+    assert.equal(existsSync(bundlePath), false);
+    const receipt = await h.execute(["receipts", "show", "--id", requestId, "--json"]);
+    assert.equal(receipt.exitCode, 0, receipt.stderr);
+    assert.deepEqual(JSON.parse(receipt.stdout).data.receipt.undoRef, { kind: "recently-deleted-entry", value: entryId });
+
+    const restored = await h.execute(["recently-deleted", "restore", "--entry", entryId, "--json"]);
+    assert.equal(restored.exitCode, 0, restored.stderr);
+    assert.equal((await capability())?.source, installed.source);
+    assert.equal(await readFile(join(bundlePath, "SKILL.md"), "utf8"), markdown);
+    await h.execute(["tools", "remove-skill", ...flags, "--path", installedPath, "--json"]);
+  }
+});

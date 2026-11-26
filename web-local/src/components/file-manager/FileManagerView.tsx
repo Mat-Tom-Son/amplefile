@@ -821,16 +821,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
    * such as /Applications/Safari.app, opens what it points to in its default
    * app; a broken link says so and opens nothing.
    */
-  async function openLink(entry: TreeEntry) {
+  async function openLink(entry: TreeEntry, linkPlace = place, linkRoot = placeRoot) {
     const link = entry.link;
     if (!link) return;
     if (link.target === "missing") { showToast({ text: `“${entry.name}” is a broken link. What it points to isn’t there.`, tone: "info" }); return; }
     if (link.target === "folder" && !entry.package) {
       if (fixtureMode) { showToast({ text: "Opening links is disabled in the preview", tone: "info" }); return; }
-      await openNativeFolder(placeNativePath(placeRoot, entry.path));
+      await openNativeFolder(placeNativePath(linkRoot, entry.path));
       return;
     }
-    await openLinkInDesktop(entry, "open");
+    await openLinkInDesktop(entry, "open", linkPlace);
   }
 
   /**
@@ -858,12 +858,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   /** A link's file opens, or the link itself is shown in the system file manager, through the desktop. */
-  async function openLinkInDesktop(entry: TreeEntry, action: "open" | "reveal") {
+  async function openLinkInDesktop(entry: TreeEntry, action: "open" | "reveal", linkPlace = place) {
     if (fixtureMode) { showToast({ text: "Opening files is disabled in the preview", tone: "info" }); return; }
     const placeLink = window.ampleFileDesktop?.placeLink;
     if (!placeLink) { showToast({ text: "Opening files is available in the Mac app", tone: "info" }); return; }
     try {
-      await placeLink.open(place, entry.path, action);
+      await placeLink.open(linkPlace, entry.path, action);
     } catch (caught) {
       onError(desktopErrorText(errorText(caught)));
     }
@@ -1367,6 +1367,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
     const target = connectedFolders.find((item) => item.id === result.connectedFolderId);
     if (!target) return;
+    if (result.link) {
+      await openLink(result, { kind: "connected-folder", id: target.id }, target.connectedFolderRoot);
+      return;
+    }
     if (result.kind === "folder") {
       setQuery("");
       navigate({ place: { kind: "connected-folder", id: target.id }, path: result.path });
@@ -1728,10 +1732,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           </div>
           {plainSearch && plainFolderSearch.status === "error" ? <div className="fm-empty">
             <span className="fm-empty-text">{plainFolderSearch.error ?? "Couldn’t search this folder."}</span>
-          </div> : search.status === "done" && !search.results.length && !(plainSearch && plainFolderSearch.stoppedEarly) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
+          </div> : search.status === "done" && !search.results.length && (!plainSearch || !(plainFolderSearch.stoppedEarly || plainFolderSearch.incomplete)) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
           <div className="fm-rows" role="rowgroup">
             {search.results.map((result, index) => {
-              const entry: TreeEntry = { name: result.name, path: result.path, kind: result.kind, ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}) };
+              const entry: TreeEntry = result;
               const where = result.place ? { name: [placeName, ...result.path.split("/").slice(0, -1)].join(" › ") } : connectedFolders.find((item) => item.id === result.connectedFolderId);
               return <div
                 key={result.key}

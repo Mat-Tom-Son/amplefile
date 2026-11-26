@@ -77,5 +77,6 @@ test("automations wait reports a timeout while a run is still active", desktopCl
   const timedOut = await waitWith("running", ["--timeout", "1", "--json"]);
   assert.equal(timedOut.code, 7, timedOut.stderr);
   assert.equal(timedOut.stdout, "");
-  assert.equal(timedOut.stderr, "AmpleFile: automations wait timed out after 1s.\n");
+  // With --json the timeout is the same JSON object on both platforms' commands.
+  assert.equal(timedOut.stderr, `${JSON.stringify({ ok: false, error: { code: "timeout", message: "automations wait timed out after 1s." } }, null, 2)}\n`);
 });

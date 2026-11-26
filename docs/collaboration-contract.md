@@ -269,9 +269,11 @@ amplefile requests list|show --request <id> --json                          # re
 A request owns the work; a turn is one execution within it. Status, waits,
 and automation hops follow the request across answer and synthesis turns. An
 unanswered question or an accepted answer without a linked turn remains
-outstanding, including after restart. An asynchronous answer queued behind a
-busy Chat can continue automatically during that app run. After restart,
-sending the same recorded answer explicitly resumes it. Stop fences answer
+outstanding, including after restart. If the turn that asked is still
+finishing, the answer is recorded and queued until the Chat is idle. An
+asynchronous question can also queue its answer behind other work in the
+Chat. After restart, sending the recorded answer explicitly resumes it.
+Stop fences answer
 acceptance and continuation admission through every ancestor.
 
 The original assignment is saved separately from the latest message. Every

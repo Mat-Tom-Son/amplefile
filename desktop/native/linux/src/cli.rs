@@ -466,14 +466,41 @@ fn run() -> Result<Outcome> {
         client.request(&argv, None, None, None)
     }
 }
+/// The JSON code for a failure the command itself reports, by its exit code.
+fn failure_code(exit: i32) -> &'static str {
+    match exit {
+        2 => "usage",
+        6 => "unavailable",
+        7 | 124 => "timeout",
+        _ => "failure",
+    }
+}
+
+/// What the command writes to stderr for its own failure: with --json, one
+/// JSON object the way the app's answers are shaped; otherwise one line.
+fn failure_text(exit: i32, message: &str, json_output: bool) -> String {
+    if !json_output {
+        return format!("AmpleFile: {message}\n");
+    }
+    // The Mac command's JSON.stringify(value, null, 2), byte for byte: ok first.
+    let quote = |text: &str| serde_json::to_string(text).unwrap_or_default();
+    format!(
+        "{{\n  \"ok\": false,\n  \"error\": {{\n    \"code\": {},\n    \"message\": {}\n  }}\n}}\n",
+        quote(failure_code(exit)),
+        quote(message)
+    )
+}
+
 fn main() {
+    // Read before anything can fail, so every failure honors --json.
+    let json_output = env::args().skip(1).any(|arg| arg == "--json");
     match run() {
         Ok(outcome) => {
             outcome.emit();
             std::process::exit(outcome.code);
         }
         Err((code, message)) => {
-            eprintln!("AmpleFile: {message}");
+            let _ = io::stderr().write_all(failure_text(code, &message, json_output).as_bytes());
             std::process::exit(code);
         }
     }
@@ -485,6 +512,21 @@ mod tests {
 
     fn args(argv: &[&str]) -> Vec<String> {
         argv.iter().map(|arg| (*arg).into()).collect()
+    }
+
+    #[test]
+    fn failures_are_json_with_json_and_one_line_without() {
+        for (exit, code) in [(1, "failure"), (2, "usage"), (6, "unavailable"), (7, "timeout"), (124, "timeout")] {
+            let text = failure_text(exit, "Something \"quoted\" went wrong.", true);
+            assert!(text.ends_with('\n'));
+            let value: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(value, json!({"ok": false, "error": {"code": code, "message": "Something \"quoted\" went wrong."}}));
+        }
+        assert_eq!(
+            failure_text(7, "automations wait timed out after 1s.", true),
+            "{\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"timeout\",\n    \"message\": \"automations wait timed out after 1s.\"\n  }\n}\n",
+        );
+        assert_eq!(failure_text(2, "Provide --task <id>.", false), "AmpleFile: Provide --task <id>.\n");
     }
 
     #[test]
