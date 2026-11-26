@@ -150,6 +150,7 @@ import {
   turnStatusFor,
   waitingRefForTask,
 } from "./request-records.js";
+import { removeImportedSkill } from "./capability-routes.js";
 import { canQueueAnswerWhileBusy, queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
 import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
@@ -1409,31 +1410,30 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const source = input.source.trim();
       if (!source) throw new AmpleFileCliError("usage", "A package source is required.");
-      if (input.scope === "connected-folder") {
-        const connectedFolder = await resolveConnectedFolder(input.connectedFolder ?? "");
-        // Exactly the desktop packages/remove route: project scope requires
-        // the Connected Folder's Pi project trust and the per–Connected Folder capability fence.
-        const removed = await runActOperation(() => runCapabilityMutation(state, connectedFolder, "project", () =>
-          removePiPackage(connectedFolder.connectedFolderRoot, source, {
-            scope: "project",
-            runtimeProvider: state.runtimeProvider,
-          })));
-        await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", connectedFolder });
-        return { scope: "connected-folder" as const, connectedFolder: toActConnectedFolderRef(connectedFolder), source, removed };
-      }
-      // Everywhere scope mutates the user-scope Pi settings every
-      // Connected Folder runtime loads. The app-owned management root is the resolution
-      // context — the same root the AmpleFile Agent's own runtime
-      // uses — and the global capability fence refuses while any agent
-      // or compaction work is active anywhere.
-      const ampleFileAgentRootScope = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
-      const removed = await runActOperation(() => runCapabilityMutation(state, ampleFileAgentRootScope, "global", () =>
-        removePiPackage(ampleFileAgentRootScope.connectedFolderRoot, source, {
-          scope: "user",
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      const target = connectedFolder ?? { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
+      await runActOperation(() => runCapabilityMutation(state, target, connectedFolder ? "project" : "global", async () => {
+        const removed = await removePiPackage(target.connectedFolderRoot, source, {
+          scope: connectedFolder ? "project" : "user",
           runtimeProvider: state.runtimeProvider,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove" });
-      return { scope: "everywhere" as const, source, removed };
+        });
+        if (!removed) {
+          throw new AmpleFileCliError("notFound", "Provide the source of an installed package in this scope, or use 'tools remove-skill' for an imported Skill.");
+        }
+      }));
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", connectedFolder });
+      return { scope: input.scope, ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}), source, removed: true };
+    },
+    async toolsRemoveSkill(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      const target = connectedFolder ?? { id: ampleFileAgentScopeId, name: "Everywhere", connectedFolderRoot: ampleFileAgentRoot() };
+      // The capabilities list names the file. Single-Skill imports also return
+      // the folder containing it, which addresses the same installed Skill.
+      const skillPath = basename(input.path).toLowerCase() === "skill.md" ? input.path : join(input.path, "SKILL.md");
+      const removed = await runActOperation(() => removeImportedSkill(state, target, connectedFolder ? "project" : "global", skillPath, { receiptId: input.requestId }));
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove-skill", connectedFolder });
+      return { scope: input.scope, ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}), removed: true, path: removed.removedPath, skillName: removed.skillName, recentlyDeleted: removed.recentlyDeleted };
     },
     async connectedFoldersDelete(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);

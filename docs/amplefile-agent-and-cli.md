@@ -389,6 +389,14 @@ follows the request retention window. Deletion, disconnecting, and
 whole–Connected Folder History restore wait for running jobs; Skills &
 Extensions changes do not.
 
+`tools remove-skill` moves one imported Skill to Recently Deleted. Give it
+the installed `SKILL.md` path at the end of the Skill id in
+`capabilities list --json` or the directory containing that file.
+Select the scope it is installed in. The reply
+and the receipt name the Recently Deleted entry for restore. Use
+`tools remove --source` with an installed Pi package's source. If no
+package in the selected scope matches the source, the command exits 3.
+
 `amplefile recently-deleted …` reads and restores
 [Recently Deleted](act-ledger.md#recently-deleted). Like `automations` it
 sits above Connected Folders, so neither verb takes `--connected-folder`;

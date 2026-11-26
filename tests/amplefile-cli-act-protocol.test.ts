@@ -1218,7 +1218,6 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
 test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp receipts, and render bespoke output", async () => {
   const connectedFolderRef = { id: "connected-folder-1", name: "Fold Connected Folder", connectedFolderRoot: "/tmp/fold" };
   const calls: Array<{ method: string; input?: unknown }> = [];
-  let toolsRemoved = true;
   const facade = {
     workerShow: async (input: unknown) => {
       calls.push({ method: "workerShow", input });
@@ -1285,7 +1284,7 @@ test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp
         scope: scoped.scope,
         ...(scoped.scope === "connected-folder" ? { connectedFolder: connectedFolderRef } : {}),
         source: scoped.source,
-        removed: toolsRemoved,
+        removed: true,
       };
     },
   } as unknown as AmpleFileActFacade;
@@ -1368,11 +1367,10 @@ test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp
   assert.equal(lastOk().detail, "scope everywhere; source @example/pkg");
   assert.equal(lastOk().connectedFolderId, undefined);
 
-  toolsRemoved = false;
   const removedConnectedFolder = await execute(["tools", "remove", "--scope", "connected-folder", "--connected-folder", "connected-folder-1", "--source", "./tools/pkg"]);
-  assert.match(removedConnectedFolder.stdout, /Package \.\/tools\/pkg is not installed \(Connected Folder scope in Fold Connected Folder \[connected-folder-1\]\); nothing was removed\./);
+  assert.match(removedConnectedFolder.stdout, /Removed package \.\/tools\/pkg/);
   assert.deepEqual(calls.at(-1)?.input, { scope: "connected-folder", connectedFolder: "connected-folder-1", source: "./tools/pkg" });
-  assert.equal(lastOk().detail, "scope connected-folder; source ./tools/pkg (not installed)");
+  assert.equal(lastOk().detail, "scope connected-folder; source ./tools/pkg");
   assert.equal(lastOk().connectedFolderId, "connected-folder-1");
 });
 

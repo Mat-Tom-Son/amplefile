@@ -295,9 +295,9 @@ export async function handleCapabilityRoutes({ state, req, res, url, method }: L
  * An Everywhere Skill belongs to no Connected Folder; its entry is kept under the
  * AmpleFile Agent's scope id, like that agent's Chats.
  */
-async function removeImportedSkill(
+export async function removeImportedSkill(
   state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
+  connectedFolder: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">,
   scope: CapabilityScope,
   skillPath: string,
   context: { receiptId: string | null },

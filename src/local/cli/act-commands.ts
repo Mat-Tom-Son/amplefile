@@ -94,6 +94,7 @@ export type AmpleFileCliActCommandName =
   | "tools.enable"
   | "tools.disable"
   | "tools.remove"
+  | "tools.remove-skill"
   | "automations.enable"
   | "automations.list"
   | "automations.models"
@@ -532,7 +533,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     throw usageError(`--attach cannot be used with '${command || "(none)"}'.`);
   }
   const pathCommands = new Set([
-    "tools enable", "tools disable",
+    "tools enable", "tools disable", "tools remove-skill",
     "connected-folders register",
     "files rename",
     "files delete",
@@ -757,6 +758,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     "tools enable",
     "tools disable",
     "tools remove",
+    "tools remove-skill",
     "automations enable",
     "automations run",
     "automations stop",
@@ -1398,6 +1400,13 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         output,
         ...requireToolsScope(),
         source: requireBoundedFlag("--source", "package-source", maxActPathLength),
+        ...(parentTaskId ? { parentTaskId } : {}),
+      };
+    case "tools remove-skill":
+      allowOnlyFlags("--scope", "--connected-folder", "--parent-task");
+      return {
+        name: "tools.remove-skill", output, ...requireToolsScope(),
+        path: requireSinglePath("installed-skill-path"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "tools remove":
@@ -2285,6 +2294,14 @@ async function runActCommand(
         connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
+    case "tools.remove-skill":
+      return toTerminalSafeJson(await facade.toolsRemoveSkill({
+        scope: command.toolsScope!,
+        ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
+        path: resolve(request.cwd, command.path!),
+        requestId: request.id,
+        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
+      }));
     case "tools.remove":
       return toJson(await facade.toolsRemove({
         scope: command.toolsScope!,
@@ -2830,9 +2847,12 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     }
     case "tools.remove": {
       const where = record.scope === "connected-folder" ? `Connected Folder scope in ${connectedFolderLabel}` : "everywhere scope";
-      return record.removed === true
-        ? `Removed package ${terminalText(record.source)} (${where}). Reinstalling it is a fresh receipted act.\n`
-        : `Package ${terminalText(record.source)} is not installed (${where}); nothing was removed.\n`;
+      return `Removed package ${terminalText(record.source)} (${where}). Reinstalling it is a fresh receipted act.\n`;
+    }
+    case "tools.remove-skill": {
+      const entry = record.recentlyDeleted as { entryId?: unknown; restoreBy?: unknown };
+      return `Moved Skill ${terminalText(record.skillName)} to Recently Deleted until ${terminalText(entry.restoreBy)}. `
+        + `Put it back with 'recently-deleted restore --entry ${terminalText(entry.entryId)}'.\n`;
     }
     case "connected-folders.delete": {
       const cleanup = record.cleanupPending === true ? " Final cleanup completes at the next start." : "";
@@ -3242,7 +3262,7 @@ function actReceiptDetail(
     changed?: unknown;
     appearanceRef?: unknown;
     restoredAppearanceRef?: unknown;
-    removed?: unknown;
+    skillName?: unknown;
     source?: unknown;
     digest?: unknown;
     run?: { runId?: unknown; state?: unknown; outcome?: unknown };
@@ -3387,8 +3407,12 @@ function actReceiptDetail(
       return `restored ${typeof record.restoredAppearanceRef === "string" ? record.restoredAppearanceRef : "none"}`;
     case "tools.remove":
       return typeof record.scope === "string" && typeof record.source === "string"
-        ? `scope ${record.scope}; source ${boundedReceiptText(record.source)}${record.removed === false ? " (not installed)" : ""}`
+        ? `scope ${record.scope}; source ${boundedReceiptText(record.source)}`
         : undefined;
+    case "tools.remove-skill": {
+      const entry = record.recentlyDeleted as { entryId?: unknown } | undefined;
+      return typeof entry?.entryId === "string" ? `scope ${String(record.scope)}; skill ${boundedReceiptText(String(record.skillName))}; trash ${entry.entryId}` : undefined;
+    }
     // Automation receipts carry identifiers and outcomes only, per the
     // automations five-questions table — the owning journal holds the per-hop
     // evidence.
@@ -3477,6 +3501,7 @@ function actUndoRef(
         return { kind: "recently-deleted-entry", value: record.recovery.entryId };
       }
       return safetyCheckpointId ? { kind: "safety-checkpoint", value: safetyCheckpointId } : undefined;
+    case "tools.remove-skill":
     case "connected-folders.delete": {
       const first = Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted[0] : record.recentlyDeleted;
       const entryId = first && typeof first === "object" ? (first as { entryId?: unknown }).entryId : undefined;

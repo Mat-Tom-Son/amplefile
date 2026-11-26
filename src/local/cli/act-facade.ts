@@ -1046,22 +1046,22 @@ export interface AmpleFileActFacade {
     displacedAppearanceRef: string | null;
   }>;
 
-  /**
-   * Skills & Extensions removal. Installs, updates, and skill imports make
-   * bytes runnable and run through the prepared-act path (`toolsInstall`,
-   * `toolsUpdate`, `toolsImportSkill`). Everywhere scope mutates the same
-   * personal Pi settings every Connected Folder runtime loads (resolved through the
-   * app-owned AmpleFile Agent root, exactly like the AmpleFile Agent's own
-   * runtime) and is fenced against all running work; Connected Folder scope
-   * requires the explicit Connected Folder and its project trust. Both reuse the desktop's capability-mutation
-   * fencing unchanged. A source that is not installed reports `removed:
-   * false` honestly.
-   */
+  /** Remove an installed Pi package under the capability mutation fence. */
   toolsRemove(input: { scope: "everywhere" | "connected-folder"; connectedFolder?: string; source: string; parentTaskId?: string }): Promise<{
     scope: "everywhere" | "connected-folder";
     connectedFolder?: AmpleFileActConnectedFolderRef;
     source: string;
-    removed: boolean;
+    removed: true;
+  }>;
+
+  /** Move one imported Skill into Recently Deleted through the desktop removal path. */
+  toolsRemoveSkill(input: { scope: "everywhere" | "connected-folder"; connectedFolder?: string; path: string; requestId: string; parentTaskId?: string }): Promise<{
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: AmpleFileActConnectedFolderRef;
+    removed: true;
+    path: string;
+    skillName: string;
+    recentlyDeleted: { entryId: string; restoreBy: string };
   }>;
 
   /**
