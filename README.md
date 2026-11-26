@@ -20,8 +20,8 @@ for its tag, and the metadata points there.
 
 The repository lists only the newest build:
 
-- amplefile-desktop 0.2.5-1 (x86_64), from [linux-0.2.5](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-0.2.5)
-- `AmpleFile-0.2.5-1-linux-x86_64.rpm`, sha256 `fa69668c1630c583ac4c351c79c74e7c2e07458e2ec38fad286e77c5554b2633`
+- amplefile-desktop 0.2.6-1 (x86_64), from [linux-0.2.6](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-0.2.6)
+- `AmpleFile-0.2.6-1-linux-x86_64.rpm`, sha256 `267761cbc29e0dbb08c7aa8e83c5edaa86e9e80ca0dedf213ca1a1c1a6dd8803`
 - signed with the key 315D9CFCD9A8B3E2338D06996457F0AAD7F8AAB1
 
 `npm run desktop:linux:repository -- prepare` in the source repository
