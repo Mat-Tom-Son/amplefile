@@ -1728,7 +1728,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           </div>
           {plainSearch && plainFolderSearch.status === "error" ? <div className="fm-empty">
             <span className="fm-empty-text">{plainFolderSearch.error ?? "Couldn’t search this folder."}</span>
-          </div> : search.status === "done" && !search.results.length && !(plainSearch && plainFolderSearch.stoppedEarly) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
+          </div> : search.status === "done" && !search.results.length && !(plainSearch ? plainFolderSearch.stoppedEarly || plainFolderSearch.incomplete : connectedFolderSearch.incomplete) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
           <div className="fm-rows" role="rowgroup">
             {search.results.map((result, index) => {
               const entry: TreeEntry = { name: result.name, path: result.path, kind: result.kind, ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}) };
@@ -1754,6 +1754,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               </div>;
             })}
           </div>
+          {!plainSearch && search.status === "done" && connectedFolderSearch.incomplete ? <p className="fm-search-note" role="status">Search stopped before checking every item.</p> : null}
           {/* A plain folder's search reads a bounded amount at a time: it says when it stopped early, and goes on when asked. */}
           {plainSearch && plainFolderSearch.stoppedEarly ? <p className="fm-search-note" role="status">
             <span>{stoppedEarlyText(plainFolderSearch.stoppedEarly, plainFolderSearch.scannedFiles)}</span>

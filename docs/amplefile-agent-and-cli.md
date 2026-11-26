@@ -851,8 +851,10 @@ HTTP uses `offsetBytes`, `lengthBytes`, and `expectedSha256`. Binary and
 uncaptured content stay explicit.
 
 `search --connected-folder <id> --query <text> [--scope files|chats|all] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] --json`
-streams ordinary text files regardless of size. `path` narrows the file
-portion; Chat scope stays separate. The response has `files`, `chats`,
+matches a case-insensitive substring in file and folder names and streams
+ordinary text files regardless of size. `path` narrows the file portion.
+The response has `names` for file and folder name matches (each with
+`path`, `name`, and `kind`), `files` for text line matches, `chats`,
 `truncated`, `scannedFiles`, `nextCursor`, and per-page `coverage`. Repeat
 the same selection with the returned cursor until it is null; a page with no
 matches can still advance through a large file. The defaults are 200

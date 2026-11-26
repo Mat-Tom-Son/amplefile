@@ -2769,9 +2769,10 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     case "files.create":
       return `Created empty file ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
     case "search": {
+      const names = (Array.isArray(record.names) ? record.names : []) as Array<{ path?: unknown; kind?: unknown }>;
       const files = (Array.isArray(record.files) ? record.files : []) as Array<{ path?: unknown; line?: unknown; preview?: unknown }>;
       const chats = (Array.isArray(record.chats) ? record.chats : []) as Array<{ conversationId?: unknown; title?: unknown; role?: unknown; preview?: unknown }>;
-      const total = files.length + chats.length;
+      const total = names.length + files.length + chats.length;
       const scopeLabel = `scope ${terminalText(record.scope ?? "all")}`;
       // The service's bounds are part of the answer: a stopped search must
       // never read as a complete one.
@@ -2779,6 +2780,12 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         + (record.nextCursor ? `\nContinue with the same selection and --cursor ${terminalText(record.nextCursor)}` : "");
       if (!total) return `No matches for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}).${boundNote}\n`;
       const sections: string[] = [];
+      if (names.length) {
+        const shown = names.slice(0, 20);
+        sections.push(`Names (${names.length}):`);
+        sections.push(...shown.map((match) => `- ${terminalText(match.path)}${match.kind === "folder" ? "/" : ""}`));
+        if (names.length > shown.length) sections.push(`${names.length - shown.length} more name match(es) in the --json result.`);
+      }
       if (files.length) {
         const shown = files.slice(0, 20);
         sections.push(`Files (${files.length}):`);

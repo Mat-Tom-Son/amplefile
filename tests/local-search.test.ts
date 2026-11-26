@@ -179,3 +179,40 @@ test("large match payloads continue before the response budget instead of losing
   } while(cursor);
   assert.deepEqual(lines,Array.from({length:1000},(_,index)=>index+1)); assert.ok(pages>1);
 });
+
+test("search pages names and text together under the same exclusions", async (t) => {
+  const { root, dispose } = await connectedFolder("names");
+  t.after(dispose);
+  await mkdir(join(root, "Sales archive"));
+  await mkdir(join(root, ".pi"));
+  await writeFile(join(root, "Sales archive", " sales & ops.txt "), "unrelated");
+  await writeFile(join(root, "Sales.dat"), Buffer.alloc(32));
+  await writeFile(join(root, "report.txt"), "SALES are up");
+  await writeFile(join(root, ".pi", "Sales secret.txt"), "private");
+  await writeFile(join(root, "Sales ignored.txt"), "ignored");
+  await symlink(join(root, "report.txt"), join(root, "Sales link"));
+  await setConnectedFolderIgnoreState(root, ["Sales ignored.txt"], true);
+
+  const names = [];
+  const lines = [];
+  let cursor: string | undefined;
+  for (let pageNumber = 0; ; pageNumber++) {
+    assert.ok(pageNumber < 16, "search advances to the end");
+    const page = await searchConnectedFolder(root, "SaLeS", { includeChats: false, maxMatches: 1, cursor });
+    assert.ok(page.names.length + page.files.length <= 1);
+    names.push(...page.names);
+    lines.push(...page.files);
+    if (!page.nextCursor) break;
+    cursor = page.nextCursor;
+  }
+  assert.deepEqual(names.map(({ path, name, kind }) => [path, name, kind]), [
+    ["Sales archive", "Sales archive", "folder"],
+    ["Sales archive/ sales & ops.txt ", " sales & ops.txt ", "file"],
+    ["Sales.dat", "Sales.dat", "file"],
+  ]);
+  assert.deepEqual(lines, [{ path: "report.txt", line: 1, preview: "SALES are up" }]);
+  const file = await searchConnectedFolder(root, "sales & ops.txt", { path: "Sales archive/ sales & ops.txt ", includeChats: false });
+  assert.deepEqual(file.names.map(({ name }) => name), [" sales & ops.txt "]);
+  assert.deepEqual(file.files, []);
+  assert.deepEqual((await searchConnectedFolder(root, "sales", { includeFiles: false })).names, []);
+});

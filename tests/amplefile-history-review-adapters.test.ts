@@ -280,3 +280,18 @@ test("History reads and per-file restore select the exact spaced name", async (t
   assert.equal(await readFile(join(root, path), "utf8"), firstText);
   assert.equal(await readFile(join(root, "note.txt"), "utf8"), currentText);
 });
+
+test("CLI and the window search endpoint share file name matches", async (t) => {
+  const { api, connectedFolder, request, execute } = await fixture(t);
+  const path = "sales & ops.txt";
+  await writeFile(join(connectedFolder.connectedFolderRoot, path), "unrelated");
+  const cli = await execute(request(["search", "--connected-folder", connectedFolder.id, "--scope", "files", "--query", "Sales & Ops", "--json"]));
+  assert.equal(cli.exitCode, 0, cli.stderr);
+  const { names, files } = JSON.parse(cli.stdout).data;
+  assert.deepEqual(files, []);
+  assert.deepEqual(names.map(({ path, name, kind }: { path: string; name: string; kind: string }) => ({ path, name, kind })), [{ path, name: path, kind: "file" }]);
+  const query = new URLSearchParams({ q: "Sales & Ops", scope: "files" });
+  const response = await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}/search?${query}`, { headers: { "x-amplefile-session": sessionToken } });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).names, names);
+});

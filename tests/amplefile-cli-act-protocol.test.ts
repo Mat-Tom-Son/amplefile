@@ -1188,13 +1188,15 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
     connectedFolder: connectedFolderRef,
     scope: "files",
     query: "quarterly budget",
+    names: [{ path: "notes/Quarterly budget", name: "Quarterly budget", kind: "folder" }],
     files: [{ path: "notes/plan.md", line: 2, preview: "the Quarterly budget is due" }],
     chats: [],
     truncated: true,
     scannedFiles: 41,
   };
   const searched = await execute(["search", "--connected-folder", "connected-folder-1", "--query", "quarterly budget", "--scope", "files"]);
-  assert.match(searched.stdout, /1 match for "quarterly budget" in Fold Connected Folder \[connected-folder-1\] \(scope files\):/);
+  assert.match(searched.stdout, /2 matches for "quarterly budget" in Fold Connected Folder \[connected-folder-1\] \(scope files\):/);
+  assert.match(searched.stdout, /- notes\/Quarterly budget\//);
   assert.match(searched.stdout, /- notes\/plan\.md:2 — the Quarterly budget is due/);
   assert.match(searched.stdout, /Coverage is incomplete/);
   assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", query: "quarterly budget", scope: "files" });

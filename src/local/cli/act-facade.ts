@@ -21,6 +21,7 @@ import type {
   AmpleFileResultEnvelope,
   AmpleFileResultOutcome,
 } from "../requests/request-records.js";
+import type { FolderSearchNameMatch } from "../folder-search.js";
 import type { ConnectedFolderChatMatch, ConnectedFolderFileMatch, ConnectedFolderSearchCoverage } from "../search.js";
 import type { HistoryFileComparison, HistoryFileRead, HistoryFileReadOptions, HistoryPageOptions } from "../../shared/history-review.js";
 
@@ -959,16 +960,14 @@ export interface AmpleFileActFacade {
   }>;
 
   /**
-   * Content search over one Connected Folder's files and Chats — the same service as
-   * `/api/connected-folders/:id/search`. It honours the person's ignore rules, skips
-   * binary files, and reports when a bound stopped the search
-   * rather than implying completeness. The act receipt records the scope
-   * only, never the query text.
+   * Search names, file text and Chats through the same service as
+   * `/api/connected-folders/:id/search`. Receipts carry the scope only.
    */
   search(input: { connectedFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number }): Promise<{
     connectedFolder: AmpleFileActConnectedFolderRef;
     scope: "files" | "chats" | "all";
     query: string;
+    names: FolderSearchNameMatch[];
     files: ConnectedFolderFileMatch[];
     chats: ConnectedFolderChatMatch[];
     truncated: boolean;

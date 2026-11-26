@@ -177,3 +177,26 @@ test("a selected file's Info asks for its date without hashing it", async (t) =>
   const info = requests.find((item) => item.path.includes("/file-info"))!;
   assert.equal(new URL(info.path, "http://local").searchParams.get("hash"), "0");
 });
+
+test("Connected Folder search displays the host's file and folder name matches", async (t) => {
+  const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => {
+    if (path !== "/api/connected-folders/lab/search?q=Sales&scope=files") return undefined;
+    return { query: "Sales", names: [
+      { kind: "folder", name: "Sales Archive", path: "Sales Archive" },
+      { kind: "file", name: " sales & ops.txt ", path: "Sales Archive/ sales & ops.txt " },
+    ], files: [{ path: "a.md", line: 1, preview: "Sales report" }], truncated: false };
+  }));
+  await dom.render(view(module));
+  await dom.waitFor(() => !!dom.container.querySelector('[data-fm-path="a.md"]'));
+  const before = requests.filter((item) => item.path.includes("/tree")).length;
+  const field = dom.container.querySelector<HTMLInputElement>(".fm-search input")!;
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, "Sales");
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  const rows = () => [...dom.container.querySelectorAll("[data-fm-result]")];
+  await dom.waitFor(() => rows().length === 3);
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "a.md"]);
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Sales report"]);
+  assert.equal(requests.filter((item) => item.path.includes("/tree")).length, before);
+});
