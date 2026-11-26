@@ -585,8 +585,9 @@ other surface.
   Folders** (while any exist) or the folder shown; results list name
   matches, then text matches with the words around them, in Name, Match, and
   Connected Folder columns. Connected Folder search checks up to 20,000
-  entries for names, including links, and reads a separate bounded page of
-  file text. The window says when name or text coverage is incomplete.
+  entries for names, including links, and stops at 500 name matches. It reads
+  a separate bounded page of file text. The window shows the matches it found.
+  The CLI's `coverage` reports what the search left out.
   In a Standard Folder or any other folder the host's folder search reads
   names and file text below the folder shown. That list has a Where column.
   Hidden items are searched only while

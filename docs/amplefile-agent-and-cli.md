@@ -865,9 +865,12 @@ uncaptured content stay explicit.
 `search --connected-folder <id> --query <text> [--scope files|chats|all] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] --json`
 matches a case-insensitive substring in names and streams ordinary text
 files regardless of size. `path` narrows the file portion. The first
-page returns `names` from a separate walk of up to 20,000 eligible entries,
-with no file content reads. Matches carry `path`, `name`, and `kind`.
-Matching symbolic links include the listing's `link` detail. The walk skips
+page returns `names` from a separate walk of up to 20,000 eligible entries
+that stops at 500 matches. When the walk reaches the match cap,
+`coverage.names.complete` is false. Use a narrower query or `--path` to
+find remaining names. The walk uses file metadata. Matches carry `path`,
+`name`, and `kind`. Matching symbolic links include the listing's
+`link` detail. The walk skips
 link targets, ignored items, nested Connected Folders, Office lock files,
 and internal metadata.
 

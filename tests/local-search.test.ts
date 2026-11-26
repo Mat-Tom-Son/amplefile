@@ -224,6 +224,22 @@ test("an entry beyond the 20,000-name budget leaves name coverage incomplete", a
   assert.deepEqual(limited.coverage.names, { visitedEntries: 20_000, complete: false });
 });
 
+test("the name walk stops at 500 matches and reports incomplete coverage", async (t) => {
+  const { root, dispose } = await connectedFolder("name-match-limit");
+  t.after(dispose);
+  for (let start = 0; start < 520; start += 100) {
+    await Promise.all(Array.from({ length: Math.min(100, 520 - start) }, (_, index) =>
+      writeFile(join(root, `report-${String(start + index).padStart(3, "0")}.txt`), "")));
+  }
+
+  const page = await searchConnectedFolder(root, "report", { includeChats: false });
+  assert.equal(page.names.length, 500);
+  assert.equal(page.names.at(-1)?.path, "report-499.txt");
+  assert.deepEqual(page.coverage.names, { visitedEntries: 500, complete: false });
+  assert.equal(page.coverage.textComplete, true);
+  assert.equal(page.coverage.complete, false);
+});
+
 test("name matches arrive once on the first page, outside the text match cap", async (t) => {
   const { root, dispose } = await connectedFolder("name-pages");
   t.after(dispose);

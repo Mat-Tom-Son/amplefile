@@ -178,10 +178,21 @@ test("a selected file's Info asks for its date without hashing it", async (t) =>
   assert.equal(new URL(info.path, "http://local").searchParams.get("hash"), "0");
 });
 
-test("Connected Folder search shows a deep name match when only text is incomplete", async (t) => {
+test("Connected Folder search shows matches and empty results without a coverage note", async (t) => {
   const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => {
-    if (path !== "/api/connected-folders/lab/search?q=Sales&scope=files") return undefined;
-    return { query: "Sales", names: [
+    if (!path.startsWith("/api/connected-folders/lab/search?")) return undefined;
+    const query = new URL(path, "http://local").searchParams.get("q");
+    if (query === "Complete") return {
+      names: [{ kind: "file", name: "Complete.md", path: "Complete.md" }], files: [], truncated: false,
+      coverage: { names: { visitedEntries: 2, complete: true }, textComplete: true, complete: true },
+    };
+    if (query === "Missing" || query === "Absent") {
+      const complete = query === "Absent";
+      return { names: [], files: [], truncated: !complete,
+        coverage: { names: { visitedEntries: 2, complete }, textComplete: complete, complete } };
+    }
+    if (query !== "Sales") return undefined;
+    return { query, names: [
       { kind: "folder", name: "Sales Archive", path: "Sales Archive" },
       { kind: "file", name: " sales & ops.txt ", path: "deep/2026/November/Sales Archive/ sales & ops.txt " },
       { kind: "file", name: "Sales link", path: "deep/Sales link", link: { target: "file", targetPath: "/tmp/report.txt" } },
@@ -200,11 +211,12 @@ test("Connected Folder search shows a deep name match when only text is incomple
   await dom.waitFor(() => !!dom.container.querySelector('[data-fm-path="a.md"]'));
   const before = requests.filter((item) => item.path.includes("/tree")).length;
   const field = dom.container.querySelector<HTMLInputElement>(".fm-search input")!;
-  await dom.act(() => {
-    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, "Sales");
+  const searchFor = (query: string) => dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, query);
     field.dispatchEvent(new window.Event("input", { bubbles: true }));
   });
   const rows = () => [...dom.container.querySelectorAll("[data-fm-result]")];
+  await searchFor("Sales");
   await dom.waitFor(() => rows().length === 4);
   assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "Sales link", "a.md"]);
   assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Name", "Sales report"]);
@@ -212,7 +224,16 @@ test("Connected Folder search shows a deep name match when only text is incomple
   assert.ok(rows()[2]?.querySelector(".fm-link-badge"));
   await dom.act(() => rows()[2]?.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true })));
   assert.deepEqual(opened, [[{ kind: "connected-folder", id: lab.id }, "deep/Sales link", "open"]]);
-  assert.doesNotMatch(dom.container.textContent!, /Search stopped before checking every item/);
-  assert.match(dom.container.textContent!, /Some file text wasn’t searched/);
+  assert.ok(!dom.container.querySelector(".fm-search-note"), "text coverage is incomplete");
+
+  await searchFor("Complete");
+  await dom.waitFor(() => rows()[0]?.querySelector(".fm-row-name")?.textContent === "Complete.md");
+  assert.ok(!dom.container.querySelector(".fm-search-note"), "both walks are complete");
+
+  for (const query of ["Missing", "Absent"]) {
+    await searchFor(query);
+    await dom.waitFor(() => dom.container.querySelector(".fm-empty")?.textContent === `No names or text match “${query}”`);
+    assert.ok(!dom.container.querySelector(".fm-search-note"), `${query} has no matches`);
+  }
   assert.equal(requests.filter((item) => item.path.includes("/tree")).length, before);
 });

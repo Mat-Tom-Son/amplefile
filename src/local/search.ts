@@ -16,6 +16,7 @@ export interface ConnectedFolderChatMatch { conversationId: string; title: strin
 interface NameSearchCoverage { visitedEntries: number; complete: boolean; }
 
 const maxNameEntries = 20_000;
+const maxNameMatches = 500;
 
 export interface ConnectedFolderSearchCoverage {
   /** Text counters describe this page, including excluded directory roots, not their descendants. */
@@ -277,6 +278,10 @@ async function searchNames(
       }
       coverage.visitedEntries++;
       await addMatch(child, entry.name);
+      if (names.length === maxNameMatches) {
+        coverage.complete = false;
+        return false;
+      }
       if (entry.isDirectory() && !await walk(child)) return false;
     }
     return true;
