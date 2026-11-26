@@ -12,6 +12,7 @@ import {
 } from "../src/local/cli/index.js";
 import type { AmpleFileCliActReceiptV3 } from "../src/local/cli/act-receipts.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
+import { createConversation } from "../src/local/agent/chat-store.js";
 
 const token = "a".repeat(64);
 
@@ -50,6 +51,7 @@ async function recentlyDeletedHarness(prefix: string): Promise<{
       resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
       receipts: {
         hasAccepted: async () => false,
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push(structuredClone(record));
           return true;
@@ -308,6 +310,30 @@ test("an app item an earlier build kept lists as blocked and cannot be restored"
     const restored = await h.execute(["recently-deleted", "restore", "--entry", entryId, "--json"]);
     assert.notEqual(restored.exitCode, 0, "nothing can bring an old app item back");
     assert.ok((await h.api.recentlyDeleted.list()).entries.some((item) => item.id === entryId), "a refused restore leaves the item alone");
+  } finally {
+    await h.close();
+  }
+});
+
+test("restoring a deleted Worker Chat while an automation run counts the act as its own succeeds and leaves its receipt", async () => {
+  const h = await recentlyDeletedHarness("chat-during-run");
+  try {
+    const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Chats" });
+    // The act is a running step's work, so its placed files are measured;
+    // a Chat transcript is reserved metadata, never content.
+    h.api.automations.countsAsRunWork = () => true;
+    const conversation = await createConversation(connectedFolder.connectedFolderRoot);
+    const removed = await fetch(`${h.api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}`, { method: "DELETE" });
+    assert.equal(removed.status, 200, await removed.text());
+    const entry = (await h.api.actFacade.recentlyDeletedList()).entries.find((item) => item.originalPath === `.amplefile/conversations/${conversation.id}.jsonl`);
+    assert.ok(entry, "the Chat is in Recently Deleted");
+
+    h.records.length = 0;
+    const restored = await h.execute(["recently-deleted", "restore", "--entry", entry.id, "--json"]);
+    assert.equal(restored.exitCode, 0, restored.stderr);
+    assert.ok(existsSync(join(connectedFolder.connectedFolderRoot, ".amplefile", "conversations", `${conversation.id}.jsonl`)), "the transcript is back");
+    assert.deepEqual(h.records.map((record) => record.outcome), ["accepted", "ok"], "the restore leaves its receipt");
+    assert.equal(h.lastOk().command, "recently-deleted.restore");
   } finally {
     await h.close();
   }

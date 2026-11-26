@@ -10,6 +10,7 @@ import {
   RegisteredConnectedFolderTrustAuthority,
 } from "../src/local/agent/registered-connected-folder-runtime.js";
 import { loadAgentSkillCatalog } from "../src/local/agent/skill-catalog.js";
+import { ampleFileAutomationContractVersion } from "../src/local/automations/automation-declarations.js";
 import { AmpleFileCliError } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../src/local/state-paths.js";
@@ -119,26 +120,36 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     // cross–Connected Folder execution inside a portable Connected Folder Chat.
     assert.match(ampleFileAgentContext, /Never run cross-connected-folder work through a Connected Folder Chat\./);
     assert.match(ampleFileAgentContext, /amplefile\.automation-proposal/);
-    assert.match(ampleFileAgentContext, /Use version 1 for manual, interval, and on-settled triggers/);
-    assert.match(ampleFileAgentContext, /Use version 3 for a folder-change trigger/);
-    // The opt-in catch-up: version 5, one run, never a backlog.
-    assert.match(ampleFileAgentContext, /use version 5 and add `"ifMissed":"run"` to the trigger/);
+    // The version to write comes from the validator itself, and trigger
+    // shapes come from `help automations`, so the instructions name no
+    // older version and no retired trigger that could drift from it.
+    assert.match(ampleFileAgentContext, new RegExp(`Write \`"version": ${ampleFileAutomationContractVersion}\`, the newest`));
+    assert.match(ampleFileAgentContext, /`amplefile help automations` lists what each version added/);
+    assert.match(ampleFileAgentContext, /the Connected Folder's own top level/);
+    assert.doesNotMatch(ampleFileAgentContext, /on-settled|\bversion[ -][0-9]/);
+    // The opt-in catch-up: one run, never a backlog.
+    assert.match(ampleFileAgentContext, /add `"ifMissed":"run"` to the trigger/);
     assert.match(ampleFileAgentContext, /one run, never a backlog/);
     assert.match(ampleFileAgentContext, /<name>\.amplefile-automation\.json` directly in your own working folder/);
     assert.match(ampleFileAgentContext, /appears in Settings → Automations under \*\*Ready to turn on\*\*/);
     assert.match(ampleFileAgentContext, /do not enable it yourself unless they ask you to/);
-    assert.match(ampleFileAgentContext, /Use version 2 for a one-time trigger shaped exactly/);
+    assert.match(ampleFileAgentContext, /A one-time trigger is shaped exactly/);
     assert.match(ampleFileAgentContext, /`ifMissed` is required/);
     assert.match(ampleFileAgentContext, /any future time up to ten years ahead/);
     assert.match(ampleFileAgentContext, /automations enable --proposal/);
     assert.match(ampleFileAgentContext, /enabling the same declaration again changes nothing/);
-    assert.match(ampleFileAgentContext, /Use version 4 for placeholders or an agent step/);
     assert.match(ampleFileAgentContext, /[Oo]rdered steps use three kinds/);
     assert.match(ampleFileAgentContext, /\{\{trigger\.summary\}\}/);
     assert.match(ampleFileAgentContext, /a message into a new thread of your own/);
     assert.match(ampleFileAgentContext, /Anything else inside `\{\{ \}\}` is refused when you enable/);
     assert.match(ampleFileAgentContext, /automations show --automation <id>/);
     assert.match(ampleFileAgentContext, /automations receipts \[--automation <id>\]/);
+    // Run-now returns at once; a run is followed by id, never by holding the
+    // command that started it.
+    assert.match(ampleFileAgentContext, /`automations run` returns the run's id as soon as the run starts and never waits for it/);
+    assert.match(ampleFileAgentContext, /automations status --automation <id> --run <run-id> --json/);
+    assert.match(ampleFileAgentContext, /when another run of that automation is still going, it says it started nothing/);
+    assert.match(ampleFileAgentContext, /automations wait --automation <id> --run <run-id> --json/);
     assert.match(ampleFileAgentContext, /automations sit above Connected Folders and take no `--connected-folder`/);
     assert.match(ampleFileAgentContext, /Up to 64 automation runs execute at once/);
     assert.match(ampleFileAgentContext, /A pure reminder performs no future Worker work/);
@@ -222,16 +233,20 @@ test("the AmpleFile Agent runs above all Connected Folders on the shared turn ma
     assert.match(skillContent, /Setup-only \(no act verb\)/);
     assert.match(skillContent, /Never delegate cross-connected-folder work into a Connected Folder Chat/);
     assert.match(skillContent, /amplefile\.automation-proposal/);
-    assert.match(skillContent, /one-time trigger requires version 2/);
+    assert.match(skillContent, new RegExp(`Write \`"version": ${ampleFileAutomationContractVersion}\`, the newest`));
+    assert.match(skillContent, /take trigger shapes from `amplefile help automations`/);
+    assert.match(skillContent, /a one-time trigger is exactly/);
+    assert.doesNotMatch(skillContent, /on-settled|\bversion[ -][0-9]/);
     assert.match(skillContent, /`ifMissed` is required/);
     assert.match(skillContent, /any future time up to ten years ahead/);
     assert.match(skillContent, /automations enable --proposal/);
-    assert.match(skillContent, /Version 4 adds the closed placeholder set and the `agent` step/);
+    assert.match(skillContent, /Messages may use the closed placeholder set/);
     assert.match(skillContent, /`chat`, `files`, or `agent`/);
     assert.doesNotMatch(skillContent, /Optional Checks|checks (status|run)/);
-    assert.match(skillContent, /automations list\|show\|run\|stop\|disable\|delete\|receipts/);
+    assert.match(skillContent, /automations list\|show\|run\|status\|wait\|stop\|disable\|delete\|receipts/);
+    assert.match(skillContent, /returns the run id without waiting, so the run's steps can use `amplefile`/);
     assert.match(skillContent, /A pure reminder does no future Worker work/);
-    assert.match(skillContent, /Deferred work uses a version-2 `at` automation/);
+    assert.match(skillContent, /Deferred work uses an `at` automation/);
     assert.match(skillContent, /finish the current turn/);
     assert.match(skillContent, /Never busy-wait/);
     assert.match(skillContent, /report the receipt/);

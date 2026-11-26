@@ -370,6 +370,11 @@ test("drawing is bounded: a request that goes away leaves the queue, a full queu
   await until(() => slow.stats.imagesDrawn === 1);
   assert.equal(await refusal(slow.thumbnail({ path: join(place, "big.png"), size: 256 })), "timed-out");
   assert.equal(slow.stats.imagesDrawn, 1, "the second ask is answered from the remembered refusal");
+  // That first drawing still runs to its end and keeps its thumbnail. Wait for it, so it cannot write into the
+  // folder while the test's cleanup removes it.
+  const deadline = Date.now() + 15_000;
+  while ((await slow.cache.size()).files === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal((await slow.cache.size()).files, 1);
 });
 
 test("a PDF that takes too long ends its worker, and the next PDF starts a new one", async (t) => {

@@ -769,7 +769,15 @@ async function run() {
     const signInWindow = () => BrowserWindow.getAllWindows().find((candidate) => candidate !== window && candidate.webContents.getURL() === `${popupOrigin}/two`);
     await until(signInWindow, "the sign-in window loads");
     const popup = signInWindow();
+    // This is the one window here that is on the screen and takes focus (the app opens it, not the test), so a
+    // person's key press or click can land in it, and a pop-up counts its own presses toward opening a tab. Stand in
+    // for one, then hide the window, which takes no input, and load its page again, which forgets presses, before
+    // anything below is counted. Without this, a stray press during a build opened a tab and failed the count.
+    popup.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
     popup.hide();
+    const reloaded = new Promise((resolve) => popup.webContents.once("did-finish-load", resolve));
+    popup.webContents.reload();
+    await reloaded;
     try {
       assert.equal(await popup.webContents.executeJavaScript("navigator.userActivation.isActive"), false);
       const beforeChildren = await tabCount();

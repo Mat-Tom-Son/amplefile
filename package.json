@@ -1,6 +1,6 @@
 {
   "name": "amplefile-desktop",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
   "description": "A local-first desktop app powered by Pi.",

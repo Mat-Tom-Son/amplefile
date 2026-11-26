@@ -178,6 +178,7 @@ async function startModelJourney(prefix: string, options: {
       resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
       receipts: {
         hasAccepted: async (requestId) => records.some((record) => record.requestId === requestId && record.outcome === "accepted"),
+        lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }),
         append: async (record) => {
           records.push(structuredClone(record));
           return true;

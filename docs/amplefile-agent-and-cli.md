@@ -18,7 +18,8 @@ using the same bounded read v1 and authenticated act v3 request-file protocols.
 DEB/RPM add the command at installation; development gives Worker shells a
 profile-local launcher. Linux state defaults to `$XDG_CONFIG_HOME/AmpleFile`
 (normally `~/.config/AmpleFile`), and every Worker inherits the exact running
-profile and executable. Wait settles on completion or a question as on Mac.
+profile and executable. The Mac and Linux clients both support caller-chosen
+act ids, receipt lookup, and waiting for Chats, the AmpleFile Agent, and Automations.
 
 ## What the AmpleFile Agent is
 
@@ -268,7 +269,8 @@ has two parts, and nothing changes until the person clicks:
 
 The Skill (`src/shared/outside-agent-skill.ts`) is short on purpose: the
 rules (`--json`, an explicit `--connected-folder`, receipts over raw edits,
-no secrets, no polling), how to look around, handing work to a Worker and
+tracing a cut-off act by its `--request-id`, no secrets, no polling), how to
+look around, handing work to a Worker and
 waiting for its result, asking the AmpleFile Agent to work across Connected
 Folders, files and undo, and Automations, with `amplefile help <command>` for
 the rest. Its product name, command, and folder come from
@@ -343,6 +345,8 @@ amplefile tools disable --path <resource-path> --kind extensions --scope everywh
 amplefile tools enable --path <resource-path> --kind extensions --scope connected-folder --connected-folder "Home" --json
 amplefile recently-deleted list --json
 amplefile recently-deleted restore --entry <recently-deleted-id> --json
+amplefile files rename --connected-folder "Home" --path draft.md --name final.md --request-id "$(uuidgen)" --json
+amplefile receipts show --id <request-id> --json
 ```
 
 `tools enable|disable` uses Pi's resource filters for `extensions`, `skills`,
@@ -436,6 +440,9 @@ journal across restarts. `chat status --task` and `chat result --task` read
 it, and `chat wait --task` is a poll in the shim that finishes with that
 turn's own result: a failed or aborted turn exits non-zero instead of
 presenting an older transcript message as success (a wait timeout exits 7).
+The failure message names its cause in fixed words, never the provider's own
+text, and is followed by the report the turn filed before it ended or the
+start of its unfinished reply ([collaboration contract](collaboration-contract.md#host-environment-and-role)).
 `chat status|result --conversation` are the transcript-scoped views.
 
 On startup, an accepted turn that reached its transcript but never settled is
@@ -457,7 +464,7 @@ Connected Folder's identity and Chats) is left behind, a name already taken
 gets Finder's " copy" name, and a source that is itself a link is refused, as
 is one whose name is longer than 240 characters, which a copy never shortens.
 `chat handoff --file` and an Automation's `files` step copy the same way.
-`connected-folders create` and `connected-folders create`
+`connected-folders create`
 and `connected-folders register` grant the same runtime authorization as the
 window's actions. Content-bearing Chat and agent-preference reads
 (`chat status|result`, `chats list`, `connected-folders worker show`) belong
@@ -468,6 +475,59 @@ code 6.
 Deleting a Worker Chat moves its portable transcript into Recently Deleted
 and records the Connected Folder, Chat, and Recently Deleted entry identities
 in its receipt.
+
+### Following an act after the wait ends
+
+Every act has a request id, and its receipts are journaled under that id. A
+caller that stops waiting (a shell timeout, a lost connection, a killed
+process) does not stop the act: the desktop host claims a request on arrival
+and can still run it after the shim is gone, as late as the five-minute
+freshness window allows behind other commands in its queue. So the caller
+names the id: every act command takes `--request-id <uuid>` (`uuidgen` makes
+one), and the host journals the act under it. Without the flag, the act's id
+is the request's own. The caller chooses the id, rather than the shim
+printing one, because then the caller holds it before anything can cut the
+command off: a harness that kills a command on timeout often drops or
+truncates its output, and the id would go with it.
+
+The id names the act, not the request file. The shim checks it, lowercases
+it, and leaves it in argv, where the host reads it, whichever shim sent it.
+Every try still travels as a request file of its own, with its own random id
+and its own answer, which the shim removes once it has read it. So a caller
+only ever reads the answer the host decided for the request it sent, never
+one decided for another caller or an earlier try.
+
+`amplefile receipts show --id <request-id>` reads what became of it, from the
+receipt journals and from what the host still holds:
+
+| `state` | Meaning |
+|---|---|
+| `queued` | The host holds the request (its file waits to be claimed, or it waits in line) and has not started it. By `decideBy` it will have run or been refused. |
+| `accepted` | It started. `running` says whether the host is still on it; `false` means it was interrupted or its outcome could not be written, so check what it changes before running it again. An act the window or the popover started reports `running: null`. |
+| `ok`, `error` | It ran; `receipt` is its outcome receipt. |
+| `rejected` | It was refused without running: the app's token did not match, it waited too long in line, or its `--parent-task` was no longer active. Nothing changed. |
+| `not_found` | No receipt and nothing held under the id, so it never ran. `journalSince` says how far back the journals are known to reach once one has rotated. |
+
+Every act journals `accepted` before it runs, so an id without one never ran.
+The read runs beside the host's serial queue, as `jobs output` and
+`chat compact` do, because it is usually asked while the act it names still
+waits in that queue. It journals itself in `act-reads.jsonl`.
+
+The same id also makes a retry safe, because the host decides each try on
+its own against the journal. A try under an id that never ran (`rejected`, or
+refused before it was journaled, such as a usage error) runs. A try under an
+id that already ran, for the same command or any other, is refused with exit
+5 and told what the id ran and how it ended; it is never run again and never
+handed that run's output. Two callers waiting under one id at once each get
+an answer: one runs the act, and the other is refused the same way. That
+refusal reaches as far back as the journals still hold the id's `accepted`
+line: at least the five-minute freshness window, and in practice the last 8
+to 16 MB of act receipts, which `journalSince` reports. A retry under an id
+older than that runs again. Every new command needs a new id. `chat wait`,
+`agent wait`, and `automations wait` refuse `--request-id`, because they run
+in the shim and each of their polls is a read of its own. When the
+shim's own wait (`AMPLEFILE_CLI_TIMEOUT_MS`) runs out, it exits 124 and names
+the act's id with the `receipts show` command that answers for it.
 
 ## The AmpleFile Agent conversation
 
@@ -840,7 +900,8 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 
 1. The shim writes an atomic UUID-named request under the owning app's
    profile, with the arguments, current working directory, protocol version,
-   and timestamp. An installed production app uses
+   and timestamp. Each try has its own random id; an act command's own
+   `--request-id` travels in its arguments. An installed production app uses
    `~/Library/Application Support/AmpleFile/cli/requests`, and the separately
    identified local smoke app uses its own product directory. Packaged child
    commands receive that exact root through the CLI-only
@@ -851,14 +912,22 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 3. The desktop host claims the request on arrival, executes it through
    `AmpleFileCliKernelAdapter` or the act executor in one serial queue, and
    atomically writes stdout, stderr, structured result, and exit code under
-   `responses`. `jobs output` and `chat compact`, which can take minutes and
-   are fenced by their own services, run beside that queue so they never
-   stall other commands. An act that reaches the front of the queue more
+   `responses`. No command holds that queue while it waits on agent work,
+   because agent work uses the same command: `chat send` and
+   `automations run` return as soon as the turn or run is accepted, and
+   `chat wait`, `agent wait`, and `automations wait` wait in the shim by
+   repeating a quick status read. `jobs output` and `chat compact`, which can
+   take minutes and are fenced by their own services, run beside that queue
+   so they never stall other commands; so does `receipts show`, which answers
+   about acts still waiting in it. An act that reaches the front of the queue more
    than five minutes after the shim created it is refused without running
    and journaled as `rejected`, so a caller that gave up never sees it land
    late.
 4. The shim returns that output and removes its request and response files.
-   The broker also removes stale bounded files during initialization.
+   When a command is stopped before it reads its response, AmpleFile removes
+   the response once it is five minutes old, if it is running then, whether
+   or not it has restarted in between, or else when it next starts. The
+   broker also removes stale bounded files during initialization.
 
 A CLI-only launch can start the host, process its queue, flush Pi state, and
 exit without showing the window. If the window is already open, the command
@@ -894,10 +963,18 @@ that is honest for a personal, local product:
   its recorded response, and after the shim cleans up, the journal's
   `accepted` records refuse a duplicated id outright. The broker refuses
   requests older than its freshness window, and journal rotation holds
-  entries at least that long, so the two compose into a durable at-most-once
-  guarantee. The host reads the journal once, keeps the accepted ids in
-  memory, cuts an unfinished final line at startup, and refuses acts while
-  an unreadable line could still name a request the broker would accept.
+  entries at least that long, so for one request file the two compose into a
+  durable at-most-once guarantee. The host reads the journal once, keeps the
+  accepted ids in memory, cuts an unfinished final line at startup, and
+  refuses acts while an unreadable line could still name a request file the
+  broker would accept. A caller may name an act's id with `--request-id`,
+  which the host reads from argv and journals the act under. A retry under
+  that id is a new request file with a new creation time, so the freshness
+  window no longer bounds it: it is refused, never run twice, for as long as
+  the journals still hold the id's `accepted` line, and an id whose line has
+  rotated out, or sits in an unreadable line past that line's window, runs
+  again. `receipts show` reports how far back the journals
+  reach as `journalSince`.
 - **Explicit scope.** Every act command names its Connected Folder; writes
   never resolve from the working directory. Chat commands also name their
   conversation or task.
@@ -906,7 +983,9 @@ that is honest for a personal, local product:
   (an unwritable journal refuses the command) and a terminal `ok` or `error`
   line after. Status, list, show, and overview reads journal the same pair
   in `cli/receipts/act-reads.jsonl` instead, so a `chat wait` poll never
-  crowds real acts out of the journal or the overview. Receipts record the
+  crowds real acts out of the journal or the overview. `receipts show`
+  reads one request id's lines back from both journals, and journals itself
+  with the reads. Receipts record the
   initiating surface (`cli`, `popover`,
   `main-window`) and typed undo references, including Recently Deleted entry
   ids: identifiers and digests only, never content. A crash can separate the
@@ -917,7 +996,11 @@ that is honest for a personal, local product:
   the interactive local API exposes, reusing the same route internals as the
   window: Connected Folder trust grants, capability-mutation locks,
   turn-conflict refusal, History checkpoints, and kernel task records.
-  Without the running app there is no facade and nothing changes.
+  Without the running app there is no facade and nothing changes. Errors
+  keep the window's meaning: a name another item already has is a conflict
+  (exit 5), a disk refusal (locked, no permission, no room) reads as the
+  window says it, naming the item but never its full path, and any other
+  failed system call is a plain failure that names only its error code.
 - **Prepared acts.** Runnable-code, standing-power, and destruction acts
   prepare a fully pinned record, recheck every pin at effect time, consume it
   journal-first, and execute at most once through a fenced kernel task,
@@ -985,8 +1068,9 @@ of reaching around it.
 | Act argv parsing and executor | `src/local/cli/act-commands.ts` | `tests/amplefile-cli-act-protocol.test.ts`, `tests/desktop-amplefile-cli-host.test.ts` |
 | Act facade over route internals | `src/local/api/act-lane.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
 | Atomic bounded file broker | `src/local/cli/broker.ts` | `tests/amplefile-cli-broker.test.ts` |
-| Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
-| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
+| Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts`, `tests/automation-run-cli-reentry.test.ts` |
+| CLI clients and child-process PATH | `desktop/cli/`, `desktop/native/linux/src/cli.rs`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts`, `tests/desktop-cli-request-id.test.ts`, `tests/desktop-cli-automation-wait.test.ts` (Linux via `node scripts/test-linux-native.mjs`) |
+| `--request-id` and `receipts show` | `src/local/cli/act-commands.ts`, `src/local/cli/act-receipts.ts`, `src/local/cli/broker.ts`, `desktop/cli/amplefile-cli.jxa.js` | `tests/amplefile-cli-receipts-show.test.ts`, `tests/amplefile-cli-act-receipts.test.ts`, `tests/desktop-amplefile-cli-host.test.ts`, `tests/desktop-cli-request-id.test.ts` |
 | Real Pi turn driver | `scripts/amplefile-drive.ts` | Run against the local API when provider credentials are available. |
 | Machine-wide Automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` |
 | Prepared acts | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts`, `tests/amplefile-cli-act-receipts.test.ts` |
@@ -996,7 +1080,8 @@ of reaching around it.
 | Turn environment line and role preamble | `src/local/agent/turn-environment.ts`, `src/local/agent/role-preamble.ts` | `tests/turn-environment.test.ts`, `tests/role-preamble-prompt.test.ts` |
 | Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/api/act-lane.ts`, `src/local/api/request-records.ts`, `src/local/api/request-routes.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
 | Bounded inference | `src/local/agent/bounded-inference.ts` | `tests/bounded-inference.test.ts` |
-| Automation declarations, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
+| Why a turn failed, and the next turn's notice of it | `src/local/agent/turn-failure.ts`, `src/local/api/turn-run.ts`, `src/local/api/plain-file-error.ts` | `tests/turn-failure-visibility.test.ts` |
+| Automation declarations, authoring guide, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-authoring-guide.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
 | Overview composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |
 
 See [Architecture](architecture.md) for the surrounding process boundaries,

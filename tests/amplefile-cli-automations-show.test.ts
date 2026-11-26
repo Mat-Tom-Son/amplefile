@@ -45,7 +45,7 @@ async function showAutomation(steps: unknown[], trigger?: Record<string, unknown
     {
       version: "test",
       getActFacade: () => ({ facade, token }),
-      receipts: { hasAccepted: async () => false, append: async () => true },
+      receipts: { hasAccepted: async () => false, append: async () => true, lookup: async () => ({ accepted: null, settled: null, rejected: null, journalSince: null }) },
     },
   );
   assert.equal(outcome.exitCode, 0, outcome.stderr);

@@ -6,6 +6,7 @@ import { stopComputerSharingForScope } from "./api/computer-sharing.js";
  * in `./api/`, which hold the routes and their domain code.
  */
 
+import { isAmpleFileRequestSettled } from "./requests/request-records.js";
 import { shutdownIncludedToolHost } from "./agent/included-tool-setup.js";
 import { ModelContextInspector } from "./agent/model-context-inspector.js";
 import { observeAmpleFileAutomationFiles } from "./automations/automation-file-observer.js";
@@ -308,6 +309,19 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     store: automationStore,
     ports: createAutomationHopPorts(state),
     observeFiles: observeAmpleFileAutomationFiles,
+    // A step's request and every request handed work from it: their turns,
+    // and the Connected Folders where any of them still has work.
+    requestLineage: (stepTurnTaskId) => {
+      const request = state.requests.byTaskId(stepTurnTaskId);
+      if (!request) return null;
+      const records = [request, ...state.requests.subtree(request.requestId)];
+      return {
+        taskIds: records.flatMap((record) => record.turns.map((turn) => turn.taskId)),
+        connectedFolderIds: records
+          .filter((record) => !isAmpleFileRequestSettled(record) && record.owner.connectedFolderId !== undefined)
+          .map((record) => record.owner.connectedFolderId!),
+      };
+    },
     tasks: {
       start: ({ automationId, runId }) =>
         kernel.startExperimentalAutomationRunTask({ automationId, runId, actor: { kind: "system" } }),

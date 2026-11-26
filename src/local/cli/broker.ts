@@ -69,6 +69,16 @@ export interface AmpleFileCliCleanupResult {
 
 export type AmpleFileCliRequestExecutor = (request: AmpleFileCliBrokeredRequest) => Promise<AmpleFileCliResponseV1>;
 
+/** A request the broker holds and has not answered, as `heldRequests` lists it. */
+export interface AmpleFileCliHeldRequest {
+  id: string;
+  argv: string[];
+  /** When the shim wrote the request file, no earlier than its own creation time. */
+  writtenAt: Date;
+  /** True once the broker has taken it up; it may still wait in line. */
+  processing: boolean;
+}
+
 export class AmpleFileCliFileBroker {
   readonly paths: AmpleFileCliBrokerPaths;
   private readonly stateRoot: string;
@@ -77,7 +87,8 @@ export class AmpleFileCliFileBroker {
   private readonly maxActRequestBytes: number;
   private readonly claimReadBytes: number;
   private readonly maxResponseBytes: number;
-  private readonly maxRequestAgeMs: number;
+  /** A request created longer ago than this is refused rather than claimed. */
+  readonly maxRequestAgeMs: number;
   private readonly maxFutureSkewMs: number;
   private readonly inFlight = new Map<string, Promise<AmpleFileCliResponseV1>>();
 
@@ -223,13 +234,59 @@ export class AmpleFileCliFileBroker {
     return operation;
   }
 
-  async cleanup(options: { olderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
+  /**
+   * Every request this broker holds and has not answered: files waiting to
+   * be claimed, unless already too old ever to be claimed, and claimed
+   * requests still being processed. A claim nothing is processing is residue
+   * of a host that stopped, and is left out. Waiting files are listed before
+   * claims because a claim moves a file from one to the other, so a request
+   * moving between them is still listed. Each file is read for its id and
+   * argv; one that cannot be read is left out.
+   */
+  async heldRequests(): Promise<AmpleFileCliHeldRequest[]> {
+    await this.initialize();
+    const held: AmpleFileCliHeldRequest[] = [];
+    for (const [directory, claimed] of [[this.paths.requests, false], [this.paths.claims, true]] as const) {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const match = /^([0-9a-f-]{36})\.json$/i.exec(entry.name);
+        if (!match || !entry.isFile()) continue;
+        const id = match[1]!.toLowerCase();
+        const processing = this.inFlight.has(id);
+        if (claimed && !processing) continue;
+        const path = safeChild(directory, entry.name);
+        const info = await lstat(path).catch(() => null);
+        if (!info?.isFile()) continue;
+        if (!processing && this.now().getTime() - info.mtimeMs > this.maxRequestAgeMs) continue;
+        const argv = await readHeldArgv(path, this.claimReadBytes);
+        if (argv) held.push({ id, argv, writtenAt: info.mtime, processing });
+      }
+    }
+    return held;
+  }
+
+  /**
+   * Removes the answer written under this id once it is older than
+   * `olderThanMs`, the age past which no live command could still be about
+   * to read it. It never creates the broker's folders.
+   */
+  async removeAnswer(id: string, olderThanMs: number): Promise<boolean> {
+    const path = this.requestPaths(id).response;
+    const info = await lstat(path).catch(() => null);
+    if (!info?.isFile() || this.now().getTime() - info.mtimeMs < olderThanMs) return false;
+    await rm(path, { force: true });
+    return true;
+  }
+
+  async cleanup(options: { olderThanMs?: number; answersOlderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
     await this.initialize();
     const olderThanMs = positiveLimit(options.olderThanMs, AMPLEFILE_CLI_DEFAULT_CLEANUP_AGE_MS, "olderThanMs");
-    const threshold = this.now().getTime() - olderThanMs;
+    // Answers can go sooner than requests and claims: the command waiting on
+    // one reads and removes it within moments, so an old one was never read.
+    const answersOlderThanMs = positiveLimit(options.answersOlderThanMs, olderThanMs, "answersOlderThanMs");
     const removed: string[] = [];
     const skippedUnsafe: string[] = [];
     for (const directory of [this.paths.requests, this.paths.claims, this.paths.responses]) {
+      const threshold = this.now().getTime() - (directory === this.paths.responses ? answersOlderThanMs : olderThanMs);
       await assertSafeDirectory(this.paths.root, directory, "CLI broker directory");
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         if (!/^[0-9a-f-]{36}\.(?:json|lock)$|^[0-9a-f-]{36}\.[0-9a-f-]{36}\.tmp$/i.test(entry.name)) continue;
@@ -393,6 +450,16 @@ function assertWithin(root: string, path: string): void {
   const child = relative(base, candidate);
   if (child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child))) return;
   throw new AmpleFileCliError("permissionDenied", "CLI broker path escapes its state root.");
+}
+
+/** A held request file's argv, or null when it cannot be read as a request. */
+async function readHeldArgv(path: string, maxBytes: number): Promise<string[] | null> {
+  try {
+    const record = JSON.parse((await readBoundedFile(path, maxBytes, "CLI request")).toString("utf8")) as { argv?: unknown };
+    return Array.isArray(record.argv) && record.argv.every((item) => typeof item === "string") ? record.argv as string[] : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fileExists(path: string): Promise<boolean> {

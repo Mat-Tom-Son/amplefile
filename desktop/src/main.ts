@@ -127,6 +127,7 @@ import {
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
 import { pickLinuxOpenWithApp } from "./open-with-linux-chooser.js";
 import { linuxTerminalLaunchPlan } from "./linux-open-terminal.js";
+import { macTerminalLaunchPlan, openFolderInTerminal } from "./open-terminal.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
 import { RailTooltipOverlay } from "./rail-tooltip-overlay.js";
@@ -1093,25 +1094,22 @@ function registerIpc(): void {
     const error = await shell.openPath(connectedFolder.connectedFolderRoot);
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
-  if (process.platform === "linux") {
+  // Open Terminal Here resolves the folder under its place's path policy and rechecks it after choosing the terminal.
+  if (process.platform === "darwin" || process.platform === "linux") {
+    const linux = process.platform === "linux";
     ipcMain.handle("amplefile:place:open-terminal", async (event, value: unknown) => {
       assertTrustedMainRenderer(event);
       const location = parseWindowLocation(value);
       if (!location) throw new Error("Choose a folder to open in a terminal.");
       const { place, path } = location;
-      const resolveFolder = async () => place.kind === "connected-folder"
-        ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
-        : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null;
-      const folder = await resolveFolder();
-      const original = folder ? await lstat(folder) : null;
-      if (!folder || !original?.isDirectory()) throw new Error("Choose a folder to open in a terminal.");
-      const plan = await linuxTerminalLaunchPlan(folder);
-      // The desktop terminal lookup can take time. Recheck the place before launching into it.
-      const current = await resolveFolder() === folder ? await lstat(folder) : null;
-      if (!current?.isDirectory() || current.dev !== original.dev || current.ino !== original.ino) {
-        throw new Error("That folder changed. Try opening it in a terminal again.");
-      }
-      await launchOpenWith(plan);
+      await openFolderInTerminal({
+        resolveFolder: async () => place.kind === "connected-folder"
+          ? resolveConnectedFolderPath((await getConnectedFolder(place.id)).connectedFolderRoot, path)
+          : isStandardFolderId(place.id) ? resolveStandardFolderPath(place.id, path) : null,
+        launch: launchOpenWith,
+        launchPlan: linux ? linuxTerminalLaunchPlan : macTerminalLaunchPlan,
+        launchFailureMessage: linux ? "AmpleFile couldn’t open a terminal." : undefined,
+      });
     });
   }
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
@@ -1622,7 +1620,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId, state: Windo
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
       ...(process.platform === "linux" ? [linuxOpenRecentMenuItem()] : []),
-      ...(process.platform === "linux" ? [{ id: "open-terminal", label: "Open Terminal Here", enabled: state.terminalFolderOpen === true, click: menuCommand("open-terminal") }] : []),
+      ...(process.platform === "darwin" || process.platform === "linux" ? [{ id: "open-terminal", label: "Open Terminal Here", enabled: state.terminalFolderOpen === true, click: menuCommand("open-terminal") }] : []),
       { type: "separator" },
       { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: state.connectedFolderOpen, click: menuCommand("new-chat") },
       // The folder shown, in any place: a Connected Folder, a Standard Folder, the disk, or any other folder.

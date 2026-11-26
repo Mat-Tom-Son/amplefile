@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createElement } from "react";
 
 import { linuxTerminalLaunchPlan } from "../desktop/src/linux-open-terminal.js";
+import { openFolderInTerminal } from "../desktop/src/open-terminal.js";
 import { parseLinuxMountableVolumes } from "../src/local/linux-mountable-volumes.js";
 import { startLocalApi } from "../src/local/server.js";
 import { listMountableVolumes, mountListedLinuxVolume, type ToolRunner } from "../src/local/volumes.js";
@@ -43,6 +44,23 @@ test("Open Terminal Here prefers the desktop selection, then TERMINAL, then inst
   assert.equal(fallback.command, ghostty);
   assert.deepEqual(fallback.args, [`--working-directory=${folder}`]);
   await assert.rejects(linuxTerminalLaunchPlan("../Photos", env), /Choose a folder/);
+});
+
+test("Open Terminal Here checks the folder again after an asynchronous terminal lookup", async (t) => {
+  const root = await scratch(t);
+  const folder = join(root, "Notes");
+  await mkdir(folder);
+  let launched = false;
+  await assert.rejects(openFolderInTerminal({
+    resolveFolder: async () => folder,
+    launchPlan: async (path) => {
+      await rename(path, join(root, "Old Notes"));
+      await mkdir(path);
+      return { kind: "spawn", command: "terminal", args: [], cwd: path };
+    },
+    launch: async () => { launched = true; },
+  }), /That folder changed/);
+  assert.equal(launched, false);
 });
 
 test("Linux Info reads file and link metadata on request under the place's path policy", { skip: process.platform !== "linux" }, async (t) => {
@@ -197,6 +215,14 @@ test("Get Info opens the panel at Info for an item, from its menu and from the F
   await dom.act(() => { (row("other.txt") as HTMLElement).click(); });
   await dom.act(() => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Show or hide the panel"]')!.click(); });
   assert.equal(panel(), null);
+  // Behind a dialog it does nothing: the panel stays hidden.
+  const dialog = window.document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  window.document.body.append(dialog);
   await dom.render(createElement(module.FileManagerView, { ...props, desktopAction: { id: 2, command: "get-info" } }));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(panel(), null);
+  dialog.remove();
+  await dom.render(createElement(module.FileManagerView, { ...props, desktopAction: { id: 3, command: "get-info" } }));
   await dom.waitFor(() => (panel()?.textContent ?? "").includes("other.txt"));
 });

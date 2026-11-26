@@ -659,11 +659,16 @@ export class AmpleFileJobService {
     return { job, output };
   }
 
-  /** Records the job's one delivery; a second delivery is ignored. */
+  /**
+   * Records the job's one delivery; a second delivery is ignored. The one
+   * exception is a follow-up that could not start (`taskId` null): its end
+   * reached no turn, so the Chat's next turn may still receive it, once.
+   */
   async markDelivered(jobId: string, by: "read" | "turn_context" | "follow_up", taskId: string | null): Promise<AmpleFileJobRecord | null> {
     const record = this.store.get(jobId);
-    if (!record || record.delivery || !isAmpleFileJobTerminalState(record.state)) return record;
-    return await this.store.update(jobId, (current) => current.delivery ? current : {
+    const replaceable = (delivery: AmpleFileJobRecord["delivery"]) => delivery !== null && isUndeliveredFollowUp(delivery) && taskId !== null;
+    if (!record || (record.delivery && !replaceable(record.delivery)) || !isAmpleFileJobTerminalState(record.state)) return record;
+    return await this.store.update(jobId, (current) => current.delivery && !replaceable(current.delivery) ? current : {
       ...current,
       delivery: { at: this.#now().toISOString(), by, taskId },
     });
@@ -838,3 +843,8 @@ vwait ended
 set status [wait]
 exit [lindex $status 3]
 `;
+
+/** A delivery to a follow-up turn that could not start: the job's end reached no model. */
+export function isUndeliveredFollowUp(delivery: NonNullable<AmpleFileJobRecord["delivery"]>): boolean {
+  return delivery.by === "follow_up" && delivery.taskId === null;
+}

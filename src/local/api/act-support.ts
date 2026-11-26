@@ -30,6 +30,7 @@ import type {
 import type { ConnectedFolderSummary } from "../connected-folder.js";
 import { normalizeConnectedFolderRelativePath } from "./file-changes.js";
 import { automationErrorStatus, errorMessage } from "./http.js";
+import { plainSystemCallError } from "./plain-file-error.js";
 import type { LocalApiState } from "./state.js";
 
 export async function classifyActAmpleFileAgentAttachments(raw: string[], cwd: string | undefined): Promise<AmpleFileAgentAttachmentRef[]> {
@@ -168,8 +169,13 @@ export function appearanceCustomizationsEqual(
 export async function runActOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
-  } catch (error) {
-    if (error instanceof AmpleFileCliError) throw error;
+  } catch (thrown) {
+    if (thrown instanceof AmpleFileCliError) throw thrown;
+    // A failed system call never shows a full path: a file refusal (EACCES,
+    // EEXIST, …) reads as the window says it, with the status its cause
+    // deserves, and any other failed call is a plain failure. Errors that
+    // are not system calls, such as a package manager's "E404", pass through.
+    const error = plainSystemCallError(thrown);
     // Exactly the HTTP boundary's status translation (sendError), so a
     // route error means the same thing on both surfaces.
     const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === "number"

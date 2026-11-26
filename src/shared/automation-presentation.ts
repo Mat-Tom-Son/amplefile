@@ -40,6 +40,11 @@ export function automationCatchUpSentence(count: number, reason: AutomationCatch
   return `${waiting ? "Catching up" : "Caught up"} on ${count} ${count === 1 ? "file" : "files"} that changed ${automationCatchUpGap(reason)}`;
 }
 
+/** "Followed up on 2 new files that arrived while an Automation was running", or the waiting form. */
+export function automationFollowUpSentence(count: number, waiting = false): string {
+  return `${waiting ? "Following up" : "Followed up"} on ${count} new ${count === 1 ? "file" : "files"} that arrived while an Automation was running`;
+}
+
 export function automationTriggerSummary(trigger: AutomationTriggerView): string {
   if (trigger.summary) return trigger.summary;
   if (trigger.kind === "files-changed") {

@@ -9,7 +9,8 @@ import { ampleFileAgentRoot } from "../state-paths.js";
 
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
-import { PiConversationClient, type PiChatEvent } from "../agent/pi-client.js";
+import { PiConversationClient, type PiChatEvent, type PiFileToolWrite } from "../agent/pi-client.js";
+import { notePiFileToolWrite } from "./automation-attribution.js";
 import { appendMessage, type ChatMessage } from "../agent/chat-store.js";
 import { AmpleFileRequestLimitError, AmpleFileRequestLineageError } from "../requests/request-records.js";
 import { connectedFolderOperationsGuideForScope } from "../agent/connected-folder-operations-guide.js";
@@ -154,6 +155,9 @@ export async function getClient(
   client.on("event", (event: PiChatEvent) => {
     broadcast(state, streamKey(connectedFolderId, conversationId), assistantEventForRenderer(event));
   });
+  // A running automation step's own Pi writes, in its turn or a Chat it
+  // handed work to, never start a follow-up run (docs/automations.md).
+  client.on("file-tool-wrote", (event: PiFileToolWrite) => { void notePiFileToolWrite(state, event); });
   state.clients.set(key, client);
   return client;
 }

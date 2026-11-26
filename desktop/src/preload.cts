@@ -144,6 +144,10 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   placeLink: {
     open: (place: { kind: "connected-folder" | "standard"; id: string }, path: string, action: "open" | "reveal") => ipcRenderer.invoke("amplefile:place:open-link", { place, path, action }),
   },
+  // Open Terminal Here: a terminal window in the folder.
+  ...(process.platform === "darwin" || process.platform === "linux" ? {
+    openTerminal: (location: Pick<WindowLocation, "place" | "path">) => ipcRenderer.invoke("amplefile:place:open-terminal", location),
+  } : {}),
   fileClipboard: {
     // A Copy, or with "cut" a Cut, which the host remembers for every window by the place the items are in.
     write: (paths: string[], operation: "copy" | "cut" = "copy", from?: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[] }) => (
@@ -267,6 +271,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       ipcRenderer.on("amplefile:window:chrome-state-changed", listener);
       return () => ipcRenderer.removeListener("amplefile:window:chrome-state-changed", listener);
     },
+    // Closing the last folder tab closes this window (the host handles "close" alone on a Mac).
     control: (action: "minimize" | "toggle-maximize" | "close") => ipcRenderer.send("amplefile:window:control", action),
   },
   shell: {
@@ -300,9 +305,6 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     setShowFilesFromOtherApps: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-show-files-from-other-apps", enabled),
     setOpenFoldersByDefault: (enabled: boolean) => ipcRenderer.invoke("amplefile:file-manager-integration:set-open-folders-by-default", enabled),
   } } : {}),
-  ...(process.platform === "linux" ? {
-    openTerminal: (location: Pick<WindowLocation, "place" | "path">) => ipcRenderer.invoke("amplefile:place:open-terminal", location),
-  } : {}),
   // Windows: which one this is, where it is (so File → New Window opens there), and new ones.
   windows: {
     slot: windowSlot,
