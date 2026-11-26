@@ -473,7 +473,11 @@ window's actions. Content-bearing Chat and agent-preference reads
 (`chat status|result`, `chats list`, `connected-folders worker show`) belong
 to the act lane, so the read lane stays content-free. When the interactive
 app is not running, act commands fail fast with "Open AmpleFile…" and exit
-code 6.
+code 6. On macOS, local CLI errors with `--json` also use stderr for a single
+`{"ok":false,"error":{"code":"…","message":"…"}}` document. A usage error
+is `usage` (exit 2), a missing act token is `unavailable` (exit 6),
+and a wait timeout is `timeout` (exit 7 for a command wait, 124 for
+the shim's transport wait). Other local failures exit 1 with `failure`.
 
 Deleting a Worker Chat moves its portable transcript into Recently Deleted
 and records the Connected Folder, Chat, and Recently Deleted entry identities

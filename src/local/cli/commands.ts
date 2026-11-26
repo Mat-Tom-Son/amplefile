@@ -657,6 +657,8 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "",
     `Usage: ${executable} [--json] <command> [--connected-folder <id-or-name>]`,
     "",
+    "With --json, successful replies go to stdout and errors go to stderr.",
+    "",
     "Read commands:",
     "  context             Show the resolved Connected Folder and host context",
     "  connected-folders list",
