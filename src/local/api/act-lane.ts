@@ -150,7 +150,8 @@ import {
   turnStatusFor,
   waitingRefForTask,
 } from "./request-records.js";
-import { queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
+import { removeImportedSkill } from "./capability-routes.js";
+import { canQueueAnswerWhileBusy, queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
 import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./turn-acceptance.js";
@@ -255,7 +256,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // Every other refusal is named before anything changes: a second
       // answer, an expired question, a closed request, the wrong Connected Folder, a
       // busy Chat.
-      if (question.state === "answered" && !resuming) {
+      if (question.state === "answered" && (!resuming || (!question.asynchronous && state.queuedAnswers.has(questionId)))) {
         throw new AmpleFileCliError("conflict", "That question already has an answer.");
       }
       if (question.state === "cancelled") throw new AmpleFileCliError("conflict", "That request was stopped, so its question is closed.");
@@ -277,7 +278,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // flips, so a refusal leaves it open and answerable later: a busy
       // Chat, a capability change in flight, an archived or snoozed Chat.
       const answerKey = clientKey(connectedFolder.id, record.owner.conversationId);
-      const queuesWhileBusy = () => question.asynchronous === true
+      const queuesWhileBusy = () => canQueueAnswerWhileBusy(state, answerKey, question)
         && (state.runningTurns.has(answerKey) || state.compactingConversations.has(answerKey));
       await yieldBackgroundCompaction(state, answerKey);
       if (!queuesWhileBusy()) assertChatMutable(connectedFolder.id, record.owner.conversationId);
@@ -287,6 +288,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       if (summary.snoozedUntil && Date.parse(summary.snoozedUntil) > Date.now()) {
         throw new AmpleFileCliError("conflict", "Resume this Chat before answering its question.");
       }
+      const canQueue = queuesWhileBusy();
+      if (!canQueue) assertChatMutable(connectedFolder.id, record.owner.conversationId);
       let answered: AmpleFileQuestionRecord = question;
       if (!resuming) {
         try {
@@ -295,8 +298,10 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           throw collaborationRefusal(error);
         }
       }
-      if (queuesWhileBusy()) {
-        state.queuedAsyncAnswers.add(questionId);
+      // If the asking turn was draining at admission, a later turn can take
+      // the Chat while the answer is persisting. Honor the accepted answer.
+      if (queuesWhileBusy() || (canQueue && state.runningTurns.has(answerKey))) {
+        state.queuedAnswers.add(questionId);
         await recordFacadeAction(state, input.parentTaskId, { command: "chat.answer", connectedFolder, conversationId: record.owner.conversationId });
         publishControlHint(state, "connected-folders");
         return { connectedFolder: toActConnectedFolderRef(connectedFolder), question: toActQuestionRef(answered), continuation: null, queued: true, request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record) };
@@ -309,7 +314,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // the text already on record, so the Chat and the record say the same
       // thing. Should acceptance still fail here, the answer stays recorded
       // and sending it again picks up exactly where this left off.
-      state.queuedAsyncAnswers.delete(questionId);
+      state.queuedAnswers.delete(questionId);
       const delivered = resuming ? answered.answer ?? answer : answer;
       let accepted: Awaited<ReturnType<typeof acceptConversationTurn>>;
       try {
@@ -795,9 +800,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async jobsStart(input) {
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       assertOwnTask(state, connectedFolder.id, input.taskId);
-      const cwd = input.cwd?.trim()
-        ? (isAbsolute(input.cwd.trim()) ? resolve(input.cwd.trim()) : resolve(connectedFolder.connectedFolderRoot, input.cwd.trim()))
-        : connectedFolder.connectedFolderRoot;
+      const cwd = input.cwd?.trim() ? resolve(connectedFolder.connectedFolderRoot, input.cwd) : connectedFolder.connectedFolderRoot;
       // The Connected Folder's own Pi shell settings, so a job runs the way its bash would.
       const runtime = await resolvePiRuntime(connectedFolder.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false }).catch(() => null);
       const shell: AmpleFileJobShell | undefined = runtime ? {
@@ -1062,8 +1065,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     },
     async historyVersions(input) {
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const path = input.path.trim();
-      if (!path) throw new AmpleFileCliError("usage", "A Connected Folder–relative file path is required.");
+      const path = input.path;
+      if (!path.trim()) throw new AmpleFileCliError("usage", "A Connected Folder–relative file path is required.");
       const page = await runActOperation(() => listFileVersionPage(connectedFolder.connectedFolderRoot, path, input));
       return { connectedFolder: toActConnectedFolderRef(connectedFolder), path, ...page, versions: page.versions.map(toActFileVersionRef) };
     },
@@ -1101,8 +1104,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesMove(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const sourceRaw = input.fromPath.trim();
-      if (!sourceRaw) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
+      const sourceRaw = input.fromPath;
+      if (!sourceRaw.trim()) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
       return runActOperation(async () => {
         const { moved, safetyCheckpointId } = await moveConnectedFolderEntryWithHistory(connectedFolder, {
           sourcePath: sourceRaw,
@@ -1122,9 +1125,9 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesRename(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const sourceRaw = input.path.trim();
-      const newName = input.newName.trim();
-      if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
+      const sourceRaw = input.path;
+      const newName = input.newName;
+      if (!sourceRaw.trim() || !newName.trim()) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
         const { renamed, safetyCheckpointId } = await renameConnectedFolderEntryWithHistory(connectedFolder, { path: sourceRaw, newName });
         await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, moved: [renamed.path] });
@@ -1142,8 +1145,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesDelete(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const target = input.path.trim();
-      if (!target) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
+      const target = input.path;
+      if (!target.trim()) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
       return runActOperation(async () => {
         // What a run's own delete removes vacates its name (docs/automations.md).
         const act = { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId };
@@ -1222,7 +1225,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     },
     async registerConnectedFolder(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const rootPath = input.connectedFolderRoot.trim();
+      const rootPath = input.connectedFolderRoot;
       if (!rootPath || !isAbsolute(rootPath)) {
         throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
@@ -1246,10 +1249,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
         at: new Date().toISOString(),
         connectedFolderId: connectedFolder.id,
         connectedFolderName: connectedFolder.name,
-        sources: input.fromPaths.map((raw) => {
-          const trimmed = raw.trim();
-          return isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
-        }),
+        sources: input.fromPaths.map((path) => resolve(input.cwd, path)),
         copied: result.copied,
         checkpointId: result.checkpointId,
       });
@@ -1410,31 +1410,30 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const source = input.source.trim();
       if (!source) throw new AmpleFileCliError("usage", "A package source is required.");
-      if (input.scope === "connected-folder") {
-        const connectedFolder = await resolveConnectedFolder(input.connectedFolder ?? "");
-        // Exactly the desktop packages/remove route: project scope requires
-        // the Connected Folder's Pi project trust and the per–Connected Folder capability fence.
-        const removed = await runActOperation(() => runCapabilityMutation(state, connectedFolder, "project", () =>
-          removePiPackage(connectedFolder.connectedFolderRoot, source, {
-            scope: "project",
-            runtimeProvider: state.runtimeProvider,
-          })));
-        await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", connectedFolder });
-        return { scope: "connected-folder" as const, connectedFolder: toActConnectedFolderRef(connectedFolder), source, removed };
-      }
-      // Everywhere scope mutates the user-scope Pi settings every
-      // Connected Folder runtime loads. The app-owned management root is the resolution
-      // context — the same root the AmpleFile Agent's own runtime
-      // uses — and the global capability fence refuses while any agent
-      // or compaction work is active anywhere.
-      const ampleFileAgentRootScope = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
-      const removed = await runActOperation(() => runCapabilityMutation(state, ampleFileAgentRootScope, "global", () =>
-        removePiPackage(ampleFileAgentRootScope.connectedFolderRoot, source, {
-          scope: "user",
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      const target = connectedFolder ?? { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
+      await runActOperation(() => runCapabilityMutation(state, target, connectedFolder ? "project" : "global", async () => {
+        const removed = await removePiPackage(target.connectedFolderRoot, source, {
+          scope: connectedFolder ? "project" : "user",
           runtimeProvider: state.runtimeProvider,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove" });
-      return { scope: "everywhere" as const, source, removed };
+        });
+        if (!removed) {
+          throw new AmpleFileCliError("notFound", "Provide the source of an installed package in this scope, or use 'tools remove-skill' for an imported Skill.");
+        }
+      }));
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", connectedFolder });
+      return { scope: input.scope, ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}), source, removed: true };
+    },
+    async toolsRemoveSkill(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      const target = connectedFolder ?? { id: ampleFileAgentScopeId, name: "Everywhere", connectedFolderRoot: ampleFileAgentRoot() };
+      // The capabilities list names the file. Single-Skill imports also return
+      // the folder containing it, which addresses the same installed Skill.
+      const skillPath = basename(input.path).toLowerCase() === "skill.md" ? input.path : join(input.path, "SKILL.md");
+      const removed = await runActOperation(() => removeImportedSkill(state, target, connectedFolder ? "project" : "global", skillPath, { receiptId: input.requestId }));
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove-skill", connectedFolder });
+      return { scope: input.scope, ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}), removed: true, path: removed.removedPath, skillName: removed.skillName, recentlyDeleted: removed.recentlyDeleted };
     },
     async connectedFoldersDelete(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);

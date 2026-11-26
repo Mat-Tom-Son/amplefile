@@ -389,6 +389,14 @@ follows the request retention window. Deletion, disconnecting, and
 whole–Connected Folder History restore wait for running jobs; Skills &
 Extensions changes do not.
 
+`tools remove-skill` moves one imported Skill to Recently Deleted. Give it
+the installed `SKILL.md` path at the end of the Skill id in
+`capabilities list --json` or the directory containing that file.
+Select the scope it is installed in. The reply
+and the receipt name the Recently Deleted entry for restore. Use
+`tools remove --source` with an installed Pi package's source. If no
+package in the selected scope matches the source, the command exits 3.
+
 `amplefile recently-deleted …` reads and restores
 [Recently Deleted](act-ledger.md#recently-deleted). Like `automations` it
 sits above Connected Folders, so neither verb takes `--connected-folder`;
@@ -413,6 +421,9 @@ setters reserve the Connected Folder–scoped agent mutation fence across
 validation, write, and client invalidation, and their receipts contain model
 identifiers or an instruction character count, never instruction text.
 Provider credentials and connection setup have no act verb.
+
+CLI file and History paths preserve spaces anywhere in an item name. Quote
+paths and new names with spaces so the shell passes them as a single argument.
 
 `chat send` accepts a CLI-started agent turn through the same acceptance path
 as the window: conflict checks, stable request identity, durable acceptance
@@ -462,7 +473,11 @@ window's actions. Content-bearing Chat and agent-preference reads
 (`chat status|result`, `chats list`, `connected-folders worker show`) belong
 to the act lane, so the read lane stays content-free. When the interactive
 app is not running, act commands fail fast with "Open AmpleFile…" and exit
-code 6.
+code 6. On macOS, local CLI errors with `--json` also use stderr for a single
+`{"ok":false,"error":{"code":"…","message":"…"}}` document. A usage error
+is `usage` (exit 2), a missing act token is `unavailable` (exit 6),
+and a wait timeout is `timeout` (exit 7 for a command wait, 124 for
+the shim's transport wait). Other local failures exit 1 with `failure`.
 
 Deleting a Worker Chat moves its portable transcript into Recently Deleted
 and records the Connected Folder, Chat, and Recently Deleted entry identities
@@ -778,9 +793,11 @@ recovery, keyboard, and privacy behavior.
 [Worker tools](worker-tools.md) documents the structured collaboration
 adapters, `chat ask --asynchronous`, `jobs start --interactive|--service`,
 `jobs input`, and `worktrees manage`. These use this facade and explicit
-Connected Folder and task lineage. Queued asynchronous answers return
-`continuation: null` and `queued: true` until idle delivery starts the one
-linked turn.
+Connected Folder and task lineage. Answer as soon as `chat wait` or
+`agent wait` reports a question. If the asking turn is still finishing, the
+answer returns `continuation: null` and `queued: true`. The Chat starts the
+question's one continuation once the asking turn finishes. Asynchronous
+questions can also queue their answers behind other work in the Chat.
 
 ### Observed turn files
 
@@ -846,22 +863,33 @@ HTTP uses `offsetBytes`, `lengthBytes`, and `expectedSha256`. Binary and
 uncaptured content stay explicit.
 
 `search --connected-folder <id> --query <text> [--scope files|chats|all] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] --json`
-streams ordinary text files regardless of size. `path` narrows the file
-portion; Chat scope stays separate. The response has `files`, `chats`,
-`truncated`, `scannedFiles`, `nextCursor`, and per-page `coverage`. Repeat
-the same selection with the returned cursor until it is null; a page with no
-matches can still advance through a large file. The defaults are 200
-matches, 5,000 visited entries or files, and 8 MiB scanned per page, with
-fixed read buffers and a 512 KiB match-payload budget. Ignored directories,
-internal metadata and nested Connected Folders, symlinks, binary content,
-unreadable entries, and detected changes have separate coverage counts.
-Directory counts name excluded roots, not all descendants.
-`coverage.complete` is false while work remains or any page met unreadable
-or changed content. Search is a sequence of live observations, not a
-transactional snapshot. Cursors bind the selection and ignore rules, verify
-active directory and file identities, and expire on host restart. Local
-Search GET uses `q`, `scope`, `path`, `limit`, and `cursor` with the same
-service and request cancellation.
+matches a case-insensitive substring in names and streams ordinary text
+files regardless of size. `path` narrows the file portion. The first
+page returns `names` from a separate walk of up to 20,000 eligible entries
+that stops at 500 matches. When the walk reaches the match cap,
+`coverage.names.complete` is false. Use a narrower query or `--path` to
+find remaining names. The walk uses file metadata. Matches carry `path`,
+`name`, and `kind`. Matching symbolic links include the listing's
+`link` detail. The walk skips
+link targets, ignored items, nested Connected Folders, Office lock files,
+and internal metadata.
+
+`files` contains text line matches and `chats` contains Chat matches.
+Their page budgets are 200 matches by default (`--limit`), 5,000 visited
+entries or files, 8 MiB of file reads, and 512 KiB of match payload.
+Repeat the same selection with `nextCursor` until it is null. A page can
+advance through a large file without returning a match. The name walk
+runs once and `names` is empty on continuation pages.
+
+`coverage.names` reports the first walk's entry count and completeness
+(`null` in Chats-only scope). `coverage.textComplete` reports whether the
+file text and Chat search reached its end without unreadable or changed
+content. `coverage.complete` covers both walks, and `truncated` is its
+inverse. Text coverage counters describe each page, including excluded
+roots and skipped entries. Search reflects live observations. Cursors
+bind the selection and ignore rules, verify active directory and file
+identities, and expire on host restart. Local Search GET uses `q`, `scope`,
+`path`, `limit`, and `cursor` with the same service and request cancellation.
 
 A Connected Folder turn's hidden context includes the actual pre-turn History
 capture: checkpoint id (including deduplicated reuse), captured file count,

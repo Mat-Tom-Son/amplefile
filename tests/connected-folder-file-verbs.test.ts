@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
-import { AmpleFileCliError } from "../src/local/cli/index.js";
+import { resolveConnectedFolderPath, scanConnectedFolderTree } from "../src/local/connected-folder.js";
+import { AmpleFileCliError, parseAmpleFileCliActArgv } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
 
 // Rename, move, New Folder, and New File have one owner each, reached from the
@@ -57,6 +58,64 @@ async function startConnectedFolder(t: TestContext) {
 
 const usage = (error: unknown) => error instanceof AmpleFileCliError && error.code === "usage" && /240 characters/.test(error.message);
 
+test("the resolver preserves edge and inner spaces in file names", async (t) => {
+  const { root } = await startConnectedFolder(t);
+  for (const path of [" left.txt", "right.txt ", "inner space.txt", "dir/ name "]) {
+    assert.equal(resolveConnectedFolderPath(root, path), join(root, path));
+  }
+  assert.equal(resolveConnectedFolderPath(root, ""), root);
+  await writeFile(join(root, "sentinel"), "root item");
+  assert.ok((await scanConnectedFolderTree(root, 0, "   ")).entries.some((entry) => entry.name === "sentinel"));
+});
+
+test("a CLI creation path preserves a parent whose name is a space", async (t) => {
+  const { facade, id, root } = await startConnectedFolder(t);
+  await mkdir(join(root, " "));
+  const path = " /child.txt";
+  const created = await facade.filesCreate({ connectedFolder: id, path });
+  assert.equal(created.path, path);
+  assert.equal(existsSync(join(root, path)), true);
+  assert.equal(existsSync(join(root, "child.txt")), false);
+  await facade.historyRestore({ connectedFolder: id, checkpointId: created.safetyCheckpointId });
+  assert.equal(existsSync(join(root, path)), false);
+});
+
+test("whole-folder History restores exact spaced names and leaves their twins alone", async (t) => {
+  const { facade, id, root } = await startConnectedFolder(t);
+  const originals = { " left.txt": "saved left", "right.txt ": "saved right", "left.txt": "twin left", "right.txt": "twin right" };
+  for (const [path, bytes] of Object.entries(originals)) await writeFile(join(root, path), bytes);
+  const saved = await facade.historySave({ connectedFolder: id });
+  await writeFile(join(root, " left.txt"), "edited");
+  await rm(join(root, "right.txt "));
+  await facade.historyRestore({ connectedFolder: id, checkpointId: saved.checkpoint.checkpointId });
+  for (const [path, bytes] of Object.entries(originals)) assert.equal(await readFile(join(root, path), "utf8"), bytes, path);
+});
+
+test("CLI file mutations preserve spaced sources and destinations", async (t) => {
+  const { facade, id, root } = await startConnectedFolder(t);
+  await mkdir(join(root, " archive "));
+  await writeFile(join(root, " left.txt"), "spaced");
+  await writeFile(join(root, "left.txt"), "twin");
+  const rename = parseAmpleFileCliActArgv(["files", "rename", "--connected-folder", id, "--path", " left.txt", "--name", "right.txt "]);
+  assert.equal(rename.path, " left.txt");
+  assert.equal(rename.entryName, "right.txt ");
+  const renamed = await facade.filesRename({ connectedFolder: id, path: rename.path!, newName: rename.entryName! });
+  assert.equal(renamed.path, "right.txt ");
+  await writeFile(join(root, "right.txt"), "other twin");
+  const move = parseAmpleFileCliActArgv(["files", "move", "--connected-folder", id, "--from", renamed.path, "--to", " archive "]);
+  assert.equal(move.toDir, " archive ");
+  const moved = await facade.filesMove({ connectedFolder: id, fromPath: move.fromPaths![0]!, toDir: move.toDir! });
+  assert.equal(moved.path, " archive /right.txt ");
+  const twin = join(root, " archive ", "right.txt");
+  await writeFile(twin, "nested twin");
+  assert.equal(await readFile(join(root, moved.path), "utf8"), "spaced");
+  await facade.filesDelete({ connectedFolder: id, path: moved.path });
+  assert.equal(existsSync(join(root, moved.path)), false);
+  assert.equal(await readFile(twin, "utf8"), "nested twin");
+  assert.equal(await readFile(join(root, "left.txt"), "utf8"), "twin");
+  assert.equal(await readFile(join(root, "right.txt"), "utf8"), "other twin");
+});
+
 test("a name longer than 240 characters is refused by every file verb on both surfaces, and nothing changes", async (t) => {
   const { facade, id, root, post, listing } = await startConnectedFolder(t);
   await mkdir(join(root, "notes"));
@@ -101,8 +160,8 @@ test("restoring a rename's History point puts back the original name, whatever n
   assert.equal(existsSync(join(root, "notes", "final.md")), false);
 
   // `files rename` on the CLI.
-  const cliRenamed = await facade.filesRename({ connectedFolder: id, path: " notes/draft.md ", newName: "  final.md  " });
-  assert.equal(cliRenamed.path, "notes/final.md");
+  const cliRenamed = await facade.filesRename({ connectedFolder: id, path: "notes/draft.md", newName: "  final.md  " });
+  assert.equal(cliRenamed.path, "notes/  final.md  ");
   assert.equal(cliRenamed.fromPath, "notes/draft.md");
   assert.equal(cliRenamed.priorName, "draft.md");
   await facade.historyRestore({ connectedFolder: id, checkpointId: cliRenamed.safetyCheckpointId });
@@ -116,7 +175,7 @@ test("restoring a move's History point puts the item back, on both surfaces", as
   await mkdir(join(root, "archive"));
   await writeFile(join(root, "docs", "plan.md"), "plan", "utf8");
 
-  const moved = await post("/move-local-entry", { sourcePath: " docs/plan.md ", targetFolderPath: " archive/ " });
+  const moved = await post("/move-local-entry", { sourcePath: "docs/plan.md", targetFolderPath: "archive/" });
   assert.equal(moved.status, 200, JSON.stringify(moved.json));
   assert.equal((moved.json.moved as { path: string }).path, "archive/plan.md");
   await restoreOverHttp(moved.json.safetyCheckpointId as string);
@@ -136,7 +195,7 @@ test("restoring a New Folder or New File History point removes the item it made,
   const before = await listing();
 
   // The window's New Folder and New File, with names the effect trims.
-  const folder = await post("/folders", { parentPath: " notes ", name: " Made Folder " });
+  const folder = await post("/folders", { parentPath: "notes", name: " Made Folder " });
   assert.equal(folder.status, 201, JSON.stringify(folder.json));
   assert.equal((folder.json.folder as { path: string }).path, "notes/Made Folder");
   await restoreOverHttp(folder.json.safetyCheckpointId as string);
@@ -150,12 +209,12 @@ test("restoring a New Folder or New File History point removes the item it made,
 
   // `files mkdir` and `files create` on the CLI.
   const cliFolder = await facade.filesMkdir({ connectedFolder: id, path: "notes/ Made Folder" });
-  assert.equal(cliFolder.path, "notes/Made Folder");
+  assert.equal(cliFolder.path, "notes/ Made Folder");
   await facade.historyRestore({ connectedFolder: id, checkpointId: cliFolder.safetyCheckpointId });
   assert.deepEqual(await listing(), before);
 
   const cliFile = await facade.filesCreate({ connectedFolder: id, path: "notes/ made.md" });
-  assert.equal(cliFile.path, "notes/made.md");
+  assert.equal(cliFile.path, "notes/ made.md");
   await facade.historyRestore({ connectedFolder: id, checkpointId: cliFile.safetyCheckpointId });
   assert.deepEqual(await listing(), before);
 });

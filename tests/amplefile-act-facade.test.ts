@@ -752,11 +752,12 @@ test("the act facade drives Connected Folder rename, appearance, and tools famil
     );
     await waitForAsync(async () =>
       (await facade.turnStatus({ connectedFolder: connectedFolder.id, taskId: holding.taskId })).task.state !== "running");
-    const everywhereRemoval = await facade.toolsRemove({ scope: "everywhere", source: "./missing-tool-pkg" });
-    assert.deepEqual(everywhereRemoval, { scope: "everywhere", source: "./missing-tool-pkg", removed: false });
-    const connectedFolderRemoval = await facade.toolsRemove({ scope: "connected-folder", connectedFolder: connectedFolder.id, source: "./missing-tool-pkg" });
-    assert.equal(connectedFolderRemoval.removed, false);
-    assert.equal(connectedFolderRemoval.connectedFolder?.id, connectedFolder.id);
+    for (const selection of [{ scope: "everywhere" }, { scope: "connected-folder", connectedFolder: connectedFolder.id }] as const) {
+      await assert.rejects(
+        () => facade.toolsRemove({ ...selection, source: "./missing-tool-pkg" }),
+        (error: unknown) => error instanceof AmpleFileCliError && error.code === "notFound" && /installed package/.test(error.message),
+      );
+    }
 
     // Unregistering removes the registration while the folder and its
     // portable identity remain; re-registering restores the same Connected Folder id.

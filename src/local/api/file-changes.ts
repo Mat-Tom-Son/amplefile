@@ -28,6 +28,7 @@ import {
   renameConnectedFolderEntry,
   resolveConnectedFolderDeleteTarget,
   resolveConnectedFolderPath,
+  normalizeRelative as normalizeConnectedFolderRelativePath,
   safeFileName,
   touchConnectedFolderRoot,
   withConnectedFolderHistoryOperation,
@@ -54,20 +55,19 @@ export async function addExternalFilesInternal(
   const toDir = normalizeConnectedFolderRelativePath(input.toDir ?? "");
   const sources: string[] = [];
   for (const raw of input.fromPaths) {
-    const trimmed = raw.trim();
-    if (!trimmed) throw new AmpleFileCliError("usage", "Source paths cannot be empty.");
-    const source = isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
+    if (!raw.trim()) throw new AmpleFileCliError("usage", "Source paths cannot be empty.");
+    const source = isAbsolute(raw) ? resolve(raw) : resolve(input.cwd, raw);
     const info = await lstat(source).catch(() => null);
-    if (!info) throw new AmpleFileCliError("notFound", `Source not found: ${trimmed}.`);
-    if (info.isSymbolicLink()) throw new AmpleFileCliError("usage", `Symbolic-link sources cannot be added: ${trimmed}.`);
+    if (!info) throw new AmpleFileCliError("notFound", `Source not found: ${raw}.`);
+    if (info.isSymbolicLink()) throw new AmpleFileCliError("usage", `Symbolic-link sources cannot be added: ${raw}.`);
     if (!info.isFile() && !info.isDirectory()) {
-      throw new AmpleFileCliError("usage", `Only files and folders can be added: ${trimmed}.`);
+      throw new AmpleFileCliError("usage", `Only files and folders can be added: ${raw}.`);
     }
     if (pathContainsPath(connectedFolder.connectedFolderRoot, source)) {
-      throw new AmpleFileCliError("usage", `Source is already inside this Connected Folder: ${trimmed}. Move it in Files instead.`);
+      throw new AmpleFileCliError("usage", `Source is already inside this Connected Folder: ${raw}. Move it in Files instead.`);
     }
     if (pathContainsPath(source, connectedFolder.connectedFolderRoot)) {
-      throw new AmpleFileCliError("usage", `Source contains this Connected Folder and cannot be copied into it: ${trimmed}.`);
+      throw new AmpleFileCliError("usage", `Source contains this Connected Folder and cannot be copied into it: ${raw}.`);
     }
     sources.push(source);
   }
@@ -488,6 +488,4 @@ export function pathContainsPath(parent: string, candidate: string): boolean {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-export function normalizeConnectedFolderRelativePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
-}
+export { normalizeConnectedFolderRelativePath };

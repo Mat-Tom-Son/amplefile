@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createContext, runInContext } from "node:vm";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
@@ -58,6 +59,50 @@ test("macOS CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
   assert.match(jxaHelper, /fileHandleWithStandardError/);
   assert.match(jxaHelper, /\$\.exit\(exitCode\)/);
   assertActLaneShimContract(jxaHelper);
+});
+
+test("macOS shim emits JSON on stderr for its own errors and preserves the exit codes", async () => {
+  const shim = await read("desktop/cli/amplefile-cli.jxa.js");
+  let exitCode: number | undefined;
+  let stderr = "";
+  let running = false;
+  const stderrHandle = Symbol("stderr");
+  const context = createContext({
+    ObjC: { import() {} },
+    $: Object.assign((value: string) => value, {
+      NSFileManager: { defaultManager: { fileExistsAtPath: () => true } },
+      NSFileHandle: { fileHandleWithStandardError: stderrHandle },
+      exit(code: number) { exitCode = code; },
+    }),
+  });
+  runInContext(shim, context);
+  context.environmentValue = (name: string) => name === "HOME" ? "/temporary" : "";
+  context.createDirectory = () => {};
+  context.readActToken = () => running ? "fixture-token" : null;
+  context.writeHandle = (handle: symbol, text: string) => {
+    assert.equal(handle, stderrHandle);
+    stderr += text;
+  };
+  for (const [argv, exit, code, pattern] of [
+    [["files", "delete", "--json"], 6, "unavailable", /Open AmpleFile/],
+    [["chat", "wait", "--json"], 2, "usage", /require an explicit --connected-folder/],
+    [["chat", "send", "--request-id", "invalid", "--json"], 2, "usage", /must be a UUID/],
+  ] as const) {
+    stderr = "";
+    context.run(["/temporary/bin", ...argv]);
+    assert.equal(exitCode, exit);
+    const { ok, error } = JSON.parse(stderr);
+    assert.equal(ok, false);
+    assert.equal(error.code, code);
+    assert.match(error.message, pattern);
+    running = true;
+  }
+
+  stderr = "";
+  running = false;
+  context.run(["/temporary/bin", "files", "delete"]);
+  assert.equal(exitCode, 6);
+  assert.match(stderr, /^AmpleFile: Open AmpleFile/);
 });
 
 test("packaged asset verification requires external CLI shims", async () => {
@@ -131,7 +176,6 @@ function assertActLaneShimContract(shim: string): void {
   assert.match(shim, /receipts show --id/);
   assert.match(shim, /16777216/, "the --message-file payload bound matches AMPLEFILE_CLI_ACT_MAX_PAYLOAD_BYTES");
   assert.match(shim, /Open AmpleFile to run this command/);
-  assert.match(shim, /exit\s*\(?6\)?/);
   assert.match(shim, /--task/);
   assert.match(shim, /task\.state/);
   assert.match(shim, /accepted/);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,6 +48,34 @@ test("secure settings round-trip through the injected safe storage", async (t) =
   const reopened = new SecureSettingsStore(file, { safeStorage });
   assert.equal(await reopened.getProviderApiKey("openai"), "sk-test-1");
   assert.deepEqual(await reopened.status(), { encryptionAvailable: true, configuredProviders: ["openai"], credentialsNeedReentry: false });
+});
+
+test("secure settings writes make both credentials copies owner-only", { skip: process.platform === "win32" }, async (t) => {
+  const root = await tempRoot(t);
+  const safeStorage = new FakeSafeStorage();
+  const file = join(root, "secure-settings.bin");
+  const backup = `${file}.bak`;
+  const store = new SecureSettingsStore(file, { safeStorage });
+  const mode = async (path: string) => (await stat(path)).mode & 0o777;
+  await store.setProviderApiKey("openai", "sk-first");
+  assert.equal(await mode(file), 0o600);
+  await chmod(file, 0o644);
+  await store.setProviderApiKey("openai", "sk-second");
+  assert.equal(await mode(file), 0o600);
+  assert.equal(await mode(backup), 0o600);
+
+  await chmod(file, 0o644);
+  await chmod(backup, 0o644);
+  await store.setProviderApiKey("openai", "sk-third");
+  assert.equal(await mode(file), 0o600);
+  assert.equal(await mode(backup), 0o600);
+  assert.equal(JSON.parse(safeStorage.decryptString(await readFile(backup))).credentials.openai.key, "sk-second");
+
+  await rm(file);
+  await chmod(backup, 0o644);
+  await new SecureSettingsStore(file, { safeStorage }).setProviderApiKey("openai", "sk-fourth");
+  assert.equal(await mode(file), 0o600);
+  assert.equal(await mode(backup), 0o600);
 });
 
 test("undecryptable settings and backup are set aside, never deleted, and a new key can be saved", async (t) => {

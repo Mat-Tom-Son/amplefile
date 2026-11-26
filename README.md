@@ -86,7 +86,8 @@ native app, tests, and what to do when the toolchain is wrong.
   **Skills & Extensions** ([details](docs/skills-and-extensions.md)).
 - **Other agents.** **Settings → Command Line** adds the `amplefile` command so
   Claude Code, Codex, and other shell agents can hand work to your Workers and
-  follow it. See [the AmpleFile Agent and CLI](docs/amplefile-agent-and-cli.md).
+  follow it. Search covers file, folder, and link names, file text, and Chats.
+  See [the AmpleFile Agent and CLI](docs/amplefile-agent-and-cli.md).
 
 Built with Electron, React, TypeScript, and the [Pi agent runtime](https://pi.dev).
 The [docs map](docs/README.md) covers architecture, product contracts, and

@@ -834,3 +834,44 @@ test("saved delegated files are usable and an explicit follow-up carries those r
     assert.equal((await finished.json() as any).work.canContinue, false, "delivered results do not offer another synthesis");
   } finally { await j.close(); }
 });
+
+for (const group of ["chat", "agent"]) {
+  test(`${group} answer queues as soon as status reports the asking turn is waiting`, async () => {
+    const j = await startJourney(`answer-while-draining-${group}`);
+    try {
+      const connectedFolder = group === "chat" ? (await j.api.actFacade.createConnectedFolder({ name: "Questions" })).connectedFolder : undefined;
+      const scope = connectedFolder?.id ?? ampleFileAgentScopeId;
+      j.held.add(scope);
+      const flags = connectedFolder ? ["--connected-folder", connectedFolder.id] : [];
+      const own = await j.ok<{ taskId: string; conversationId: string }>([group, "send", ...flags, "--new", "--message", "/hold", "--json"]);
+      const asked = await j.ok<{ question: { questionId: string } }>([group, "ask", ...flags, "--task", own.taskId, "--question", "Proceed?", "--json"]);
+      const questionId = asked.question.questionId;
+      const waiting = await j.ok<{ task: { state: string }; waiting: { questionId: string } }>([group, "status", ...flags, "--task", own.taskId, "--json"]);
+      assert.equal(waiting.task.state, "running");
+      assert.equal(waiting.waiting.questionId, questionId, "the shim's wait poll can return now");
+
+      const answer = [group, "answer", ...flags, "--question", questionId, "--answer", "/hold", "--json"];
+      const accepted = await j.ok<{ queued: boolean; continuation: unknown }>(answer);
+      assert.equal(accepted.queued, true);
+      assert.equal(accepted.continuation, null);
+      assert.equal(j.api.requests.byTaskId(own.taskId)!.turns.length, 1);
+      const duplicate = await j.run(answer);
+      assert.equal(duplicate.exitCode, 5);
+      assert.match(duplicate.stderr, /That question already has an answer\./);
+
+      await j.release(own.taskId);
+      await waitFor(() => Boolean(j.api.requests.question(questionId)?.continuationTaskId), "the queued answer's continuation");
+      const continuation = j.api.requests.question(questionId)!.continuationTaskId!;
+      await j.release(continuation);
+      await j.settled(scope, continuation);
+      assert.equal(j.api.requests.byTaskId(own.taskId)!.turns.length, 2);
+      const messages = group === "agent" ? await ampleFileAgentTranscript(j.api, own.conversationId) : await transcript(j.api, scope, own.conversationId);
+      assert.equal(messages.filter((message) => message.role === "user" && message.requestId === `answer-${questionId}`).length, 1);
+      const later = await j.run(answer);
+      assert.equal(later.exitCode, 5);
+      assert.match(later.stderr, /That question already has an answer\./);
+    } finally {
+      await j.close();
+    }
+  });
+}

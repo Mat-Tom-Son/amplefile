@@ -54,8 +54,8 @@ export async function handleHistoryRoutes({ state, req, res, url, method }: Loca
   const historyReviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/(read|diff)$/);
   if (method === "GET" && historyReviewMatch) {
     const connectedFolder = await getConnectedFolder(historyReviewMatch[1]);
-    const path = url.searchParams.get("path")?.trim();
-    if (!path) throw badRequest("A Connected Folder–relative file path is required.");
+    const path = url.searchParams.get("path");
+    if (!path?.trim()) throw badRequest("A Connected Folder–relative file path is required.");
     if (historyReviewMatch[2] === "read") {
       const checkpointId = url.searchParams.get("checkpointId")?.trim();
       if (!checkpointId) throw badRequest("A checkpointId is required.");
@@ -114,8 +114,8 @@ export async function handleHistoryRoutes({ state, req, res, url, method }: Loca
   const fileVersionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/file-versions$/);
   if (method === "GET" && fileVersionsMatch) {
     const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
-    const path = url.searchParams.get("path")?.trim();
-    if (!path) throw badRequest("A Connected Folder–relative file path is required.");
+    const path = url.searchParams.get("path");
+    if (!path?.trim()) throw badRequest("A Connected Folder–relative file path is required.");
     sendJson(res, { path, ...await listFileVersionPage(connectedFolder.connectedFolderRoot, path, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }) });
     return true;
   }

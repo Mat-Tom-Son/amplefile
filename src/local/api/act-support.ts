@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 import JSZip from "jszip";
 import type { ConversationSummary } from "../agent/chat-store.js";
 import { classifyAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
@@ -98,7 +98,7 @@ export async function recordFacadeAction(
  */
 export function splitActEntryPath(rawPath: string, missingMessage: string): { parentPath: string; name: string } {
   const target = normalizeConnectedFolderRelativePath(rawPath);
-  if (!target) throw new AmpleFileCliError("usage", missingMessage);
+  if (!target.trim()) throw new AmpleFileCliError("usage", missingMessage);
   const lastSlash = target.lastIndexOf("/");
   return {
     parentPath: lastSlash === -1 ? "" : target.slice(0, lastSlash),
@@ -130,11 +130,10 @@ async function readBoundedActJsonFile(
   maximumBytes: number,
   label: string,
 ): Promise<unknown> {
-  const trimmed = rawPath.trim();
-  if (!trimmed) throw new AmpleFileCliError("usage", `A ${label} file path is required.`);
-  const path = isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed);
+  if (!rawPath.trim()) throw new AmpleFileCliError("usage", `A ${label} file path is required.`);
+  const path = resolve(cwd, rawPath);
   const info = await stat(path).catch(() => null);
-  if (!info || !info.isFile()) throw new AmpleFileCliError("notFound", `The ${label} file was not found: ${trimmed}.`);
+  if (!info || !info.isFile()) throw new AmpleFileCliError("notFound", `The ${label} file was not found: ${rawPath}.`);
   if (info.size > maximumBytes) {
     throw new AmpleFileCliError("usage", `The ${label} file is larger than ${maximumBytes} bytes and cannot be a typed AmpleFile file.`);
   }
