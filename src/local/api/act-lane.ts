@@ -795,9 +795,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async jobsStart(input) {
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       assertOwnTask(state, connectedFolder.id, input.taskId);
-      const cwd = input.cwd?.trim()
-        ? (isAbsolute(input.cwd.trim()) ? resolve(input.cwd.trim()) : resolve(connectedFolder.connectedFolderRoot, input.cwd.trim()))
-        : connectedFolder.connectedFolderRoot;
+      const cwd = input.cwd?.trim() ? resolve(connectedFolder.connectedFolderRoot, input.cwd) : connectedFolder.connectedFolderRoot;
       // The Connected Folder's own Pi shell settings, so a job runs the way its bash would.
       const runtime = await resolvePiRuntime(connectedFolder.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false }).catch(() => null);
       const shell: AmpleFileJobShell | undefined = runtime ? {
@@ -1062,8 +1060,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     },
     async historyVersions(input) {
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const path = input.path.trim();
-      if (!path) throw new AmpleFileCliError("usage", "A Connected Folder–relative file path is required.");
+      const path = input.path;
+      if (!path.trim()) throw new AmpleFileCliError("usage", "A Connected Folder–relative file path is required.");
       const page = await runActOperation(() => listFileVersionPage(connectedFolder.connectedFolderRoot, path, input));
       return { connectedFolder: toActConnectedFolderRef(connectedFolder), path, ...page, versions: page.versions.map(toActFileVersionRef) };
     },
@@ -1101,8 +1099,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesMove(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const sourceRaw = input.fromPath.trim();
-      if (!sourceRaw) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
+      const sourceRaw = input.fromPath;
+      if (!sourceRaw.trim()) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
       return runActOperation(async () => {
         const { moved, safetyCheckpointId } = await moveConnectedFolderEntryWithHistory(connectedFolder, {
           sourcePath: sourceRaw,
@@ -1122,9 +1120,9 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesRename(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const sourceRaw = input.path.trim();
-      const newName = input.newName.trim();
-      if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
+      const sourceRaw = input.path;
+      const newName = input.newName;
+      if (!sourceRaw.trim() || !newName.trim()) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
         const { renamed, safetyCheckpointId } = await renameConnectedFolderEntryWithHistory(connectedFolder, { path: sourceRaw, newName });
         await noteAutomationRunFiles(state, { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId }, { root: connectedFolder.connectedFolderRoot, moved: [renamed.path] });
@@ -1142,8 +1140,8 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     async filesDelete(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const target = input.path.trim();
-      if (!target) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
+      const target = input.path;
+      if (!target.trim()) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
       return runActOperation(async () => {
         // What a run's own delete removes vacates its name (docs/automations.md).
         const act = { connectedFolderId: connectedFolder.id, parentTaskId: input.parentTaskId };
@@ -1222,7 +1220,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
     },
     async registerConnectedFolder(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const rootPath = input.connectedFolderRoot.trim();
+      const rootPath = input.connectedFolderRoot;
       if (!rootPath || !isAbsolute(rootPath)) {
         throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
@@ -1246,10 +1244,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
         at: new Date().toISOString(),
         connectedFolderId: connectedFolder.id,
         connectedFolderName: connectedFolder.name,
-        sources: input.fromPaths.map((raw) => {
-          const trimmed = raw.trim();
-          return isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
-        }),
+        sources: input.fromPaths.map((path) => resolve(input.cwd, path)),
         copied: result.copied,
         checkpointId: result.checkpointId,
       });

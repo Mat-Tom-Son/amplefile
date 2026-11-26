@@ -414,6 +414,9 @@ validation, write, and client invalidation, and their receipts contain model
 identifiers or an instruction character count, never instruction text.
 Provider credentials and connection setup have no act verb.
 
+CLI file and History paths preserve spaces anywhere in an item name. Quote
+paths and new names with spaces so the shell passes them as a single argument.
+
 `chat send` accepts a CLI-started agent turn through the same acceptance path
 as the window: conflict checks, stable request identity, durable acceptance
 before the transcript append, a kernel task record with a `cli` actor,

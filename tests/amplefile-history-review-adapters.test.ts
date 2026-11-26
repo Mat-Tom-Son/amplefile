@@ -256,3 +256,27 @@ test("CLI and HTTP expose working History pages/ranges and narrowed Search conti
   const mismatch=await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}/search?${new URLSearchParams({q:"different",path:"large.txt",scope:"files",cursor:search.nextCursor})}`,{headers:{"x-amplefile-session":sessionToken}});
   assert.equal(mismatch.status,409);
 });
+
+test("History reads and per-file restore select the exact spaced name", async (t) => {
+  const { connectedFolder, request, execute, fetchReview } = await fixture(t);
+  const root = connectedFolder.connectedFolderRoot;
+  const path = " note.txt ";
+  await writeFile(join(root, path), firstText);
+  const checkpoint = await createConnectedFolderCheckpoint(root);
+  await writeFile(join(root, path), secondText);
+  const selector = ["--connected-folder", connectedFolder.id, "--path", path, "--json"];
+  const read = await execute(request(["history", "read", ...selector, "--checkpoint", checkpoint.checkpointId]));
+  assert.equal(read.exitCode, 0, read.stderr);
+  assert.equal(JSON.parse(read.stdout).data.review.observation.text, firstText);
+  const response = await fetchReview("read", { path, checkpointId: checkpoint.checkpointId });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).review.observation.text, firstText);
+  const versions = await execute(request(["history", "versions", ...selector]));
+  assert.equal(versions.exitCode, 0, versions.stderr);
+  const [version] = JSON.parse(versions.stdout).data.versions;
+  assert.equal(version.hashSha256, createHash("sha256").update(firstText).digest("hex"));
+  const restored = await execute(request(["history", "restore-file", ...selector, "--version", version.hashSha256]));
+  assert.equal(restored.exitCode, 0, restored.stderr);
+  assert.equal(await readFile(join(root, path), "utf8"), firstText);
+  assert.equal(await readFile(join(root, "note.txt"), "utf8"), currentText);
+});

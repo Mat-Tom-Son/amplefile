@@ -609,12 +609,15 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     ...(stringFlag("--cursor") !== undefined ? { cursor: requireBoundedFlag("--cursor", "cursor", 128 * 1024) } : {}),
     ...(stringFlag("--limit") !== undefined ? { limit: optionalInteger("--limit", 1, 1000) } : {}),
   });
-  const boundedActPath = (flag: string, raw: string, label: string): string => {
-    const value = raw.trim();
-    if (!value) throw usageError(`Provide ${flag} <${label}>.`);
-    if (value.length > maxActPathLength) throw usageError(`${flag} must be at most ${maxActPathLength} characters.`);
+  const boundedActPath = (flag: string, value: string, label: string, maximumLength = maxActPathLength): string => {
+    if (!value.trim()) throw usageError(`Provide ${flag} <${label}>.`);
+    if (value.length > maximumLength) throw usageError(`${flag} must be at most ${maximumLength} characters.`);
     if (cliControlCharacters.test(value)) throw usageError(`${flag} contains unsupported control characters.`);
     return value;
+  };
+  const optionalBoundedPath = (flag: string, label: string): string | undefined => {
+    const value = stringFlag(flag);
+    return value === undefined ? undefined : boundedActPath(flag, value, label);
   };
   /**
    * A report summary, a question, and an answer are prose: they may carry the
@@ -672,7 +675,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     if (raw === undefined) return {};
     const value = raw.trim();
     if (!value) throw usageError("Provide --data <json> or --data @<path>.");
-    if (value.startsWith("@")) return { resultDataPath: boundedActPath("--data", value.slice(1), "json-path") };
+    if (value.startsWith("@")) return { resultDataPath: boundedActPath("--data", raw.trimStart().slice(1), "json-path") };
     if (Buffer.byteLength(value, "utf8") > ampleFileRequestLimits.maxResultDataBytes) {
       throw usageError(ampleFileRequestLimitMessage("resultData", ampleFileRequestLimits.maxResultDataBytes));
     }
@@ -1190,8 +1193,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     case "connected-folders register": {
       allowOnlyFlags("--parent-task");
       if (pathValues.length > 1) throw usageError("--path may be provided only once.");
-      const registerPath = pathValues[0]?.trim();
-      if (!registerPath) throw usageError("Provide --path <absolute-folder-path>.");
+      const registerPath = boundedActPath("--path", pathValues[0] ?? "", "absolute-folder-path");
       return { name: "connected-folders.register", output, registerPath, ...(parentTaskId ? { parentTaskId } : {}) };
     }
     case "connected-folders rename":
@@ -1224,8 +1226,8 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       // host-side, the same pattern as `automations enable --proposal`. Or name
       // just the parts to change; the image is read and encoded host-side.
       allowOnlyFlags("--connected-folder", "--proposal", "--banner-image", "--icon", "--color", "--parent-task");
-      const proposalPath = optionalBoundedFlag("--proposal", "proposal-path", maxActPathLength);
-      const bannerImagePath = optionalBoundedFlag("--banner-image", "image-path", maxActPathLength);
+      const proposalPath = optionalBoundedPath("--proposal", "proposal-path");
+      const bannerImagePath = optionalBoundedPath("--banner-image", "image-path");
       const icon = optionalBoundedFlag("--icon", "icon-name", 64);
       const color = optionalBoundedFlag("--color", "#rrggbb", 16);
       const parts = { ...(bannerImagePath ? { bannerImagePath } : {}), ...(icon ? { icon } : {}), ...(color ? { color } : {}) };
@@ -1317,7 +1319,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         output,
         connectedFolder: requireConnectedFolder(),
         fromPaths: [requireSingleFrom("connected-folder-path")],
-        toDir: requireBoundedFlag("--to", "folder-in-connected-folder", maxActPathLength),
+        toDir: boundedActPath("--to", stringFlag("--to") ?? "", "folder-in-connected-folder"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files rename":
@@ -1327,7 +1329,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         output,
         connectedFolder: requireConnectedFolder(),
         path: requireSinglePath("connected-folder-path"),
-        entryName: requireBoundedFlag("--name", "new-name"),
+        entryName: boundedActPath("--name", stringFlag("--name") ?? "", "new-name", maxActIdLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files delete":
@@ -1415,7 +1417,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       return {
         name: "automations.enable",
         output,
-        proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxActPathLength),
+        proposalPath: boundedActPath("--proposal", stringFlag("--proposal") ?? "", "proposal-path"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     // Recently Deleted sits above Connected Folders (docs/act-ledger.md):
@@ -1504,7 +1506,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         throw usageError("--timeout must be a positive number of seconds.");
       }
       const jobName = optionalBoundedFlag("--name", "label", 200);
-      const jobCwd = optionalBoundedFlag("--cwd", "folder", maxActPathLength);
+      const jobCwd = optionalBoundedPath("--cwd", "folder");
       return {
         name: "jobs.start",
         output,

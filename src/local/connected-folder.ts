@@ -585,7 +585,7 @@ export async function scanConnectedFolderTree(
   if (options.maxEntries !== undefined && (depthLimit !== 0 || !Number.isInteger(options.maxEntries) || options.maxEntries < 1)) {
     throw Object.assign(new Error("maxEntries is a whole number of entries for a one-level listing (maxDepth 0)."), { status: 400, statusCode: 400 });
   }
-  const scanRoot = resolveConnectedFolderPath(safeRoot, relativePath || ".");
+  const scanRoot = resolveConnectedFolderPath(safeRoot, relativePath.trim() ? relativePath : ".");
   const info = await stat(scanRoot).catch(() => null);
   // A folder that was deleted, or sits on a drive that is gone, is still named by a saved tab or a Back step.
   if (!info) throw notFound("This folder is no longer here.");
@@ -796,7 +796,7 @@ async function prepareConnectedFolderMove(
   input: { sourcePath: string; targetFolderPath?: string },
 ): Promise<{ sourcePath: string; source: string; destination: string }> {
   const sourcePath = normalizeRelative(input.sourcePath);
-  const targetFolderPath = normalizeRelative(input.targetFolderPath ?? "");
+  const targetFolderPath = input.targetFolderPath?.trim() ? normalizeRelative(input.targetFolderPath) : "";
   if (!sourcePath || sourcePath === ".") throw new Error("Select a file or folder to move.");
   if (targetFolderPath === sourcePath || targetFolderPath.startsWith(`${sourcePath}/`)) throw new Error("Folders cannot be moved into themselves.");
   await assertOutsideNestedFolders(root, sourcePath);
@@ -805,7 +805,7 @@ async function prepareConnectedFolderMove(
   if (samePath(source, root)) throw new Error("The Connected Folder root cannot be moved.");
   const sourceInfo = await lstat(source).catch(() => null);
   if (!sourceInfo || (!sourceInfo.isFile() && !sourceInfo.isDirectory() && !sourceInfo.isSymbolicLink())) throw notFound(`Connected Folder item not found: ${sourcePath}`);
-  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
+  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath.trim() ? targetFolderPath : ".");
   if (!(await stat(targetFolder)).isDirectory()) throw new Error("Move items into a folder.");
   if (dirname(source) === targetFolder) throw new Error(`${basename(source)} is already in the selected folder.`);
   const destination = join(targetFolder, basename(source));
@@ -904,7 +904,7 @@ export async function createConnectedFolderFolder(
   name: string,
 ): Promise<ConnectedFolderCreatedEntry> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
-  const parent = resolveConnectedFolderPath(root, parentPath || ".");
+  const parent = resolveConnectedFolderPath(root, parentPath);
   if (!(await stat(parent)).isDirectory()) throw new Error("Create folders inside a Connected Folder.");
   const safeName = safeFileName(name);
   const destination = join(parent, safeName);
@@ -928,7 +928,7 @@ export async function createConnectedFolderTextFile(
   text = "",
 ): Promise<ConnectedFolderCreatedEntry> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
-  const parent = resolveConnectedFolderPath(root, parentPath || ".");
+  const parent = resolveConnectedFolderPath(root, parentPath);
   if (!(await stat(parent)).isDirectory()) throw new Error("Create files inside a Connected Folder.");
   const safeName = safeFileName(name);
   const destination = join(parent, safeName);
@@ -982,7 +982,7 @@ export async function writeUploadedFiles(
   files: Array<{ fileName: string; relativePath?: string; data: Buffer }>,
 ): Promise<Array<{ path: string; sizeBytes: number }>> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
-  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
+  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath.trim() ? targetFolderPath : ".");
   const uploads = files.map((file) => ({
     desired: resolveConnectedFolderPath(targetFolder, safeUploadPath(file.relativePath || file.fileName)),
     data: file.data,
@@ -1035,7 +1035,7 @@ export async function copyPathIntoConnectedFolder(
   targetFolderPath: string,
 ): Promise<string> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
-  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath || ".");
+  const targetFolder = resolveConnectedFolderPath(root, targetFolderPath.trim() ? targetFolderPath : ".");
   const name = safeFileName(basename(sourcePath));
   if (containsReservedConnectedFolderPathSegment(name)) throw new Error("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
   if (isInsideTransfer(sourcePath, targetFolder)) throw new Error(`“${basename(sourcePath)}” can’t be copied into itself.`);
@@ -1056,7 +1056,7 @@ export async function copyPathIntoConnectedFolder(
  */
 export function resolveConnectedFolderPath(connectedFolderRoot: string, relativePath: string, options: { finalLink?: boolean } = {}): string {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
-  const normalized = normalizeRelative(relativePath || ".");
+  const normalized = normalizeRelative(relativePath);
   if (isAbsolute(relativePath) || normalized.split("/").includes("..")) {
     throw new Error("Path escapes the selected Connected Folder.");
   }
@@ -2123,17 +2123,15 @@ function safeUploadPath(value: string): string {
 export const maxConnectedFolderEntryNameLength = 240;
 
 /**
- * The name an item in a Connected Folder gets for a requested name: trimmed,
- * and refused when it is empty, a path, reserved, or longer than
+ * Validate an exact name. Refuse a blank name, a path, a reserved name, or one longer than
  * {@link maxConnectedFolderEntryNameLength} characters. A name is never
  * shortened, so whoever plans a change from it names the item the change
  * makes.
  */
-export function safeFileName(value: string): string {
-  const name = value.trim();
-  if (!name || name === "." || name === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(name)) throw new Error("File name is not allowed.");
+export function safeFileName(name: string): string {
+  if (!name.trim() || name === "." || name === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(name)) throw new Error("File name is not allowed.");
   const windowsStem = name.split(".")[0]?.toLocaleUpperCase() ?? "";
-  if (/[. ]$/.test(name) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)) {
+  if (/\.$/.test(name) || (process.platform === "win32" && name.endsWith(" ")) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem)) {
     throw new Error("File name is reserved by Windows.");
   }
   if (name.length > maxConnectedFolderEntryNameLength) {
@@ -2155,8 +2153,8 @@ function safeSegment(value: string): string {
   return value.toLocaleLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function normalizeRelative(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
+export function normalizeRelative(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
 }
 
 function stableConnectedFolderId(connectedFolderRoot: string): string {

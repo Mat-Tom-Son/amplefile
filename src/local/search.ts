@@ -43,7 +43,7 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   assertConnectedFolderDoesNotContainState(root);
   aborted(options.signal);
   if (options.includeFiles === false && options.path) throw retrievalError("Search path narrows files; use files or all scope.");
-  const selected = options.path ? relative(await realpath(root), await realpath(resolveConnectedFolderPath(root, options.path))).split(sep).join("/") : "";
+  const selected = options.path?.trim() ? relative(await realpath(root), await realpath(resolveConnectedFolderPath(root, options.path))).split(sep).join("/") : "";
   const ignore = (await readConnectedFolderIgnoreState(root)).patterns;
   const nested = await nestedRegisteredConnectedFolderPaths(root);
   const scope = digest(JSON.stringify([root, query, selected, options.includeFiles !== false, options.includeChats !== false, ignore, nested]));
