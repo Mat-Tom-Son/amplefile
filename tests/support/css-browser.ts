@@ -44,8 +44,11 @@ export interface CssFixtureOptions {
 /** A complete `<pre id="result">…</pre>` element in the dumped page. */
 const completeResult = /<pre id="result">[^<]*<\/pre>/u;
 
-/** How long a stopped browser gets to exit before it is killed outright. */
+/** How long a stopped browser and its helpers get to leave before the browser is killed outright. */
 const stopGraceMs = 5_000;
+
+/** How long a killed browser gets to be gone before the runner settles anyway. */
+const killGraceMs = 1_000;
 
 /**
  * Lays out a fixture page in a disposable headless Chromium and returns the
@@ -86,47 +89,56 @@ export function dumpCssFixture(browser: string, fixturePath: string, options: Cs
     let page = "";
     let said = "";
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     // "close" comes once the process has exited and every process holding its
     // output pipes, helpers included, has let go of them.
     const closed = new Promise<void>((done) => child.once("close", () => done()));
+    const closedWithin = (ms: number) => new Promise<void>((done) => {
+      const wait = setTimeout(done, ms);
+      void closed.then(() => {
+        clearTimeout(wait);
+        done();
+      });
+    });
     const running = () => child.exitCode === null && child.signalCode === null;
     const finish = (outcome: { page: string } | { error: Error }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (running()) child.kill();
-      let grace: NodeJS.Timeout | undefined;
-      const graceOver = new Promise<void>((done) => {
-        grace = setTimeout(done, stopGraceMs);
-      });
-      void Promise.race([closed, graceOver]).then(() => {
-        clearTimeout(grace);
-        child.stdout.destroy();
-        child.stderr.destroy();
-        if (running()) child.kill("SIGKILL");
+      void (async () => {
+        await closedWithin(stopGraceMs);
+        // Stop waiting on helpers that still hold the pipes, and on a browser that would not stop.
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        if (running()) {
+          child.kill("SIGKILL");
+          await closedWithin(killGraceMs);
+        }
         if ("page" in outcome) resolve(outcome.page);
         else reject(outcome.error);
-      });
+      })();
     };
-    const timer = setTimeout(() => {
-      finish({ error: new Error(`${name} did not return the fixture's result within ${timeoutMs} ms.${saidTail(said)}`) });
-    }, timeoutMs);
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      if (settled) return;
-      page += chunk;
-      if (completeResult.test(page)) finish({ page });
-    });
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      said = (said + chunk).slice(-4_000);
-    });
-    // A browser that cannot start reports here, then closes without exiting.
+    // A browser that cannot start reports here, then closes without exiting. When spawn has
+    // run out of file descriptors it also leaves the pipes null, hence the optional chaining.
     child.on("error", (error) => finish({ error }));
     // Output can still be in the pipe when the process exits; "close" comes after all of it is read.
     child.once("close", (code, signal) => {
       if (completeResult.test(page)) finish({ page });
       else finish({ error: new Error(`${name} ended (${signal ? `signal ${signal}` : `exit code ${code}`}) before the fixture wrote its result.${saidTail(said)}`) });
+    });
+    timer = setTimeout(() => {
+      finish({ error: new Error(`${name} did not return the fixture's result within ${timeoutMs} ms.${saidTail(said)}`) });
+    }, timeoutMs);
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      if (settled) return;
+      page += chunk;
+      if (completeResult.test(page)) finish({ page });
+    });
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      said = (said + chunk).slice(-4_000);
     });
   });
 }

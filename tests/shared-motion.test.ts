@@ -60,5 +60,5 @@ test("shared motion cancels running effects and removes exits when either Reduce
       assert.equal(result.ghosts, 0, `${result.preference}: leaving copies must be removed immediately`);
       assert.equal(result.newEffects, 0, `${result.preference}: no new scripted effects while reduced`);
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });

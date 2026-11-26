@@ -353,7 +353,7 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
       assert.ok(item.close.right > item.width / 2, "close control stays beside the title at narrow widths");
       if (item.width <= 800) assert.ok(item.scrollTop > 0, "all expanded metadata remains reachable by scrolling");
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });
 
 test("actual catalog markup keeps one header row, one toolbar row, and openable rows in the window's style", { timeout: 60_000 }, async (t) => {
@@ -408,7 +408,7 @@ test("actual catalog markup keeps one header row, one toolbar row, and openable 
         assert.ok(Math.abs(item.search.top-item.filters.top)<2 && Math.abs(item.search.height-item.filters.height)<1,`search and the type filter share one row and height (${where})`);
       } else assert.ok(item.filters.top>=item.search.bottom,`narrow toolbar wraps cleanly below search (${where})`);
     }
-  } finally { await rm(scratch,{recursive:true,force:true}); }
+  } finally { await rm(scratch,{recursive:true,force:true,maxRetries:8,retryDelay:100}); }
 });
 
 test("Discover looks like loading until results arrive, says when the catalog fails, and opens a row's details from the row", async (t) => {

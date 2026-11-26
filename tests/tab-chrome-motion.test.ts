@@ -127,5 +127,5 @@ test("browser tabs share the strip, and the frame behind the tab in front slides
       assert.equal(result.none.visible, "hidden", "with no tab in front the frame is not drawn");
       assert.equal(result.none.ready, undefined);
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });

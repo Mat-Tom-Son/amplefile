@@ -53,5 +53,5 @@ test("the actual banner cascade repaints every pattern after an accent edit", { 
         }
       }
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });
