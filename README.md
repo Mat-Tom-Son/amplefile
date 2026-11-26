@@ -42,7 +42,7 @@ Files stay on your computer. Content a Worker uses goes to the model provider
 you choose; see [Privacy](PRIVACY.md).
 
 Linux x64 previews provide RPM, DEB and AppImage packages, including Computer Control.
-Download the [Linux 0.2.3 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-0.2.3);
+Download the [Linux 0.2.5 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-0.2.5);
 see [Linux builds](docs/linux-build.md) for setup and verification. Earlier
 previews are tagged `linux-test-*` and new ones `linux-*`. On Fedora,
 an RPM signed for AmpleFile's package repository adds that repository when it
