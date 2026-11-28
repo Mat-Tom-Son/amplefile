@@ -290,11 +290,23 @@ export async function touchConnectedFolderRoot(connectedFolderRoot: string): Pro
 }
 
 export async function registerLinkedConnectedFolder(connectedFolderRoot: string, providerHint?: "google-drive"): Promise<ConnectedFolderSummary> {
+  return (await registerLinkedConnectedFolderIdentity(connectedFolderRoot, providerHint)).connectedFolder;
+}
+
+/**
+ * Registers a linked folder and says whether that made a new Connected Folder
+ * identity (`newIdentity`), decided inside the one registry operation that
+ * creates or reuses it, so two registrations at once never both claim it. It
+ * is false when the folder already carried an identity: registered at this
+ * path, moved and linked again, or bringing its portable
+ * `.amplefile/connected-folder.json`.
+ */
+export async function registerLinkedConnectedFolderIdentity(connectedFolderRoot: string, providerHint?: "google-drive"): Promise<{ connectedFolder: ConnectedFolderSummary; newIdentity: boolean }> {
   const safeRoot = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   if (!insideManagedConnectedFolder(safeRoot, await readRegistry())) assertLinkedConnectedFolderStateSeparation(safeRoot);
   const info = await stat(safeRoot).catch(() => null);
   if (!info?.isDirectory()) throw new Error("The folder selected for this Connected Folder does not exist.");
-  return registerConnectedFolder({
+  return registerConnectedFolderIdentity({
     name: basename(safeRoot),
     connectedFolderRoot: safeRoot,
     location: {
@@ -1132,6 +1144,11 @@ export async function sha256File(path: string): Promise<string> {
 }
 
 async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" | "createdAt" | "updatedAt">): Promise<ConnectedFolderSummary> {
+  return (await registerConnectedFolderIdentity(input)).connectedFolder;
+}
+
+/** The one registration path; `newIdentity` is true only when this call minted the identity. */
+async function registerConnectedFolderIdentity(input: Omit<ConnectedFolderSummary, "id" | "createdAt" | "updatedAt">): Promise<{ connectedFolder: ConnectedFolderSummary; newIdentity: boolean }> {
   const connectedFolderRoot = resolve(input.connectedFolderRoot);
   return withRegistryOwnershipMutation(() => registrationRoots(connectedFolderRoot), async (claim) => {
     claim(connectedFolderRoot);
@@ -1147,7 +1164,7 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
         throw new Error("This Connected Folder is still being removed. Restart AmpleFile to retry its cleanup.");
       }
       await writePortableManifest(existing);
-      return existing;
+      return { connectedFolder: existing, newIdentity: false };
     }
     const portableIdentity = await readExistingConnectedFolderManifest(connectedFolderRoot);
     const now = new Date().toISOString();
@@ -1168,7 +1185,7 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
         identityOwner.createdAt = portableIdentity.createdAt;
         identityOwner.updatedAt = now;
         await commitRegistryAndPortableManifest(registry, identityOwner);
-        return identityOwner;
+        return { connectedFolder: identityOwner, newIdentity: false };
       }
     }
     const id = portableIdentity?.id ?? stableConnectedFolderId(connectedFolderRoot);
@@ -1184,7 +1201,8 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
     };
     registry.connectedFolders.push(connectedFolder);
     await commitRegistryAndPortableManifest(registry, connectedFolder);
-    return connectedFolder;
+    // A folder that brought its portable identity keeps it; only a minted one is new.
+    return { connectedFolder, newIdentity: !portableIdentity };
   });
 }
 

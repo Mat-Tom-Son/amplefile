@@ -140,7 +140,8 @@ export async function handleCapabilityRoutes({ state, req, res, url, method }: L
         const controller = new AbortController();
         const close = () => { if (!res.writableEnded) controller.abort(); };
         res.once("close", close);
-        try { sendJson(res, { probe: await entry.service.probe(selection, { signal: controller.signal }) }); }
+        // The check is kept by the host with its connection; the answer carries what the row now shows.
+        try { const probe = await entry.service.probe(selection, { signal: controller.signal }); sendJson(res, { probe, lastCheck: entry.service.lastCheck(selection) }); }
         finally { res.off("close", close); }
         return true;
       }

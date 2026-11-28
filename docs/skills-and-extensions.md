@@ -193,7 +193,17 @@ supplies native readiness evidence without repeatedly pressing Check. Computer
 permissions retain a visible timestamp and become neutral historical evidence
 after five minutes; Check observes without helper repair or Chat disposal.
 Documents proof belongs to the immutable running build. Service Connections
-separates configuration from each connection's checked health. See the
+separates configuration from each connection's checked health. Opening its
+setup reads no credential, so an HTTP connection says **Sign-In Unknown Until
+Checked** until a change or Refresh reads what is saved (**Signed In** or **No
+Saved Sign-In**). **Check** says what it established on that connection's row:
+**Connected · Signed In**, **Connected · No Sign-In Needed** (and no **Sign
+In** button), or **Needs Sign-In**. AmpleFile keeps that result with the
+connection, so every window shows it and opening the setup again still does,
+until the connection's definition or sign-in changes: a save, Turn On or Off,
+Use Token, Disconnect, a completed Sign In, or Remove, or a list that reads
+credentials finding a sign-in saved or removed since. A failed check replaces
+an earlier result; a cancelled one leaves it. See the
 [extension contract](extension-foundation.md#readiness-and-lifecycle) for the exact
 observation and lifecycle boundaries.
 Web defaults to DuckDuckGo without a key. Documents supplies ordinary libraries

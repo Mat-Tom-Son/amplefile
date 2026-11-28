@@ -102,14 +102,17 @@ test("the Trash view lists the system Trash, and a permanent action sends nothin
   await dom.waitFor(() => !dom.container.querySelector(".fm-trash"));
 });
 
-test("Search in a plain folder asks the host's folder search, shows where each match is, and goes on when asked", async (t) => {
+test("Search in a plain folder asks the host's folder search, shows where each match is, and keeps going until it has found everything", async (t) => {
   let pages = 0;
+  let releaseHeld: (() => void) | null = null;
+  const last = { query: "lemon", names: [], files: [{ path: "budget.txt", line: 1, preview: "Lemon budget", sizeBytes: 9, updatedAt: at }], chats: [], connectedFolders: [], truncated: false, scannedFiles: 4, nextCursor: null, coverage: { stoppedBy: null, complete: true, unreadable: 0, visitedEntries: 1, scannedBytes: 1 } };
   const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => {
     if (!path.startsWith("/api/standard-folders/home/search")) return undefined;
     pages += 1;
-    return pages === 1
-      ? { query: "lemon", names: [{ path: "Notes/lemon.txt", name: "lemon.txt", kind: "file" }], files: [], chats: [], connectedFolders: [], truncated: true, scannedFiles: 20000, nextCursor: "cursor-1", coverage: { stoppedBy: "time", complete: false, unreadable: 0, visitedEntries: 1, scannedBytes: 1 } }
-      : { query: "lemon", names: [], files: [{ path: "budget.txt", line: 1, preview: "Lemon budget", sizeBytes: 9, updatedAt: at }], chats: [], connectedFolders: [], truncated: false, scannedFiles: 4, nextCursor: null, coverage: { stoppedBy: null, complete: true, unreadable: 0, visitedEntries: 1, scannedBytes: 1 } };
+    if (pages === 1) return { query: "lemon", names: [{ path: "Notes/lemon.txt", name: "lemon.txt", kind: "file" }], files: [], chats: [], connectedFolders: [], truncated: true, scannedFiles: 20000, nextCursor: "cursor-1", coverage: { stoppedBy: "time", complete: false, unreadable: 0, visitedEntries: 1, scannedBytes: 1 } };
+    // The window asks for the second page by itself; it is held until the person has pressed Stop.
+    if (pages === 2) return new Promise((resolve) => { releaseHeld = () => resolve(last); });
+    return last;
   }));
   await dom.render(view(module));
   await dom.waitFor(() => dom.container.querySelector('[data-fm-path="budget.txt"]') !== null);
@@ -123,16 +126,85 @@ test("Search in a plain folder asks the host's folder search, shows where each m
   const first = requests.find((item) => item.path.startsWith("/api/standard-folders/home/search"))!;
   assert.equal(first.path, "/api/standard-folders/home/search?q=lemon", "hidden items only while Show Hidden Files is on");
   const rows = () => [...dom.container.querySelectorAll(".fm-content [data-fm-result]")].map((row) => row.textContent);
+  const note = () => dom.container.querySelector(".fm-search-note")?.textContent ?? null;
+  const status = () => dom.container.querySelector(".fm-status")?.textContent;
   assert.match(rows()[0]!, /lemon\.txt.*Name.*ana › Notes/);
-  assert.match(dom.container.querySelector(".fm-search-note")!.textContent!, /stopped after a few seconds, having read 20,000 files/);
+  // Nobody asked for the next page: the window went on by itself, and says so with Stop.
+  await dom.waitFor(() => requests.some((item) => item.path === "/api/standard-folders/home/search?q=lemon&cursor=cursor-1"));
+  assert.match(note()!, /Searching… 20,000 files read so far\./);
+  assert.equal(status(), "Searching… 1 found");
   assert.ok(!dom.container.querySelector(".fm-ask-row"), "a plain folder has no Worker to ask");
   assert.ok(!buttons(dom).includes("All Connected Folders"), "with none registered there is nothing else to search");
-  const keepSearching = [...dom.container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Keep Searching")!;
-  await dom.act(() => { keepSearching.click(); });
+  const button = (label: string) => [...dom.container.querySelectorAll<HTMLButtonElement>(".fm-search-note button")].find((item) => item.textContent === label);
+  await dom.act(() => { button("Stop")!.click(); });
+  assert.equal(note(), "Search stopped. There may be more matches.Keep Searching");
+  assert.equal(status(), "1+ items", "a stopped search never reads as a complete count");
+  // The page held when Stop was pressed adds nothing once it arrives.
+  await dom.act(async () => { releaseHeld?.(); await new Promise((resolve) => setTimeout(resolve, 10)); });
+  assert.equal(rows().length, 1);
+  await dom.act(() => { button("Keep Searching")!.click(); });
   await dom.waitFor(() => rows().length === 2);
-  assert.ok(requests.some((item) => item.path === "/api/standard-folders/home/search?q=lemon&cursor=cursor-1"));
+  assert.equal(requests.filter((item) => item.path === "/api/standard-folders/home/search?q=lemon&cursor=cursor-1").length, 2, "Keep Searching goes on from where it stopped");
   assert.match(rows()[1]!, /budget\.txt.*Lemon budget/);
-  assert.equal(dom.container.querySelector(".fm-search-note"), null, "the search reached the end");
+  assert.equal(note(), null, "the search reached the end");
+  assert.equal(status(), "2 items");
+});
+
+test("items a search skipped are added up across every page, never read off the last one", async (t) => {
+  const page = (query: string, file: string, cursor: string | null, unreadable: number) => ({
+    query, names: [{ path: file, name: file, kind: "file" }], files: [], chats: [], connectedFolders: [], truncated: cursor !== null || unreadable > 0, scannedFiles: 1, nextCursor: cursor,
+    // As the host says it: counters and `complete` describe this page alone.
+    coverage: { stoppedBy: cursor ? "time" : null, complete: cursor === null && unreadable === 0, unreadable, changed: 0, visitedEntries: 1, scannedBytes: 1 },
+  });
+  const { dom, module } = await createFileManagerHarness(t, answers((path) => {
+    if (!path.startsWith("/api/standard-folders/home/search")) return undefined;
+    const params = new URL(path, "http://local").searchParams;
+    const query = params.get("q")!;
+    const first = !params.get("cursor");
+    // An unreadable item on the first page, then a slow clean last page.
+    if (query === "skip") return first ? page(query, "skip-1.txt", "c-1", 1) : new Promise((resolve) => setTimeout(() => resolve(page(query, "skip-2.txt", null, 0)), 40));
+    // Two clean pages, back to back.
+    if (query === "clean") return first ? page(query, "clean-1.txt", "c-1", 0) : page(query, "clean-2.txt", null, 0);
+    return undefined;
+  }));
+  await dom.render(view(module));
+  await dom.waitFor(() => dom.container.querySelector('[data-fm-path="budget.txt"]') !== null);
+  const field = dom.container.querySelector<HTMLInputElement>(".fm-search input")!;
+  const searchFor = (query: string) => dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, query);
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  const status = () => dom.container.querySelector(".fm-status")?.textContent;
+  const skippedNote = () => [...dom.container.querySelectorAll(".fm-search-note")].some((note) => /Some items were skipped/.test(note.textContent ?? ""));
+  await searchFor("skip");
+  await dom.waitFor(() => status() === "2 items");
+  assert.ok(skippedNote(), "the first page's unreadable item is still said after a clean last page");
+  await searchFor("clean");
+  await dom.waitFor(() => status() === "2 items" && dom.container.querySelector('[data-fm-result]')?.textContent?.includes("clean-1.txt") === true);
+  await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  assert.ok(!skippedNote(), "two clean pages never say something was skipped");
+});
+
+test("a search that finds thousands of items draws only the rows in view", async (t) => {
+  const names = Array.from({ length: 3_000 }, (_, index) => ({ path: `Many/lemon-${String(index).padStart(4, "0")}.txt`, name: `lemon-${String(index).padStart(4, "0")}.txt`, kind: "file" }));
+  const { dom, module } = await createFileManagerHarness(t, answers((path) => path.startsWith("/api/standard-folders/home/search")
+    ? { query: "lemon", names, files: [], chats: [], connectedFolders: [], truncated: false, scannedFiles: 0, nextCursor: null, coverage: { stoppedBy: null, complete: true, unreadable: 0, visitedEntries: 3_000, scannedBytes: 0 } }
+    : undefined));
+  await dom.render(view(module));
+  await dom.waitFor(() => dom.container.querySelector('[data-fm-path="budget.txt"]') !== null);
+  const field = dom.container.querySelector<HTMLInputElement>(".fm-search input")!;
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(field, "lemon");
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await dom.waitFor(() => dom.container.querySelector(".fm-status")?.textContent === "3000 items");
+  const drawn = () => dom.container.querySelectorAll(".fm-content [data-fm-result]").length;
+  assert.ok(drawn() > 0 && drawn() < 200, `only the rows in view are drawn (${drawn()})`);
+  assert.equal(dom.container.querySelector(".fm-content")?.getAttribute("aria-rowcount"), "3001", "screen readers hear every result");
+  // The chosen row is always drawn, however far down the keyboard takes it.
+  const content = dom.container.querySelector<HTMLElement>(".fm-content")!;
+  await dom.act(() => { content.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })); });
+  await dom.waitFor(() => dom.container.querySelector('.fm-content [data-fm-result].is-selected')?.textContent?.includes("lemon-2999.txt") === true);
 });
 
 test("Info measures a selected folder, saying Calculating… first, and the list's Size column fills in", async (t) => {

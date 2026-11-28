@@ -397,6 +397,7 @@ test("the local API persists native edit evidence and successful or interrupted 
   const stopped = (await json(api.origin, base)).messages.find((message: ChatMessage) => message.role === "assistant" && message.turnId === held.taskId) as ChatMessage;
   assert.equal(stopped.content, "The partial reply is still in progress.");
   assert.equal(stopped.interruption?.reason, "cancelled");
+  assert.equal(stopped.interruption?.partialResponse, true, "the saved text is the model's own reply so far");
   assert.deepEqual(stopped.assistantPresentation?.segments.map((segment) => segment.kind), ["progress"]);
   await closeApi();
   api = await startLocalApi(options);

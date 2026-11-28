@@ -172,16 +172,18 @@ test("assistant rendering has complete Markdown chrome and Connected Folder–aw
   assert.doesNotMatch(activity, /Learned From/);
 });
 
-test("provider interruptions stay visible and the configured model is disclosed before first send", () => {
+test("provider interruptions stay visible and the configured model is disclosed before first send", async () => {
+  const interruptionCopy = await read("web-local/src/components/chat/interruption-copy.ts");
   assert.match(chatPanel, /ConfiguredModel/);
   assert.match(chatPanel, /\/api\/agent\/status\?connectedFolderId=/);
   assert.match(chatPanel, /\/api\/agent\/composer\?scope=connected-folder&connectedFolderId=/);
   assert.match(chatPanel, /setComposerState\(composerResult\.status === "fulfilled"/);
   assert.match(chatPanel, /loadMessages\(conversationId, false, \{ settleStreamingTurn: true \}\)/);
-  assert.match(messages, /Response Interrupted/);
-  assert.match(messages, /AmpleFile preserved/);
+  assert.match(messages, /interruptionCopy\(interruption, \{ steps, canContinue: Boolean\(onContinue\) \}\)/);
+  assert.match(interruptionCopy, /Response Interrupted/);
+  assert.match(interruptionCopy, /interruption\.partialResponse === true/, "a saved reply is claimed only from the record's mark");
   assert.match(messages, /Worker setup needed/);
-  assert.match(messages, /Request Stopped/);
+  assert.match(interruptionCopy, /Request Stopped/);
   assert.match(messages, /savedWorkTrailPreviews\(message\)/);
   assert.match(workTrail, /message\.workTrail\?\.length/);
   assert.match(workTrail, /message\.interruption\?\.activities \?\? \[\]/);

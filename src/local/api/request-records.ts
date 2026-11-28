@@ -46,6 +46,8 @@ export async function turnResultForScope(
   scopeId: string,
   rootPath: string,
   taskId: string,
+  /** The reading turn, when the read names one (`--parent-task`). */
+  readerTaskId?: string,
 ): ReturnType<AmpleFileActFacade["agentTurnResult"]> {
   const request = state.requests.byTaskId(taskId);
   if (request && (request.owner.connectedFolderId ?? ampleFileAgentScopeId) === scopeId) {
@@ -71,7 +73,7 @@ export async function turnResultForScope(
   const message = messages.find((item) => item.id === task.messageId);
   if (!message) throw new AmpleFileCliError("failure", "The turn's response message could not be found in the transcript.");
   const result = await completedRequestEnvelope(state, taskId);
-  await noteResultReadByRunningParent(state, taskId);
+  if (readerTaskId) await noteChildTurnReadByRunningParent(state, taskId, readerTaskId);
   return {
     conversationId,
     task: { taskId, state: "succeeded" as const, endedAt: task.endedAt! },
@@ -104,21 +106,68 @@ async function unfinishedTurnLeftovers(state: LocalApiState, taskId: string): Pr
 }
 
 /**
- * A parent that reads a child's settled result while its own turn is still
- * running has received it: `chat wait` and `agent wait` end with exactly this
- * read. Recording that delivery by the child's turn identity keeps the host
- * from starting a follow-up turn that repeats the same result. A later
- * child turn, such as an answer's continuation, is a new identity and is
- * still delivered.
+ * The parent's own running turn named by a read (`--parent-task`, which
+ * `chat wait` and `agent wait` pass on), or null when the read names no turn,
+ * or another one: someone else reading the same child, such as a person in
+ * Terminal, never stands in for the parent.
  */
-async function noteResultReadByRunningParent(state: LocalApiState, taskId: string): Promise<void> {
-  const child = state.requests.byTaskId(taskId);
-  if (!child?.parentRequestId || !isAmpleFileRequestTerminalState(child.state) || child.turns.at(-1)!.taskId !== taskId) return;
+function readingParent(state: LocalApiState, child: AmpleFileRequestRecord, readerTaskId: string): AmpleFileRequestRecord | null {
+  if (!child.parentRequestId) return null;
   const parent = state.requests.get(child.parentRequestId);
   const parentTurn = parent?.turns.at(-1);
-  if (!parent || !parentTurn || (parentTurn.state !== "accepted" && parentTurn.state !== "running")) return;
-  if (parent.deliveredChildTaskIds.includes(taskId)) return;
+  if (!parent || !parentTurn || (parentTurn.state !== "accepted" && parentTurn.state !== "running")) return null;
+  return parentTurn.taskId === readerTaskId.trim() ? parent : null;
+}
+
+/**
+ * A parent whose own running turn reads a child turn's settled result has
+ * received that child turn: `chat wait` ends with exactly this read
+ * (`chat result`). Recording the delivery by the child's turn identity keeps
+ * the host from starting a follow-up turn that repeats the same result. A
+ * later child turn, such as an answer's continuation, is a new identity and
+ * is still delivered.
+ */
+export async function noteChildTurnReadByRunningParent(state: LocalApiState, taskId: string, readerTaskId: string): Promise<void> {
+  const child = state.requests.byTaskId(taskId);
+  if (!child || child.turns.at(-1)!.taskId !== taskId || !isAmpleFileRequestTerminalState(child.state)) return;
+  const parent = readingParent(state, child, readerTaskId);
+  if (!parent || parent.deliveredChildTaskIds.includes(taskId)) return;
   await state.requests.noteChildDelivery(parent.requestId, [taskId]);
+}
+
+/**
+ * A parent whose own running turn sees its child waiting on the person's
+ * answer has seen those questions: `chat wait` ends with exactly this read
+ * (the status whose `waiting` names the question), and the question is
+ * already in Needs you. Only the questions are recorded, never the child
+ * turn: a report that same turn files afterward (after an asynchronous
+ * question, say) still reaches the parent. A question put to the parent is
+ * not recorded: the follow-up turn is the parent's sure chance to answer it.
+ */
+export async function noteChildQuestionsSeenByRunningParent(state: LocalApiState, taskId: string, readerTaskId: string): Promise<void> {
+  const child = state.requests.byTaskId(taskId);
+  if (!child || child.turns.at(-1)!.taskId !== taskId || !waitingOnlyOnPerson(state, child.requestId)) return;
+  const parent = readingParent(state, child, readerTaskId);
+  if (!parent) return;
+  const seen = new Set(parent.seenQuestionIds ?? []);
+  const fresh = waitingQuestions(state, child.requestId).map((question) => question.questionId).filter((id) => !seen.has(id));
+  if (fresh.length) await state.requests.noteQuestionsSeen(parent.requestId, fresh);
+}
+
+/**
+ * Whether a child's latest turn still has something for its parent: it has
+ * settled, was not delivered, and is not only questions the parent's own
+ * turn has already seen. A turn that filed a report, or ended any way but
+ * succeeding, always has. The follow-up turn, the parent's next turn's
+ * context, and the work view's Continue all ask this, so they agree.
+ */
+export function childTurnAwaitsDelivery(state: LocalApiState, parent: AmpleFileRequestRecord, child: AmpleFileRequestRecord): boolean {
+  const turn = child.turns.at(-1)!;
+  if (turn.settledAt === null || parent.deliveredChildTaskIds.includes(turn.taskId)) return false;
+  if (turn.state !== "succeeded" || child.results.some((result) => result.taskId === turn.taskId)) return true;
+  const waiting = waitingQuestions(state, child.requestId);
+  const seen = new Set(parent.seenQuestionIds ?? []);
+  return !(waiting.length > 0 && waiting.every((question) => question.respondent === "person" && seen.has(question.questionId)));
 }
 
 /** Only a request's selected report/final reply, never its transcript or graph. */
@@ -268,11 +317,7 @@ export function requestLimitRefusalMessage(limit: "questionLifetime"): string {
 export function waitingRefForTask(state: LocalApiState, taskId: string): AmpleFileActWaitingRef | null {
   const record = state.requests.byTaskId(taskId);
   if (!record) return null;
-  const now = Date.now();
-  const open = state.requests.questions(record.requestId)
-    .filter((question) => (question.state === "open" || (question.state === "answered" && question.continuationTaskId === null)) && (question.expiresAt === null || now < Date.parse(question.expiresAt)))
-    .sort((left, right) => left.askedAt.localeCompare(right.askedAt));
-  const question = open[0];
+  const question = waitingQuestions(state, record.requestId)[0];
   if (!question) return null;
   return {
     questionId: question.questionId,
@@ -282,6 +327,20 @@ export function waitingRefForTask(state: LocalApiState, taskId: string): AmpleFi
     askedAt: question.askedAt,
     expiresAt: question.expiresAt,
   };
+}
+
+/** The request's own questions still waiting, oldest first: open, or answered with no continuation yet, and not past their window. */
+function waitingQuestions(state: LocalApiState, requestId: string): AmpleFileQuestionRecord[] {
+  const now = Date.now();
+  return state.requests.questions(requestId)
+    .filter((question) => (question.state === "open" || (question.state === "answered" && question.continuationTaskId === null)) && (question.expiresAt === null || now < Date.parse(question.expiresAt)))
+    .sort((left, right) => left.askedAt.localeCompare(right.askedAt));
+}
+
+/** The request waits on its own questions, and every one of them is the person's to answer. */
+function waitingOnlyOnPerson(state: LocalApiState, requestId: string): boolean {
+  const waiting = waitingQuestions(state, requestId);
+  return waiting.length > 0 && waiting.every((question) => question.respondent === "person");
 }
 
 /**

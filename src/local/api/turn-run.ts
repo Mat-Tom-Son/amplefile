@@ -44,6 +44,7 @@ import { detachCachedClient, getClient, refreshClientIfMarked } from "./conversa
 import { broadcast, flushTurnCheckpoint, publishControlHint, turnStateEvent } from "./event-streams.js";
 import { errorMessage } from "./http.js";
 import { composeContinuationMessage, queueRequestGraphSettle } from "./request-routes.js";
+import { childTurnAwaitsDelivery } from "./request-records.js";
 import { type BackgroundCompaction, clientKey, type LocalApiState, type SettledTurnRecord, streamKey } from "./state.js";
 import { changeQueuedMessage, queuedMessageEvent, sendQueuedMessage } from "./turn-acceptance.js";
 
@@ -131,10 +132,7 @@ export async function runAgentTurn(
         ...(parentTaskId && (assignment === undefined || assignment === content) ? { assignmentIsThisMessage: true } : {}),
       });
     if (connectedFolderTurn && request) {
-      const children = state.requests.children(request.requestId).filter((child) => {
-        const latest = child.turns.at(-1)!;
-        return latest.settledAt !== null && !request.deliveredChildTaskIds.includes(latest.taskId);
-      });
+      const children = state.requests.children(request.requestId).filter((child) => childTurnAwaitsDelivery(state, request, child));
       if (children.length) {
         connectedFolderTurn.releasedChildResults = await composeContinuationMessage(state, request, children);
         await state.requests.noteChildDelivery(request.requestId, children.map((child) => child.turns.at(-1)!.taskId));
@@ -238,9 +236,12 @@ export async function runAgentTurn(
         ? "The agent was stopped before it completed this response."
         : assistantFailurePublicDetail(error);
     const workTrail = capturedWorkTrail;
-    const interruptedContent = closedByApp
-      ? durable?.assistantText.trim() || appClosedTurnDetail
+    // The saved content is the model's own reply so far, or a placeholder
+    // that says what happened; the interruption records which.
+    const interrupted = closedByApp
+      ? durable?.assistantText.trim() ? { content: durable.assistantText.trim(), partialResponse: true } : { content: appClosedTurnDetail, partialResponse: false }
       : assistantFailureTranscriptContent(error, durable?.assistantText ?? "", cancelled);
+    const interruptedContent = interrupted.content;
     const interruptedPresentation = parseAssistantPresentation(capturedPresentation, interruptedContent);
     const interruptedMessage = {
       id: randomUUID(),
@@ -258,6 +259,7 @@ export async function runAgentTurn(
         provider: error instanceof PiTurnFailure ? error.provider : null,
         model: error instanceof PiTurnFailure ? error.model : null,
         activities: error instanceof PiTurnFailure ? error.activities : [],
+        ...(interrupted.partialResponse ? { partialResponse: true as const } : {}),
       },
     };
     try {
@@ -267,7 +269,7 @@ export async function runAgentTurn(
     } catch (preservationError) {
       console.error(`Could not preserve an interrupted Worker result: ${errorMessage(preservationError)}`);
     }
-    const message = closedByApp ? appClosedTurnDetail : assistantTurnFailureMessage(error, failureResultPreserved);
+    const message = closedByApp ? appClosedTurnDetail : assistantTurnFailureMessage(error, failureResultPreserved, interrupted.partialResponse);
     settledStatus = cancelled && !closedByApp ? "aborted" : "failed";
     settledError = message;
     // A provider failure settles the Pi session cleanly after its bounded retry
@@ -467,10 +469,11 @@ export async function recoverDurableTurnState(state: LocalApiState): Promise<voi
       continue;
     }
     const detail = appClosedTurnDetail;
+    const partial = record.assistantText.trim();
     const recoveredMessage: ChatMessage = {
       id: randomUUID(),
       role: "assistant",
-      content: record.assistantText.trim() || detail,
+      content: partial || detail,
       createdAt: new Date().toISOString(),
       turnId: record.turnId,
       requestId: record.requestId,
@@ -481,6 +484,7 @@ export async function recoverDurableTurnState(state: LocalApiState): Promise<voi
         provider: null,
         model: null,
         activities: [],
+        ...(partial ? { partialResponse: true as const } : {}),
       },
     };
     let messageId: string | undefined;
@@ -553,15 +557,17 @@ function throwIfTurnCancelled(state: LocalApiState, taskId: string): void {
  * `chat wait`, a parent's follow-up turn, and Automation receipts: the cause
  * in fixed words, then whether anything the turn did before failing was kept.
  */
-function assistantTurnFailureMessage(error: unknown, partialResponsePreserved: boolean): string {
+function assistantTurnFailureMessage(error: unknown, preserved: boolean, partialResponse: boolean): string {
   if (isPiTurnCancelledError(error)) return "The turn was stopped before it finished.";
   if (!(error instanceof PiTurnFailure)) return assistantFailurePublicDetail(error);
   const description = describePiTurnFailure(error);
-  const didWork = error.partialText.trim().length > 0 || error.activities.length > 0;
-  if (!didWork || description.cause === "response_length") return description.text;
-  return partialResponsePreserved
-    ? `${description.text} The partial response and completed tool activity before the failure were kept in the Chat.`
-    : `${description.text} AmpleFile could not save the partial response.`;
+  const activity = error.activities.length > 0;
+  if ((!partialResponse && !activity) || description.cause === "response_length") return description.text;
+  // Says only what was there to keep: a reply so far, completed tool activity, or both.
+  const what = partialResponse && activity ? "The partial response and completed tool activity" : partialResponse ? "The partial response" : "The completed tool activity";
+  return preserved
+    ? `${description.text} ${what} before the failure ${partialResponse && activity ? "were" : "was"} kept in the Chat.`
+    : `${description.text} AmpleFile could not save ${what.charAt(0).toLowerCase()}${what.slice(1)}.`;
 }
 
 function describePiTurnFailure(error: PiTurnFailure) {
@@ -607,14 +613,14 @@ function assistantFailureReason(error: unknown): "provider_error" | "setup_error
   return isModelSetupError(error) ? "setup_error" : "assistant_error";
 }
 
-function assistantFailureTranscriptContent(error: unknown, checkpointText = "", cancelled = false): string {
+/** What an interrupted turn saves as its reply: the model's text so far when there is any, else a placeholder saying what happened. */
+function assistantFailureTranscriptContent(error: unknown, checkpointText = "", cancelled = false): { content: string; partialResponse: boolean } {
   const checkpoint = checkpointText.trim();
-  if (error instanceof PiTurnFailure) {
-    return error.partialText || checkpoint || describePiTurnFailure(error).text;
-  }
-  if (checkpoint) return checkpoint;
-  if (cancelled) return "The agent was stopped before it completed a response.";
-  return assistantFailurePublicDetail(error);
+  const partial = error instanceof PiTurnFailure && error.partialText.trim() ? error.partialText : checkpoint;
+  if (partial) return { content: partial, partialResponse: true };
+  if (error instanceof PiTurnFailure) return { content: describePiTurnFailure(error).text, partialResponse: false };
+  if (cancelled) return { content: "The agent was stopped before it completed a response.", partialResponse: false };
+  return { content: assistantFailurePublicDetail(error), partialResponse: false };
 }
 
 export function assistantFailurePublicDetail(error: unknown): string {

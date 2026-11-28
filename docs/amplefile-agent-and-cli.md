@@ -724,7 +724,17 @@ composes one deterministic follow-up turn in that conversation: a
 outcome, the files it chose, and any question still open beneath it.
 Delivered child turns are recorded so a result is not delivered twice. A
 child result the parent's still-running turn reads with `chat result` or
-`agent result` (the last step of `chat wait`) counts as delivered too.
+`agent result` counts as delivered too, and a status read that shows a
+child waiting only on the person's answer (the last step of `chat wait`
+either way) records those questions as seen, so a child turn whose only
+news is those questions gets no follow-up turn, while a report it files
+afterward still does. Both count only when the read names that turn with
+`--parent-task`:
+`chat status`, `chat result`, `agent status`, and `agent result` accept it,
+and `chat wait` and `agent wait` pass it on to the reads they make. A read
+without it, or naming another turn, records nothing. A child waiting on a
+question for its parent still gets the follow-up turn, where the parent
+answers it.
 Continuations never follow a root Stop, a configured spending-cap failure, or
 a restart, and a person can turn them off in Settings → Automations → Limits.
 Compaction cleanup reevaluates deliveries the Chat deferred, including when
@@ -864,32 +874,40 @@ uncaptured content stay explicit.
 
 `search --connected-folder <id> --query <text> [--scope files|chats|all] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] --json`
 matches a case-insensitive substring in names and streams ordinary text
-files regardless of size. `path` narrows the file portion. The first
-page returns `names` from a separate walk of up to 20,000 eligible entries
-that stops at 500 matches. When the walk reaches the match cap,
-`coverage.names.complete` is false. Use a narrower query or `--path` to
-find remaining names. The walk uses file metadata. Matches carry `path`,
-`name`, and `kind`. Matching symbolic links include the listing's
-`link` detail. The walk skips
-link targets, ignored items, nested Connected Folders, Office lock files,
-and internal metadata.
+files regardless of size. `path` narrows the file portion. Repeat the same
+selection with `nextCursor` until it is null to find every match: each page
+is bounded, and the cursor carries both walks on from where the page stopped.
+
+`names` comes from a walk of file metadata, depth first and by name, that
+visits up to 20,000 eligible entries and returns up to 500 matches per page,
+ahead of that page's text. Later pages continue it, and no name is returned
+twice. Matches carry `path`, `name`, and `kind`. Matching symbolic links
+include the listing's `link` detail. The walk skips link targets, ignored
+items, nested Connected Folders, Office lock files, and internal metadata.
 
 `files` contains text line matches and `chats` contains Chat matches.
 Their page budgets are 200 matches by default (`--limit`), 5,000 visited
 entries or files, 8 MiB of file reads, and 512 KiB of match payload.
-Repeat the same selection with `nextCursor` until it is null. A page can
-advance through a large file without returning a match. The name walk
-runs once and `names` is empty on continuation pages.
+A page can advance through a large file without returning a match. Chats
+are searched in id order.
 
-`coverage.names` reports the first walk's entry count and completeness
-(`null` in Chats-only scope). `coverage.textComplete` reports whether the
-file text and Chat search reached its end without unreadable or changed
-content. `coverage.complete` covers both walks, and `truncated` is its
-inverse. Text coverage counters describe each page, including excluded
-roots and skipped entries. Search reflects live observations. Cursors
-bind the selection and ignore rules, verify active directory and file
-identities, and expire on host restart. Local Search GET uses `q`, `scope`,
-`path`, `limit`, and `cursor` with the same service and request cancellation.
+Search reflects live observations. A folder resumes by name after the last
+entry a page finished, so items added or removed between pages never end the
+search; an item added behind that point is not seen. A folder removed,
+replaced, or turned into a link since a page entered it, a file that changed
+partway through its scan, and a Chat removed or rewritten since, are
+skipped: the text and Chat search counts each in `coverage.changed`, and the
+name walk leaves `coverage.names.complete` false. Neither walk follows a link.
+`coverage.names` reports this page's name-walk entry count and whether the
+whole walk has finished with nothing unreadable or changed (`null` in
+Chats-only scope). `coverage.textComplete` reports whether the file text and
+Chat search reached its end without unreadable or changed content.
+`coverage.complete` covers both walks, and `truncated` is its inverse. Text
+coverage counters describe each page, including excluded roots and skipped
+entries. Cursors bind the query, selection, ignore rules, and nested
+Connected Folders (another search's cursor is refused with a conflict), and
+expire on host restart. Local Search GET uses `q`, `scope`, `path`, `limit`,
+and `cursor` with the same service and request cancellation.
 
 A Connected Folder turn's hidden context includes the actual pre-turn History
 capture: checkpoint id (including deduplicated reuse), captured file count,

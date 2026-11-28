@@ -206,6 +206,12 @@ export function parentPath(path: string): string {
   return index < 0 ? "" : path.slice(0, index);
 }
 
+/** The one folder all `paths` are in, or null when they are in several (or there are none). */
+export function sharedParentPath(paths: readonly string[]): string | null {
+  const parents = new Set(paths.map(parentPath));
+  return parents.size === 1 ? [...parents][0]! : null;
+}
+
 /** Shift-click: every row between the anchor and the clicked row, in shown order. */
 export function rangeSelection(order: readonly string[], anchor: string | null, target: string): string[] {
   const end = order.indexOf(target);
@@ -265,9 +271,11 @@ export function historyTimeLabel(value: string, now: Date = new Date()): string 
 }
 
 /** "3 items", "1 of 12 selected", "2 of 12 selected". */
-export function fileManagerStatusText(total: number, selected: number): string {
-  if (selected > 0) return `${selected} of ${total} selected`;
-  return `${total} ${total === 1 ? "item" : "items"}`;
+export function fileManagerStatusText(total: number, selected: number, options: { partial?: boolean } = {}): string {
+  // A search that stopped early has found at least this many: "200+ items", never a count that reads as all of them.
+  const shown = options.partial ? `${total}+` : `${total}`;
+  if (selected > 0) return `${selected} of ${shown} selected`;
+  return `${shown} ${total === 1 && !options.partial ? "item" : "items"}`;
 }
 
 /**

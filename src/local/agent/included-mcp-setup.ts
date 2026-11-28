@@ -24,10 +24,42 @@ export interface IncludedMcpServer extends IncludedMcpSelection {
   revision: string;
   environmentKeys: string[];
   headerKeys: string[];
+  /** What the connection's last Check established, while it still holds (see `IncludedMcpCheckStore`). */
+  lastCheck?: IncludedMcpLastCheck;
 }
 export interface IncludedMcpOAuthJob { id: string; state: "running" | "connected" | "cancelled" | "failed"; message?: string; }
-export interface IncludedMcpProbe { state: "ready" | "setup_required" | "empty" | "error" | "cancelled"; detail: string; checkedAt: string; tools: number; resources: number; prompts: number; }
+/**
+ * A connection check's evidence. `signIn` is what the check established about
+ * signing in to an HTTP service: it connected with a saved sign-in (`saved`),
+ * connected with none, so the service needs none (`not_needed`), or refused
+ * until someone signs in (`required`). It is null when the check could not
+ * tell (a failure, a cancel, or a service with no sign-in of its own).
+ */
+export interface IncludedMcpProbe { state: "ready" | "setup_required" | "empty" | "error" | "cancelled"; detail: string; checkedAt: string; tools: number; resources: number; prompts: number; signIn: "saved" | "not_needed" | "required" | null; }
+/** What a connection's last Check established, as its row shows it. */
+export interface IncludedMcpLastCheck { state: IncludedMcpProbe["state"]; signIn: IncludedMcpProbe["signIn"]; checkedAt: string; }
+interface StoredCheck extends IncludedMcpLastCheck {
+  /** The definition's revision that was checked. */
+  revision: string;
+  /** Whether a sign-in was saved when the check connected; null when the check did not read it. */
+  credentialPresent: boolean | null;
+}
+/**
+ * Each connection's last Check, kept by the host rather than by the dialog
+ * that ran it, so every setup session and every window shows it. Keyed by the
+ * definition's file and name. A check stands while the definition's revision
+ * is the one checked and, when a listing reads credentials, while a sign-in is
+ * saved exactly when one was at the check; every change AmpleFile makes to
+ * the definition or its sign-in (save, Turn On or Off, Use Token, Disconnect,
+ * a completed Sign In, Remove) forgets it. It lives as long as the app does.
+ */
+export type IncludedMcpCheckStore = Map<string, StoredCheck>;
+const sharedChecks: IncludedMcpCheckStore = new Map();
+/** A store of its own, for a test; the app shares one across every setup session. */
+export function createIncludedMcpCheckStore(): IncludedMcpCheckStore { return new Map(); }
 export interface IncludedMcpSetupOptions extends IncludedMcpPaths {
+  /** Where last checks are kept; defaults to the one store the whole app shares. */
+  checks?: IncludedMcpCheckStore;
   credentials?: CredentialStore;
   providerToken?: (provider: string) => Promise<string | undefined>;
   openAuthorizationUrl(url: string): void | Promise<void>;
@@ -117,6 +149,15 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
   const credentials = options.credentials ? Promise.resolve(options.credentials) : createPersistentPiAuthStorage(paths).then((store) => store.credentials);
   const jobs = new Map<string, { public: IncludedMcpOAuthJob; selection: IncludedMcpSelection; controller: AbortController; settled: Promise<void> }>();
   const probes = new Map<AbortController, Promise<void>>();
+  const checks = options.checks ?? sharedChecks;
+  const checkKey = (selection: Pick<IncludedMcpSelection, "scope" | "name">) => `${includedMcpConfigPath(paths, selection.scope)}\0${selection.name}`;
+  const forgetCheck = (selection: Pick<IncludedMcpSelection, "scope" | "name">) => { checks.delete(checkKey(selection)); };
+  /** Keeps what a check found; a failed check supersedes an earlier success, and a cancelled one changes nothing. */
+  const rememberCheck = (selection: IncludedMcpSelection, checkedRevision: string, probe: IncludedMcpProbe, credentialPresent: boolean | null) => {
+    if (probe.state === "cancelled") return;
+    if (probe.state === "error") { forgetCheck(selection); return; }
+    checks.set(checkKey(selection), { state: probe.state, signIn: probe.signIn, checkedAt: probe.checkedAt, revision: checkedRevision, credentialPresent });
+  };
   let disposed = false;
   let oauthStartQueue: Promise<void> = Promise.resolve();
   function assertOpen() { if (disposed) throw new Error("This connection setup has closed."); }
@@ -139,9 +180,28 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
       job.public.state = "cancelled"; job.controller.abort(); await job.settled;
     }
   }
+  /** Whether a sign-in is saved for this definition: a bearer token, or native OAuth tokens. Reads the credential store. */
+  async function savedSignIn(source: string, name: string, config: McpServerConfig & { url: string }): Promise<{ present: boolean; bearer: boolean }> {
+    const id = credentialId(source, name, config);
+    const saved = await (await credentials).read(id);
+    const bearer = saved?.type === "api_key";
+    return { present: bearer || Boolean(oauth.tokens(id, config.url)), bearer };
+  }
+  /** The row's last check while it still holds: the same revision, and, when credentials were read, the same saved sign-in. */
+  function standingCheck(selection: Pick<IncludedMcpSelection, "scope" | "name">, currentRevision: string, credential: IncludedMcpServer["credential"]): IncludedMcpLastCheck | null {
+    const stored = checks.get(checkKey(selection));
+    if (!stored) return null;
+    const readNow = credential === "present" || credential === "missing";
+    if (stored.revision !== currentRevision || (readNow && stored.credentialPresent !== null && (credential === "present") !== stored.credentialPresent)) {
+      forgetCheck(selection);
+      return null;
+    }
+    return { state: stored.state, signIn: stored.signIn, checkedAt: stored.checkedAt };
+  }
   async function mutate<T>(selection: IncludedMcpSelection, operation: () => Promise<T>): Promise<T> {
     assertOpen(); if (selection.expectedRevision !== undefined) await selected(selection); await cancelFor(selection);
-    const run = async () => { assertOpen(); return operation(); };
+    // Any change AmpleFile makes to a definition or its sign-in ends what its last check established.
+    const run = async () => { assertOpen(); const value = await operation(); forgetCheck(selection); return value; };
     return options.withMutation ? options.withMutation(selection, run) : run();
   }
   return {
@@ -155,22 +215,27 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
           let auth: IncludedMcpServer["auth"] = http ? config.auth?.provider ? "provider" : "automatic" : "none";
           if (inspectCredentials && http) {
             try {
-              const id = credentialId(source, name, config);
-              const saved = await (await credentials).read(id);
-              const tokens = oauth.tokens(id, config.url);
-              auth = saved?.type === "api_key" ? "bearer" : config.auth?.provider ? "provider" : "automatic";
-              credential = saved?.type === "api_key" || tokens ? "present" : "missing";
+              const saved = await savedSignIn(source, name, config);
+              auth = saved.bearer ? "bearer" : config.auth?.provider ? "provider" : "automatic";
+              credential = saved.present ? "present" : "missing";
             } catch { credential = "unavailable"; }
           }
+          const lastCheck = standingCheck({ scope, name }, revision(config), credential);
           results.push({ scope, name, path, ...(override ? { inherited: true } : {}), transport: http ? "http" : "stdio", endpoint: endpoint(config), disabled: config.enabled === false, auth, credential,
-            exposure: config.exposure ?? "codemode", revision: revision(config), environmentKeys: "env" in config ? Object.keys(config.env ?? {}) : [], headerKeys: http ? Object.keys(config.headers ?? {}) : [] });
+            exposure: config.exposure ?? "codemode", revision: revision(config), environmentKeys: "env" in config ? Object.keys(config.env ?? {}) : [], headerKeys: http ? Object.keys(config.headers ?? {}) : [],
+            ...(lastCheck ? { lastCheck } : {}) });
         }
       }
       return results;
     },
+    /** The connection's last check as its row shows it, or null when none stands. */
+    lastCheck(selection: Pick<IncludedMcpSelection, "scope" | "name">): IncludedMcpLastCheck | null {
+      const stored = checks.get(checkKey(selection));
+      return stored ? { state: stored.state, signIn: stored.signIn, checkedAt: stored.checkedAt } : null;
+    },
     async probe(selection: IncludedMcpSelection, { signal }: { signal?: AbortSignal } = {}): Promise<IncludedMcpProbe> {
       const { entry, definition } = await selected(selection);
-      const empty = { checkedAt: new Date().toISOString(), tools: 0, resources: 0, prompts: 0 };
+      const empty = { checkedAt: new Date().toISOString(), tools: 0, resources: 0, prompts: 0, signIn: null };
       if (definition.enabled === false) return { ...empty, state: "setup_required", detail: "Enable this service to check its connection." };
       const store = await credentials; assertOpen();
       const controller = new AbortController(); const owned = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000), ...(signal ? [signal] : [])]);
@@ -185,10 +250,20 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
         if (revision((await selected(selection)).definition) !== revision(definition)) return { ...empty, state: "error", detail: "This service changed while it was being checked. Check it again." };
         const counts = { tools: connection.tools.length, resources: resources.length, prompts: 0 };
         const usable = counts.tools + counts.resources > 0;
-        return { ...empty, ...counts, state: usable ? "ready" : "empty", detail: usable ? "The service initialized successfully and its capabilities are available." : "The service connected but did not advertise tools or resources." };
+        // A service AmpleFile signs in to itself (HTTP, no AI Models provider) connected: with a saved sign-in, or with none, so it needs none.
+        const present = "url" in definition && !definition.auth?.provider
+          ? await savedSignIn(entry.source, selection.name, definition).then((saved) => saved.present, () => null)
+          : null;
+        const signIn = present === null ? null : present ? "saved" as const : "not_needed" as const;
+        const result: IncludedMcpProbe = { ...empty, ...counts, signIn, state: usable ? "ready" : "empty", detail: usable ? "The service initialized successfully and its capabilities are available." : "The service connected but did not advertise tools or resources." };
+        rememberCheck(selection, revision(definition), result, present);
+        return result;
       } catch {
         const cancelled = controller.signal.aborted || signal?.aborted;
-        return { ...empty, state: cancelled ? "cancelled" : connection.state === "needs-auth" ? "setup_required" : "error", detail: cancelled ? "Connection check cancelled." : owned.aborted ? "The service did not respond within 15 seconds." : "The service could not complete MCP initialization. Check its command or URL and sign-in settings." };
+        const needsSignIn = !cancelled && connection.state === "needs-auth";
+        const result: IncludedMcpProbe = { ...empty, state: cancelled ? "cancelled" : needsSignIn ? "setup_required" : "error", ...(needsSignIn ? { signIn: "required" as const } : {}), detail: cancelled ? "Connection check cancelled." : needsSignIn ? "The service needs you to sign in before it can be used." : owned.aborted ? "The service did not respond within 15 seconds." : "The service could not complete MCP initialization. Check its command or URL and sign-in settings." };
+        rememberCheck(selection, revision(definition), result, null);
+        return result;
       } finally { owned.removeEventListener("abort", abort); controller.abort(); await connection.close(); probes.delete(controller); finished(); }
     },
     async saveServer(input: IncludedMcpSelection & { definition: McpServerConfig }): Promise<void> {
@@ -267,6 +342,7 @@ export function createIncludedMcpSetup(options: IncludedMcpSetupOptions) {
             await (await credentials).delete(credentialId(entry.source, selection.name, definition)); controller.signal.throwIfAborted(); await store.save(staged);
           }); };
           if (options.withMutation) await options.withMutation(selection, commit); else await commit();
+          forgetCheck(selection);
           job.public = { id: job.public.id, state: "connected" };
         } catch { job.public = { id: job.public.id, state: controller.signal.aborted ? "cancelled" : "failed", ...(controller.signal.aborted ? {} : { message: "The service could not complete authorization. Check its URL and OAuth configuration, then try again." }) }; }
         finally { await connection.close(); }

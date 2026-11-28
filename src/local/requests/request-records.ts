@@ -353,6 +353,14 @@ export interface AmpleFileRequestRecord {
   /** Finished jobs whose end already reached the Chat, by any path. */
   deliveredJobIds?: string[];
   /**
+   * Questions its children asked that this request's own running turn has
+   * seen (a status read naming that turn). Kept apart from delivered child
+   * turns: a seen question is not repeated in a follow-up turn, while
+   * anything else its child turn leaves, such as a report filed after an
+   * asynchronous question, still is. Absent until the first one.
+   */
+  seenQuestionIds?: string[];
+  /**
    * The checklist the agent keeps for this request: what it
    * plans to do and how far it got. The host keeps it, shows it to the
    * person, and hands it back to every later turn of the request.
@@ -873,7 +881,7 @@ export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRec
       "createdAt", "updatedAt", "settledAt", "deadline", "state", "turns", "childRequestIds", "questionIds", "results",
       "usage", "continuationCount", "stopRequestedAt", "limitHit", "reconciledAt", "remote", "content", "attachments",
       "actions", "continuedFromTaskId", "assignment", "deliveredChildTaskIds", "continuationState",
-      "jobs", "deliveredJobIds", "checklist",
+      "jobs", "deliveredJobIds", "seenQuestionIds", "checklist",
     ],
     label,
   );
@@ -966,6 +974,12 @@ export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRec
   if (record.deliveredJobIds !== undefined) {
     parsed.deliveredJobIds = stringArray(record.deliveredJobIds, `${label} delivered background jobs`).map((id) => {
       if (!ampleFileJobRefIdPattern.test(id)) throw new Error(`${label} delivered background job id is invalid.`);
+      return id;
+    });
+  }
+  if (record.seenQuestionIds !== undefined) {
+    parsed.seenQuestionIds = stringArray(record.seenQuestionIds, `${label} seen questions`).map((id) => {
+      if (!ampleFileQuestionIdPattern.test(id)) throw new Error(`${label} seen question id is invalid.`);
       return id;
     });
   }

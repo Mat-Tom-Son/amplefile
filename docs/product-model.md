@@ -584,17 +584,23 @@ other surface.
 - **Search** reads names and contents. A scope bar offers **All Connected
   Folders** (while any exist) or the folder shown; results list name
   matches, then text matches with the words around them, in Name, Match, and
-  Connected Folder columns. Connected Folder search checks up to 20,000
-  entries for names, including links, and stops at 500 name matches. It reads
-  a separate bounded page of file text. The window shows the matches it found.
-  The CLI's `coverage` reports what the search left out.
-  In a Standard Folder or any other folder the host's folder search reads
-  names and file text below the folder shown. That list has a Where column.
-  Hidden items are searched only while
-  Show Hidden Files is on. It reads a bounded amount at a time: when it
-  stops early it says so ("Search stopped after a few seconds, having read
-  20,000 files.") with **Keep Searching**, and it says when some folders
-  could not be read. Connected Folders inside are left to their own search,
+  Connected Folder columns. In a Standard Folder or any other folder the
+  host's folder search reads names and file text below the folder shown,
+  and that list has a Where column; hidden items there are searched only
+  while Show Hidden Files is on. Search finds everything: the host answers a
+  bounded page at a time (a Connected Folder's names, links included, up to
+  20,000 entries or 500 matches a page, its file text up to 200 matches a
+  page), and the window asks for the next page itself until the search
+  reaches its end, adding matches as they arrive, names first. While it
+  runs, a note at the foot of the results says so with **Stop**, and the
+  path bar counts what it has found ("Searching… 240 found"). Stopped, or
+  paused after 10,000 matches so a runaway search never fills memory, it
+  says so with **Keep Searching**, and the path bar counts with a plus
+  ("240+ items"). The note stays in view however far down the results go,
+  and the list draws only the rows in view, so thousands of results scroll
+  quickly. Search says when something was skipped because it could not be
+  read or changed during the search. Connected Folders inside a plain
+  folder are left to their own search,
   which applies their rules, and the results say so with **Search All
   Connected Folders**. Selection is accent-colored while the contents have
   focus. Where a Worker exists (in a Connected Folder, or searching all of
@@ -659,7 +665,7 @@ other surface.
   files, each only while it is still as the turn left it; a file changed
   again since stays as it is, and the notice says how many were kept. Undo
   takes its own restore point first, so ⇧⌘Z redoes it.
-- **Set Up for Me:** right after a folder is connected, Info opens with a
+- **Set Up for Me:** right after a folder is first connected, Info opens with a
   card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
   Thanks**. Either answer closes the card for good; the card is the only
   place the window offers it ([Set Up for Me](#set-up-for-me)). With no AI
@@ -789,10 +795,12 @@ The included tools' setup works with or without a Connected Folder.
 
 ### Set Up for Me
 
-**Set Up for Me** is offered once for each Connected Folder, on the card
-Info shows right after the folder is connected, whichever way it was
-connected: New Connected Folder, Connect Folder, Connect This Folder, or
-first run. It starts a new Chat in the panel with one message, and the
+**Set Up for Me** is offered once for each Connected Folder identity, on the
+card Info shows right after the folder is first connected, whichever way it
+was connected: New Connected Folder, Connect Folder, Connect This Folder, or
+first run. A folder that already carries its identity is not offered it
+again: one moved and connected at its new path, or disconnected and
+connected again, had its offer when the identity was made. It starts a new Chat in the panel with one message, and the
 included `set-up-connected-folder` Skill does the rest: it looks the folder
 over, organizes it when that helps (moves and renames only, never deletes,
 each through a restore-pointed `amplefile files` verb that refuses to

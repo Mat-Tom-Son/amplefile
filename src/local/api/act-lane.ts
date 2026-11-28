@@ -137,6 +137,7 @@ import {
   assertRequestsAboveConnectedFolders,
   collaborationRefusal,
   conversationResultForScope,
+  noteChildQuestionsSeenByRunningParent,
   readReportDataFile,
   requestDetailView,
   requestLimitRefusalMessage,
@@ -557,10 +558,13 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       // by, and a question another Connected Folder's agent asked is that Connected Folder's
       // content, never this caller's (docs/collaboration-contract.md).
       const owned = record !== null && record.owner.connectedFolderId === connectedFolder.id;
+      const waiting = owned ? waitingRefForTask(state, taskId) : null;
+      // A parent's own running turn that sees its child waiting on the person has seen those questions.
+      if (waiting && input.parentTaskId) await noteChildQuestionsSeenByRunningParent(state, taskId, input.parentTaskId);
       return {
         connectedFolder: toActConnectedFolderRef(connectedFolder),
         task,
-        waiting: owned ? waitingRefForTask(state, taskId) : null,
+        waiting,
         request: owned ? toActRequestRefForConnectedFolder(state, record) : null,
       };
     },
@@ -568,7 +572,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const taskId = input.taskId.trim();
       if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
-      const result = await turnResultForScope(state, connectedFolder.id, connectedFolder.connectedFolderRoot, taskId);
+      const result = await turnResultForScope(state, connectedFolder.id, connectedFolder.connectedFolderRoot, taskId, input.parentTaskId);
       return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
     },
     // --- the collaboration verbs (docs/collaboration-contract.md) ---
@@ -1229,7 +1233,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       if (!rootPath || !isAbsolute(rootPath)) {
         throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
-      const connectedFolder = await runActOperation(() => registerConnectedFolderInternal(state, rootPath));
+      const { connectedFolder } = await runActOperation(() => registerConnectedFolderInternal(state, rootPath));
       await recordLandedAction(state, input.parentTaskId, {
         command: "connected-folders.register",
         at: new Date().toISOString(),
@@ -1891,10 +1895,13 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const taskId = input.taskId.trim();
       if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
       const record = state.requests.byTaskId(taskId);
+      const waiting = waitingRefForTask(state, taskId);
+      // A parent's own running turn that sees its child waiting on the person has seen those questions.
+      if (waiting && input.parentTaskId) await noteChildQuestionsSeenByRunningParent(state, taskId, input.parentTaskId);
       return {
         task: turnStatusFor(state, ampleFileAgentScopeId, taskId),
         request: await ampleFileAgentRequestView(state, taskId),
-        waiting: waitingRefForTask(state, taskId),
+        waiting,
         requestGraph: record ? toActRequestRef(state, record) : null,
       };
     },
@@ -1918,7 +1925,7 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const taskId = input.taskId.trim();
       if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
       const scope = ampleFileAgentScope(state);
-      return turnResultForScope(state, scope.id, scope.rootPath, taskId);
+      return turnResultForScope(state, scope.id, scope.rootPath, taskId, input.parentTaskId);
     },
     async agentAbort(input) {
       const scope = ampleFileAgentScope(state);

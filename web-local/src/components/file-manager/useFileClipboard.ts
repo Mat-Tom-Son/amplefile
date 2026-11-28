@@ -29,7 +29,6 @@ export interface FileClipboardContext {
   /** The folder list: the Edit menu's Cut, Copy, and Paste act on it only while it has the keyboard. */
   contentRef: RefObject<HTMLDivElement | null>;
   changes: FileChanges;
-  nameOfPlace: (place: FileManagerPlace) => string;
   onError: (message: string | null) => void;
 }
 
@@ -41,7 +40,7 @@ export interface FileClipboardContext {
  * copied here and the other way around.
  */
 export function useFileClipboard(context: FileClipboardContext) {
-  const { fixtureMode, place, placeRoot, location, contentRef, changes, nameOfPlace, onError } = context;
+  const { fixtureMode, place, placeRoot, location, contentRef, changes, onError } = context;
   const fileClipboardRef = useRef<FileClipboardContents | null>(null);
   // What is cut in any window, as paths on disk, as the desktop host last said; drawn dimmed in every window.
   const [desktopCut, setDesktopCut] = useState<ReadonlySet<string> | null>(null);
@@ -158,7 +157,7 @@ export function useFileClipboard(context: FileClipboardContext) {
       if (result.copiedInstead) showToast({ text: `Copied ${label}. The original stays where it was.`, tone: "info" });
       else if (moved) {
         // A plain move says nothing, as Finder's does; one that left something behind says so.
-        const message = moveResultMessage(label, where, from ? nameOfPlace(from.place) : "the original folder", result);
+        const message = moveResultMessage(label, where, from ? changes.sourceFolderLabel(from.place, from.paths) : "the original folder", result);
         if (!said && (message.tone !== "success" || message.text.includes("Recently Deleted"))) showToast(message);
       }
     } catch (caught) {

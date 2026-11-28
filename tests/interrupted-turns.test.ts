@@ -122,6 +122,7 @@ test("quitting mid-turn records an app interruption, and Continue starts an ordi
   const reply = transcript.messages.find((message) => message.role === "assistant" && message.turnId === sent.taskId)!;
   assert.equal(reply.interruption?.reason, "app_interrupted");
   assert.match(reply.interruption!.message, /AmpleFile closed before this turn finished/);
+  assert.equal((reply.interruption as { partialResponse?: true }).partialResponse, undefined, "a turn that only ran a tool saved no reply text, and says so");
 
   // Continue is the person's ordinary message; the model sees no bare filler.
   faux.setResponses([fauxAssistantMessage("Picked up where I left off.")]);

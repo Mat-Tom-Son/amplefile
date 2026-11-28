@@ -155,6 +155,21 @@ test("chat store preserves interrupted assistant output and completed activity",
   assert.deepEqual(await readConversation(connectedFolderRoot, "chat-interrupted"), [assistantMessage]);
 });
 
+test("chat store keeps the saved-reply mark only when it is exactly true", async (t) => {
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-partial-response-"));
+  t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
+  const interruption = { reason: "cancelled" as const, message: "The agent was stopped before it completed this response.", retryAttempts: 0, provider: null, model: null, activities: [] };
+  const kept: ChatMessage = { id: "assistant-partial-1", role: "assistant", content: "I moved the first two", createdAt: "2026-01-01T00:00:01Z", interruption: { ...interruption, partialResponse: true } };
+  const placeholder: ChatMessage = { id: "assistant-partial-2", role: "assistant", content: "The agent was stopped before it completed a response.", createdAt: "2026-01-01T00:00:02Z", interruption };
+  const malformed = { id: "assistant-partial-3", role: "assistant", content: "Stopped.", createdAt: "2026-01-01T00:00:03Z", interruption: { ...interruption, partialResponse: "yes" } } as unknown as ChatMessage;
+  for (const message of [kept, placeholder, malformed]) await appendMessage(connectedFolderRoot, "chat-partial", message);
+  const [readKept, readPlaceholder, readMalformed] = await readConversation(connectedFolderRoot, "chat-partial");
+  assert.equal(readKept!.interruption?.partialResponse, true);
+  assert.deepEqual(readPlaceholder, placeholder, "a record without the mark, as older builds wrote, reads back unchanged");
+  assert.equal(readMalformed!.interruption?.reason, "cancelled", "a malformed mark keeps the interruption itself");
+  assert.equal("partialResponse" in readMalformed!.interruption!, false, "and claims no saved reply");
+});
+
 test("chat store preserves bounded thinking and tool trails on successful replies", async (t) => {
   const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-work-trail-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));

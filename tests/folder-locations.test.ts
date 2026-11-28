@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -258,6 +258,43 @@ test("the window's routes work in the computer place as in a Standard Folder", a
   // Go to Folder opens any folder and completes names outside the places too.
   const goTo = await json(`/api/go-to-folder?path=${encodeURIComponent(`${work}/In`)}`);
   assert.deepEqual((goTo.body.suggestions as Array<{ name: string }>).map((item) => item.name), ["Inbox", "Inbox.zip"]);
+});
+
+test("Connect This Folder says whether it made a new Connected Folder identity, so Set Up for Me is offered once per identity", async (t) => {
+  const root = await sandbox(t, "folder-locations-identity-");
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false });
+  t.after(async () => { await api.close(); configureAmpleFileStateRoot(undefined); });
+  const work = join(root, "work");
+  await mkdir(join(work, "QA Relink"), { recursive: true });
+  const connect = async (folder: string) => {
+    const answer = await fetch(`${api.origin}/api/standard-folders/${computerFolderId}/connected-folders`, {
+      method: "POST", headers: { "content-type": "application/json", origin: "http://localhost:5173" }, body: JSON.stringify({ path: onDisk(join(work, folder)) }),
+    });
+    assert.equal(answer.status, 201);
+    return await answer.json() as { connectedFolder: { id: string; connectedFolderRoot: string }; newIdentity: boolean };
+  };
+
+  // Two windows connecting the same folder at once: the registry decides, so exactly one of them made the identity.
+  await mkdir(join(work, "Twice"));
+  const twice = await Promise.all([connect("Twice"), connect("Twice")]);
+  assert.equal(twice[0].connectedFolder.id, twice[1].connectedFolder.id);
+  assert.deepEqual(twice.map((answer) => answer.newIdentity).sort(), [false, true], "only one connect claims the new identity");
+
+  const first = await connect("QA Relink");
+  assert.equal(first.newIdentity, true, "the first connect makes the identity");
+
+  // Renamed in Finder, then connected again at its new path: the same identity, not a new one.
+  await rename(join(work, "QA Relink"), join(work, "QA Relink Moved"));
+  const relinked = await connect("QA Relink Moved");
+  assert.equal(relinked.connectedFolder.id, first.connectedFolder.id);
+  assert.equal(relinked.connectedFolder.connectedFolderRoot, join(work, "QA Relink Moved"));
+  assert.equal(relinked.newIdentity, false, "a folder moved and linked again had its offer when it was first connected");
+
+  // Disconnected, then connected again: its portable identity came with it.
+  assert.equal((await fetch(`${api.origin}/api/connected-folders/${first.connectedFolder.id}`, { method: "DELETE", headers: { origin: "http://localhost:5173" } })).status, 200);
+  const reconnected = await connect("QA Relink Moved");
+  assert.equal(reconnected.connectedFolder.id, first.connectedFolder.id);
+  assert.equal(reconnected.newIdentity, false);
 });
 
 test("the disk's top lists its links and hidden entries on request, as every other listing does", async () => {
