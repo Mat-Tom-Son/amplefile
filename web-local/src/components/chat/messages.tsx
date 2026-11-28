@@ -15,6 +15,7 @@ import { FluentGlyph } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type ConnectedFolderPathLinkResolver } from "./activity";
 import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
+import { interruptionCopy } from "./interruption-copy";
 import { SafeMarkdownAnchor } from "./SafeMarkdownAnchor";
 
 export type { ConnectedFolderPathLinkResolver };
@@ -93,7 +94,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     };
   }, [message.content, message.id, message.role, opensFiles, resolveConnectedFolderPathLinks, connectedFolderLinkCacheKey]);
 
-  if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with the results from delegated work.</p>;
+  if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with results or questions from delegated work.</p>;
   if (message.kind === "context_compaction") return <p className="work-continuation" role="note">{message.content}</p>;
 
   return (
@@ -119,7 +120,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           ? <TurnFiles files={changedFiles} resolveConnectedFolderPathLinks={resolveConnectedFolderPathLinks} onOpenConnectedFolderFile={onOpenConnectedFolderFile} />
           : null}
         {message.role === "assistant" && showLanding && message.landing ? <TurnLanding landing={message.landing} /> : null}
-        {message.role === "assistant" && message.interruption ? <InterruptedTurn interruption={message.interruption} onContinue={onContinue} /> : null}
+        {message.role === "assistant" && message.interruption ? <InterruptedTurn interruption={message.interruption} steps={savedRuntimePreviews.some((entry) => entry.kind === "tool")} onContinue={onContinue} /> : null}
       </div>
       <footer className="message-footer">
         <span className="message-footer-meta">
@@ -294,50 +295,26 @@ function ContinueButton({ onContinue }: { onContinue?: () => void }) {
   return <button className="ui-control turn-interruption-continue" type="button" onClick={onContinue}>Continue</button>;
 }
 
-function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullable<ChatMessage["interruption"]>; onContinue?: () => void }) {
+function InterruptedTurn({ interruption, steps, onContinue }: { interruption: NonNullable<ChatMessage["interruption"]>; steps: boolean; onContinue?: () => void }) {
+  const copy = interruptionCopy(interruption, { steps, canContinue: Boolean(onContinue) });
   if (interruption.reason === "setup_error") {
     return (
       <section className="turn-interruption turn-interruption--setup" role="status" aria-label="Worker setup needed">
-        <strong>Connect Your AI to Continue</strong>
-        <span>Sign in with ChatGPT, Claude, or OpenRouter, or paste an API key.</span>
+        <strong>{copy.heading}</strong>
+        <span>{copy.text}</span>
         <button className="ui-control ui-control--primary" type="button" onClick={() => requestConnectAi()}>Connect AI</button>
       </section>
     );
   }
-  if (interruption.reason === "assistant_error") {
-    return (
-      <section className="turn-interruption" role="status" aria-label="Failed Worker response">
-        <strong>Request Stopped</strong>
-        <span>AmpleFile saved this result with your Chat.{onContinue ? " Continue whenever you’re ready." : ""}</span>
-        <ContinueButton onContinue={onContinue} />
-      </section>
-    );
-  }
-  if (interruption.reason === "cancelled") {
-    return (
-      <section className="turn-interruption" role="status" aria-label="Stopped Worker response">
-        <strong>Response Stopped</strong>
-        <span>AmpleFile saved the response produced before you stopped the Worker.</span>
-      </section>
-    );
-  }
-  if (interruption.reason === "app_interrupted") {
-    return (
-      <section className="turn-interruption" role="status" aria-label="Worker response interrupted by app close">
-        <strong>App Interrupted This Response</strong>
-        <span>AmpleFile saved the partial response and did not rerun the turn because tools may already have changed something.</span>
-        <ContinueButton onContinue={onContinue} />
-      </section>
-    );
-  }
-  const retryText = interruption.retryAttempts > 0
-    ? interruption.retryAttempts === 1 ? "1 automatic retry was attempted." : `${interruption.retryAttempts} automatic retries were attempted.`
-    : "The provider did not identify this as safely retryable.";
+  const label = interruption.reason === "assistant_error" ? "Failed Worker response"
+    : interruption.reason === "cancelled" ? "Stopped Worker response"
+    : interruption.reason === "app_interrupted" ? "Worker response interrupted by app close"
+    : "Interrupted Worker response";
   return (
-    <section className="turn-interruption" role="status" aria-label="Interrupted Worker response">
-      <strong>Response Interrupted</strong>
-      <span>AmpleFile preserved the partial response. {retryText}</span>
-      <ContinueButton onContinue={onContinue} />
+    <section className="turn-interruption" role="status" aria-label={label}>
+      <strong>{copy.heading}</strong>
+      <span>{copy.text}</span>
+      {interruption.reason === "cancelled" ? null : <ContinueButton onContinue={onContinue} />}
     </section>
   );
 }

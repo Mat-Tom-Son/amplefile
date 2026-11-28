@@ -178,7 +178,7 @@ test("a selected file's Info asks for its date without hashing it", async (t) =>
   assert.equal(new URL(info.path, "http://local").searchParams.get("hash"), "0");
 });
 
-test("Connected Folder search shows matches and empty results without a coverage note", async (t) => {
+test("Connected Folder search keeps going until it has found everything, and says when something was skipped", async (t) => {
   const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => {
     if (!path.startsWith("/api/connected-folders/lab/search?")) return undefined;
     const query = new URL(path, "http://local").searchParams.get("q");
@@ -191,7 +191,14 @@ test("Connected Folder search shows matches and empty results without a coverage
       return { names: [], files: [], truncated: !complete,
         coverage: { names: { visitedEntries: 2, complete }, textComplete: complete, complete } };
     }
+    // Held until the person stops it.
+    if (query === "Held") return new Promise(() => undefined);
     if (query !== "Sales") return undefined;
+    // The window asks for the next page by itself; it carries a deeper name and more text.
+    if (new URL(path, "http://local").searchParams.get("cursor") === "text-page-2") return {
+      query, names: [{ kind: "file", name: "Sales deep.md", path: "deep/z/Sales deep.md" }], files: [{ path: "b.md", line: 3, preview: "more Sales" }],
+      truncated: false, nextCursor: null, coverage: { names: { visitedEntries: 9, complete: true }, textComplete: true, complete: true },
+    };
     return { query, names: [
       { kind: "folder", name: "Sales Archive", path: "Sales Archive" },
       { kind: "file", name: " sales & ops.txt ", path: "deep/2026/November/Sales Archive/ sales & ops.txt " },
@@ -217,23 +224,38 @@ test("Connected Folder search shows matches and empty results without a coverage
   });
   const rows = () => [...dom.container.querySelectorAll("[data-fm-result]")];
   await searchFor("Sales");
-  await dom.waitFor(() => rows().length === 4);
-  assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "Sales link", "a.md"]);
-  assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Name", "Sales report"]);
+  await dom.waitFor(() => rows().length === 6);
+  assert.ok(requests.some((item) => item.path.includes("cursor=text-page-2")), "the next page was asked for without a click");
+  // Every name first, wherever its page came from, then every text match.
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-row-name")?.textContent), ["Sales Archive", " sales & ops.txt ", "Sales link", "Sales deep.md", "a.md", "b.md"]);
+  assert.deepEqual(rows().map((row) => row.querySelector(".fm-col-match")?.textContent), ["Name", "Name", "Name", "Name", "Sales report", "more Sales"]);
   assert.equal(rows()[1]?.querySelector(".fm-row-name")?.getAttribute("title"), "deep/2026/November/Sales Archive/ sales & ops.txt ");
   assert.ok(rows()[2]?.querySelector(".fm-link-badge"));
   await dom.act(() => rows()[2]?.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true })));
   assert.deepEqual(opened, [[{ kind: "connected-folder", id: lab.id }, "deep/Sales link", "open"]]);
-  assert.ok(!dom.container.querySelector(".fm-search-note"), "text coverage is incomplete");
+  await dom.waitFor(() => !dom.container.querySelector(".fm-search-note"));
+  assert.equal(dom.container.querySelector(".fm-status")?.textContent, "6 items", "the search reached its end");
+
+  // A new search shows only its own results, even when it is stopped before its first page arrives.
+  await searchFor("Held");
+  await dom.waitFor(() => rows().length === 0);
+  const stopButton = () => [...dom.container.querySelectorAll<HTMLButtonElement>(".fm-search-note button")].find((item) => item.textContent === "Stop");
+  await dom.waitFor(() => !!stopButton());
+  await dom.act(() => { stopButton()!.click(); });
+  assert.equal(rows().length, 0, "no other query's results come back on Stop");
+  assert.equal(dom.container.querySelector(".fm-status")?.textContent, "Search stopped");
+  assert.equal(dom.container.querySelector(".fm-search-note")?.textContent, "Search stopped. There may be more matches.Keep Searching");
 
   await searchFor("Complete");
   await dom.waitFor(() => rows()[0]?.querySelector(".fm-row-name")?.textContent === "Complete.md");
   assert.ok(!dom.container.querySelector(".fm-search-note"), "both walks are complete");
 
-  for (const query of ["Missing", "Absent"]) {
-    await searchFor(query);
-    await dom.waitFor(() => dom.container.querySelector(".fm-empty")?.textContent === `No names or text match “${query}”`);
-    assert.ok(!dom.container.querySelector(".fm-search-note"), `${query} has no matches`);
-  }
+  // Something it could not read: never "no matches", but said plainly.
+  await searchFor("Missing");
+  await dom.waitFor(() => /Some items were skipped/.test(dom.container.querySelector(".fm-search-note")?.textContent ?? ""));
+  assert.equal(dom.container.querySelector(".fm-empty"), null);
+  await searchFor("Absent");
+  await dom.waitFor(() => dom.container.querySelector(".fm-empty")?.textContent === "No names or text match “Absent”");
+  assert.ok(!dom.container.querySelector(".fm-search-note"), "Absent has no matches");
   assert.equal(requests.filter((item) => item.path.includes("/tree")).length, before);
 });

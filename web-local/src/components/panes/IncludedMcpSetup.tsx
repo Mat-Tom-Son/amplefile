@@ -1,6 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import type { IncludedMcpServer, IncludedMcpOAuthJob } from "../../../../src/local/agent/included-mcp-setup";
+import type { IncludedMcpServer, IncludedMcpOAuthJob, IncludedMcpProbe, IncludedMcpLastCheck } from "../../../../src/local/agent/included-mcp-setup";
 import { api, errorText } from "../../lib/api";
+
+/**
+ * A connection's status on its row. Its last check, which the host keeps with
+ * the connection until its definition or sign-in changes, says what it
+ * established (connected, and whether a sign-in was used or is needed);
+ * otherwise the row says what is configured and saved. A sign-in is never
+ * called required until a check found the service refusing without one.
+ */
+export function serviceConnectionStatus(server: IncludedMcpServer, check: Pick<IncludedMcpLastCheck, "state" | "signIn"> | null = server.lastCheck ?? null): string {
+  if (server.disabled) return "Turned Off";
+  if (server.auth === "provider") return "Uses AI Models Connection";
+  if (server.inherited) return "Uses Everywhere Connection";
+  const connected = check?.state === "ready" || check?.state === "empty";
+  if (server.auth === "none") return connected ? "Connected · No Sign-In Required" : "No Sign-In Required";
+  if (check?.signIn === "required") return "Needs Sign-In";
+  if (connected) return check.signIn === "saved" ? "Connected · Signed In" : check.signIn === "not_needed" ? "Connected · No Sign-In Needed" : "Connected";
+  if (server.credential === "present") return "Signed In";
+  if (server.credential === "not_checked") return "Sign-In Unknown Until Checked";
+  if (server.credential === "unavailable") return "Secure Storage Unavailable";
+  return server.auth === "automatic" ? "No Saved Sign-In" : "Not Signed In";
+}
 
 export function IncludedMcpSetup({ connectedFolderId, enabled }: { connectedFolderId: string; enabled: boolean }) {
   const [opened, setOpened] = useState(false);
@@ -36,7 +57,7 @@ export function IncludedMcpSetup({ connectedFolderId, enabled }: { connectedFold
 
   async function operation(action: string, fields: Record<string, unknown> = {}) {
     if (!session.current) throw new Error("Wait for connection setup to open, then try again.");
-    return api<{ servers?: IncludedMcpServer[]; job?: IncludedMcpOAuthJob; probe?: { state: string; detail: string } }>("/api/agent/mcp-setup", { method: "POST", body: { ...fields, connectedFolderId, sessionId: session.current, operation: action } });
+    return api<{ servers?: IncludedMcpServer[]; job?: IncludedMcpOAuthJob; probe?: IncludedMcpProbe; lastCheck?: IncludedMcpLastCheck | null }>("/api/agent/mcp-setup", { method: "POST", body: { ...fields, connectedFolderId, sessionId: session.current, operation: action } });
   }
   async function act(action: string, fields: Record<string, unknown> = {}) {
     if (busyRef.current) return;
@@ -47,6 +68,12 @@ export function IncludedMcpSetup({ connectedFolderId, enabled }: { connectedFold
       if (result.servers) setServers(result.servers);
       if (result.job) setJob(result.job);
       setProbe(result.probe ? { ...result.probe, ...(typeof fields.name === "string" ? { name: fields.name } : {}) } : null);
+      // A check's answer carries what the host now keeps for that connection; its row shows it.
+      if (action === "check" && result.probe) {
+        const checked = result.lastCheck ?? null;
+        setServers((current) => current.map((row) => row.scope !== fields.scope || row.name !== fields.name ? row
+          : checked ? { ...row, lastCheck: checked } : (({ lastCheck: _dropped, ...rest }) => rest)(row)));
+      }
       if (action === "save") { setAdding(false); setName(""); setEndpoint(""); setExtra("{}"); }
       if (action === "bearer") { setTokenFor(null); setToken(""); }
       if (action === "oauth-cancel") setJob(null);
@@ -79,13 +106,13 @@ export function IncludedMcpSetup({ connectedFolderId, enabled }: { connectedFold
     {job ? <div className="included-mcp-auth" role="status"><p>{job.state === "running" ? "Complete sign-in in your browser." : job.state === "connected" ? "Signed in." : job.message ?? `Sign-in ${job.state}.`}</p>{job.state === "running" ? <button type="button" className="ui-control" onClick={() => void act("oauth-cancel", { jobId: job.id })}>Cancel Sign-In</button> : null}</div> : null}
     {!opened && !error ? <p role="status">Loading connections…</p> : opened && !servers.length && !adding ? <p>No Connections</p> : null}
     {opened && servers.length ? <p>Connections are checked when used. Check a connection below to verify it now.</p> : null}
-    <ul className="included-mcp-list">{servers.map((server) => <li key={`${server.scope}:${server.name}`}><div><strong>{server.name}</strong><small>{server.scope === "global" ? "Everywhere" : "This Connected Folder only"} · {server.disabled ? "Turned Off" : server.auth === "provider" ? "Uses AI Models Connection" : server.inherited ? "Uses Everywhere Connection" : server.auth === "none" ? "No Sign-In Required" : server.credential === "present" ? "Signed In" : server.credential === "not_checked" ? "Sign-In Not Checked" : server.credential === "unavailable" ? "Secure Storage Unavailable" : server.auth === "automatic" ? "No Saved Sign-In" : "Not Signed In"}</small></div><div className="included-tool-actions">
+    <ul className="included-mcp-list">{servers.map((server) => { const check = server.lastCheck ?? null; return <li key={`${server.scope}:${server.name}`}><div><strong>{server.name}</strong><small>{server.scope === "global" ? "Everywhere" : "This Connected Folder only"} · {serviceConnectionStatus(server, check)}</small></div><div className="included-tool-actions">
       <button type="button" className="ui-control" disabled={busy || !enabled || server.disabled} onClick={() => void act("check", selection(server))}>Check</button>
       <button type="button" className="ui-control" disabled={busy || !enabled} onClick={() => void act("enabled", { ...selection(server), enabled: server.disabled })}>{server.disabled ? "Turn On" : "Turn Off"}</button>
-      {server.transport === "http" && server.auth !== "none" && server.auth !== "provider" && !server.inherited ? <><button type="button" className="ui-control" disabled={busy || !enabled || server.disabled || job?.state === "running"} onClick={() => void act("oauth", selection(server))}>Sign In</button></> : null}
+      {server.transport === "http" && server.auth !== "none" && server.auth !== "provider" && !server.inherited && check?.signIn !== "not_needed" ? <><button type="button" className="ui-control" disabled={busy || !enabled || server.disabled || job?.state === "running"} onClick={() => void act("oauth", selection(server))}>Sign In</button></> : null}
       </div><details className="included-tool-optional"><summary>Connection Settings</summary><code>{server.endpoint}</code><small>Tool Access: {server.exposure}</small><div className="included-tool-actions">{server.transport === "http" && server.auth !== "provider" && !server.inherited ? <><button type="button" className="ui-control" disabled={busy || !enabled} onClick={() => { setTokenFor(server); setToken(""); }}>Use Token</button><button type="button" className="ui-control" disabled={busy} onClick={() => void act("disconnect", selection(server))}>Disconnect</button></> : null}
       <button type="button" className="ui-control" disabled={busy} onClick={() => void act("remove", selection(server))}>Remove</button>
-    </div></details></li>)}</ul>
+    </div></details></li>; })}</ul>
     {tokenFor ? <form className="included-mcp-form" onSubmit={(event) => { event.preventDefault(); void act("bearer", { ...selection(tokenFor), token }); }}><label>Token for {tokenFor.name}<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} /></label><div className="included-tool-actions"><button type="submit" className="ui-control ui-control--primary" disabled={busy || !token.trim()}>Connect</button><button type="button" className="ui-control" onClick={() => { setTokenFor(null); setToken(""); }}>Cancel</button></div></form> : null}
     {adding ? <form className="included-mcp-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
       <h3>Add Connection</h3><label>Name<input required value={name} onChange={(event) => setName(event.target.value)} placeholder="my-service" /></label>

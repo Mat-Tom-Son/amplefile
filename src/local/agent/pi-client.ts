@@ -1902,14 +1902,14 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
       lines.push(
         "Connected Folders inside this one, each with its own Worker (host-owned; the person nested them here):",
         JSON.stringify(turn.nestedFolders, null, 2),
-        "Files under those paths belong to their Workers. Hand work there off with chat handoff --to-connected-folder <connectedFolderId> instead of editing it yourself, follow it with chat wait, and coordinate when a request spans several. Their files are already in their Connected Folder, so leave --file off for anything under those paths.",
+        "Files under those paths belong to their Workers. Hand work there off with chat handoff --to-connected-folder <connectedFolderId> instead of editing it yourself, follow it with chat wait --parent-task <this request's task id>, and coordinate when a request spans several. Their files are already in their Connected Folder, so leave --file off for anything under those paths.",
       );
     }
     if (context.addressedFolders?.length) {
       lines.push(
         "The person addressed these Workers with @ in this message (host-resolved):",
         JSON.stringify(context.addressedFolders, null, 2),
-        "Give each its part with chat handoff --to-connected-folder <connectedFolderId> and a self-contained message, follow with chat wait, and include what they report in your reply. Do the parts nobody was addressed for yourself.",
+        "Give each its part with chat handoff --to-connected-folder <connectedFolderId> and a self-contained message, follow with chat wait --parent-task <this request's task id>, and include what they report in your reply. Do the parts nobody was addressed for yourself.",
       );
     }
     lines.push(
@@ -1929,7 +1929,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
       lines.push(
         "The person addressed these Workers with @ in this message (host-resolved):",
         JSON.stringify(context.addressedFolders, null, 2),
-        "Send each its part with chat send --connected-folder <connectedFolderId> --new --parent-task <this request's task id>, then follow with chat wait. Write each assignment self-contained.",
+        "Send each its part with chat send --connected-folder <connectedFolderId> --new --parent-task <this request's task id>, then follow with chat wait --parent-task <this request's task id>. Write each assignment self-contained.",
       );
     }
   }

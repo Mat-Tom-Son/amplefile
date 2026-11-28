@@ -55,7 +55,12 @@ export function moveShortfall(result: unknown): MoveShortfall {
   return { notRemoved, failed, failures, partlyRemoved: reasoned(body.partlyRemoved), recentlyDeleted, duplicateIdentities };
 }
 
-/** The toast after a move: plain about anything that did not go as asked. */
+/**
+ * The toast after a move: plain about anything that did not go as asked.
+ * `sourceName` is the folder the items came from, as `targetName` is the
+ * folder they went to. An item in both places is said to have been copied,
+ * and only it: the items that did leave their folder are said to have moved.
+ */
 export function moveResultMessage(label: string, targetName: string, sourceName: string, result: unknown): { text: string; tone: "success" | "info" } {
   const { notRemoved, failures, partlyRemoved, recentlyDeleted, duplicateIdentities } = moveShortfall(result);
   if (!notRemoved.length && !failures.length && !partlyRemoved.length && !recentlyDeleted.length && !duplicateIdentities.length) return { text: `Moved ${label} to ${targetName}`, tone: "success" };
@@ -66,8 +71,14 @@ export function moveResultMessage(label: string, targetName: string, sourceName:
   const written = (result as { written?: unknown } | null)?.written;
   const nothingArrived = Array.isArray(written) && written.length === 0;
   if (inBoth.length) {
-    const count = inBoth.length === 1 ? "1 item is" : `${inBoth.length} items are`;
-    sentences.push(`Copied ${label} to ${targetName}, but ${count} also still in ${sourceName}: ${names(inBoth)}.`);
+    // What did leave its folder: the answer's own list of moves, or, from an
+    // answer without one, how many more arrived than are in both places.
+    const moved = movedItems(result);
+    const movedCount = moved?.length ?? (Array.isArray(written) ? Math.max(0, written.length - inBoth.length) : 0);
+    if (movedCount) sentences.push(`Moved ${moved?.length === 1 ? basename(moved[0]!) : `${movedCount} ${movedCount === 1 ? "item" : "items"}`} to ${targetName}.`);
+    sentences.push(inBoth.length === 1
+      ? `Copied ${basename(inBoth[0]!)} to ${targetName}; the original is still in ${sourceName}.`
+      : `Copied ${inBoth.length} items to ${targetName}; the originals are still in ${sourceName}: ${names(inBoth)}.`);
   } else if (onlyInSource.length && nothingArrived) {
     sentences.push(`Nothing was moved to ${targetName}.`);
   } else {
@@ -90,6 +101,16 @@ export function moveResultMessage(label: string, targetName: string, sourceName:
     sentences.push(`AmpleFile could not remove the Connected Folder identity from the ${folders.length === 1 ? "copy" : "copies"} in ${targetName} (${shown}), so it is also still in ${sourceName}. Connect only one of them.`);
   }
   return { text: sentences.join(" "), tone: failures.length || partlyRemoved.length || duplicateIdentities.length ? "info" : "success" };
+}
+
+/** The source paths the answer says left their folder, or null when it does not list them. */
+function movedItems(result: unknown): string[] | null {
+  const moves = (result as { moves?: unknown } | null)?.moves;
+  if (!Array.isArray(moves)) return null;
+  return moves.flatMap((item) => {
+    const from = (item as { from?: unknown } | null)?.from;
+    return typeof from === "string" && from ? [from] : [];
+  });
 }
 
 /** A reason as a sentence: as it is when it names its own item (“name” …), else put after what it is about. */

@@ -186,13 +186,11 @@ async function startJourney(prefix: string): Promise<Journey> {
       await waitFor(() => pending.some((turn) => turn.taskId === taskId), `turn ${taskId} to reach the prompt gate`);
       pending.splice(pending.findIndex((turn) => turn.taskId === taskId), 1)[0]!.release();
     },
-    settled: async (connectedFolderId, taskId) => {
-      await waitFor(async () => {
-        const status = connectedFolderId === ampleFileAgentScopeId
-          ? await api.actFacade.agentTurnStatus({ taskId })
-          : await api.actFacade.turnStatus({ connectedFolder: connectedFolderId, taskId });
-        return status.task.state !== "running";
-      }, `turn ${taskId} to settle`);
+    // The kernel's task list, not `chat status`: a status read that sees a
+    // child waiting on the person counts as its running parent receiving it,
+    // and the journey's own waiting must never stand in for a parent.
+    settled: async (_connectedFolderId, taskId) => {
+      await waitFor(async () => !(await api.kernel.getTasks({ kind: "system" })).tasks.some((task) => task.id === taskId), `turn ${taskId} to settle`);
     },
     restart: async (beforeOpen) => {
       drain();
@@ -331,8 +329,13 @@ test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connecte
     assert.doesNotMatch(JSON.stringify(j.records), /currency/i, "a receipt never carries the question text");
 
     // 4. The host says which, on the status document, while the turn runs.
+    // A read that names no turn (a person in Terminal) shows it, and receives nothing for the parent.
+    const terminalStatus = await j.ok<{ waiting: { questionId: string } | null }>(["chat", "status", "--connected-folder", quotes.id, "--task", child.taskId, "--json"]);
+    assert.equal(terminalStatus.waiting?.questionId, asked.question.questionId);
+    assert.deepEqual(j.api.requests.get(rootRequestId)!.deliveredChildTaskIds, [], "only the parent's own read counts as received");
+    assert.equal(j.api.requests.get(rootRequestId)!.seenQuestionIds, undefined);
     const waitingStatus = await j.ok<{ task: { state: string }; waiting: { questionId: string; requestId: string; respondent: string; question: string; askedAt: string; expiresAt: string | null } | null; request: RequestRef }>([
-      "chat", "status", "--connected-folder", quotes.id, "--task", child.taskId, "--json",
+      "chat", "status", "--connected-folder", quotes.id, "--task", child.taskId, "--parent-task", root.taskId, "--json",
     ]);
     assert.equal(waitingStatus.task.state, "running");
     assert.ok(["running", "succeeded", "failed", "aborted", "unknown"].includes(waitingStatus.task.state), "the turn-state vocabulary is unchanged");
@@ -342,6 +345,11 @@ test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connecte
     assert.equal(waitingStatus.waiting?.question, "Which currency should the totals use?");
     assert.equal(waitingStatus.waiting!.expiresAt, null, "new work has no forced answer deadline");
     assert.equal(waitingStatus.request?.state, "waiting");
+    // `chat wait --parent-task` ends with exactly this read: the AmpleFile
+    // Agent's running turn has seen the question, so no follow-up repeats it;
+    // the child turn itself is not delivered by seeing its question.
+    assert.deepEqual(j.api.requests.get(rootRequestId)!.seenQuestionIds, [asked.question.questionId]);
+    assert.deepEqual(j.api.requests.get(rootRequestId)!.deliveredChildTaskIds, []);
     // The blocking loop belongs to the installed shim; the host keeps failing
     // an old one loudly rather than holding a broker request open.
     const waited = await j.run(["chat", "wait", "--connected-folder", quotes.id, "--task", child.taskId, "--json"]);
@@ -357,16 +365,15 @@ test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connecte
     assert.doesNotMatch(JSON.stringify(overview), /currency/i, "the overview names the question, never its text");
 
     // 6. Both turns end. The AmpleFile Agent's turn never blocked on the child, and the
-    //    request it left behind reports the open question honestly.
+    //    request it left behind reports the open question honestly. Its turn
+    //    already saw the question, which waits in Needs you, so no follow-up
+    //    turn repeats it.
     await j.release(child.taskId);
     await j.settled(quotes.id, child.taskId);
     await j.release(root.taskId);
     await j.settled(ampleFileAgentScopeId, root.taskId);
-    // The question is delivered even though the child ended before its parent.
-    await waitFor(() => j.api.requests.get(rootRequestId)!.turns.length === 2, "the question delivery");
-    const questionDelivery = j.api.requests.get(rootRequestId)!.turns[1]!;
-    await j.release(questionDelivery.taskId);
-    await j.settled(ampleFileAgentScopeId, questionDelivery.taskId);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 1, "no follow-up turn repeats a question the AmpleFile Agent already showed");
     const parked = await j.api.actFacade.agentTurnStatus({ taskId: root.taskId });
     assert.equal(parked.task.state, "succeeded", "the AmpleFile Agent's own turn finished instead of waiting");
     assert.equal(parked.requestGraph?.state, "waiting");
@@ -435,20 +442,20 @@ test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connecte
     const afterReport = (await j.ok<{ request: RequestDetail }>(["requests", "show", "--request", rootRequestId, "--json"])).request;
     assert.equal(afterReport.childRequests[0]!.resultRecords[0]!.envelope!.summary, "North is cheaper by $8.");
     assert.equal(j.prompts.length, promptsBefore, "no turn ran to move the result");
-    assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 2);
+    assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 1);
 
     // 10. Every child has now settled after the AmpleFile Agent's own turn ended, so the
     //     host brings the AmpleFile Agent back exactly once with what came in.
     await j.release(answered.continuation.taskId);
     await j.settled(quotes.id, answered.continuation.taskId);
-    await waitFor(() => j.api.requests.get(rootRequestId)!.turns.length === 3, "the AmpleFile Agent to be brought back");
+    await waitFor(() => j.api.requests.get(rootRequestId)!.turns.length === 2, "the AmpleFile Agent to be brought back");
     const continuation = j.api.requests.get(rootRequestId)!;
-    assert.equal(continuation.continuationCount, 2);
-    assert.equal(continuation.turns[2]!.role, "continuation");
+    assert.equal(continuation.continuationCount, 1);
+    assert.equal(continuation.turns[1]!.role, "continuation");
     // The request records the follow-up turn a moment before its message
     // reaches the transcript, so wait for the message itself.
     const followUpMessages = async () => (await ampleFileAgentTranscript(j.api, root.conversationId))
-      .filter((message) => message.role === "user" && message.requestId === `continuation-${rootRequestId}-2`);
+      .filter((message) => message.role === "user" && message.requestId === `continuation-${rootRequestId}-1`);
     await waitFor(async () => (await followUpMessages()).length > 0, "the follow-up message in the AmpleFile Agent's transcript");
     const brought = await followUpMessages();
     assert.equal(brought.length, 1, "one continuation turn for the whole settle batch");
@@ -456,10 +463,10 @@ test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connecte
     assert.match(brought[0]!.content, /succeeded: North is cheaper by \$8\./);
     assert.match(brought[0]!.content, /files: quotes\/comparison\.md/);
     assert.doesNotMatch(brought[0]!.content, gateVocabulary);
-    await j.release(continuation.turns[2]!.taskId);
-    await j.settled(ampleFileAgentScopeId, continuation.turns[2]!.taskId);
+    await j.release(continuation.turns[1]!.taskId);
+    await j.settled(ampleFileAgentScopeId, continuation.turns[1]!.taskId);
     await new Promise((resolve) => setTimeout(resolve, 250));
-    assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 3, "a continuation never continues itself");
+    assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 2, "a continuation never continues itself");
 
     // 11. The whole journey left receipts and nothing that waited on anyone.
     assert.doesNotMatch(JSON.stringify(j.records), gateVocabulary);

@@ -244,8 +244,7 @@ export async function handlePlaceRoutes({ state, req, res, url, method }: LocalA
       const body = await readJsonBody<{ path?: unknown }>(state, req);
       if (body.path !== undefined && typeof body.path !== "string") throw badRequest("Choose a folder.");
       const target = await standardFolderRegistrationTarget(standardFolderId, body.path ?? "");
-      const connectedFolder = await registerConnectedFolderInternal(state, target);
-      sendJson(res, { connectedFolder }, 201);
+      sendJson(res, await registerConnectedFolderInternal(state, target), 201);
       return true;
     }
   }

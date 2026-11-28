@@ -28,7 +28,9 @@ import {
 } from "../web-local/src/components/file-manager/file-manager-trash.js";
 import { canThumbnail, thumbnailPath, thumbnailSize, thumbnailVersion, ThumbnailCache, ThumbnailQueue, type ThumbnailOutcome } from "../web-local/src/components/file-manager/file-manager-thumbnails.js";
 import { canMeasureFolder, folderSizeColumnText, folderSizeText, type FolderSize } from "../web-local/src/components/file-manager/file-manager-folder-size.js";
-import { mergeFolderSearchPage, stoppedEarlyText } from "../web-local/src/components/file-manager/usePlainFolderSearch.js";
+import { mergeFolderSearchPage } from "../web-local/src/components/file-manager/usePlainFolderSearch.js";
+import { mergeConnectedFolderSearchPage } from "../web-local/src/components/file-manager/useFileManagerSearch.js";
+import { searchProgressNote, searchResultsPerRun, searchStatusText } from "../web-local/src/components/file-manager/file-manager-search-progress.js";
 import type { TreeEntry } from "../web-local/src/types.js";
 import { showsFileManager } from "../web-local/src/components/file-manager/file-manager-welcome-model.js";
 
@@ -239,6 +241,39 @@ test("plain-folder search pages merge names first and never list a file twice", 
   assert.deepEqual([...second.names, ...second.texts].map((result) => result.path), ["Notes/lemon.txt", "Pictures/lemon.png", "budget.txt"]);
   assert.deepEqual(second.texts[0]!.place, home);
   assert.deepEqual(second.texts[0]!.match, { kind: "content", pre: "", hit: "Lemon", post: " budget: 40" });
-  assert.match(stoppedEarlyText("time", 20000), /20,000 files/);
 });
 
+
+test("a Connected Folder search keeps where its page stopped, so the next page goes on from there", () => {
+  const start = { connectedFolderId: "space-0123456789abcdef", path: "", names: [], texts: [], cursor: null, incomplete: false };
+  const first = mergeConnectedFolderSearchPage(start, {
+    names: [{ name: "old-notes.txt", path: "old-notes.txt", kind: "file" }],
+    files: [{ path: "old-notes.txt", line: 1, preview: "old token" }, { path: "a.txt", line: 2, preview: "old token" }],
+    nextCursor: "cursor-1",
+  }, "old");
+  assert.equal(first.cursor, "cursor-1", "a page that stopped at a bound leaves its cursor");
+  assert.deepEqual(first.names.map((result) => result.path), ["old-notes.txt"]);
+  assert.deepEqual(first.texts.map((result) => result.path), ["a.txt"], "a file already named is not listed again for its text");
+  const second = mergeConnectedFolderSearchPage(first, { names: [{ name: "old-deep.txt", path: "z/old-deep.txt", kind: "file" }], files: [{ path: "a.txt", line: 9, preview: "old" }, { path: "b.txt", line: 1, preview: "old" }], nextCursor: null, coverage: { complete: true } }, "old");
+  assert.deepEqual(second.names.map((result) => result.path), ["old-notes.txt", "z/old-deep.txt"], "names keep arriving on later pages");
+  assert.deepEqual(second.texts.map((result) => result.path), ["a.txt", "b.txt"]);
+  assert.equal(second.cursor, null, "the last page ends the search");
+  assert.equal(second.incomplete, false);
+  assert.equal(mergeConnectedFolderSearchPage(first, { names: [], files: [], nextCursor: null, coverage: { complete: false } }, "old").incomplete, true, "a last page that skipped something says so");
+  const failed = mergeConnectedFolderSearchPage(first, null, "old");
+  assert.equal(failed.cursor, null);
+  assert.equal(failed.incomplete, true, "a page that could not be read ends that search as incomplete, never as complete");
+});
+
+test("search says it is running with Stop, and stopped short of its end with Keep Searching", () => {
+  assert.deepEqual(searchProgressNote({ status: "searching", paused: null, found: 0 }), { text: "Searching…", action: "stop" });
+  assert.deepEqual(searchProgressNote({ status: "searching", paused: null, found: 12, scannedFiles: 20_000 }), { text: "Searching… 20,000 files read so far.", action: "stop" });
+  assert.deepEqual(searchProgressNote({ status: "done", paused: "stopped", found: 12 }), { text: "Search stopped. There may be more matches.", action: "continue" });
+  assert.deepEqual(searchProgressNote({ status: "done", paused: "limit", found: searchResultsPerRun }), { text: "Found 10,000 matches so far, and there may be more.", action: "continue" });
+  assert.equal(searchProgressNote({ status: "done", paused: null, found: 240 }), null, "a search that reached its end says nothing more");
+  assert.equal(searchStatusText({ status: "searching", paused: null, found: 0 }, 0), "Searching…");
+  assert.equal(searchStatusText({ status: "searching", paused: null, found: 240 }, 0), "Searching… 240 found");
+  assert.equal(searchStatusText({ status: "done", paused: null, found: 240 }, 0), "240 items");
+  assert.equal(searchStatusText({ status: "done", paused: "stopped", found: 240 }, 1), "1 of 240+ selected");
+  assert.equal(searchStatusText({ status: "done", paused: "stopped", found: 0 }, 0), "Search stopped", "never \"0+ items\"");
+});

@@ -25,7 +25,7 @@ import { ampleFileAgentScope } from "./amplefile-agent-routes.js";
 import { composeBackgroundJobLines, deliverBackgroundJobs, undeliveredSettledJobs } from "./background-jobs.js";
 import { publishControlHint } from "./event-streams.js";
 import { badRequest, errorMessage, httpError, match, notFound, readJsonBody, sendJson } from "./http.js";
-import { clampUtf8, turnStatusFor } from "./request-records.js";
+import { childTurnAwaitsDelivery, clampUtf8, turnStatusFor } from "./request-records.js";
 import { clientKey, type LocalApiRequest, type LocalApiState } from "./state.js";
 import { acceptConversationTurn } from "./turn-acceptance.js";
 
@@ -264,10 +264,7 @@ export async function requestPresentation(state: LocalApiState, record: AmpleFil
   if (record.continuationState === "failed") {
     detail = "The follow-up did not start. Your saved results are still available.";
   }
-  const readyResults = state.requests.children(record.requestId).some((child) => {
-    const turn = child.turns.at(-1)!;
-    return turn.settledAt && !record.deliveredChildTaskIds.includes(turn.taskId);
-  });
+  const readyResults = state.requests.children(record.requestId).some((child) => childTurnAwaitsDelivery(state, record, child));
   if (!outstanding && !questionCount && (record.continuationState === "failed" || readyResults)) {
     try {
       state.requests.assertCanContinue(record.requestId);
@@ -411,11 +408,8 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
   // own work and does not wait for delegated children (docs/background-jobs.md).
   const childrenBusy = state.requests.subtree(requestId).some((child) => child.continuationState === "pending"
     || child.turns.some((turn) => turn.state === "accepted" || turn.state === "running"));
-  const batch = childrenBusy ? [] : state.requests.children(requestId).filter((child) => {
-    const turn = child.turns.at(-1)!;
-    return turn.settledAt !== null && state.turnsSettledThisRun.has(turn.taskId)
-      && !request.deliveredChildTaskIds.includes(turn.taskId);
-  });
+  const batch = childrenBusy ? [] : state.requests.children(requestId).filter((child) =>
+    state.turnsSettledThisRun.has(child.turns.at(-1)!.taskId) && childTurnAwaitsDelivery(state, request, child));
   const jobs = undeliveredSettledJobs(state, request);
   if (!batch.length && !jobs.length) return;
   // Compose before claiming: a read failure has not accepted a delivery.

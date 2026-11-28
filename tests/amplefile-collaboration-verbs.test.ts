@@ -83,13 +83,13 @@ async function collaborationHarness(t: { after: (fn: () => unknown) => void }) {
   return { sandbox, stateBase, held, pending, failTasks, open, release, releaseAll };
 }
 
-async function settled(api: LocalApiHandle, connectedFolderId: string, taskId: string): Promise<void> {
-  await waitFor(async () => {
-    const status = connectedFolderId === ampleFileAgentScopeId
-      ? await api.actFacade.agentTurnStatus({ taskId })
-      : await api.actFacade.turnStatus({ connectedFolder: connectedFolderId, taskId });
-    return status.task.state !== "running";
-  });
+/**
+ * Waits on the kernel's task list, not `chat status`: a status read that sees
+ * a child waiting on the person counts as its running parent receiving it,
+ * and the test's own waiting must never stand in for a parent.
+ */
+async function settled(api: LocalApiHandle, _connectedFolderId: string, taskId: string): Promise<void> {
+  await waitFor(async () => !(await api.kernel.getTasks({ kind: "system" })).tasks.some((task) => task.id === taskId));
 }
 
 async function ampleFileAgentMessages(api: LocalApiHandle, conversationId: string): Promise<Array<{ role: string; content: string; requestId?: string }>> {
@@ -378,8 +378,8 @@ for (const reader of ["worker", "AmpleFile Agent"] as const) {
       await api.actFacade.chatReport({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, summary: "Read once by the parent", outcome: "succeeded", files: [] });
       await h.release(childTaskId);
       await settled(api, childConnectedFolder.id, childTaskId);
-      // `chat wait` ends with exactly this read while the parent's turn runs.
-      const read = await api.actFacade.turnResult({ connectedFolder: childConnectedFolder.id, taskId: childTaskId });
+      // `chat wait --parent-task` ends with exactly this read while the parent's turn runs.
+      const read = await api.actFacade.turnResult({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, parentTaskId });
       assert.equal(read.result?.summary, "Read once by the parent");
       const requestId = api.requests.byTaskId(parentTaskId)!.requestId;
       assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, [childTaskId]);
@@ -393,6 +393,151 @@ for (const reader of ["worker", "AmpleFile Agent"] as const) {
     }
   });
 }
+
+test("a person reading a child's question from Terminal leaves the parent's follow-up turn to deliver it", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: childConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Asked from Terminal" });
+    h.held.add(childConnectedFolder.id);
+    h.held.add(ampleFileAgentScopeId);
+    const root = await api.actFacade.agentSend({ content: "/hold" });
+    const childTaskId = (await api.actFacade.sendMessage({ connectedFolder: childConnectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId })).taskId;
+    await api.actFacade.chatAsk({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, question: "Deduct refunds?", respondent: "person" });
+    const requestId = api.requests.byTaskId(root.taskId)!.requestId;
+    // A person checks on it while the parent still runs: no turn is named, so the parent has not seen it.
+    assert.equal((await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: childTaskId })).waiting?.question, "Deduct refunds?");
+    assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, []);
+    assert.equal(api.requests.get(requestId)!.seenQuestionIds, undefined, "nor seen the question");
+    await h.release(childTaskId);
+    await settled(api, childConnectedFolder.id, childTaskId);
+    await h.release(root.taskId);
+    await settled(api, ampleFileAgentScopeId, root.taskId);
+    await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
+    assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, [childTaskId], "the follow-up turn carried the question to the parent");
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
+test("a report filed after an asynchronous question the parent saw still reaches the parent", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: childConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Asks and goes on" });
+    h.held.add(childConnectedFolder.id);
+    h.held.add(ampleFileAgentScopeId);
+    const root = await api.actFacade.agentSend({ content: "/hold" });
+    const childTaskId = (await api.actFacade.sendMessage({ connectedFolder: childConnectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId })).taskId;
+    // An asynchronous question does not end the asking turn: it goes on working.
+    const asked = await api.actFacade.chatAsk({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, question: "Round to whole dollars?", respondent: "person", asynchronous: true });
+    const requestId = api.requests.byTaskId(root.taskId)!.requestId;
+    const status = await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, parentTaskId: root.taskId });
+    assert.equal(status.waiting?.questionId, asked.question.questionId);
+    assert.deepEqual(api.requests.get(requestId)!.seenQuestionIds, [asked.question.questionId], "the parent's wait saw the question");
+    // The same turn then files its report, which the parent's read never showed.
+    await api.actFacade.chatReport({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, summary: "Draft totals ready; rounding still open", outcome: "partial", files: [] });
+    await h.release(childTaskId);
+    await settled(api, childConnectedFolder.id, childTaskId);
+    await h.release(root.taskId);
+    await settled(api, ampleFileAgentScopeId, root.taskId);
+    await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
+    assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, [childTaskId], "the follow-up turn carried the report");
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
+
+for (const reader of ["worker", "AmpleFile Agent"] as const) {
+  test(`a child question the ${reader} saw mid-turn through chat wait is not repeated in a follow-up turn, and the answer's turn still arrives`, async (t) => {
+    const h = await collaborationHarness(t);
+    const api = await h.open();
+    try {
+      const { connectedFolder: childConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Asking child" });
+      h.held.add(childConnectedFolder.id);
+      let parentScope: string;
+      let parentTaskId: string;
+      let childTaskId: string;
+      if (reader === "worker") {
+        const { connectedFolder: parentConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Asking parent" });
+        h.held.add(parentConnectedFolder.id);
+        const parent = await api.actFacade.sendMessage({ connectedFolder: parentConnectedFolder.id, newConversation: true, content: "/hold" });
+        parentScope = parentConnectedFolder.id;
+        parentTaskId = parent.taskId;
+        childTaskId = (await api.actFacade.chatHandoff({ connectedFolder: parentConnectedFolder.id, taskId: parent.taskId, toConnectedFolder: childConnectedFolder.id, message: "/hold", files: [] })).taskId;
+      } else {
+        h.held.add(ampleFileAgentScopeId);
+        const root = await api.actFacade.agentSend({ content: "/hold" });
+        parentScope = ampleFileAgentScopeId;
+        parentTaskId = root.taskId;
+        childTaskId = (await api.actFacade.sendMessage({ connectedFolder: childConnectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId })).taskId;
+      }
+      const asked = await api.actFacade.chatAsk({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, question: "Deduct refunds?", respondent: "person" });
+      const requestId = api.requests.byTaskId(parentTaskId)!.requestId;
+      // Someone else's read, unattributed or naming another turn, receives nothing for the parent.
+      await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: childTaskId });
+      await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, parentTaskId: childTaskId });
+      assert.equal(api.requests.get(requestId)!.seenQuestionIds, undefined);
+      // `chat wait --parent-task` ends with exactly this read once the task
+      // waits on an answer, which can happen before the asking turn has settled.
+      const status = await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: childTaskId, parentTaskId });
+      assert.equal(status.waiting?.question, "Deduct refunds?");
+      // The parent has seen the question; the child turn itself is not delivered by it.
+      assert.deepEqual(api.requests.get(requestId)!.seenQuestionIds, [asked.question.questionId]);
+      assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, []);
+      await h.release(childTaskId);
+      await settled(api, childConnectedFolder.id, childTaskId);
+      await h.release(parentTaskId);
+      await settled(api, parentScope, parentTaskId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(api.requests.get(requestId)!.turns.length, 1, "no follow-up turn repeats a question the parent already showed");
+      // The answer's turn is a new child turn: it still reaches the parent once.
+      const answer = await api.actFacade.chatAnswer({ connectedFolder: childConnectedFolder.id, questionId: asked.question.questionId, answer: "/hold" });
+      const answerTaskId = answer.continuation!.taskId;
+      await api.actFacade.chatReport({ connectedFolder: childConnectedFolder.id, taskId: answerTaskId, summary: "Net total 155.00", outcome: "succeeded", files: [] });
+      await h.release(answerTaskId);
+      await settled(api, childConnectedFolder.id, answerTaskId);
+      await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
+      const followUp = api.requests.get(requestId)!;
+      assert.deepEqual(followUp.deliveredChildTaskIds, [answerTaskId]);
+      assert.match(followUp.content, /succeeded: Net total 155\.00/);
+    } finally {
+      h.releaseAll();
+      await api.close();
+    }
+  });
+}
+
+test("a child question asked after its parent's turn ended arrives in one follow-up turn", async (t) => {
+  const h = await collaborationHarness(t);
+  const api = await h.open();
+  try {
+    const { connectedFolder: parentConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Unseen parent" });
+    const { connectedFolder: childConnectedFolder } = await api.actFacade.createConnectedFolder({ name: "Unseen child" });
+    h.held.add(parentConnectedFolder.id);
+    h.held.add(childConnectedFolder.id);
+    const parent = await api.actFacade.sendMessage({ connectedFolder: parentConnectedFolder.id, newConversation: true, content: "/hold" });
+    const child = await api.actFacade.chatHandoff({ connectedFolder: parentConnectedFolder.id, taskId: parent.taskId, toConnectedFolder: childConnectedFolder.id, message: "/hold", files: [] });
+    await h.release(parent.taskId);
+    await settled(api, parentConnectedFolder.id, parent.taskId);
+    const requestId = api.requests.byTaskId(parent.taskId)!.requestId;
+    const asked = await api.actFacade.chatAsk({ connectedFolder: childConnectedFolder.id, taskId: child.taskId, question: "Deduct refunds?", respondent: "person" });
+    // A read after the parent's turn ended is nobody's delivery.
+    assert.equal((await api.actFacade.turnStatus({ connectedFolder: childConnectedFolder.id, taskId: child.taskId })).waiting?.questionId, asked.question.questionId);
+    assert.deepEqual(api.requests.get(requestId)!.deliveredChildTaskIds, []);
+    await h.release(child.taskId);
+    await settled(api, childConnectedFolder.id, child.taskId);
+    await waitFor(async () => api.requests.get(requestId)!.turns.length === 2);
+    const followUp = api.requests.get(requestId)!;
+    assert.deepEqual(followUp.deliveredChildTaskIds, [child.taskId]);
+    assert.match(followUp.content, new RegExp(`waiting on the person: question ${asked.question.questionId} — Deduct refunds\\?`));
+  } finally {
+    h.releaseAll();
+    await api.close();
+  }
+});
 
 test("a child result read after its parent's turn ended still arrives in one follow-up turn", async (t) => {
   const h = await collaborationHarness(t);

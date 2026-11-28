@@ -968,6 +968,7 @@ test("provider HTTP 402 explains credit limits without leaking the body or retry
     assert.match(failure.interruption.message, /reduce the maximum response length/);
     assert.doesNotMatch(JSON.stringify(transcript), /account-private-value|billing\.invalid|stopped responding/);
     assert.equal(failure.interruption.retryAttempts, 0);
+    assert.equal(failure.interruption.partialResponse, undefined, "a request rejected before any text saves no reply");
     assert.equal(requestCount, 1, "HTTP 402 is actionable and must not enter the transient retry path");
     permitted = true;
     assert.equal((await fetch(`${url}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Continue after adjusting the limit." }) })).status, 202);
@@ -1097,6 +1098,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
     const interruptedTranscript = await json(conversationUrl) as any;
     const interrupted = interruptedTranscript.messages.find((message: any) => message.interruption?.reason === "provider_error");
     assert.equal(interrupted.content, "Durable partial 2.");
+    assert.equal(interrupted.interruption.partialResponse, true);
     assert.equal(interrupted.interruption.retryAttempts, 1);
     assert.equal(interrupted.interruption.provider, "durability-provider");
     assert.equal(interrupted.interruption.model, "durability-model");

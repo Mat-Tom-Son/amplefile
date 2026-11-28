@@ -4,6 +4,7 @@ import test from "node:test";
 
 const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
 const preload = await readFile(new URL("../desktop/src/preload.cts", import.meta.url), "utf8");
+const openPathDrain = await readFile(new URL("../desktop/src/open-path-drain.ts", import.meta.url), "utf8");
 
 test("Darwin file menus require the trusted main renderer and canonical Connected Folder validation", () => {
   assert.match(
@@ -64,12 +65,12 @@ test("the menu bar's items work in every place: Refresh with any folder shown, t
 });
 
 test("Finder and Open Recent recreate the Mac window before showing a queued folder where it lives", () => {
-  assert.match(
-    main,
-    /drainPendingOpenPaths[\s\S]*?while \(pendingOpenPaths\.length\)[\s\S]*?await ensureWindow\(\)[\s\S]*?folderLocationForOpenPath\(target\.path[,)][\s\S]*?handOpenLocation\(window, location\)/,
-  );
+  assert.match(main, /async function drainPendingOpenPaths[\s\S]*?await openPaths\.drain\(\)/);
+  assert.match(main, /frontWindow: \(\) => ensureWindow\(\{ awaitingOpenLocation: true \}\)[\s\S]*?hand: \(window, location\) => handOpenLocation\(window, location\)/);
+  assert.match(main, /lookUp: \(target\) => folderLocationForOpenPath\(target\.path, target\.reveal\)/);
+  assert.match(openPathDrain, /while \(this\.#queue\.length\)[\s\S]*?await this\.#host\.frontWindow\(\)[\s\S]*?await this\.#lookUp\(target\)[\s\S]*?this\.#host\.hand\(window, location\)/);
   assert.match(main, /folderLocationForOpenPath[\s\S]*?resolveFolderLocation\(path, await listConnectedFolders\(\), homedir\(\)[,)]/);
-  assert.match(main, /request = \{ token: randomUUID\(\), location \}[\s\S]*?amplefile:file-manager:open-location/);
+  assert.match(main, /function handOpenLocation[\s\S]*?queueOpenLocation\(window, location\)[\s\S]*?amplefile:file-manager:open-location[\s\S]*?function queueOpenLocation[\s\S]*?request = \{ token: randomUUID\(\), location \}/);
   assert.match(preload, /deliveredTokens[\s\S]*?amplefile:file-manager:take-open-location[\s\S]*?then\(deliver\)/);
 });
 

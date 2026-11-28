@@ -21,7 +21,7 @@ import {
   finalizeConnectedFolderRemoval,
   getConnectedFolder,
   listPendingConnectedFolderRemovals,
-  registerLinkedConnectedFolder,
+  registerLinkedConnectedFolderIdentity,
   renameConnectedFolder,
   registeredConnectedFolderOutline,
   resolveNestableFolderPath,
@@ -80,7 +80,7 @@ export async function handleConnectedFolderRegistryRoutes({ state, req, res, url
   if (method === "POST" && url.pathname === "/api/connected-folders") {
     const body = await readJsonBody<{ name?: string }>(state, req);
     const connectedFolder = await createConnectedFolderInternal(state, body.name ?? "Personal Connected Folder");
-    sendJson(res, { connectedFolder }, 201);
+    sendJson(res, { connectedFolder, newIdentity: true }, 201);
     return true;
   }
 
@@ -94,8 +94,7 @@ export async function handleConnectedFolderRegistryRoutes({ state, req, res, url
     } else if (state.appMode === "desktop") {
       throw forbidden("A folder must be selected in the desktop app before it can become a Connected Folder.");
     }
-    const connectedFolder = await registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint);
-    sendJson(res, { connectedFolder }, 201);
+    sendJson(res, await registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint), 201);
     return true;
   }
 
@@ -110,8 +109,7 @@ export async function handleConnectedFolderRegistryRoutes({ state, req, res, url
     const body = await readJsonBody<{ path?: unknown }>(state, req);
     if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose a folder inside this Connected Folder.");
     const target = await resolveNestableFolderPath(parent.connectedFolderRoot, body.path);
-    const connectedFolder = await registerConnectedFolderInternal(state, target);
-    sendJson(res, { connectedFolder }, 201);
+    sendJson(res, await registerConnectedFolderInternal(state, target), 201);
     return true;
   }
 
@@ -175,18 +173,25 @@ export async function createConnectedFolderInternal(state: LocalApiState, name: 
   return connectedFolder;
 }
 
-export async function registerConnectedFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<ConnectedFolderSummary> {
-  const known = new Set((await registeredConnectedFolderOutline()).map((item) => item.id));
-  const connectedFolder = await registerLinkedConnectedFolder(rootPath, providerHint);
+/**
+ * Registers a folder as a Connected Folder. `newIdentity` is false when the
+ * folder already carried a Connected Folder identity: it was registered at
+ * this path, its folder moved and is linked again, or its portable
+ * `.amplefile/connected-folder.json` came with it. Such a folder keeps the
+ * color it had, and the window does not offer Set Up for Me again, because
+ * that offer was made, and answered, when the identity was new.
+ */
+export async function registerConnectedFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<{ connectedFolder: ConnectedFolderSummary; newIdentity: boolean }> {
+  // Whether the identity is new is the registry's own answer, decided where it is created or reused.
+  const { connectedFolder, newIdentity } = await registerLinkedConnectedFolderIdentity(rootPath, providerHint);
   state.connectedFolderTrustAuthority.grant(connectedFolder.connectedFolderRoot);
-  // A folder that already carried a Connected Folder identity keeps the color it had.
-  if (!known.has(connectedFolder.id) && connectedFolder.createdAt === connectedFolder.updatedAt) await giveStartingColor(state, connectedFolder.id);
+  if (newIdentity) await giveStartingColor(state, connectedFolder.id);
   // Copy-level note when a suspended automation's missing Connected Folder returns with its
   // portable identity; the automation stays suspended — registration never
   // silently re-arms standing behavior — so a failure to note it is tolerable.
   await state.automations.handleConnectedFolderReRegistered(connectedFolder.id).catch(() => undefined);
   publishControlHint(state, "connected-folders");
-  return connectedFolder;
+  return { connectedFolder, newIdentity };
 }
 
 /**

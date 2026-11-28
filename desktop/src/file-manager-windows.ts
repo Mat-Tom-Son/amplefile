@@ -47,6 +47,14 @@ export interface FileManagerWindowEntry<W extends FileManagerWindowLike, Locatio
   location: WindowLocation | null;
   /** A location handed to the window that its renderer has not taken yet (it may still be loading). */
   pendingOpenLocation: OpenLocationRequest<Location> | null;
+  /**
+   * The window is owed a place it has not been handed yet (a folder given to
+   * AmpleFile is still being resolved): its renderer's take waits here for
+   * the place, or for word that none is coming, rather than answering empty
+   * and showing some other Connected Folder in the meantime.
+   */
+  awaitingOpenLocation: boolean;
+  openLocationTakes: Array<(request: OpenLocationRequest<Location> | null) => void>;
 }
 
 export const defaultWindowMenuState: WindowMenuState = Object.freeze({ connectedFolderOpen: false, showHiddenFiles: false, folderTabsOpen: false, showTabBar: false });
@@ -72,6 +80,8 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
       connectedFolderGeneration: 0,
       location: null,
       pendingOpenLocation: null,
+      awaitingOpenLocation: false,
+      openLocationTakes: [],
     };
     this.#entries.set(window.id, entry);
     this.focus(window);
@@ -87,6 +97,7 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     const entry = this.#entries.get(id) ?? null;
     this.#entries.delete(id);
     this.#recent = this.#recent.filter((recent) => recent !== id);
+    if (entry) answerOpenLocationTakes(entry, null);
     return entry;
   }
 
@@ -181,21 +192,45 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     return entry.menuState;
   }
 
-  /** Hands a location to a window; its renderer takes it when it is ready (or now, when it already is). */
+  /**
+   * Hands a location to a window; its renderer takes it when it is ready (or
+   * now, when it already is, or is waiting for it). A window opened at a
+   * place is handed it before its renderer loads, so the first take gets it.
+   */
   handOpenLocation(window: WindowReference | null | undefined, request: OpenLocationRequest<Location>): boolean {
     const entry = this.entry(window);
     if (!entry) return false;
-    entry.pendingOpenLocation = request;
+    if (entry.openLocationTakes.length) answerOpenLocationTakes(entry, request);
+    else {
+      entry.pendingOpenLocation = request;
+      entry.awaitingOpenLocation = false;
+    }
     return true;
   }
 
-  /** The window's renderer takes the location handed to it, once. */
-  takeOpenLocation(window: WindowReference | null | undefined): OpenLocationRequest<Location> | null {
+  /** The window is owed a place that is still being resolved: its renderer's take waits for it (see `awaitingOpenLocation`). */
+  awaitOpenLocation(window: WindowReference | null | undefined): boolean {
     const entry = this.entry(window);
-    if (!entry) return null;
+    if (!entry) return false;
+    if (!entry.pendingOpenLocation) entry.awaitingOpenLocation = true;
+    return true;
+  }
+
+  /** No place is coming for the window (or for any window, with none named): a take waiting for one hears there is nothing to take. */
+  settleOpenLocation(window?: WindowReference | null): void {
+    for (const entry of window === undefined ? [...this.#entries.values()] : [this.entry(window)]) {
+      if (entry) answerOpenLocationTakes(entry, null);
+    }
+  }
+
+  /** The window's renderer takes the location handed to it, once; while the window is owed one, the answer waits for it. */
+  takeOpenLocation(window: WindowReference | null | undefined): Promise<OpenLocationRequest<Location> | null> {
+    const entry = this.entry(window);
+    if (!entry) return Promise.resolve(null);
     const request = entry.pendingOpenLocation;
     entry.pendingOpenLocation = null;
-    return request;
+    if (request || !entry.awaitingOpenLocation) return Promise.resolve(request);
+    return new Promise((resolve) => { entry.openLocationTakes.push(resolve); });
   }
 
   /** The renderer showed the location sent to it; nothing is left to take. */
@@ -203,6 +238,13 @@ export class FileManagerWindows<W extends FileManagerWindowLike, Location = Wind
     const entry = this.entry(window);
     if (entry && typeof token === "string" && entry.pendingOpenLocation?.token === token) entry.pendingOpenLocation = null;
   }
+}
+
+/** Answers every take waiting on the window (with its place, or with nothing), and the window is owed nothing more. */
+function answerOpenLocationTakes<Location>(entry: { awaitingOpenLocation: boolean; openLocationTakes: Array<(request: OpenLocationRequest<Location> | null) => void> }, request: OpenLocationRequest<Location> | null): void {
+  entry.awaitingOpenLocation = false;
+  const takes = entry.openLocationTakes.splice(0);
+  for (const take of takes) take(request);
 }
 
 /** The Connected Folder in a browser page owner (`<connected-folder id>/<conversation id>`), or null. */

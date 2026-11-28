@@ -15,6 +15,7 @@ import {
   relocateFolderTabs,
   restoreFolderTabs,
   selectFolderTab,
+  showInFrontTab,
   singleFolderTab,
   storedFolderTabs,
   updateFolderTab,
@@ -53,14 +54,16 @@ export interface PanelChat {
  * The window's folder tabs (file-manager-tabs.ts holds the rules): the tabs,
  * the one in front, View → Show Tab Bar, each tab's Chat, and what is kept
  * on this computer. Restored tabs come back where they were; with nothing
- * kept, the window opens one tab at `startLocation`.
+ * kept, the window opens one tab at `startLocation`. A window handed a place
+ * as it opens (`openAt`) shows it from its first frame, in its tab in front.
  */
-export function useFolderTabs(startLocation: () => FileManagerLocation) {
+export function useFolderTabs(startLocation: () => FileManagerLocation, openAt: FileManagerLocation | null = null) {
   const nextIdRef = useRef(1);
   const makeId = () => String(nextIdRef.current++);
   const [initial] = useState(() => {
     const restored = readStoredJsonValue(folderTabsStorageKey(), (value) => restoreFolderTabs(value, makeId), null);
-    return restored ? { ...restored, restored: true } : { state: singleFolderTab(makeId(), startLocation()), showTabBar: false, restored: false };
+    if (restored) return { state: openAt ? showInFrontTab(restored.state, openAt) : restored.state, showTabBar: restored.showTabBar };
+    return { state: singleFolderTab(makeId(), openAt ?? startLocation()), showTabBar: false };
   });
   const [state, setState] = useState<FolderTabs>(initial.state);
   const [showTabBar, setShowTabBar] = useState(initial.showTabBar);
@@ -137,8 +140,6 @@ export function useFolderTabs(startLocation: () => FileManagerLocation) {
     activeTab,
     /** The tabs as they are now, for handlers that run after a change this render has not seen. */
     current: () => stateRef.current,
-    /** The window opened with tabs kept from before. */
-    restored: initial.restored,
     showTabBar,
     setShowTabBar,
     /** The strip shows with more than one tab, or always once Show Tab Bar is on. */

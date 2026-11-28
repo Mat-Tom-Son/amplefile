@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sharedParentPath } from "../web-local/src/components/file-manager/file-manager-model.js";
 import { moveResultMessage, moveShortfall } from "../web-local/src/components/file-manager/move-result.js";
 
 test("a move that carried everything says Moved, as before", () => {
   assert.deepEqual(moveResultMessage("2 items", "Archive", "Inbox", { mode: "move", written: ["a", "b"] }), { text: "Moved 2 items to Archive", tone: "success" });
 });
 
-test("a move that stopped removing says everything is in the target, what is also still in the source, and why", () => {
+test("a move that stopped removing says what moved, what was only copied and is still in the source, and why", () => {
   // The file-transfer answer exactly: the failed item is in the target and is
   // the first entry of notRemoved; it is a reason, not a second count.
   const answer = {
@@ -18,7 +19,7 @@ test("a move that stopped removing says everything is in the target, what is als
   };
   const message = moveResultMessage("3 items", "Archive", "Inbox", answer);
   assert.equal(message.tone, "info");
-  assert.equal(message.text, "Copied 3 items to Archive, but 2 items are also still in Inbox: b.md, c.md. Removing b.md failed: Operation not permitted. What History could not keep from Inbox is in Recently Deleted: a.md.");
+  assert.equal(message.text, "Moved 1 item to Archive. Copied 2 items to Archive; the originals are still in Inbox: b.md, c.md. Removing b.md failed: Operation not permitted. What History could not keep from Inbox is in Recently Deleted: a.md.");
   assert.doesNotMatch(message.text, /not moved/);
 });
 
@@ -32,7 +33,7 @@ test("the shortfall reader takes only the known shape", () => {
   assert.deepEqual(moveShortfall({ failed: [{ path: "a" }], failures: [{ path: "a" }, "b"], partlyRemoved: [{ error: "x" }], notRemoved: [1, "Notes/x.md"], recentlyDeleted: [{ path: "a" }, "b"], duplicateIdentities: [2, ""] }), { notRemoved: ["Notes/x.md"], failed: null, failures: [], partlyRemoved: [], recentlyDeleted: [], duplicateIdentities: [] });
   assert.deepEqual(moveShortfall({ failed: { path: "a", error: "no" } }).failures, [{ path: "a", error: "no" }], "one failure is also the list of them");
   const many = moveResultMessage("6 items", "Archive", "Inbox", { notRemoved: ["a", "b", "c", "d", "e"] });
-  assert.equal(many.text, "Copied 6 items to Archive, but 5 items are also still in Inbox: a, b, c and 2 more.");
+  assert.equal(many.text, "Copied 5 items to Archive; the originals are still in Inbox: a, b, c and 2 more.");
 });
 
 test("a release across disks that stopped partway is told once, by its reason", () => {
@@ -48,7 +49,7 @@ test("a release across disks that stopped partway is told once, by its reason", 
   };
   const message = moveResultMessage("Old", "Target", "Source", answer);
   assert.equal(message.tone, "info");
-  assert.equal(message.text, "Copied Old to Target, but 1 item is also still in Source: Old. Removing Old failed: AmpleFile copied Old into Recently Deleted but could not remove all of it from here: EACCES: permission denied, unlink '/Users/x/Source/Old/locked/f.txt'. The whole item is kept in Recently Deleted, and what could not be removed stays here.");
+  assert.equal(message.text, "Copied Old to Target; the original is still in Source. Removing Old failed: AmpleFile copied Old into Recently Deleted but could not remove all of it from here: EACCES: permission denied, unlink '/Users/x/Source/Old/locked/f.txt'. The whole item is kept in Recently Deleted, and what could not be removed stays here.");
   assert.doesNotMatch(message.text, /What History could not keep/);
 });
 
@@ -64,7 +65,7 @@ test("an identity the move could not drop from a copy is named", () => {
   };
   const message = moveResultMessage("D", "Target", "Source", answer);
   assert.equal(message.tone, "info");
-  assert.equal(message.text, "Copied D to Target, but 1 item is also still in Source: D. Removing D failed: AmpleFile could not move D to Recently deleted: AmpleFile could not move /x/source/D into Recently deleted: EACCES: permission denied, rename '/x/source/D' -> '/x/state/recently-deleted/entries/trash-20261109223238-27eabc05/payload/D'. Nothing was moved. Nothing was deleted. AmpleFile could not remove the Connected Folder identity from the copy in Target (D), so it is also still in Source. Connect only one of them.");
+  assert.equal(message.text, "Copied D to Target; the original is still in Source. Removing D failed: AmpleFile could not move D to Recently deleted: AmpleFile could not move /x/source/D into Recently deleted: EACCES: permission denied, rename '/x/source/D' -> '/x/state/recently-deleted/entries/trash-20261109223238-27eabc05/payload/D'. Nothing was moved. Nothing was deleted. AmpleFile could not remove the Connected Folder identity from the copy in Target (D), so it is also still in Source. Connect only one of them.");
 });
 
 test("each item that did not move is named with its own reason, and the rest are said to have moved", () => {
@@ -81,7 +82,7 @@ test("each item that did not move is named with its own reason, and the rest are
     notRemoved: ["Notes/b.md"],
   };
   assert.deepEqual(moveResultMessage("3 items", "Archive", "Inbox", answer), {
-    text: "Copied 3 items to Archive, but 1 item is also still in Inbox: b.md. 1 item was not moved and is still in Inbox: c.md. “b.md” changed while it was being copied, so it stays where it was. “c.md” can’t be changed, so it stays where it was.",
+    text: "Moved a.md to Archive. Copied b.md to Archive; the original is still in Inbox. 1 item was not moved and is still in Inbox: c.md. “b.md” changed while it was being copied, so it stays where it was. “c.md” can’t be changed, so it stays where it was.",
     tone: "info",
   });
   // Nothing arrived at all.
@@ -112,4 +113,29 @@ test("an original that only partly went is said to have moved, with what is left
   const message = moveResultMessage("Old", "Target", "Source", released);
   assert.equal(message.text, "Moved Old to Target. Part of Old could not be removed from Source and is still there: AmpleFile copied Old into Recently Deleted but could not remove all of it from here: EACCES: permission denied. The whole item is kept in Recently Deleted, and what could not be removed stays here.");
   assert.doesNotMatch(message.text, /What History could not keep/);
+});
+
+test("a move across disks that copied one item names the item that moved, the one copied, and the folder they came from", () => {
+  // The QA case: two files cut from a plain folder in the home folder and pasted onto an ExFAT disk, where a Finder tag
+  // cannot go with its copy. The window passes the folder the items came from, never the place's name.
+  const from = ["AmpleFile-QA/Incoming/ordinary.txt", "AmpleFile-QA/Incoming/tagged.txt"];
+  assert.equal(sharedParentPath(from), "AmpleFile-QA/Incoming");
+  const answer = {
+    mode: "move",
+    written: ["Cross Disk/ordinary.txt", "Cross Disk/tagged.txt"],
+    moves: [{ from: from[0], to: "Cross Disk/ordinary.txt" }],
+    copies: [{ from: from[1], to: "Cross Disk/tagged.txt" }],
+    failed: { path: from[1], error: "“tagged.txt” has a Finder tag or other extended attribute its copy could not keep, so it stays where it was." },
+    notRemoved: [from[1]],
+  };
+  const message = moveResultMessage("2 items", "Cross Disk", "Incoming", answer);
+  assert.equal(message.tone, "info");
+  assert.equal(message.text, "Moved ordinary.txt to Cross Disk. Copied tagged.txt to Cross Disk; the original is still in Incoming. “tagged.txt” has a Finder tag or other extended attribute its copy could not keep, so it stays where it was.");
+  assert.doesNotMatch(message.text, /Copied 2 items/);
+});
+
+test("items from several folders have no one folder to name", () => {
+  assert.equal(sharedParentPath(["A/x.txt", "B/y.txt"]), null);
+  assert.equal(sharedParentPath(["x.txt", "y.txt"]), "");
+  assert.equal(sharedParentPath([]), null);
 });

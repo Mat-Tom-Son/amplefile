@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import test from "node:test";
+import { dumpCssFixture, findCssBrowser } from "./support/css-browser.js";
 
-const run = promisify(execFile);
 
 test("the actual banner cascade repaints every pattern after an accent edit", { timeout: 45_000 }, async (t) => {
-  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
-  let browser: string | undefined;
-  for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is required for the banner cascade test."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-banner-css-"));
   try {
@@ -40,8 +35,8 @@ test("the actual banner cascade repaints every pattern after an accent edit", { 
     </script>`;
     const path = join(scratch, "fixture.html");
     await writeFile(path, html);
-    const { stdout } = await run(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=1000", "--disable-features=HangWatcher", `--user-data-dir=${join(scratch, "profile")}`, "--dump-dom", pathToFileURL(path).href], { timeout: 35_000, maxBuffer: 5_000_000 });
-    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1];
+    const page = await dumpCssFixture(browser, path, { profile: join(scratch, "profile"), timeoutMs: 35_000 });
+    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1];
     assert.ok(serialized && serialized !== "pending");
     const results = JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
     assert.equal(results.length, 22);
@@ -58,5 +53,5 @@ test("the actual banner cascade repaints every pattern after an accent edit", { 
         }
       }
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });

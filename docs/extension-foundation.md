@@ -140,7 +140,9 @@ diagnostics and observed tool readiness (`ready`, `setup_required`,
 `unavailable`, `unknown`, with specific failure detail). A saved credential or
 successful module import alone does not prove an operation works. An MCP connection check
 performs bounded native connect and tool/resource/prompt discovery, without
-invoking a server tool. Computer
+invoking a server tool. For an HTTP service it also reports what it established
+about sign-in: it connected with a saved sign-in, connected with none (so the
+service needs none), or was refused until someone signs in. Computer
 checks report actual helper/permission state. Web reports configured or unknown
 until the relevant operation supplies evidence; the default keyless Web path
 is available without setup. Included tiles in the Installed view's **Included with AmpleFile** strip read

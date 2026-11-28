@@ -522,8 +522,11 @@ export interface AmpleFileDesktopBridge {
     /** The Connected Folder header's right-click menu (macOS). */
     popupHeaderMenu?: Invoke<"amplefile:connected-folder:popup-header-menu">;
     setActiveConnectedFolder: Invoke<"amplefile:connected-folder:set-active-connected-folder">;
-    /** A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select. */
-    onOpenLocation: (listener: (location: OpenLocation) => void) => Unsubscribe;
+    /**
+     * A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select.
+     * `onTaken` runs once the place already handed to this window, if any, has been delivered.
+     */
+    onOpenLocation: (listener: (location: OpenLocation) => void, onTaken?: () => void) => Unsubscribe;
     onOpenFolder: Listen<"amplefile:menu:open-folder">;
   };
   /** Desktop, Documents, and Downloads in the file manager: the host resolves each folder by id. */

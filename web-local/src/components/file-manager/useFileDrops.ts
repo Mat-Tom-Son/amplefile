@@ -30,7 +30,6 @@ export interface FileDropsContext {
   listing: { refresh: () => Promise<unknown> };
   changes: FileChanges;
   select: (paths: string[]) => void;
-  nameOfPlace: (place: FileManagerPlace) => string;
   onError: (message: string | null) => void;
 }
 
@@ -41,7 +40,7 @@ export interface FileDropsContext {
  * drop back in moves rather than copies.
  */
 export function useFileDrops(context: FileDropsContext) {
-  const { fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop, listing, changes, select, nameOfPlace, onError } = context;
+  const { fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop, listing, changes, select, onError } = context;
   // Where a drag would land: "" for the folder shown, a folder row's path, or null.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   // The files dragged out of this list, so dropping them back on a folder row moves them rather than copying.
@@ -185,7 +184,7 @@ export function useFileDrops(context: FileDropsContext) {
         if (changes.reportOutcome("move", result) && result.cancelled) return result.written;
         showToast(result.copiedInstead
           ? { text: `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.`, tone: "success" }
-          : moveResultMessage(transferLabel(sources), targetName, nameOfPlace(movingPlace), result));
+          : moveResultMessage(transferLabel(sources), targetName, changes.sourceFolderLabel(movingPlace, sources), result));
         return result.written;
       }
       if (nativePaths.length) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -125,16 +125,86 @@ test("search pages through byte, match and traversal budgets with a match beyond
   assert.ok(pages > 32);
 });
 
-test("search narrows a subtree and rejects changed sources or a cursor from another selection", async (t) => {
+test("search narrows a subtree, goes on past a file changed partway, and rejects a cursor from another selection", async (t) => {
   const { root, dispose } = await connectedFolder("source"); t.after(dispose);
   await mkdir(join(root,"selected"));
   await writeFile(join(root,"selected","one.txt"), "needle\nneedle\n");
+  await writeFile(join(root,"selected","two.txt"), "needle\n");
   await writeFile(join(root,"elsewhere.txt"), "needle");
   const page = await searchConnectedFolder(root,"needle", {path:"selected",includeChats:false,maxMatches:1});
   assert.equal(page.files[0]?.path,"selected/one.txt"); assert.ok(page.nextCursor);
   await assert.rejects(searchConnectedFolder(root,"other", {path:"selected",includeChats:false,cursor:page.nextCursor!}),/selection/);
+  // The file being scanned changes between pages: the rest of it is skipped and counted, and the search goes on.
   await writeFile(join(root,"selected","one.txt"), "changed\nneedle\n");
-  await assert.rejects(searchConnectedFolder(root,"needle", {path:"selected",includeChats:false,cursor:page.nextCursor!}),/changed/);
+  const next = await searchConnectedFolder(root,"needle", {path:"selected",includeChats:false,cursor:page.nextCursor!});
+  assert.deepEqual(next.files.map(({path,line}) => [path,line]), [["selected/two.txt",1]]);
+  assert.equal(next.coverage.changed, 1);
+  assert.equal(next.coverage.textComplete, false);
+  assert.equal(next.truncated, true, "a change seen partway leaves coverage incomplete");
+  assert.equal(next.nextCursor, null);
+});
+
+test("a folder that gains items between pages goes on and finds what comes after", async (t) => {
+  const { root, dispose } = await connectedFolder("live"); t.after(dispose);
+  await mkdir(join(root,"docs"));
+  await writeFile(join(root,"docs","a.txt"), "needle\nneedle\n");
+  await writeFile(join(root,"docs","m.txt"), "needle\n");
+  await writeFile(join(root,"z.txt"), "needle\n");
+  const first = await searchConnectedFolder(root,"needle", {includeChats:false,maxMatches:1});
+  assert.deepEqual(first.files.map(({path,line}) => [path,line]), [["docs/a.txt",1]]);
+  // A Worker writes into the folder being searched: the search resumes by name, not by the folder's timestamps.
+  await writeFile(join(root,"docs","n-new.txt"), "needle\n");
+  await writeFile(join(root,"docs","0-earlier.txt"), "needle\n");
+  const found: Array<[string, number]> = []; let cursor = first.nextCursor ?? undefined; let last = first;
+  while (cursor) {
+    last = await searchConnectedFolder(root,"needle", {includeChats:false,maxMatches:1,cursor});
+    found.push(...last.files.map(({path,line}): [string, number] => [path,line])); cursor = last.nextCursor ?? undefined;
+  }
+  // An item added after the walk's place in its folder is found; one added before it is behind the walk, as with any live listing.
+  assert.deepEqual(found, [["docs/a.txt",2],["docs/m.txt",1],["docs/n-new.txt",1],["z.txt",1]]);
+  assert.equal(last.truncated, false);
+});
+
+test("a folder replaced by a link between pages is never entered, by either walk", async (t) => {
+  const { root, dispose } = await connectedFolder("replaced"); t.after(dispose);
+  const outside = join(root, "..", "outside");
+  await mkdir(outside);
+  await writeFile(join(outside,"needle-secret.txt"), "needle in the link target\n");
+  await mkdir(join(root,"b-dir"));
+  await writeFile(join(root,"b-dir","one.txt"), "needle\nneedle\n");
+  await writeFile(join(root,"b-dir","two.txt"), "needle\n");
+  for (let index = 0; index < 600; index += 1) await writeFile(join(root,"b-dir",`needle-${String(index).padStart(3,"0")}.txt`), "");
+  const first = await searchConnectedFolder(root,"needle", {includeChats:false,maxMatches:1});
+  assert.equal(first.names.length, 500, "the name walk stopped inside b-dir");
+  assert.deepEqual(first.files.map(({path,line}) => [path,line]), [["b-dir/one.txt",1]], "the text walk stopped partway through b-dir/one.txt");
+  await rename(join(root,"b-dir"), join(root,"..","b-old"));
+  await symlink(outside, join(root,"b-dir"), "dir");
+  const names = [...first.names.map(({path}) => path)]; const files: string[] = []; let cursor = first.nextCursor ?? undefined; let changed = 0; let last = first;
+  while (cursor) {
+    last = await searchConnectedFolder(root,"needle", {includeChats:false,maxMatches:1,cursor});
+    names.push(...last.names.map(({path}) => path)); files.push(...last.files.map(({path}) => path)); changed += last.coverage.changed; cursor = last.nextCursor ?? undefined;
+  }
+  assert.ok(!names.some((path) => path.includes("secret")) && !files.some((path) => path.includes("secret")), "nothing behind the link is named or read");
+  assert.equal(new Set(names).size, names.length, "no name is returned twice");
+  assert.ok(changed >= 1);
+  assert.equal(last.coverage.names?.complete, false);
+  assert.equal(last.truncated, true);
+});
+
+test("a Chat added between pages does not end the search", async (t) => {
+  const { root, dispose } = await connectedFolder("chats-live"); t.after(dispose);
+  for (const id of ["chat-a", "chat-b"]) await appendMessage(root, id, { id: `${id}-m`, role: "user", content: "needle", createdAt: "2026-11-27T00:00:00.000Z" });
+  const first = await searchConnectedFolder(root, "needle", { includeFiles: false, maxMatches: 1 });
+  assert.deepEqual(first.chats.map((chat) => chat.conversationId), ["chat-a"]);
+  await appendMessage(root, "chat-c", { id: "chat-c-m", role: "user", content: "needle too", createdAt: "2026-11-27T00:01:00.000Z" });
+  await appendMessage(root, "chat-a", { id: "chat-a-later", role: "assistant", content: "nothing here", createdAt: "2026-11-27T00:02:00.000Z" });
+  const ids: string[] = []; let cursor = first.nextCursor ?? undefined; let last = first;
+  while (cursor) {
+    last = await searchConnectedFolder(root, "needle", { includeFiles: false, maxMatches: 1, cursor });
+    ids.push(...last.chats.map((chat) => chat.conversationId)); cursor = last.nextCursor ?? undefined;
+  }
+  assert.deepEqual(ids, ["chat-b", "chat-c"]);
+  assert.equal(last.truncated, false);
 });
 
 test("directory depth and Chat count are continuation work, while symlinks stay excluded", async (t) => {
@@ -209,7 +279,7 @@ test("the first page finds a deep name beyond either text scan budget", async (t
   assert.ok(fileLimited.nextCursor);
 });
 
-test("an entry beyond the 20,000-name budget leaves name coverage incomplete", async (t) => {
+test("an entry beyond a page's 20,000-name budget arrives on the next page", async (t) => {
   const { root, dispose } = await connectedFolder("name-limit");
   t.after(dispose);
   for (let start = 0; start < 20_000; start += 200) {
@@ -222,25 +292,39 @@ test("an entry beyond the 20,000-name budget leaves name coverage incomplete", a
   const limited = await searchConnectedFolder(root, "late", { includeChats: false, maxScannedFiles: 1 });
   assert.deepEqual(limited.names, []);
   assert.deepEqual(limited.coverage.names, { visitedEntries: 20_000, complete: false });
+  assert.ok(limited.nextCursor);
+  const next = await searchConnectedFolder(root, "late", { includeChats: false, maxScannedFiles: 1, cursor: limited.nextCursor! });
+  assert.deepEqual(next.names.map(({ path }) => path), ["late.txt"]);
+  assert.deepEqual(next.coverage.names, { visitedEntries: 1, complete: true });
 });
 
-test("the name walk stops at 500 matches and reports incomplete coverage", async (t) => {
+test("the name walk returns 500 names a page and the rest on later pages, each once", async (t) => {
   const { root, dispose } = await connectedFolder("name-match-limit");
   t.after(dispose);
-  for (let start = 0; start < 520; start += 100) {
-    await Promise.all(Array.from({ length: Math.min(100, 520 - start) }, (_, index) =>
-      writeFile(join(root, `report-${String(start + index).padStart(3, "0")}.txt`), "")));
+  for (let start = 0; start < 1_200; start += 100) {
+    await Promise.all(Array.from({ length: 100 }, (_, index) =>
+      writeFile(join(root, `report-${String(start + index).padStart(4, "0")}.txt`), "")));
   }
 
   const page = await searchConnectedFolder(root, "report", { includeChats: false });
   assert.equal(page.names.length, 500);
-  assert.equal(page.names.at(-1)?.path, "report-499.txt");
+  assert.equal(page.names.at(-1)?.path, "report-0499.txt");
   assert.deepEqual(page.coverage.names, { visitedEntries: 500, complete: false });
   assert.equal(page.coverage.textComplete, true);
   assert.equal(page.coverage.complete, false);
+  assert.ok(page.nextCursor, "the cursor carries the name walk on");
+  const names = page.names.map(({ path }) => path); const sizes = [page.names.length]; let cursor = page.nextCursor ?? undefined; let last = page;
+  while (cursor) {
+    last = await searchConnectedFolder(root, "report", { includeChats: false, cursor });
+    names.push(...last.names.map(({ path }) => path)); sizes.push(last.names.length); cursor = last.nextCursor ?? undefined;
+  }
+  assert.deepEqual(sizes, [500, 500, 200]);
+  assert.deepEqual(names, Array.from({ length: 1_200 }, (_, index) => `report-${String(index).padStart(4, "0")}.txt`));
+  assert.deepEqual(last.coverage.names, { visitedEntries: 200, complete: true });
+  assert.equal(last.truncated, false);
 });
 
-test("name matches arrive once on the first page, outside the text match cap", async (t) => {
+test("name matches arrive once, outside the text match cap", async (t) => {
   const { root, dispose } = await connectedFolder("name-pages");
   t.after(dispose);
   await mkdir(join(root, "Sales archive"));
