@@ -92,11 +92,13 @@ function parseWaitCommand(argumentsList) {
   const json = argumentsList.includes("--json");
   let connectedFolder = "";
   let task = "";
+  let parentTask = "";
   let timeoutSeconds = 3600;
   for (let index = 0; index < argumentsList.length; index += 1) {
     const token = argumentsList[index];
     if (token === "--connected-folder") { connectedFolder = argumentsList[index + 1] || ""; index += 1; }
     else if (token === "--task") { task = argumentsList[index + 1] || ""; index += 1; }
+    else if (token === "--parent-task") { parentTask = argumentsList[index + 1] || ""; index += 1; }
     else if (token === "--timeout") {
       timeoutSeconds = Number(argumentsList[index + 1]);
       index += 1;
@@ -112,7 +114,7 @@ function parseWaitCommand(argumentsList) {
   if (group === "chat" && !connectedFolder) throw usageFailure("Act commands require an explicit --connected-folder <id-or-name>.");
   if (group === "agent" && connectedFolder) throw usageFailure("The AmpleFile Agent sits above Connected Folders, so 'agent wait' takes no --connected-folder.");
   if (!task) throw usageFailure(`Provide --task <id> from ${group} send.`);
-  return { group, connectedFolder, task, timeoutSeconds, json };
+  return { group, connectedFolder, task, parentTask, timeoutSeconds, json };
 }
 
 function runWaitLoop(context, plan, actToken) {
@@ -122,7 +124,10 @@ function runWaitLoop(context, plan, actToken) {
   // terminal state (then the result is printed), or the task is waiting on
   // an answer (then the status document with its `waiting` field is
   // printed, exit 0). A parent never sits on a child's question.
-  const scopeArgv = plan.group === "chat" ? ["--connected-folder", plan.connectedFolder] : [];
+  // A wait run by a parent's own turn names that turn (--parent-task), and so does every read it makes: the host
+  // records the child turn as delivered to that parent only for a read attributed to it.
+  const scopeArgv = (plan.group === "chat" ? ["--connected-folder", plan.connectedFolder] : [])
+    .concat(plan.parentTask ? ["--parent-task", plan.parentTask] : []);
   const statusArgv = [plan.group, "status"].concat(scopeArgv, ["--task", plan.task, "--json"]);
   const deadline = Date.now() + plan.timeoutSeconds * 1000;
   for (;;) {

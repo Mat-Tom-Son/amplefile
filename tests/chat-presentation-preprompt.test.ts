@@ -87,6 +87,7 @@ test("a reused Chat stopped before prompting cannot inherit the prior turn's fin
   assert.ok(replies[0]!.workTrail?.some((entry) => entry.edit?.path === "note.txt"), "the prior turn must have evidence available to leak");
   assert.equal(replies[1]!.content, stoppedText);
   assert.equal(replies[1]!.interruption?.reason, "cancelled");
+  assert.equal(replies[1]!.interruption?.partialResponse, undefined, "a placeholder is never marked as the model's reply");
   assert.equal(replies[1]!.assistantPresentation, undefined, "a turn that never prompted has no native text boundaries");
   assert.equal(replies[1]!.workTrail, undefined, "a turn that never prompted cannot borrow the prior edit");
   assert.equal(requests, 2, "only the first turn invokes the synthetic model");

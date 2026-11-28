@@ -149,6 +149,10 @@ test("the enclosing folder and status line", () => {
   assert.equal(parentPath("Kitchen refresh"), "");
   assert.equal(fileManagerStatusText(1, 0), "1 item");
   assert.equal(fileManagerStatusText(12, 2), "2 of 12 selected");
+  // A search that stopped early never reads as a complete count.
+  assert.equal(fileManagerStatusText(200, 0, { partial: true }), "200+ items");
+  assert.equal(fileManagerStatusText(1, 0, { partial: true }), "1+ items");
+  assert.equal(fileManagerStatusText(200, 1, { partial: true }), "1 of 200+ selected");
 });
 
 test("Shift-click selects a range and typing jumps to a name", () => {

@@ -1244,7 +1244,7 @@ const SavedPopoverMessage = memo(function SavedPopoverMessage({ message }: { mes
     >
       {steps ? <RuntimeContextPreview entries={steps} renderText={renderStepText} /> : null}
       <div className="popover-message-body">
-        {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
+        {message.kind === "assistant_continuation" ? "Continuing with results or questions from delegated work." : message.role === "assistant"
           ? <PopoverMarkdown text={message.content} />
           : message.content}
       </div>

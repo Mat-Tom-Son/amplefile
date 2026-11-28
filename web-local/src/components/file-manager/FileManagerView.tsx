@@ -99,7 +99,9 @@ import { useDrives, useVolumeSpace } from "./useDrives";
 import { TrashView } from "./TrashView";
 import { type TrashItem } from "./file-manager-trash";
 import { useRememberedFolderSizes } from "./file-manager-folder-size";
-import { stoppedEarlyText, usePlainFolderSearch } from "./usePlainFolderSearch";
+import { usePlainFolderSearch } from "./usePlainFolderSearch";
+import { FileManagerSearchRows } from "./FileManagerSearchRows";
+import { searchProgressNote, searchStatusText } from "./file-manager-search-progress";
 // The window's parts, each in its own file: navigation, selection, file changes, the clipboard, drops, menus, and the sidebar.
 import { type FolderHistory } from "./file-manager-navigation";
 // Folder tabs and per-folder view settings.
@@ -602,9 +604,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   });
   const changes = useFileChanges({ fixtureMode, tabId, folderView: activeTab.view === "folder", place, location, apiBase, selection, byPath, listing, standard, fileOperations, conflictQuestion, select, setSelection, setHiddenPaths, nameOfPlace, requestRename, onError });
   const { deletePaths, duplicateSelection, renameEntry, runTrashDeletion } = changes;
-  const clipboard = useFileClipboard({ fixtureMode, place, placeRoot, location, contentRef, changes, nameOfPlace, onError });
+  const clipboard = useFileClipboard({ fixtureMode, place, placeRoot, location, contentRef, changes, onError });
   const { cutPaths } = clipboard;
-  const drops = useFileDrops({ fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop: searchMode || recentsOpen, listing, changes, select, nameOfPlace, onError });
+  const drops = useFileDrops({ fixtureMode, place, placeRoot, location, folderName, bridge, selection, selected, byPath, listTakesNoDrop: searchMode || recentsOpen, listing, changes, select, onError });
   const { dropTarget, setDropTarget, isItemDrag } = drops;
   const menus = useFileManagerMenus({
     mac, fixtureMode, place, location, placeName, bridge, selection, selected, byPath, select, onError, folderShown: activeTab.view === "folder",
@@ -948,9 +950,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       const url = target.kind === "connected-folder"
         ? `/api/connected-folders/${encodeURIComponent(target.id)}/nested-folders`
         : `/api/standard-folders/${encodeURIComponent(target.id)}/connected-folders`;
-      const { connectedFolder: created } = await api<{ connectedFolder: ConnectedFolderSummary }>(url, { method: "POST", body: { path } });
+      const { connectedFolder: created, newIdentity } = await api<{ connectedFolder: ConnectedFolderSummary; newIdentity?: boolean }>(url, { method: "POST", body: { path } });
       await Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
-      onOfferSetUp?.(created.id);
+      // A folder that already carried its Connected Folder identity was offered Set Up for Me when it was first connected.
+      if (newIdentity) onOfferSetUp?.(created.id);
       const open = () => navigate({ place: { kind: "connected-folder", id: created.id }, path: "" }, "push", created);
       if (target.kind === "standard" && (!path || (samePlace(target, place) && path === location.path))) {
         // The folder itself is a Connected Folder now, and the sidebar lists it there.
@@ -1489,9 +1492,22 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const closePreview = () => { setPreviewOpen(false); contentRef.current?.focus({ preventScroll: true }); };
   const connectedFolderSearch = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode && !plainSearch, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
   const plainFolderSearch = usePlainFolderSearch({ query, place, path: location.path, includeHidden: showHidden, enabled: searchMode && plainSearch, fixtureTree: fixture && place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : null });
+  // Either search asks for page after page until it finds everything; `paused` is set only when the person stopped it
+  // or a run gathered its share, and Keep Searching goes on (file-manager-search-progress.ts).
   const search = plainSearch
-    ? { results: plainFolderSearch.results, status: plainFolderSearch.status === "done" || plainFolderSearch.status === "error" ? "done" as const : "searching" as const }
-    : connectedFolderSearch;
+    ? {
+      results: plainFolderSearch.results,
+      status: plainFolderSearch.status === "done" || plainFolderSearch.status === "error" ? "done" as const : "searching" as const,
+      paused: plainFolderSearch.paused,
+      scannedFiles: plainFolderSearch.scannedFiles,
+      incomplete: plainFolderSearch.status === "done" && plainFolderSearch.incomplete,
+      stop: plainFolderSearch.stop,
+      continueSearch: plainFolderSearch.continueSearch,
+    }
+    // Idle in search mode is a search about to start.
+    : { ...connectedFolderSearch, status: connectedFolderSearch.status === "done" ? "done" as const : "searching" as const, scannedFiles: 0, incomplete: connectedFolderSearch.status === "done" && connectedFolderSearch.incomplete };
+  const searchProgress = { status: search.status, paused: search.paused, found: search.results.length, scannedFiles: search.scannedFiles };
+  const searchNote = searchProgressNote(searchProgress);
   const searchChosen = searchMode && searchSelection ? search.results.find((result) => result.key === searchSelection) ?? null : null;
   const searchChosenConnectedFolder = searchChosen ? connectedFolders.find((item) => item.id === searchChosen.connectedFolderId) ?? null : null;
   useEffect(() => { setSearchSelection(null); }, [query, searchScope]);
@@ -1515,7 +1531,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     : recentsOpen && !searchMode
     ? recents ? fileManagerStatusText(recents.length, recentChosen ? 1 : 0) : "Loading…"
     : searchMode
-    ? search.status === "done" ? fileManagerStatusText(search.results.length, searchChosen ? 1 : 0) : "Searching…"
+    ? searchStatusText(searchProgress, searchChosen ? 1 : 0)
     : status === "ready" ? fileManagerStatusText(visible.length, selected.size) : "";
   const sidebarStandard = sidebarStandardFolders(standard.folders, connectedFolders);
   const columns: ReadonlyArray<{ key: FileManagerSortKey; label: string }> = [
@@ -1732,9 +1748,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           </div>
           {plainSearch && plainFolderSearch.status === "error" ? <div className="fm-empty">
             <span className="fm-empty-text">{plainFolderSearch.error ?? "Couldn’t search this folder."}</span>
-          </div> : search.status === "done" && !search.results.length && (!plainSearch || !(plainFolderSearch.stoppedEarly || plainFolderSearch.incomplete)) ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
-          <div className="fm-rows" role="rowgroup">
-            {search.results.map((result, index) => {
+          </div> : search.status === "done" && !search.results.length && !search.paused && !search.incomplete ? <p className="fm-empty">No names or text match “{query.trim()}”</p> : null}
+          <FileManagerSearchRows results={search.results} chosenKey={searchSelection} scrollRef={contentRef} renderRow={(result, index, top) => {
               const entry: TreeEntry = result;
               const where = result.place ? { name: [placeName, ...result.path.split("/").slice(0, -1)].join(" › ") } : connectedFolders.find((item) => item.id === result.connectedFolderId);
               return <div
@@ -1745,6 +1760,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
                 data-fm-result={result.key}
                 className={`fm-row${index % 2 ? " is-odd" : ""}${searchSelection === result.key ? " is-selected" : ""}`}
                 onClick={(event) => { event.stopPropagation(); contentRef.current?.focus({ preventScroll: true }); setSearchSelection(result.key); }}
+                style={{ transform: `translateY(${top}px)` }}
                 onDoubleClick={() => void openSearchResult(result)}
               >
                 <span role="gridcell" className="fm-cell fm-col-name">
@@ -1756,14 +1772,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
                 </span>
                 <span role="gridcell" className="fm-cell fm-col-where" title={where?.name}>{where?.name ?? ""}</span>
               </div>;
-            })}
-          </div>
-          {/* A plain folder's search reads a bounded amount at a time: it says when it stopped early, and goes on when asked. */}
-          {plainSearch && plainFolderSearch.stoppedEarly ? <p className="fm-search-note" role="status">
-            <span>{stoppedEarlyText(plainFolderSearch.stoppedEarly, plainFolderSearch.scannedFiles)}</span>
-            <button type="button" className="fm-text-button" disabled={plainFolderSearch.status === "searching"} onClick={plainFolderSearch.continueSearch}>{plainFolderSearch.status === "searching" ? "Searching…" : "Keep Searching"}</button>
+            }} />
+          {/* While search runs it says so with Stop; stopped short of its end it says so with Keep Searching. The note
+              stays in view at the foot of the list however far down the results go. */}
+          {searchNote ? <p className="fm-search-note is-partial" role="status">
+            <span>{searchNote.text}</span>
+            <button type="button" className="fm-text-button" onClick={searchNote.action === "stop" ? search.stop : search.continueSearch}>{searchNote.action === "stop" ? "Stop" : "Keep Searching"}</button>
           </p> : null}
-          {plainSearch && plainFolderSearch.status === "done" && plainFolderSearch.incomplete ? <p className="fm-search-note">Some folders couldn’t be read, so they weren’t searched.</p> : null}
+          {search.incomplete ? <p className="fm-search-note">Some items were skipped because they couldn’t be read or changed during the search.</p> : null}
           {plainSearch && plainFolderSearch.connectedFoldersInside.length ? <p className="fm-search-note">
             <span>{plainFolderSearch.connectedFoldersInside.length === 1 ? "A Connected Folder inside is searched with its own rules." : "Connected Folders inside are searched with their own rules."}</span>
             <button type="button" className="fm-text-button" onClick={() => setSearchScope("all")}>Search All Connected Folders</button>

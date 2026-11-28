@@ -15,6 +15,7 @@ export interface ConnectedFolderFileMatch { path: string; line: number; preview:
 export interface ConnectedFolderChatMatch { conversationId: string; title: string; role: "user" | "assistant" | "system"; createdAt: string; preview: string; }
 interface NameSearchCoverage { visitedEntries: number; complete: boolean; }
 
+/** The name walk's budget for one page: entries visited, and name matches returned. The cursor carries the rest. */
 const maxNameEntries = 20_000;
 const maxNameMatches = 500;
 
@@ -22,7 +23,7 @@ export interface ConnectedFolderSearchCoverage {
   /** Text counters describe this page, including excluded directory roots, not their descendants. */
   ignored: number; internal: number; symbolicLink: number; binary: number; unreadable: number; changed: number; nonRegular: number;
   scannedBytes: number;
-  /** Coverage of the first-page name walk. Null when files were out of scope. */
+  /** This page's slice of the name walk: entries it visited, and whether the whole walk has finished with nothing unreadable or changed. Null when files were out of scope. */
   names: NameSearchCoverage | null;
   /** Whether the requested file text and Chat search has finished with full coverage. */
   textComplete: boolean;
@@ -41,11 +42,27 @@ export interface ConnectedFolderSearchOptions {
   maxScannedBytes?: number;
   path?: string; cursor?: string; signal?: AbortSignal;
 }
+/** A folder a walk has entered: where it is, the last entry finished (by name), and the folder's dev:ino when entered. */
 interface DirectoryPosition { path: string; after: string | null; version: string; }
 interface FilePosition { path: string; version: string; offset: number; line: number; tail: string; matched: boolean; sampled?: boolean; }
-interface SearchCursor { scope: string; nameCoverage: NameSearchCoverage | null; stack: DirectoryPosition[]; current?: FilePosition; filesDone: boolean; chatIndex: number; messageIndex: number; chatVersion?: string; transcriptVersion?: string; incomplete: boolean; }
+/** The name walk, carried page to page until it has visited the whole selection. */
+interface NameWalk { stack: DirectoryPosition[]; done: boolean; incomplete: boolean; }
+/** Chats are searched in id order: every Chat up to `after` is finished, and `current` is one partly searched. */
+interface ChatPosition { after: string | null; current: { id: string; messageIndex: number } | null; }
+interface SearchCursor { scope: string; names: NameWalk | null; stack: DirectoryPosition[]; current?: FilePosition; filesDone: boolean; chats: ChatPosition; incomplete: boolean; }
 
-/** Fixed allocations and resumable page budgets; ordinary text files have no size ceiling. */
+/**
+ * Search one Connected Folder's names, file text, and Chats, a bounded page
+ * at a time. Following `nextCursor` until it is null finds every match in the
+ * selection: the name walk and the text walk each continue where the last
+ * page stopped. Pages are live observations, as the plain-folder search's
+ * are: a folder resumes by name after the last entry finished, so items added
+ * or removed between pages never end the search; a folder removed, replaced,
+ * or turned into a link since, and a file that changed partway through its
+ * scan, are skipped, counted as changed, and leave coverage incomplete. A
+ * walk never follows a link. A cursor from another query, selection, ignore
+ * rules, or set of nested Connected Folders is refused.
+ */
 export async function searchConnectedFolder(connectedFolderRoot: string, rawQuery: string, options: ConnectedFolderSearchOptions = {}): Promise<ConnectedFolderSearchResult> {
   const query = rawQuery.trim();
   if (!query) throw retrievalError("Enter something to search for.");
@@ -60,9 +77,10 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   const scope = digest(JSON.stringify([root, query, selected, options.includeFiles !== false, options.includeChats !== false, ignore, nested]));
   const cursor = options.cursor ? decodeRetrievalCursor<SearchCursor>(options.cursor) : undefined;
   if (cursor && cursor.scope !== scope) throw retrievalError("Search selection or ignore rules changed. Start the search again.", 409);
-  const state: SearchCursor = cursor ?? { scope, nameCoverage: null, stack: [], filesDone: options.includeFiles === false, chatIndex: 0, messageIndex: 0, incomplete: false };
+  const state: SearchCursor = cursor ?? { scope, names: null, stack: [], filesDone: options.includeFiles === false, chats: { after: null, current: null }, incomplete: false };
   const needle = query.toLocaleLowerCase();
-  let names: ConnectedFolderNameMatch[] = [];
+  const names: ConnectedFolderNameMatch[] = [];
+  let nameVisited = 0;
   const files: ConnectedFolderFileMatch[] = [];
   const chats: ConnectedFolderChatMatch[] = [];
   const matchCount = () => files.length + chats.length;
@@ -101,37 +119,56 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   };
   if (!cursor && !state.filesDone) {
     if (selected && excluded(selected)) {
-      state.nameCoverage = { visitedEntries: 0, complete: true };
+      state.names = { stack: [], done: true, incomplete: false };
       state.filesDone = true;
     } else {
       const info = await lstat(resolveConnectedFolderPath(root, selected, { finalLink: true }), { bigint: true });
-      const nameSearch = await searchNames(root, selected, info, needle, exclusion, options.signal);
-      names = nameSearch.names;
-      state.nameCoverage = nameSearch.coverage;
-      if (info.isDirectory()) state.stack.push({ path: selected, after: null, version: identity(info) });
-      else if (info.isFile()) state.current = filePosition(selected, info);
-      else {
-        if (info.isSymbolicLink()) coverage.symbolicLink++;
-        else coverage.nonRegular++;
-        state.filesDone = true;
+      state.names = { stack: [], done: true, incomplete: false };
+      if (info.isDirectory()) {
+        state.names = { stack: [{ path: selected, after: null, version: folderIdentity(info) }], done: false, incomplete: false };
+        state.stack.push({ path: selected, after: null, version: folderIdentity(info) });
+      } else {
+        // A selected file or link is the whole name walk: its own name, once.
+        if (info.isFile() || info.isSymbolicLink()) {
+          nameVisited++;
+          if (basename(selected).toLocaleLowerCase().includes(needle)) {
+            const match = await nameMatch(root, selected, basename(selected), info);
+            if (match) names.push(match);
+            else state.names.incomplete = true;
+          }
+        }
+        if (info.isFile()) state.current = filePosition(selected, info);
+        else {
+          if (info.isSymbolicLink()) coverage.symbolicLink++;
+          else coverage.nonRegular++;
+          state.filesDone = true;
+        }
       }
     }
   }
-  for (const frame of state.stack) {
-    if (identity(await safe(frame.path).catch(() => { throw retrievalError("A searched directory changed. Start the search again.", 409); })) !== frame.version) throw retrievalError("A searched directory changed. Start the search again.", 409);
+  // This page's slice of the name walk comes first: names arrive ahead of the slower text walk.
+  if (state.names && !state.names.done) {
+    const slice = await continueNameWalk(root, state.names, needle, exclusion, options.signal);
+    names.push(...slice.names);
+    nameVisited += slice.visited;
   }
+  // A file position carried from an earlier page that is gone or changed is a change, not a failure.
+  const carriedFile = cursor ? state.current : undefined;
   while (!state.filesDone && !resultBudgetReached && matchCount() < maxMatches && scannedFiles < maxFiles && visited < maxFiles && coverage.scannedBytes < maxBytes) {
     aborted(options.signal);
     if (state.current) {
       const current = state.current;
       const initial = await safe(current.path).catch((error) => {
-        if (cursor) throw retrievalError("A searched file changed or disappeared. Start the search again.", 409);
-        if ((error as { statusCode?: number }).statusCode) throw error;
-        coverage.unreadable++; state.incomplete = true; return null;
+        if ((error as Error).name === "AbortError") throw error;
+        return null;
       });
-      if (initial && identity(initial) !== current.version) throw retrievalError("A searched file changed. Start the search again.", 409);
       scannedFiles++;
-      if (!initial || await scanFile(root, current, initial, needle, maxMatches, maxBytes, files, coverage, admit, options.signal)) delete state.current;
+      if (!initial || identity(initial) !== current.version) {
+        if (initial || current === carriedFile) coverage.changed++;
+        else coverage.unreadable++;
+        state.incomplete = true;
+        delete state.current;
+      } else if (await scanFile(root, current, initial, needle, maxMatches, maxBytes, files, coverage, admit, options.signal)) delete state.current;
       if (!state.current && !state.stack.length) state.filesDone = true;
       continue;
     }
@@ -139,21 +176,10 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
     if (!frame) { state.filesDone = true; break; }
     let listing = directoryEntries.get(frame.path);
     if (!listing) {
-      const entries = await readdir(resolveConnectedFolderPath(root, frame.path), { withFileTypes: true }).catch(() => null);
+      const entries = await openFolder(root, frame);
+      if (entries === "changed") { coverage.changed++; state.incomplete = true; state.stack.pop(); continue; }
       if (!entries) { coverage.unreadable++; state.incomplete = true; state.stack.pop(); continue; }
-      // Sort once per directory/page, then advance by index. A wide directory
-      // must not be sorted or searched again for every individual entry.
-      entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-      let index = 0;
-      if (frame.after !== null) {
-        let end = entries.length;
-        while (index < end) {
-          const middle = Math.floor((index + end) / 2);
-          if (entries[middle]!.name <= frame.after) index = middle + 1;
-          else end = middle;
-        }
-      }
-      listing = { entries, index }; directoryEntries.set(frame.path, listing);
+      listing = { entries, index: resumeIndex(entries, frame.after) }; directoryEntries.set(frame.path, listing);
     }
     const entry = listing.entries[listing.index++];
     if (!entry) { state.stack.pop(); directoryEntries.delete(frame.path); continue; }
@@ -161,10 +187,13 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
     const path = frame.path ? `${frame.path}/${entry.name}` : entry.name;
     if (excluded(path)) { frame.after = entry.name; continue; }
     if (entry.isSymbolicLink()) { frame.after = entry.name; coverage.symbolicLink++; continue; }
-    const info = await safe(path).catch(() => null);
+    const info = await safe(path).catch((error) => {
+      if ((error as Error).name === "AbortError") throw error;
+      return null;
+    });
     frame.after = entry.name;
     if (!info) { coverage.unreadable++; state.incomplete = true; continue; }
-    if (info.isDirectory()) state.stack.push({ path, after: null, version: identity(info) });
+    if (info.isDirectory()) state.stack.push({ path, after: null, version: folderIdentity(info) });
     else if (info.isFile()) state.current = filePosition(path, info);
     else coverage.nonRegular++;
   }
@@ -177,41 +206,52 @@ export async function searchConnectedFolder(connectedFolderRoot: string, rawQuer
   if (!state.current && !state.stack.length) state.filesDone = true;
   let chatsDone = options.includeChats === false;
   if (state.filesDone && !chatsDone) {
-    const conversations = await listConversations(root);
-    const version = digest(JSON.stringify(conversations));
-    if (state.chatVersion && state.chatVersion !== version) throw retrievalError("Chats changed. Start the search again.", 409);
-    state.chatVersion = version;
+    // Chats in id order, resumed after the last one finished: a Chat added or
+    // a transcript that grew between pages never ends the search.
+    const conversations = (await listConversations(root)).sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+    const position = state.chats;
+    if (position.current && !conversations.some((conversation) => conversation.id === position.current!.id)) {
+      coverage.changed++; state.incomplete = true;
+      position.after = position.current.id; position.current = null;
+    }
+    let index = position.current
+      ? conversations.findIndex((conversation) => conversation.id === position.current!.id)
+      : conversations.findIndex((conversation) => position.after === null || conversation.id > position.after);
+    if (index < 0) index = conversations.length;
     let inspected = 0;
-    while (state.chatIndex < conversations.length && !resultBudgetReached && matchCount() < maxMatches && inspected < maxFiles) {
+    while (index < conversations.length && !resultBudgetReached && matchCount() < maxMatches && inspected < maxFiles) {
       aborted(options.signal);
-      const conversation = conversations[state.chatIndex]!;
+      const conversation = conversations[index]!;
       const messages = await readConversation(root, conversation.id);
-      const transcriptVersion = digest(JSON.stringify(messages));
-      if (state.transcriptVersion && state.transcriptVersion !== transcriptVersion) throw retrievalError("A searched Chat changed. Start the search again.", 409);
-      state.transcriptVersion = transcriptVersion; inspected++;
-      while (state.messageIndex < messages.length && matchCount() < maxMatches) {
-        const message = messages[state.messageIndex++]!;
+      let messageIndex = position.current?.id === conversation.id ? position.current.messageIndex : 0;
+      // A transcript is appended to; one that shrank since was rewritten, and the rest of it is skipped.
+      if (messageIndex > messages.length) { coverage.changed++; state.incomplete = true; messageIndex = messages.length; }
+      const current = { id: conversation.id, messageIndex };
+      position.current = current; inspected++;
+      while (current.messageIndex < messages.length && matchCount() < maxMatches) {
+        const message = messages[current.messageIndex++]!;
         if (["conversation_lifecycle", "conversation_title", "assistant_continuation", "context_compaction"].includes(message.kind ?? "")) continue;
         const text = message.content.replace(/\s+/g, " ");
         const at = text.toLocaleLowerCase().indexOf(needle);
         if (at >= 0) {
           const match = { conversationId: conversation.id, title: conversation.title, role: message.role, createdAt: message.createdAt, preview: preview(text, at, query.length) };
-          if (!admit(match)) { state.messageIndex--; break; }
+          if (!admit(match)) { current.messageIndex--; break; }
           chats.push(match);
         }
       }
-      if (state.messageIndex < messages.length) break;
-      state.chatIndex++; state.messageIndex = 0; delete state.transcriptVersion;
+      if (current.messageIndex < messages.length) break;
+      position.after = conversation.id; position.current = null; index++;
     }
-    chatsDone = state.chatIndex >= conversations.length;
+    chatsDone = index >= conversations.length;
   }
   aborted(options.signal);
   state.incomplete ||= coverage.unreadable > 0 || coverage.changed > 0;
-  const more = !state.filesDone || !chatsDone;
-  coverage.names = state.nameCoverage;
-  coverage.textComplete = !more && !state.incomplete;
+  const namesMore = Boolean(state.names && !state.names.done);
+  const textMore = !state.filesDone || !chatsDone;
+  coverage.names = state.names ? { visitedEntries: nameVisited, complete: !namesMore && !state.names.incomplete } : null;
+  coverage.textComplete = !textMore && !state.incomplete;
   coverage.complete = coverage.textComplete && (coverage.names?.complete ?? true);
-  return { query, names, files, chats, scannedFiles, truncated: !coverage.complete, nextCursor: more ? encodeRetrievalCursor(state) : null, coverage };
+  return { query, names, files, chats, scannedFiles, truncated: !coverage.complete, nextCursor: namesMore || textMore ? encodeRetrievalCursor(state) : null, coverage };
 }
 
 /** Canonicalize a selected link's parent while keeping the link itself as the selection. */
@@ -225,74 +265,107 @@ async function selectedSearchPath(root: string, path?: string): Promise<string> 
   return relative(await realpath(root), selected).split(sep).join("/");
 }
 
-async function searchNames(
-  root: string, selected: string, initial: BigIntStats, needle: string,
+/**
+ * A folder a walk entered, listed again by name, or "changed" when it is no
+ * longer that folder: removed, replaced by another (a new dev:ino), or turned
+ * into a link anywhere on its path. A changed folder is never entered. Null
+ * when it cannot be listed.
+ */
+async function openFolder(root: string, frame: DirectoryPosition): Promise<import("node:fs").Dirent[] | "changed" | null> {
+  let absolute: string;
+  try { absolute = resolveConnectedFolderPath(root, frame.path); } catch { return "changed"; }
+  const info = await lstat(absolute, { bigint: true }).catch(() => null);
+  if (!info?.isDirectory() || folderIdentity(info) !== frame.version) return "changed";
+  const entries = await readdir(absolute, { withFileTypes: true }).catch(() => null);
+  // Sort once per directory/page, then advance by index. A wide directory
+  // must not be sorted or searched again for every individual entry.
+  return entries?.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0) ?? null;
+}
+
+/** Where a folder's listing resumes: the first entry after the last one finished. */
+function resumeIndex(entries: readonly import("node:fs").Dirent[], after: string | null): number {
+  if (after === null) return 0;
+  let index = 0;
+  let end = entries.length;
+  while (index < end) {
+    const middle = Math.floor((index + end) / 2);
+    if (entries[middle]!.name <= after) index = middle + 1;
+    else end = middle;
+  }
+  return index;
+}
+
+/**
+ * One page of the name walk: depth first, each folder's entries by name, up
+ * to `maxNameEntries` visited and `maxNameMatches` matched. The walk stops
+ * before an entry the page has no room for, so the next page starts with it
+ * and no name is returned twice. Links are matched with their listing detail
+ * and never entered.
+ */
+async function continueNameWalk(
+  root: string, walk: NameWalk, needle: string,
   exclusion: (path: string) => "internal" | "ignored" | null, signal?: AbortSignal,
-): Promise<{ names: ConnectedFolderNameMatch[]; coverage: NameSearchCoverage }> {
+): Promise<{ names: ConnectedFolderNameMatch[]; visited: number }> {
   const names: ConnectedFolderNameMatch[] = [];
-  const coverage: NameSearchCoverage = { visitedEntries: 0, complete: true };
-
-  async function addMatch(path: string, name: string, info?: BigIntStats): Promise<void> {
-    if (!name.toLocaleLowerCase().includes(needle)) return;
-    try {
-      const absolute = resolveConnectedFolderPath(root, path, { finalLink: true });
-      info ??= await lstat(absolute, { bigint: true });
-      if (info.isSymbolicLink()) {
-        // Use the listing's target metadata for display. Neither search walk enters it.
-        const link = await inspectSymbolicLink(absolute);
-        if (link) names.push({
-          path, name, kind: link.target === "folder" ? "folder" : "file",
-          updatedAt: (link.targetInfo ?? link.linkInfo).mtime.toISOString(),
-          ...(link.target === "file" && link.targetInfo ? { sizeBytes: link.targetInfo.size } : {}),
-          link: { target: link.target, targetPath: link.targetPath },
-        });
-      } else if (info.isFile() || info.isDirectory()) {
-        names.push({
-          path, name, kind: info.isDirectory() ? "folder" : "file", updatedAt: info.mtime.toISOString(),
-          ...(info.isFile() ? { sizeBytes: Number(info.size) } : {}),
-        });
-      }
-    } catch {
-      coverage.complete = false;
-    }
-  }
-
-  async function walk(path: string): Promise<boolean> {
+  let visited = 0;
+  const listings = new Map<DirectoryPosition, { entries: import("node:fs").Dirent[]; index: number }>();
+  while (walk.stack.length) {
     aborted(signal);
-    let entries;
-    try {
-      entries = await readdir(resolveConnectedFolderPath(root, path), { withFileTypes: true });
-    } catch {
-      coverage.complete = false;
-      return true;
+    const frame = walk.stack.at(-1)!;
+    let listing = listings.get(frame);
+    if (!listing) {
+      const entries = await openFolder(root, frame);
+      if (!Array.isArray(entries)) { walk.incomplete = true; walk.stack.pop(); continue; }
+      listing = { entries, index: resumeIndex(entries, frame.after) };
+      listings.set(frame, listing);
     }
-    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-    for (const entry of entries) {
-      aborted(signal);
-      if (!entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink()) continue;
-      const child = path ? `${path}/${entry.name}` : entry.name;
-      if (exclusion(child)) continue;
-      if (coverage.visitedEntries === maxNameEntries) {
-        coverage.complete = false;
-        return false;
-      }
-      coverage.visitedEntries++;
-      await addMatch(child, entry.name);
-      if (names.length === maxNameMatches) {
-        coverage.complete = false;
-        return false;
-      }
-      if (entry.isDirectory() && !await walk(child)) return false;
+    const entry = listing.entries[listing.index];
+    if (!entry) { walk.stack.pop(); continue; }
+    const child = frame.path ? `${frame.path}/${entry.name}` : entry.name;
+    if ((!entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink()) || exclusion(child)) {
+      listing.index++; frame.after = entry.name;
+      continue;
     }
-    return true;
+    if (visited === maxNameEntries || names.length === maxNameMatches) break;
+    listing.index++; frame.after = entry.name; visited++;
+    const matches = entry.name.toLocaleLowerCase().includes(needle);
+    if (!matches && !entry.isDirectory()) continue;
+    const info = await lstat(resolveConnectedFolderPath(root, child, { finalLink: true }), { bigint: true }).catch(() => null);
+    if (!info) { walk.incomplete = true; continue; }
+    if (matches) {
+      const match = await nameMatch(root, child, entry.name, info);
+      if (match) names.push(match);
+      else walk.incomplete = true;
+    }
+    if (info.isDirectory()) walk.stack.push({ path: child, after: null, version: folderIdentity(info) });
   }
+  walk.done = walk.stack.length === 0;
+  return { names, visited };
+}
 
-  if (initial.isDirectory()) await walk(selected);
-  else if (initial.isFile() || initial.isSymbolicLink()) {
-    coverage.visitedEntries++;
-    await addMatch(selected, basename(selected), initial);
+/** A matching name as a result row: a file or folder with its size and date, or a link with its listing detail. Null when it cannot be read. */
+async function nameMatch(root: string, path: string, name: string, info: BigIntStats): Promise<ConnectedFolderNameMatch | null> {
+  try {
+    if (info.isSymbolicLink()) {
+      // Use the listing's target metadata for display. Neither search walk enters it.
+      const link = await inspectSymbolicLink(resolveConnectedFolderPath(root, path, { finalLink: true }));
+      return link ? {
+        path, name, kind: link.target === "folder" ? "folder" : "file",
+        updatedAt: (link.targetInfo ?? link.linkInfo).mtime.toISOString(),
+        ...(link.target === "file" && link.targetInfo ? { sizeBytes: link.targetInfo.size } : {}),
+        link: { target: link.target, targetPath: link.targetPath },
+      } : null;
+    }
+    if (info.isFile() || info.isDirectory()) {
+      return {
+        path, name, kind: info.isDirectory() ? "folder" : "file", updatedAt: info.mtime.toISOString(),
+        ...(info.isFile() ? { sizeBytes: Number(info.size) } : {}),
+      };
+    }
+    return null;
+  } catch {
+    return null;
   }
-  return { names, coverage };
 }
 
 async function scanFile(root: string, current: FilePosition, initial: BigIntStats, needle: string, maxMatches: number, maxBytes: number, files: ConnectedFolderFileMatch[], coverage: ConnectedFolderSearchCoverage, admit: (match: ConnectedFolderFileMatch) => boolean, signal?: AbortSignal): Promise<boolean> {
@@ -300,7 +373,8 @@ async function scanFile(root: string, current: FilePosition, initial: BigIntStat
   const resultStart = files.length;
   try {
     handle = await open(resolveConnectedFolderPath(root, current.path), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    if (identity(await handle.stat({ bigint: true })) !== current.version) throw retrievalError("A searched file changed. Start the search again.", 409);
+    // A file that changed since its scan began is dropped from here on, counted as changed.
+    if (identity(await handle.stat({ bigint: true })) !== current.version) { coverage.changed++; return true; }
     if (!current.sampled) {
       const sample = Buffer.alloc(Math.min(8192, maxBytes - coverage.scannedBytes));
       const { bytesRead } = await handle.read(sample, 0, sample.length, 0);
@@ -329,7 +403,7 @@ async function scanFile(root: string, current: FilePosition, initial: BigIntStat
         if (at >= 0) {
           const match = { path: current.path, line: current.line, preview: preview(joined, at, needle.length) };
           if (!admit(match)) {
-            if (identity(await handle.stat({ bigint: true })) !== current.version) throw retrievalError("A searched file changed. Start the search again.", 409);
+            if (identity(await handle.stat({ bigint: true })) !== current.version) { files.splice(resultStart); coverage.changed++; return true; }
             return false;
           }
           files.push(match); current.matched = true;
@@ -353,6 +427,8 @@ async function scanFile(root: string, current: FilePosition, initial: BigIntStat
 }
 function filePosition(path: string, info: BigIntStats): FilePosition { return { path, version: identity(info), offset: 0, line: 1, tail: "", matched: false }; }
 function identity(info: BigIntStats): string { return [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs, info.mode].join(":"); }
+/** A folder's identity across pages: the same folder, whatever was added to or removed from it since. */
+function folderIdentity(info: BigIntStats): string { return `${info.dev}:${info.ino}`; }
 function digest(value: string): string { return createHash("sha256").update(value).digest("hex"); }
 function preview(line: string, at: number, length: number): string { const start = Math.max(0, at - 80); const value = `${start ? "…" : ""}${line.slice(start, at + length + 80).trim()}`; return value.length > 240 ? `${value.slice(0, 240)}…` : value; }
 function looksBinary(bytes: Buffer): boolean { if (bytes.includes(0)) return true; let controls = 0; for (const byte of bytes) if (byte < 9 || byte > 13 && byte < 32) controls++; return bytes.length > 0 && controls / bytes.length > 0.1; }

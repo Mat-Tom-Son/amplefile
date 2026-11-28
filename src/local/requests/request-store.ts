@@ -864,6 +864,23 @@ export class AmpleFileRequestStore {
     });
   }
 
+  /** Questions its children asked that this request's own running turn has seen; each must belong to a direct child. */
+  noteQuestionsSeen(requestId: string, questionIds: string[]): Promise<void> {
+    return this.#run(async () => {
+      const record = this.#requireRecord(requestId);
+      const seen = new Set(record.seenQuestionIds ?? []);
+      const before = seen.size;
+      for (const id of questionIds) {
+        const question = this.question(id);
+        if (!question || this.#requireRecord(question.requestId).parentRequestId !== requestId) {
+          throw new AmpleFileRequestLineageError("A request can see only its own children's questions.");
+        }
+        seen.add(id);
+      }
+      if (seen.size !== before) await this.#writeRequest({ ...record, seenQuestionIds: [...seen] });
+    });
+  }
+
   #childDeliveryIds(record: AmpleFileRequestRecord, taskIds: string[]): string[] {
     const delivered = new Map<string, string>();
     for (const id of [...record.deliveredChildTaskIds, ...taskIds]) {

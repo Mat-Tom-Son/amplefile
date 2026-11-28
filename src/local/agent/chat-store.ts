@@ -51,6 +51,8 @@ export interface ChatMessageInterruption {
   provider: string | null;
   model: string | null;
   activities: ChatMessageInterruptionActivity[];
+  /** The saved content is the model's own reply so far, not a placeholder AmpleFile wrote. Absent in records older builds wrote. */
+  partialResponse?: true;
 }
 
 export interface ChatMessageInterruptionActivity {
@@ -489,7 +491,11 @@ function parseChatMessage(line: string): ChatMessage | null {
     if (workTrail?.length) message.workTrail = workTrail;
     const assistantPresentation = parsed.role === "assistant" ? parseAssistantPresentation(parsed.assistantPresentation, parsed.content) : undefined;
     if (assistantPresentation) message.assistantPresentation = assistantPresentation;
-    if (isChatMessageInterruption(parsed.interruption)) message.interruption = parsed.interruption;
+    // Saved reply text is claimed only by an explicit mark; any other value reads as none.
+    if (isChatMessageInterruption(parsed.interruption)) {
+      const { partialResponse, ...interruption } = parsed.interruption;
+      message.interruption = partialResponse === true ? { ...interruption, partialResponse } : interruption;
+    }
     if (Array.isArray(parsed.attachments)) {
       const attachments = parsed.attachments.filter(isChatMessageAttachmentRef).slice(0, 32);
       if (attachments.length) message.attachments = attachments;

@@ -4,15 +4,17 @@ import { api, errorText } from "../../lib/api";
 import type { TreeEntry } from "../../types";
 import { placeApiBase, placeKey, type FileManagerPlace } from "./file-manager-places";
 import { snippet, type FileManagerSearchResult } from "./useFileManagerSearch";
+import { searchResultsPerRun, type SearchPause } from "./file-manager-search-progress";
 
 /**
  * Search in a Standard Folder or the computer place (docs/product-model.md,
  * "Search"): names and file text below the folder shown, through the host's
- * folder search (`GET /api/standard-folders/:id/search`). Each page is bounded
- * by time and by how much it reads; when one stops early the window says so
- * and Keep Searching asks for the next page. Hidden items are searched only
- * while Show Hidden Files is on. Connected Folders inside are listed, not
- * searched: their own search applies their rules.
+ * folder search (`GET /api/standard-folders/:id/search`). The host answers a
+ * bounded page at a time; the window asks for the next page itself until the
+ * search reaches its end, so it finds everything, unless the person presses
+ * Stop or a run gathers `searchResultsPerRun` results (file-manager-search-progress.ts).
+ * Hidden items are searched only while Show Hidden Files is on. Connected
+ * Folders inside are listed, not searched: their own search applies their rules.
  */
 
 export type FolderSearchStop = "matches" | "files" | "bytes" | "entries" | "time" | "results";
@@ -25,22 +27,25 @@ export interface FolderSearchPage {
   truncated: boolean;
   scannedFiles: number;
   nextCursor: string | null;
-  coverage: { stoppedBy: FolderSearchStop | null; complete: boolean; unreadable: number; visitedEntries: number; scannedBytes: number };
+  /** Counters describe this page alone; `complete` too, so the window adds up `unreadable` and `changed` across pages. */
+  coverage: { stoppedBy: FolderSearchStop | null; complete: boolean; unreadable: number; changed?: number; visitedEntries: number; scannedBytes: number };
 }
 
 export interface PlainFolderSearchState {
   results: FileManagerSearchResult[];
   status: "idle" | "searching" | "done" | "error";
   error: string | null;
-  /** Set while there is more to search: the page stopped at a bound. */
-  stoppedEarly: FolderSearchStop | null;
+  /** Set when the search stopped short of its end: Keep Searching goes on from there. */
+  paused: SearchPause | null;
   /** Files read so far, across pages. */
   scannedFiles: number;
   /** Some folders could not be read, or changed while being read. */
   incomplete: boolean;
   /** Connected Folders inside the folder searched, which this search leaves to their own. */
   connectedFoldersInside: string[];
-  /** Asks for the next page; only while `stoppedEarly`. */
+  /** Stops a running search where it is; the results so far stay. */
+  stop: () => void;
+  /** Goes on from where the search stopped; only while `paused`. */
   continueSearch: () => void;
 }
 
@@ -78,19 +83,6 @@ function plainResult(place: FileManagerPlace, entry: Pick<TreeEntry, "name" | "p
   };
 }
 
-/** Why a page stopped, in words: "Search stopped after 5 seconds." */
-export function stoppedEarlyText(stop: FolderSearchStop, scannedFiles: number): string {
-  const files = `${scannedFiles.toLocaleString()} ${scannedFiles === 1 ? "file" : "files"}`;
-  switch (stop) {
-    case "time": return `Search stopped after a few seconds, having read ${files}.`;
-    case "files": return `Search stopped after reading ${files}.`;
-    case "bytes": return `Search stopped after reading ${files}, a lot of text at once.`;
-    case "entries": return "Search stopped after looking through a great many items.";
-    case "matches":
-    case "results": return "Search stopped after finding many matches.";
-  }
-}
-
 /** The sample window's search: names and text in its sample trees. */
 function fixturePage(tree: readonly TreeEntry[], path: string, needle: string): FolderSearchPage {
   const lower = needle.toLocaleLowerCase();
@@ -117,66 +109,100 @@ export function usePlainFolderSearch(input: {
 }): PlainFolderSearchState {
   const { query, place, path, includeHidden, enabled, fixtureTree } = input;
   const needle = query.trim();
-  const [state, setState] = useState<Omit<PlainFolderSearchState, "continueSearch">>({ results: [], status: "idle", error: null, stoppedEarly: null, scannedFiles: 0, incomplete: false, connectedFoldersInside: [] });
+  const idle: Omit<PlainFolderSearchState, "stop" | "continueSearch"> = { results: [], status: "idle", error: null, paused: null, scannedFiles: 0, incomplete: false, connectedFoldersInside: [] };
+  const [state, setState] = useState(idle);
   const accumulated = useRef<{ names: FileManagerSearchResult[]; texts: FileManagerSearchResult[] }>({ names: [], texts: [] });
+  /** Where the next page starts; null before the first page and after the last. */
   const cursorRef = useRef<string | null>(null);
+  /** The search has not reached its end. */
+  const moreRef = useRef(false);
+  /** What every page so far added up to: files read, items skipped as unreadable or changed, Connected Folders passed. */
+  const tallyRef = useRef({ scannedFiles: 0, skipped: 0, connectedFolders: new Set<string>() });
   const controllerRef = useRef<AbortController | null>(null);
+  /** The first page waits for typing to pause; Stop in that moment cancels it. */
+  const startTimerRef = useRef<number | null>(null);
   const searchKey = `${placeKey(place)}\0${path}\0${includeHidden ? 1 : 0}\0${needle}`;
   const keyRef = useRef(searchKey);
   keyRef.current = searchKey;
 
-  const fetchPage = useCallback(async (cursor: string | null, key: string) => {
+  /** Asks for pages one after another until the search ends, is stopped, or gathers a run's worth. */
+  const run = useCallback(async (key: string) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
-    setState((current) => ({ ...current, status: "searching", error: null }));
+    const until = accumulated.current.names.length + accumulated.current.texts.length + searchResultsPerRun;
+    setState((current) => ({ ...current, status: "searching", error: null, paused: null }));
     try {
-      let page: FolderSearchPage;
-      if (fixtureTree) page = fixturePage(fixtureTree, path, needle);
-      else {
-        const params = new URLSearchParams({ q: needle });
-        if (path) params.set("path", path);
-        if (includeHidden) params.set("includeHidden", "1");
-        if (cursor) params.set("cursor", cursor);
-        page = await api<FolderSearchPage>(`${placeApiBase(place)}/search?${params.toString()}`, { signal: controller.signal });
-      }
-      if (controller.signal.aborted || keyRef.current !== key) return;
-      accumulated.current = mergeFolderSearchPage(place, accumulated.current, page, needle);
-      cursorRef.current = page.nextCursor;
-      setState((current) => ({
-        results: [...accumulated.current.names, ...accumulated.current.texts],
-        status: "done",
-        error: null,
-        stoppedEarly: page.nextCursor ? page.coverage.stoppedBy ?? "time" : null,
-        scannedFiles: (cursor ? current.scannedFiles : 0) + page.scannedFiles,
-        incomplete: !page.nextCursor && !page.coverage.complete,
-        connectedFoldersInside: [...new Set([...(cursor ? current.connectedFoldersInside : []), ...page.connectedFolders.map((item) => item.connectedFolderId)])],
-      }));
+      do {
+        let page: FolderSearchPage;
+        if (fixtureTree) page = fixturePage(fixtureTree, path, needle);
+        else {
+          const params = new URLSearchParams({ q: needle });
+          if (path) params.set("path", path);
+          if (includeHidden) params.set("includeHidden", "1");
+          if (cursorRef.current) params.set("cursor", cursorRef.current);
+          page = await api<FolderSearchPage>(`${placeApiBase(place)}/search?${params.toString()}`, { signal: controller.signal });
+        }
+        if (controller.signal.aborted || keyRef.current !== key) return;
+        // Everything this page says is read now, as it arrives: a state update can run later, after the next page.
+        accumulated.current = mergeFolderSearchPage(place, accumulated.current, page, needle);
+        cursorRef.current = page.nextCursor;
+        const more = page.nextCursor !== null;
+        moreRef.current = more;
+        const tally = tallyRef.current;
+        tally.scannedFiles += page.scannedFiles;
+        tally.skipped += page.coverage.unreadable + (page.coverage.changed ?? 0);
+        for (const item of page.connectedFolders) tally.connectedFolders.add(item.connectedFolderId);
+        const results = [...accumulated.current.names, ...accumulated.current.texts];
+        const limited = more && results.length >= until;
+        setState({
+          results,
+          status: more && !limited ? "searching" : "done",
+          error: null,
+          paused: limited ? "limit" : null,
+          scannedFiles: tally.scannedFiles,
+          incomplete: tally.skipped > 0,
+          connectedFoldersInside: [...tally.connectedFolders],
+        });
+        if (limited) return;
+      } while (moreRef.current);
     } catch (caught) {
       if (controller.signal.aborted || keyRef.current !== key) return;
-      setState((current) => ({ ...current, status: "error", error: errorText(caught), stoppedEarly: null }));
+      // What was found stays; Keep Searching tries again from the same place.
+      const more = moreRef.current;
+      setState((current) => ({ ...current, status: "error", error: errorText(caught), paused: more ? "stopped" : null }));
     }
   }, [fixtureTree, includeHidden, needle, path, place]);
 
   useEffect(() => {
     accumulated.current = { names: [], texts: [] };
     cursorRef.current = null;
+    moreRef.current = false;
+    tallyRef.current = { scannedFiles: 0, skipped: 0, connectedFolders: new Set() };
     controllerRef.current?.abort();
     if (!enabled || !needle) {
-      setState({ results: [], status: "idle", error: null, stoppedEarly: null, scannedFiles: 0, incomplete: false, connectedFoldersInside: [] });
+      setState(idle);
       return;
     }
-    setState({ results: [], status: "searching", error: null, stoppedEarly: null, scannedFiles: 0, incomplete: false, connectedFoldersInside: [] });
+    setState({ ...idle, status: "searching" });
+    moreRef.current = true;
     const key = searchKey;
-    const timer = window.setTimeout(() => void fetchPage(null, key), debounceMs);
+    const timer = startTimerRef.current = window.setTimeout(() => void run(key), debounceMs);
     return () => { window.clearTimeout(timer); controllerRef.current?.abort(); };
   }, [enabled, searchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const continueSearch = useCallback(() => {
-    const cursor = cursorRef.current;
-    if (!cursor || !enabled) return;
-    void fetchPage(cursor, keyRef.current);
-  }, [enabled, fetchPage]);
+  const stop = useCallback(() => {
+    if (startTimerRef.current !== null) window.clearTimeout(startTimerRef.current);
+    startTimerRef.current = null;
+    controllerRef.current?.abort();
+    const more = moreRef.current;
+    setState((current) => current.status === "searching" ? { ...current, status: "done", paused: more ? "stopped" : null } : current);
+  }, []);
 
-  return { ...state, continueSearch };
+  const continueSearch = useCallback(() => {
+    if (!moreRef.current || !enabled) return;
+    void run(keyRef.current);
+  }, [enabled, run]);
+
+  return { ...state, stop, continueSearch };
 }

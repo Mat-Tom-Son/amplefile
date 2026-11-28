@@ -114,6 +114,8 @@ export interface ChatMessageInterruption {
   provider: string | null;
   model: string | null;
   activities: ChatMessageInterruptionActivity[];
+  /** The saved content is the model's own reply so far, not a placeholder AmpleFile wrote. Absent in records older builds wrote. */
+  partialResponse?: true;
 }
 
 export interface ChatMessageInterruptionActivity {

@@ -141,6 +141,15 @@
   font-size: calc(12px * var(--fm-scale));
 }
 
+/* A search that stopped early: its note and Keep Searching stay at the foot of the list while the results scroll. */
+.fm-search-note.is-partial {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  background: var(--fm-window);
+  border-top: 1px solid var(--fm-line);
+}
+
 /* Info's folder size, and its partial marker. */
 .fm-size-note {
   padding: 0 0 6px;

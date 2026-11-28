@@ -588,14 +588,15 @@ export interface AmpleFileActFacade {
     conversationId: string;
     aborted: boolean;
   }>;
-  turnStatus(input: { connectedFolder: string; taskId: string }): Promise<{
+  /** `parentTaskId` names the reading turn: a parent's own read of its child records that child turn as delivered. */
+  turnStatus(input: { connectedFolder: string; taskId: string; parentTaskId?: string }): Promise<{
     connectedFolder: AmpleFileActConnectedFolderRef;
     task: AmpleFileActTurnStatus;
     /** Set while this task's request waits on an answer to a question this task asked. */
     waiting: AmpleFileActWaitingRef | null;
     request: AmpleFileActRequestRef | null;
   }>;
-  turnResult(input: { connectedFolder: string; taskId: string }): Promise<{
+  turnResult(input: { connectedFolder: string; taskId: string; parentTaskId?: string }): Promise<{
     connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     task: { taskId: string; state: "succeeded"; endedAt: string };
@@ -1302,7 +1303,7 @@ export interface AmpleFileActFacade {
     conversation: AmpleFileActConversationRef;
     state: AmpleFileActChatState;
   }>;
-  agentTurnStatus(input: { taskId: string }): Promise<{
+  agentTurnStatus(input: { taskId: string; parentTaskId?: string }): Promise<{
     task: AmpleFileActTurnStatus;
     /** The shipped attachment-and-actions projection `agent status` keeps. */
     request: AmpleFileActAgentRequest | null;
@@ -1327,7 +1328,7 @@ export interface AmpleFileActFacade {
     lastAssistant: string | null;
     messages: AmpleFileActChatMessage[];
   }>;
-  agentTurnResult(input: { taskId: string }): Promise<{
+  agentTurnResult(input: { taskId: string; parentTaskId?: string }): Promise<{
     conversationId: string;
     task: { taskId: string; state: "succeeded"; endedAt: string };
     message: AmpleFileActChatMessage;

@@ -144,7 +144,8 @@ test("a person's own message has the footer a reply has, and a failed reply's no
   assert.match(last, /Continue whenever you’re ready\.<\/span><button[^>]*>Continue<\/button>/);
   assert.doesNotMatch(last, /try again/i);
   const earlier = row(failed);
-  assert.match(earlier, /AmpleFile saved this result with your Chat\.<\/span>/);
+  assert.match(earlier, /The Worker stopped on an error before it finished\.<\/span>/);
+  assert.doesNotMatch(earlier, /reply so far|saved this result/, "text the record does not mark as the model's is not claimed as a saved reply");
   assert.doesNotMatch(earlier, /Continue/, "without the button the notice does not point at one");
 });
 

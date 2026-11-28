@@ -164,7 +164,8 @@ export function FileEntries({ view, entries, selected, focusPath, dropTarget, ma
 }
 
 /** The scrolled contents' scroll position and size, read at most once a frame. */
-function useViewport(scrollRef: RefObject<HTMLDivElement | null>): { scrollTop: number; height: number; width: number } {
+/** The scrolled view's position and size, read once a frame while it scrolls or resizes. */
+export function useViewport(scrollRef: RefObject<HTMLDivElement | null>): { scrollTop: number; height: number; width: number } {
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0, width: 0 });
   useEffect(() => {
     const scroller = scrollRef.current;

@@ -770,7 +770,9 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     "jobs start",
     "jobs stop",
   ]);
-  if (rawParentTaskId !== undefined && !lineageCommands.has(command)) {
+  // A read names the reading turn so the host can tell a parent's own read of its child from anyone else's.
+  const attributedReads = new Set(["chat status", "chat result", "chat wait", "agent status", "agent result", "agent wait"]);
+  if (rawParentTaskId !== undefined && !lineageCommands.has(command) && !attributedReads.has(command)) {
     throw usageError(`--parent-task cannot be used with '${command || "(none)"}'.`);
   }
   const parentTaskId = rawParentTaskId === undefined
@@ -808,12 +810,12 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       };
     }
     case "chat status": {
-      allowOnlyFlags("--connected-folder", "--conversation", "--task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--parent-task");
       const selection = requireConversationOrTask();
-      return { name: "chat.status", output, connectedFolder: requireConnectedFolder(), ...selection };
+      return { name: "chat.status", output, connectedFolder: requireConnectedFolder(), ...selection, ...(parentTaskId ? { parentTaskId } : {}) };
     }
     case "chat result": {
-      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--messages");
+      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--messages", "--parent-task");
       const selection = requireConversationOrTask();
       const rawMessages = stringFlag("--messages");
       if (rawMessages !== undefined && selection.task) {
@@ -832,6 +834,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         connectedFolder: requireConnectedFolder(),
         ...selection,
         ...(messages !== undefined ? { messages } : {}),
+        ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "chat abort":
@@ -1058,7 +1061,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       return { name: "agent.stop", output, task };
     }
     case "agent status": {
-      allowOnlyFlags("--conversation", "--task");
+      allowOnlyFlags("--conversation", "--task", "--parent-task");
       const conversation = stringFlag("--conversation")?.trim();
       const task = stringFlag("--task")?.trim();
       if (conversation && task) throw usageError("Use either --conversation <id> or --task <id>, not both.");
@@ -1067,10 +1070,11 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         output,
         ...(conversation ? { conversation } : {}),
         ...(task ? { task } : {}),
+        ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "agent result": {
-      allowOnlyFlags("--conversation", "--task", "--messages");
+      allowOnlyFlags("--conversation", "--task", "--messages", "--parent-task");
       const conversation = stringFlag("--conversation")?.trim();
       const task = stringFlag("--task")?.trim();
       if (conversation && task) throw usageError("Use either --conversation <id> or --task <id>, not both.");
@@ -1091,6 +1095,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         ...(conversation ? { conversation } : {}),
         ...(task ? { task } : {}),
         ...(messages !== undefined ? { messages } : {}),
+        ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "agent abort":
@@ -1961,11 +1966,11 @@ async function runActCommand(
     }
     case "chat.status":
       return command.task
-        ? toJson(await facade.turnStatus({ connectedFolder: command.connectedFolder!, taskId: command.task }))
+        ? toJson(await facade.turnStatus({ connectedFolder: command.connectedFolder!, taskId: command.task, ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}) }))
         : toJson(await facade.conversationStatus({ connectedFolder: command.connectedFolder!, conversationId: command.conversation! }));
     case "chat.result":
       return command.task
-        ? toTerminalSafeJson(await facade.turnResult({ connectedFolder: command.connectedFolder!, taskId: command.task }))
+        ? toTerminalSafeJson(await facade.turnResult({ connectedFolder: command.connectedFolder!, taskId: command.task, ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}) }))
         : toJson(await facade.conversationResult({
             connectedFolder: command.connectedFolder!,
             conversationId: command.conversation!,
@@ -2123,13 +2128,13 @@ async function runActCommand(
       return toJson(await facade.agentStop({ taskId: command.task! }));
     case "agent.status":
       return command.task
-        ? toJson(await facade.agentTurnStatus({ taskId: command.task }))
+        ? toJson(await facade.agentTurnStatus({ taskId: command.task, ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}) }))
         : toJson(await facade.agentConversationStatus({
             ...(command.conversation ? { conversationId: command.conversation } : {}),
           }));
     case "agent.result":
       return command.task
-        ? toTerminalSafeJson(await facade.agentTurnResult({ taskId: command.task }))
+        ? toTerminalSafeJson(await facade.agentTurnResult({ taskId: command.task, ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}) }))
         : toJson(await facade.agentConversationResult({
             ...(command.conversation ? { conversationId: command.conversation } : {}),
             ...(command.messages !== undefined ? { messages: command.messages } : {}),

@@ -258,11 +258,22 @@ amplefile requests list|show --request <id> --json                          # re
   acceptance path, and links it as a child of the caller's root request; the
   destination's report flows back to that root.
 - A report to a parent whose turn is still running reaches that turn through
-  `chat wait`. Reading a child's settled result with `chat result` or
-  `agent result` while the parent's turn runs, which is how `chat wait` ends,
-  records that child turn as delivered, so no follow-up turn repeats it. A
-  parent whose turn has ended sees it in `agent status`, `requests show`, the
-  overview, and the continuation turn.
+  `chat wait --parent-task <its own task id>`. While the parent's turn runs,
+  a read that names that turn with `--parent-task` counts as the parent's
+  own: reading a child's settled result with `chat result` or `agent result`
+  records that child turn as delivered, and a `chat status` or `agent status`
+  that shows the child waiting only on the person's answer records those
+  questions as seen (they are already in Needs you). `chat wait` ends with
+  one of these reads and passes the turn it names on to it. No follow-up turn
+  repeats a delivered child turn, or one whose only news is questions the
+  parent has seen; anything else that turn leaves, such as a report filed
+  after an asynchronous question, or a failure, still arrives. A read that
+  names no turn, or another one, such as a person checking from Terminal,
+  records nothing, so the parent still hears through its follow-up turn. A
+  child waiting on a question put to its parent is not recorded this way:
+  the follow-up turn is the parent's sure chance to answer it. A parent whose
+  turn has ended sees it in `agent status`, `requests show`, the overview,
+  and the continuation turn.
 
 ## Completion, delivery and recovery
 
@@ -281,8 +292,9 @@ Connected Folder continuation rebuilds its assignment and delegated handle
 from that record. Selected direct-child reports may be admitted into a new
 turn's hidden context; their delivery identities are recorded. Otherwise an
 idle owner can receive one synthesis turn. Children finishing before their
-parent ends are eligible too, unless the parent already read that result
-mid-turn. Nested owners synthesize before their own parent wakes. When
+parent ends are eligible too, unless the parent's own turn already read that
+result mid-turn, or the child turn's only news is questions that turn saw it
+waiting on (a read naming that turn with `--parent-task`). Nested owners synthesize before their own parent wakes. When
 compaction holds an otherwise idle owner, both successful and failed
 compaction cleanup reevaluate its pending child deliveries. This releases only
 results settled during the current app run; restart never replays them. The

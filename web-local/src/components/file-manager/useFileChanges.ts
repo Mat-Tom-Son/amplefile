@@ -8,7 +8,7 @@ import { requestConfirm, showToast } from "../../ui/feedback";
 import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import { isExtractableArchive } from "../../../../src/shared/file-menu";
 import type { TreeEntry } from "../../types";
-import { parentPath } from "./file-manager-model";
+import { parentPath, sharedParentPath } from "./file-manager-model";
 import { sameLocation, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 import { trashChangedEvent } from "./file-manager-trash";
 import type { ConflictPolicy, TransferAnswer } from "../../../../src/shared/file-transfer";
@@ -122,6 +122,12 @@ export function useFileChanges(context: FileChangesContext) {
   /** Where a folder in a place is, by name, for messages. */
   function folderLabel(target: { place: FileManagerPlace; path: string }): string {
     return target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : nameOfPlace(target.place);
+  }
+
+  /** Where items came from, by name, for messages: their folder, or the place when they came from several folders. */
+  function sourceFolderLabel(source: FileManagerPlace, paths: readonly string[]): string {
+    const folder = sharedParentPath(paths);
+    return folder === null ? nameOfPlace(source) : folderLabel({ place: source, path: folder });
   }
 
   /**
@@ -455,6 +461,7 @@ export function useFileChanges(context: FileChangesContext) {
     startTransfer,
     reportOutcome,
     folderLabel,
+    sourceFolderLabel,
     afterTransfer,
     recordUndo,
     recordRedo,

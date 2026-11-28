@@ -71,18 +71,44 @@ try{
    assert.ok(session.getActiveToolNames().includes('mcp__same__ping'));
  }
  await native(aDir,aConfig);await native(bDir,bConfig);assert.ok(authHeaders.includes('Bearer connected-folder-a-token'));assert.ok(authHeaders.includes('Bearer connected-folder-b-token'));assert.ok(!authHeaders.includes('Bearer global-token'));console.log('PASS actual included wrapper and native HTTP transport use the owning Connected Folder token');
- const checked=await a.probe({scope:'project',name:'same'});assert.equal(checked.state,'ready');assert.equal(checked.tools,1);
+ const checked=await a.probe({scope:'project',name:'same'});assert.equal(checked.state,'ready');assert.equal(checked.tools,1);assert.equal(checked.signIn,'saved','a check that connected with the saved token says so');
  await a.saveServer({scope:'project',name:'resources',definition:{url:origin+'/resources-mcp'}});
- const resources=await a.probe({scope:'project',name:'resources'});assert.equal(resources.state,'ready');assert.equal(resources.tools,0);assert.equal(resources.resources,2);
+ const resources=await a.probe({scope:'project',name:'resources'});assert.equal(resources.state,'ready');assert.equal(resources.tools,0);assert.equal(resources.resources,2);assert.equal(resources.signIn,'not_needed','a service that connected with no saved sign-in needs none');
  await a.saveServer({scope:'project',name:'empty',definition:{url:origin+'/empty-mcp',exposure:"direct"}});assert.equal((await a.probe({scope:'project',name:'empty'})).state,'empty');
- await a.saveServer({scope:'project',name:'unreachable',definition:{url:origin+'/missing',exposure:"direct"}});assert.equal((await a.probe({scope:'project',name:'unreachable'})).state,'error');
- await a.saveServer({scope:'project',name:'slow',definition:{url:origin+'/slow-mcp',exposure:"direct"}});const probeAbort=new AbortController();const pendingProbe=a.probe({scope:'project',name:'slow'},{signal:probeAbort.signal});setTimeout(()=>probeAbort.abort(),50);assert.equal((await pendingProbe).state,'cancelled');
+ await a.saveServer({scope:'project',name:'unreachable',definition:{url:origin+'/missing',exposure:"direct"}});const unreachable=await a.probe({scope:'project',name:'unreachable'});assert.equal(unreachable.state,'error');assert.equal(unreachable.signIn,null,'a failed check establishes nothing about sign-in');
+ await a.saveServer({scope:'project',name:'slow',definition:{url:origin+'/slow-mcp',exposure:"direct"}});const probeAbort=new AbortController();const pendingProbe=a.probe({scope:'project',name:'slow'},{signal:probeAbort.signal});setTimeout(()=>probeAbort.abort(),50);const cancelledProbe=await pendingProbe;assert.equal(cancelledProbe.state,'cancelled');assert.equal(cancelledProbe.signIn,null);
  console.log('PASS native connection checks distinguish ready, empty, failure and cancellation');
+ // Each check stays with its connection on the host, not with the setup session that ran it.
+ const pick=(rows:any[],name:string)=>rows.find((row:any)=>row.scope==='project'&&row.name===name);
+ const reopened=createIncludedMcpSetup({agentDir,credentials,cwd:aDir,openAuthorizationUrl,withMutation});
+ try{
+  const cold=await reopened.list();
+  assert.deepEqual({state:pick(cold,'resources').lastCheck?.state,signIn:pick(cold,'resources').lastCheck?.signIn},{state:'ready',signIn:'not_needed'},'a setup opened afterwards shows the check');
+  assert.equal(pick(cold,'resources').credential,'not_checked','opening still reads no credential');
+  assert.equal(pick(cold,'same').lastCheck?.signIn,'saved');
+  assert.equal(pick(cold,'unreachable').lastCheck,undefined,'a failed check leaves nothing standing');
+  assert.equal(pick(cold,'slow').lastCheck,undefined,'a cancelled check records nothing');
+  assert.equal(pick(await b.list(),'same').lastCheck,undefined,'a sibling Connected Folder\'s connection of the same name keeps its own');
+  // A sign-in removed outside setup: the next list that reads credentials sees it, and the check no longer stands.
+  const sameSource=aConfig.servers.find(entry=>entry.name==='same')!.source;
+  await credentials.delete('amplefile-'+createHash('sha256').update(JSON.stringify([resolve(sameSource),'same',origin+'/mcp'])).digest('hex').slice(0,40));
+  assert.equal(pick(await reopened.list({inspectCredentials:true}),'same').lastCheck,undefined);
+  // A changed definition: the check was of another revision.
+  const projectConfig=join(aDir,'.pi','mcp.json');const raw=JSON.parse(await readFile(projectConfig,'utf8'));raw.mcpServers.resources.exposure='direct';await writeFile(projectConfig,JSON.stringify(raw));
+  assert.equal(pick(await reopened.list(),'resources').lastCheck,undefined);
+ }finally{await reopened.dispose();}
+ // Use Token and Disconnect each end what a check established.
+ assert.equal(pick(await a.list(),'empty').lastCheck?.signIn,'not_needed');
+ await a.saveBearer({scope:'project',name:'empty',token:'empty-token'});assert.equal(pick(await a.list(),'empty').lastCheck,undefined);
+ assert.equal((await a.probe({scope:'project',name:'empty'})).signIn,'saved');assert.equal(pick(await a.list(),'empty').lastCheck?.signIn,'saved');
+ await a.disconnect({scope:'project',name:'empty'});assert.equal(pick(await a.list(),'empty').lastCheck,undefined);
+ console.log('PASS a check stays with its connection across setup sessions until its definition or sign-in changes');
  await a.disconnect({scope:'project',name:'same'});assert.equal((await a.list({inspectCredentials:true})).find(s=>s.scope==='project')!.credential,'missing');assert.equal((await b.list({inspectCredentials:true}))[1].credential,'present');
  const oauth={url:origin+'/oauth-mcp',oauth:{scope:'mcp:read',callbackUrl:'http://127.0.0.1/callback'}};
- await a.saveServer({scope:'project',name:'oauth',definition:oauth});let job=await a.startOAuth({scope:'project',name:'oauth'});assert.equal((await settle(a,job.id)).state,'connected');assert.ok(tokenFenceSeen>0);assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='oauth')!.credential,'present');assert.equal(fenced,0);console.log('PASS real PKCE loopback callback commits native tokens inside the host mutation fence');
+ await a.saveServer({scope:'project',name:'oauth',definition:oauth});assert.equal((await a.probe({scope:'project',name:'oauth'})).signIn,'required');assert.equal(pick(await a.list(),'oauth').lastCheck?.signIn,'required');let job=await a.startOAuth({scope:'project',name:'oauth'});assert.equal((await settle(a,job.id)).state,'connected');assert.equal(pick(await a.list(),'oauth').lastCheck,undefined,'a completed Sign In ends the check that found it needed');assert.ok(tokenFenceSeen>0);assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='oauth')!.credential,'present');assert.equal(fenced,0);console.log('PASS real PKCE loopback callback commits native tokens inside the host mutation fence');
  await a.saveServer({scope:'project',name:'stale',definition:oauth});mutateBeforeToken=true;job=await a.startOAuth({scope:'project',name:'stale'});assert.equal((await settle(a,job.id)).state,'failed');assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='stale')!.credential,'missing');mutateBeforeToken=false;console.log('PASS changed configuration rejects token persistence after browser authorization');
  await a.saveServer({scope:'project',name:'cancel',definition:oauth});openMode='hold';job=await a.startOAuth({scope:'project',name:'cancel'});for(let n=0;n<100&&!authorization;n++)await pause();await a.cancelOAuth(job.id);assert.equal(a.oauthStatus(job.id).state,'cancelled');assert.equal((await a.list({inspectCredentials:true})).find(s=>s.name==='cancel')!.credential,'missing');console.log('PASS cancelled setup closes its callback and cannot save tokens');
+ const refused=await a.probe({scope:'project',name:'cancel'});assert.equal(refused.state,'setup_required');assert.equal(refused.signIn,'required','a service that refuses until someone signs in needs a sign-in');console.log('PASS a check says whether sign-in was used, not needed, or required');
  authorization=undefined;
  const previousExchanges=tokenSeen;
  job=await a.startOAuth({scope:'project',name:'oauth'});

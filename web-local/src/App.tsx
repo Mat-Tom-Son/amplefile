@@ -52,7 +52,9 @@ export function App() {
   const [connectAiOpen, setConnectAiOpen] = useState(false);
   const afterConnectAi = useRef<(() => void) | undefined>(undefined);
   useEffect(() => onConnectAiRequested((then) => { afterConnectAi.current = then; setConnectAiOpen(true); }), []);
-  // Connected Folders just added that still show the Set Up for Me card.
+  // Connected Folders just added that still show the Set Up for Me card. It is offered only for an identity the
+  // connect made new (the answer's `newIdentity`): a folder that already carried one, such as a folder moved and
+  // linked again, had its offer when it was first connected.
   const [setUpOffers, setSetUpOffers] = useState<string[]>(() => readConnectedFolderSetUpOffers());
   useEffect(() => {
     if (!boot) return;
@@ -247,9 +249,9 @@ export function App() {
 
   async function createConnectedFolder(name: string) {
     if (fixtureRequested) { setCreateConnectedFolderOpen(false); showToast({ text: "Connected Folder creation is disabled in the preview", tone: "info" }); return; }
-    const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders", { method: "POST", body: { name } });
+    const result = await api<{ connectedFolder: ConnectedFolderSummary; newIdentity?: boolean }>("/api/connected-folders", { method: "POST", body: { name } });
     await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id); setCreateConnectedFolderOpen(false);
-    offerSetUp(result.connectedFolder.id);
+    if (result.newIdentity) offerSetUp(result.connectedFolder.id);
   }
 
   async function openFolder() {
@@ -257,9 +259,9 @@ export function App() {
     if (!picker) return setError("Folder selection is available in the desktop app.");
     try {
       const selected = await picker.chooseFolder(); if (!selected) return;
-      const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: selected.path, folderGrantId: selected.folderGrantId } });
+      const result = await api<{ connectedFolder: ConnectedFolderSummary; newIdentity?: boolean }>("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: selected.path, folderGrantId: selected.folderGrantId } });
       await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id);
-      offerSetUp(result.connectedFolder.id);
+      if (result.newIdentity) offerSetUp(result.connectedFolder.id);
     } catch (caught) { setError(errorText(caught)); }
   }
 
@@ -272,10 +274,10 @@ export function App() {
   async function putStandardFolderToWork(standardFolderId: string) {
     if (fixture) { showToast({ text: "Making Connected Folders is disabled in the preview", tone: "info" }); return; }
     try {
-      const { connectedFolder } = await api<{ connectedFolder: ConnectedFolderSummary }>(`/api/standard-folders/${encodeURIComponent(standardFolderId)}/connected-folders`, { method: "POST", body: { path: "" } });
+      const { connectedFolder, newIdentity } = await api<{ connectedFolder: ConnectedFolderSummary; newIdentity?: boolean }>(`/api/standard-folders/${encodeURIComponent(standardFolderId)}/connected-folders`, { method: "POST", body: { path: "" } });
       await refreshBootstrap();
       setActiveConnectedFolderId(connectedFolder.id);
-      offerSetUp(connectedFolder.id);
+      if (newIdentity) offerSetUp(connectedFolder.id);
     } catch (caught) {
       setError(errorText(caught));
     }
