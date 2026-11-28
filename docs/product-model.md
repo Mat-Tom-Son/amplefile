@@ -702,7 +702,10 @@ Window** (⌘N) opens another window at the folder the front
 window shows, or at the home folder, a step down and to the right of it, so
 two windows never sit exactly on top of each other. **Open in New Window**,
 beside **Open in New Tab** in a folder's menu and the sidebar's menus, opens
-that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
+that folder in a window of its own. A window opened at a folder, or handed
+one as it starts, shows that folder from its first frame, never another
+Connected Folder first, so its message box reaches that folder's Worker
+from the start. **New Connected Folder** is ⌥⌘N.
 
 - **Each window is its own:** its folder tabs (each with its folder,
   selection, and Chat), panel, Browser pane tabs, and size and place on the

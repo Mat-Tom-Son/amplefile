@@ -1,4 +1,4 @@
-import { freshHistory, type FolderHistory } from "./file-manager-navigation";
+import { freshHistory, pushLocation, type FolderHistory } from "./file-manager-navigation";
 import { placeKey, sameLocation, type FileManagerLocation, type FileManagerPlace } from "./file-manager-places";
 
 /**
@@ -126,6 +126,18 @@ export function withTabHistory(tab: FolderTab, history: FolderHistory): FolderTa
   if (history === tab.history) return tab;
   if (sameLocation(history.location, tab.history.location)) return { ...tab, history };
   return { ...tab, history, selection: [], query: "", scrollTop: 0 };
+}
+
+/**
+ * The tab in front goes to `location`, as going there would take it: the
+ * folder replaces the Trash or Recents, and Back returns to where the tab
+ * was. A window handed a place as it opens starts this way.
+ */
+export function showInFrontTab(state: FolderTabs, location: FileManagerLocation): FolderTabs {
+  return updateFolderTab(state, activeFolderTab(state).id, (tab) => {
+    const shown = withTabHistory(tab, pushLocation(tab.history, location));
+    return shown.view === "folder" ? shown : { ...shown, view: "folder" };
+  });
 }
 
 /**
