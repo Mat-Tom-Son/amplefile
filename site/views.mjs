@@ -329,7 +329,7 @@ export function viewConnect({ h = 680 } = {}) {
     con: ["Client Work", "Desktop", "Downloads", "Home Renovation", "Taxes 2026"].map((name) => (name === "Desktop" ? { name, cur: true, at: { in: 1 } } : { name })),
   });
   const icon = `<span class="sw"${at({ out: 1 })}>${fi("folder")}</span><span class="sw"${at({ in: 1 })}>${folderTitle("Desktop")}</span>`;
-  const before = `<div class="mw-pane info"${at({ out: 1 })}><div class="mw-pscroll untabbed">${pv("Desktop", "7 items")}<section class="mw-sec"><div class="mw-cta"><div class="t">No Worker here yet</div><div class="s">Adds a Worker and History. Nothing moves.</div><span class="mw-btn primary"${at({ press: 1 })}>Connect This Folder</span></div></section></div></div>`;
+  const before = `<div class="mw-pane info"${at({ out: 1 })}><div class="mw-pscroll untabbed">${pv("Desktop", "7 items")}${connectCard(at({ press: 1 }))}</div></div>`;
   // A folder just connected carries one offer: Set Up for Me, the only place it is made.
   const offer = `<div class="mw-rcpt offer"><div class="mw-rhead"><span class="t">Set Up This Folder</span></div><p class="mw-offer-s">Your Worker can look this folder over, organize it, and give it a look that fits.</p><div class="mw-ract"><span class="mw-btn small primary">Set Up for Me</span><span class="mw-btn small">No Thanks</span></div></div>`;
   const after = `<div class="mw-pane info a-fade"${at({ in: 1 })}>${tabs("Info")}<div class="mw-pscroll">${offer}${pv("Desktop", "7 items", "--cf-5")}${automations()}</div>${infoComp({ placeholder: "Work in Desktop", suggests: SUGGEST_ALL.slice(0, 2), sugRise: true })}</div>`;
@@ -544,7 +544,8 @@ const irow = (label, value, extra = "", cls = "", a) => `<div class="mw-irow${cl
 // Linux's Info adds an item's permissions and who owns it (src/local/linux-entry-details.ts).
 const linuxRows = (mode) => irow("Permissions", mode, "", "on-linux") + irow("Owner", "you", "", "on-linux") + irow("Group", "you", "", "on-linux");
 const information = (rows) => `<section class="mw-sec"><div class="mw-sec-h">Information</div><div class="mw-card">${rows}</div></section>`;
-const plainFoot = (name) => `<div class="mw-pfoot"><p>No Worker here yet. Connect This Folder adds a Worker and History to “${name}”. Nothing moves.</p><span class="mw-btn small primary">Connect This Folder</span></div>`;
+/** Outside a Connected Folder, under Info: no Worker here yet, and Connect This Folder. */
+const connectCard = (press = "") => `<section class="mw-sec"><div class="mw-cta"><div class="t">No Worker here yet</div><div class="s">Adds a Worker and History. Nothing moves.</div><span class="mw-btn primary"${press}>Connect This Folder</span></div></section>`;
 
 /**
  * Documents as a list while Info measures it; a search of names and the text in files; the second folder tab, which
@@ -594,10 +595,10 @@ export function viewFileManager({ h = 640 } = {}) {
   // Info follows what is shown: Documents as it is measured, then Pictures and the chosen photo.
   const recalc = (a) => `<span class="b"${at(a)}>Recalculate</span>`;
   const size = swap([["Calculating…", { out: 1 }], ["1.8 GB", { in: 1 }]]);
-  const documents = `<div class="mw-pane info"${at({ out: 4 })}><div class="mw-pscroll untabbed">${pv("Documents", "7 items")}${information(irow("Where", "you") + irow("Modified", "Today at 10:05 AM") + irow("Size", size, recalc({ in: 1 })) + irow("Contains", "1,204 items", "", "a-fade", { in: 1 }) + linuxRows("rwxr-xr-x (0755)"))}</div>${plainFoot("Documents")}</div>`;
+  const documents = `<div class="mw-pane info"${at({ out: 4 })}><div class="mw-pscroll untabbed">${pv("Documents", "7 items")}${information(irow("Where", "you") + irow("Modified", "Today at 10:05 AM") + irow("Size", size, recalc({ in: 1 })) + irow("Contains", "1,204 items", "", "a-fade", { in: 1 }) + linuxRows("rwxr-xr-x (0755)"))}${connectCard()}</div></div>`;
   const pictures = `<div${at({ out: 5 })}>${pv("Pictures", "8 items")}${information(irow("Where", "you") + irow("Modified", "Today at 8:15 AM") + irow("Size", "41.3 MB", recalc()) + irow("Contains", "8 items") + linuxRows("rwxr-xr-x (0755)"))}</div>`;
   const photo = `<div class="a-fade"${at({ in: 5 })}><div class="mw-hd"><div class="mw-pv">${thumb("garden", "big")}</div><div class="mw-pv-name">garden-before.jpg</div><div class="mw-pv-meta">JPEG image · 3.1 MB</div></div>${information(irow("Where", "Pictures") + irow("Modified", "Oct 28, 2026 at 7:12 PM") + irow("Size", "3.1 MB") + linuxRows("rw-r--r-- (0644)"))}</div>`;
-  const picturesPane = `<div class="mw-pane info"${at({ in: 4 })}><div class="mw-pscroll untabbed">${pictures}${photo}</div>${plainFoot("Pictures")}</div>`;
+  const picturesPane = `<div class="mw-pane info"${at({ in: 4 })}><div class="mw-pscroll untabbed">${pictures}${photo}${connectCard()}</div></div>`;
   const body = `${side}${mainHtml}<aside class="mw-panel">${documents}${picturesPane}</aside>`;
   return win({ label: "AmpleFile as a file manager: Info measures Documents, Search finds “lease” in file names and in the text of files, the Pictures tab shows its pictures as thumbnails, and a chosen photo shows its picture and details in Info; the sidebar holds the Trash and the drives", h, steps, start: "62,30", body });
 }
@@ -1055,8 +1056,6 @@ html:not(.os-mac) .mw-side { padding-top:12px; }
 .mw-irow .v { flex:1; min-width:0; overflow:hidden; text-align:right; white-space:nowrap; text-overflow:ellipsis; }
 .mw-irow .b { flex:none; color:var(--fm-accent); font-size:11px; font-weight:500; }
 .mw-pv .mw-th.big { margin-top:4px; }
-.mw-pfoot { flex:none; padding:12px 14px 14px; border-top:1px solid var(--fm-line); }
-.mw-pfoot p { margin:0 0 8px; color:var(--fm-text2); font-size:12px; line-height:1.4; }
 
 /* Notices rise from the bottom center of the folder list */
 .mw-toast { position:absolute; z-index:4; bottom:40px; left:594px; translate:-50% 0; display:flex; align-items:center; gap:10px; min-height:42px; padding:10px 10px 10px 14px; border:1px solid #d8e0e8; border-left:4px solid #0b6fd6; border-radius:8px; background:rgba(255,255,255,.96); box-shadow:0 8px 16px rgba(0,0,0,.14); color:#253044; font-weight:600; white-space:nowrap; transition:opacity 220ms ease-out, transform 220ms ease-out; }

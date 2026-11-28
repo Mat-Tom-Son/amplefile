@@ -163,27 +163,6 @@
   font-size: calc(11px * var(--fm-scale));
 }
 
-/* Where the message box would be, outside a Connected Folder: Connect This Folder, and Set Up AI when none is connected. */
-.fm-plain-foot {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px 14px;
-  border-top: 1px solid var(--fm-line);
-}
-
-.fm-plain-foot-t {
-  margin: 0;
-  color: var(--fm-text2);
-  font-size: calc(12px * var(--fm-scale));
-  line-height: 1.4;
-}
-
-.fm-plain-foot-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 /* The folder's list stays mounted while the Trash takes its place. */
 .fm-content[hidden] {
   display: none;

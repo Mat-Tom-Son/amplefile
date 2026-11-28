@@ -1136,9 +1136,10 @@
   opacity: 0.6;
 }
 
-/* "No Worker here yet" in a standard folder. */
+/* Outside a Connected Folder, under Info: "No Worker here yet" with Connect This Folder, and Set Up AI when none is connected. */
 .fm-cta {
-  padding: 18px 16px;
+  padding: 18px 16px 16px;
+  border: 0.5px solid var(--fm-card-line);
   border-radius: 10px;
   background: var(--fm-card);
   text-align: center;
@@ -1151,16 +1152,21 @@
 
 .fm-cta-s {
   margin: 4px 0 12px;
-  overflow: hidden;
   color: var(--fm-text2);
   font-size: calc(12px * var(--fm-scale));
   line-height: 1.4;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  text-wrap: balance;
 }
 
-.fm-cta .fm-btn {
-  margin-top: 2px;
+.fm-cta-s:first-child {
+  margin-top: 0;
+}
+
+.fm-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
 }
 
 .fm-btn.is-primary {
