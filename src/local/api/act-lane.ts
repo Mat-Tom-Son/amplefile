@@ -86,6 +86,8 @@ import {
   toActFileVersionRef,
 } from "./act-support.js";
 import { saveWorkerInstructions } from "./ai-model-routes.js";
+import { removeConnectedFolderRole, saveConnectedFolderRole } from "./role-routes.js";
+import { readConnectedFolderRole } from "../connected-folder-role.js";
 import {
   ampleFileAgentRequestView,
   ampleFileAgentScope,
@@ -152,6 +154,7 @@ import {
 } from "./request-records.js";
 import { removeImportedSkill } from "./capability-routes.js";
 import { canQueueAnswerWhileBusy, queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
+import { recallEverywhere } from "./recall.js";
 import { assertNoCapabilityMutationForTurn, runCapabilityMutation, runHistoryRestore } from "./reservations.js";
 import { clientKey, conversationRuntimeState, type LocalApiState, streamKey } from "./state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./turn-acceptance.js";
@@ -1202,12 +1205,39 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
       const query = input.query.trim();
       if (!query) throw new AmpleFileCliError("usage", "Enter something to search for.");
       const scope = input.scope ?? "all";
+      // --ranked adds the index's ranked hits to the first page
+      // (docs/index-and-recall.md); every existing field keeps its meaning.
+      const index = input.ranked && !input.cursor ? state.connectedFolderIndex : undefined;
+      if (input.ranked && !input.cursor && !index) throw new AmpleFileCliError("unavailable", "Ranked search is not available.");
+      const rankedSearch = index
+        ? runActOperation(() => index.recall({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot }, query, {
+          kinds: scope === "all" ? ["files", "chats"] : [scope],
+          ...(input.path ? { path: input.path } : {}),
+          limit: Math.min(input.limit ?? 10, 50),
+          waitMs: 3_000,
+        }))
+        : null;
+      rankedSearch?.catch(() => undefined);
       const result = await runActOperation(() => searchConnectedFolder(connectedFolder.connectedFolderRoot, query, {
         includeFiles: scope !== "chats",
         includeChats: scope !== "files",
         path: input.path, cursor: input.cursor, maxMatches: input.limit,
       }));
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), scope, ...result };
+      const ranked = rankedSearch ? await rankedSearch : null;
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), scope, ...result, ...(ranked ? { ranked } : {}) };
+    },
+    async searchEverywhere(input) {
+      const query = input.query.trim();
+      if (!query) throw new AmpleFileCliError("usage", "Enter something to search for.");
+      if (!state.connectedFolderIndex) throw new AmpleFileCliError("unavailable", "Ranked search is not available.");
+      const scope = input.scope ?? "all";
+      // Every Connected Folder's own index, merged by rank and grouped by
+      // owner (docs/index-and-recall.md); working copies are left out.
+      const ranked = await runActOperation(() => recallEverywhere(state, query, {
+        kinds: scope === "all" ? ["files", "chats"] : [scope],
+        limit: Math.min(input.limit ?? 10, 50),
+      }));
+      return { everywhere: true as const, scope, query, ranked };
     },
     async createConnectedFolder(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
@@ -1405,6 +1435,32 @@ export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFaca
           displacedAppearanceRef: appearanceCustomizationRef(slot.result),
         };
       });
+    },
+    async connectedFoldersRoleShow(input) {
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return {
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
+        role: await readConnectedFolderRole(connectedFolder.connectedFolderRoot),
+      };
+    },
+    async connectedFoldersRoleSet(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const change = await runActOperation(() => saveConnectedFolderRole(state, connectedFolder, {
+        ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
+        ...(input.askFor !== undefined ? { askFor: input.askFor } : {}),
+        ...(input.produces !== undefined ? { produces: input.produces } : {}),
+        ...(input.accepts !== undefined ? { accepts: input.accepts } : {}),
+      }));
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.role.set", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), role: change.role, previousRole: change.previousRole, changed: change.changed };
+    },
+    async connectedFoldersRoleClear(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const change = await runActOperation(() => removeConnectedFolderRole(state, connectedFolder));
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.role.clear", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), role: null, previousRole: change.previousRole, changed: change.changed };
     },
     async toolsRemove(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);

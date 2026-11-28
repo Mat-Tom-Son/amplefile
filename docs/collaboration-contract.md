@@ -83,10 +83,24 @@ from the registry:
 
 - **Nested Connected Folders.** A Connected Folder turn's hidden context lists
   the Connected Folders registered directly inside its own folder (id, name,
-  path relative to it) and asks the Worker to hand their work off with
-  `chat handoff` instead of editing it. The parent learns nothing else about
-  them, and a Connected Folder with no nested Connected Folders hears nothing
-  extra.
+  path relative to it, and the Role each has, if any) and asks the Worker to
+  route work by that Role and hand it off with `chat handoff` instead of
+  editing it. The Role is what the nested Connected Folder says about itself
+  for others to read (a one-line purpose and optionally what to ask it for,
+  what it produces, and what it accepts; [Roles](product-model.md#roles)). A
+  Connected Folder with no nested Connected Folders hears nothing extra. A Worker is told its own Role in its
+  system prompt, right after its Worker instructions, and keeps it true with
+  `connected-folders role set`.
+- **Recall across nested Connected Folders.** A parent's Worker can ask the
+  indexes of the Connected Folders nested anywhere inside its folder with
+  `recall` and `scope: "tree"` ([the index](index-and-recall.md#recall-for-workers)).
+  It gets bounded pointers grouped by owning folder: each folder's id, name,
+  path, and Role purpose, and for each hit a path, location, why it matched,
+  age, freshness, and an excerpt of at most 240 characters. It may then read
+  the file a hit names. It cannot change anything there (writes still stop at
+  the nested root, and changes go to that folder's Worker with
+  `chat handoff`), and it never searches or reads a nested Worker's Chats,
+  questions, or results. Managed Git working copies are not searched.
 - **Addressed Workers.** When the person writes `@Name` in a message, the
   composer sends those Connected Folder ids as `addressedConnectedFolderIds`
   (at most eight, never the sender's own; an id that is not registered is
@@ -105,7 +119,12 @@ The Connected Folder registry, the AmpleFile Agent's transcript, and other
 Connected Folders' results still never enter a Connected Folder turn.
 `amplefile connected-folders list --json` and the AmpleFile Agent turn's
 registry snapshot carry `parentConnectedFolderId` for a nested Connected
-Folder, so the AmpleFile Agent can split a request by owner.
+Folder, so the AmpleFile Agent can split a request by owner, and each
+Connected Folder's `rolePurpose` (when it has a Role), so it can route work to
+the Worker whose purpose fits. To learn which Worker holds something, it
+uses `amplefile search --everywhere --ranked`, which groups the best matches
+of every Connected Folder's index by Connected Folder with its Role purpose,
+then hands the work there.
 
 ## Host environment and role
 

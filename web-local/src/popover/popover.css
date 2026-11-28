@@ -535,7 +535,10 @@ textarea:focus { outline: none; }
 .popover-mention-menu > button.active { background: var(--fm-accent); color: var(--fm-on-accent); }
 .popover-mention-menu .composer-mention-icon { display: inline-flex; color: inherit; opacity: 0.8; }
 .popover-mention-menu .composer-mention-icon svg { width: 14px; height: 14px; }
-.popover-mention-menu .composer-mention-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-mention-menu .composer-mention-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.popover-mention-menu .composer-mention-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-mention-menu .composer-mention-purpose { min-width: 0; overflow: hidden; color: var(--fm-text2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.popover-mention-menu > button.active .composer-mention-purpose { color: inherit; opacity: 0.8; }
 
 button {
   font: inherit;

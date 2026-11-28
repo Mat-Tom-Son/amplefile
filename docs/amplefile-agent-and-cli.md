@@ -281,7 +281,11 @@ amplefile help capabilities
 ```
 
 `connected-folders list --json` adds `parentConnectedFolderId` to a Connected
-Folder registered inside another Connected Folder's folder.
+Folder registered inside another Connected Folder's folder, and `rolePurpose`
+to a Connected Folder whose [Role](product-model.md#roles) has a purpose. The
+purpose is one line the person or the Worker wrote for others to read; it is
+the only Role text on the read lane (`connected-folders role show` is an act
+read).
 
 `context --json` reports `cwd` and the resolved `connectedFolder`, plus
 `selectedPath` and `activeSurface`, which are always `null`. They stay in the
@@ -296,8 +300,9 @@ ambiguous; use the stable id in scripts. `--json` emits the stable protocol
 projection and is the preferred interface for scripts and shell-capable
 agents.
 
-Read commands stay content-free: Connected Folder names and paths, task
-metadata, and capability metadata; no file contents, conversation text,
+Read commands stay content-free: Connected Folder names, paths, and Role
+purposes, task metadata, and capability metadata; no file contents,
+conversation text,
 credentials, or provider tokens. The capability projection does not emit
 Extension surface block contents.
 
@@ -421,6 +426,17 @@ setters reserve the Connected Folder–scoped agent mutation fence across
 validation, write, and client invalidation, and their receipts contain model
 identifiers or an instruction character count, never instruction text.
 Provider credentials and connection setup have no act verb.
+
+`connected-folders role show` is a content-bearing act read of the Connected
+Folder's `.amplefile/role.json`; `role set` changes only the fields it is
+given (`--purpose`, and `--ask-for`, `--produces`, and `--accepts`, each
+repeatable; an empty value clears a field) and `role clear` removes the file.
+Both are receipted, take `--parent-task`, and record the previous Role in the
+receipt's `role` undo reference. The same change path serves the window's
+`GET`, `PUT`, and `DELETE /api/connected-folders/:id/role`, and a change
+rebuilds the Connected Folder's Chats at their next turn the way Worker
+instructions do. Each Worker is told its own Role in its system prompt; the
+AmpleFile Agent's snapshot carries each folder's `rolePurpose`.
 
 CLI file and History paths preserve spaces anywhere in an item name. Quote
 paths and new names with spaces so the shell passes them as a single argument.
@@ -890,6 +906,36 @@ roots and skipped entries. Search reflects live observations. Cursors
 bind the selection and ignore rules, verify active directory and file
 identities, and expire on host restart. Local Search GET uses `q`, `scope`,
 `path`, `limit`, and `cursor` with the same service and request cancellation.
+
+`search … --ranked` also asks the Connected Folder's index
+([the index and ranked search](index-and-recall.md)) and adds one field to
+the first page, `ranked`: `hits` ranked by words and meaning, each with its
+path (or Chat conversation, message, and role), `location`, a bounded
+`excerpt`, `score`, `reasons`, `sha256`, `indexedAt`, and `fresh`, plus
+`coverage` saying what is indexed, which embedder ranked, and what is not
+covered yet. `--limit` also caps the ranked hits (default 10, at most 50);
+`--path` and `--scope` narrow them. Every other field keeps its meaning, and
+continuation pages carry no `ranked`. A stale hit (`fresh: false`) means the
+file changed since it was indexed: read the file itself. Indexing and
+embedding happen on this computer. Local Search GET takes `ranked=1` and
+`rankedLimit` for the same result, and `GET /api/connected-folders/:id/index`
+reports the index's status.
+
+`search --everywhere --ranked --query <text> [--scope files|chats|all] [--limit <n>] --json`
+is the one search that names no Connected Folder: it asks every registered
+Connected Folder's index at once and returns `{ everywhere, scope, query,
+ranked }`, where `ranked.groups` holds the merged best hits grouped by
+Connected Folder (each with `id`, `name`, `connectedFolderRoot`, and
+`rolePurpose`), best first, `ranked.notIndexed` lists folders never indexed
+(asked to index now, not empty), and `ranked.leftOut.workingCopies` counts
+managed Git working copies, which are never searched. The AmpleFile Agent
+uses it to find which Worker knows about something, then hands the work
+there. `--everywhere` without `--ranked`, or with `--connected-folder`,
+`--path`, or `--cursor`, is a usage error; every other Connected
+Folder–scoped rule of the act lane is unchanged. Its receipt names no
+Connected Folder, like the `agent`, `requests`, and `receipts` families, and
+records the scope and `everywhere`, never the query
+([everywhere search](index-and-recall.md#everywhere-search)).
 
 A Connected Folder turn's hidden context includes the actual pre-turn History
 capture: checkpoint id (including deduplicated reuse), captured file count,

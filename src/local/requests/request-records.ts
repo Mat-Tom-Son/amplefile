@@ -255,6 +255,8 @@ export const ampleFileRequestActionCommands = [
   "connected-folders.appearance.apply",
   "connected-folders.appearance.reset",
   "connected-folders.appearance.undo",
+  "connected-folders.role.set",
+  "connected-folders.role.clear",
   "tools.import-skill",
   "tools.install",
   "tools.update",

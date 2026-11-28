@@ -107,6 +107,11 @@ interface AmpleFileAgentChat {
 
 // The preview's sample chats, dated relative to now so they group the way real ones do.
 const fixtureHoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+const fixtureMentionFolders: MentionFolderOption[] = [
+  { id: "fixture-home", name: "Home projects", rolePurpose: "Plans and tracks the home projects: budgets, contractor quotes, and weekend checklists.", icon: <Folder aria-hidden="true" /> },
+  { id: "fixture-bathroom", name: "Bathroom remodel", rolePurpose: "Everything for the bathroom remodel: tile options, quotes, and the contractor schedule.", icon: <Folder aria-hidden="true" />, style: { paddingLeft: "24px" } },
+  { id: "fixture-trip", name: "Japan trip", icon: <Folder aria-hidden="true" /> },
+];
 const fixtureChats: AmpleFileAgentChat[] = [
   { id: "fixture-agent", title: "What did my folders get done today?", updatedAt: fixtureHoursAgo(0.2), requestState: "done" },
   { id: "fixture-plan", title: "Gather the tax documents", updatedAt: fixtureHoursAgo(3), requestState: "waiting", needsAnswer: true },
@@ -191,7 +196,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const [text, setText] = useState("");
   // Connected Folder Workers the AmpleFile Agent can be told to involve with @,
   // in the same nested order as the Connected Folder switcher.
-  const [mentionFolders, setMentionFolders] = useState<MentionFolderOption[]>([]);
+  const [mentionFolders, setMentionFolders] = useState<MentionFolderOption[]>(popoverFixtureRequested ? fixtureMentionFolders : []);
   const [composerCaret, setComposerCaret] = useState(0);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [dismissedMentionKey, setDismissedMentionKey] = useState<string | null>(null);
@@ -440,10 +445,11 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
       // Focus and visibility often fire together on one show; read once.
       if (!force && Date.now() - lastMentionRefresh < 1000) return;
       lastMentionRefresh = Date.now();
-      void api<{ connectedFolders: Array<{ id: string; name: string; connectedFolderRoot: string }> }>("/api/connected-folders/outline")
+      void api<{ connectedFolders: Array<{ id: string; name: string; connectedFolderRoot: string; rolePurpose?: string }> }>("/api/connected-folders/outline")
         .then(({ connectedFolders }) => { const names = mentionNames(connectedFolders); setMentionFolders(folderTreeRows(connectedFolders).map(({ connectedFolder, depth }) => ({
           id: connectedFolder.id,
           name: names.get(connectedFolder.id) ?? connectedFolder.name,
+          ...(connectedFolder.rolePurpose ? { rolePurpose: connectedFolder.rolePurpose } : {}),
           icon: <Folder aria-hidden="true" />,
           style: { paddingLeft: `${8 + depth * 16}px` },
         }))); })

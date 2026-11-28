@@ -1,0 +1,170 @@
+/* The index in the window: Best Matches above Search's results, Info's index row, and Related. */
+
+.fm-best {
+  margin: 0;
+  padding: 6px 8px 4px;
+  border-bottom: 0.5px solid var(--fm-line);
+}
+
+.fm-best-h {
+  margin: 0 4px 4px;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+  font-weight: 600;
+}
+
+.fm-best-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fm-best-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.fm-best-hit:hover {
+  background: var(--fm-hover);
+}
+
+.fm-best-hit:focus-visible {
+  outline: 2px solid var(--fm-accent);
+  outline-offset: -2px;
+}
+
+.fm-best-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: calc(18px * var(--fm-scale));
+  color: var(--fm-text2);
+}
+
+.fm-best-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.fm-best-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.fm-best-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fm-best-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-best-where,
+.fm-best-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm-best-meta {
+  display: flex;
+  gap: 8px;
+}
+
+.fm-best-stale {
+  font-style: italic;
+}
+
+.fm-best-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fm-best-note {
+  margin: 4px 4px 2px;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+}
+
+/* Info's index row: one quiet line, with the reasons for the rest a click away. */
+.fm-index-row {
+  min-height: calc(30px * var(--fm-scale) * var(--fm-density));
+  color: var(--fm-text2);
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-index-row .fm-text-button {
+  flex: none;
+  font-size: calc(11px * var(--fm-scale));
+}
+
+.fm-index-reasons {
+  margin: 0;
+  padding: 2px 12px 8px 28px;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  line-height: 1.5;
+}
+
+/* Related: each row opens the file in the list. */
+.fm-related-row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.fm-related-row:hover {
+  background: var(--fm-hover);
+}
+
+.fm-related-row:focus-visible {
+  outline: 2px solid var(--fm-accent);
+  outline-offset: -2px;
+}
+
+.fm-related-row:last-child {
+  border-bottom: 0;
+}
+
+.fm-related-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  color: var(--fm-text2);
+}

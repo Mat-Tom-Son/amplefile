@@ -36,6 +36,7 @@ import { AmpleFileKernel } from "../amplefile-kernel.js";
 import { AmpleFileCliActReceipts } from "../cli/act-receipts.js";
 import type { AmpleFileActChatState } from "../cli/act-facade.js";
 import type { ConnectedFolderRemovalIo } from "../connected-folder.js";
+import type { ConnectedFolderIndexService, ConnectedFolderIndexServiceOptions } from "../index/indexer.js";
 
 export interface LocalFolderGrantProvider {
   consumeLocalFolderGrant(input: { connectedFolderRoot: string; grantId: string }): boolean | Promise<boolean>;
@@ -87,6 +88,12 @@ export interface LocalApiOptions {
   browser?: BrowserToolHost;
   /** Failure-injection seam that runs immediately before mandatory post-reservation Connected Folder validation. */
   beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
+  /**
+   * Test seam for the index behind ranked search (docs/index-and-recall.md):
+   * an embedder, extraction switches, and trigger delays. The service's
+   * reservation check and registry lookup always come from this API.
+   */
+  connectedFolderIndex?: Pick<ConnectedFolderIndexServiceOptions, "embedder" | "extract" | "delays" | "walkBounds">;
   maxBodyBytes?: number;
   loadEnv?: boolean;
   onAgentTurnActivity?: (activeTurns: number) => void;
@@ -214,6 +221,12 @@ export interface LocalApiState {
   queueRevisions: Map<string, number>;
   lastQueueRevision: number;
   capabilityMutations: Set<string>;
+  /**
+   * Each Connected Folder's index and ranked search (docs/index-and-recall.md).
+   * Optional only so hand-built test states need not supply it; the API
+   * always constructs one.
+   */
+  connectedFolderIndex?: ConnectedFolderIndexService;
   /** Turn clients whose Connected Folder changed under them; rebuilt when their turn settles. */
   clientsToRefresh: Set<string>;
   /** Settings → AI Models → Image model: one machine-wide choice, absent for Automatic. */

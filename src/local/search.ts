@@ -355,6 +355,7 @@ function filePosition(path: string, info: BigIntStats): FilePosition { return { 
 function identity(info: BigIntStats): string { return [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs, info.mode].join(":"); }
 function digest(value: string): string { return createHash("sha256").update(value).digest("hex"); }
 function preview(line: string, at: number, length: number): string { const start = Math.max(0, at - 80); const value = `${start ? "…" : ""}${line.slice(start, at + length + 80).trim()}`; return value.length > 240 ? `${value.slice(0, 240)}…` : value; }
-function looksBinary(bytes: Buffer): boolean { if (bytes.includes(0)) return true; let controls = 0; for (const byte of bytes) if (byte < 9 || byte > 13 && byte < 32) controls++; return bytes.length > 0 && controls / bytes.length > 0.1; }
+/** Search's binary sniff, shared with the index (src/local/index/extract.ts). */
+export function looksBinary(bytes: Buffer): boolean { if (bytes.includes(0)) return true; let controls = 0; for (const byte of bytes) if (byte < 9 || byte > 13 && byte < 32) controls++; return bytes.length > 0 && controls / bytes.length > 0.1; }
 function count(value: number | undefined, fallback: number, maximum: number): number { if (value === undefined) return fallback; if (!Number.isSafeInteger(value) || value < 1 || value > maximum) throw retrievalError(`Search page budget must be between 1 and ${maximum}.`); return value; }
 function aborted(signal?: AbortSignal): void { if (signal?.aborted) throw Object.assign(new Error("Search cancelled."), { name: "AbortError" }); }

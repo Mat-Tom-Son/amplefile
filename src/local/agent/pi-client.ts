@@ -51,7 +51,8 @@ import {
   type ResolvedPiRuntime,
 } from "./pi-runtime-config.js";
 import { runBoundedInference, type BoundedInferenceOutcome, type BoundedInferenceRequest } from "./bounded-inference.js";
-import { appendConnectedFolderOperationsGuide } from "./connected-folder-operations-guide.js";
+import { appendConnectedFolderOperationsGuide, appendConnectedFolderRole } from "./connected-folder-operations-guide.js";
+import { readConnectedFolderRole } from "../connected-folder-role.js";
 import { appendToolFeedbackGuide } from "./tool-feedback-guide.js";
 import { connectedFolderTurnAssignmentMaxBytes, type PiConnectedFolderTurnContext } from "./connected-folder-turn-context.js";
 import { writeFileAtomic, type AmpleFileDurableTurnUsage } from "./turn-store.js";
@@ -73,6 +74,7 @@ import { createBackgroundJobTools, type BackgroundJobToolHost } from "./job-tool
 import { createBrowserTools } from "./browser-tools.js";
 import type { BrowserToolHost } from "../../shared/browser.js";
 import { createCollaborationTools, type CollaborationToolHost } from "./collaboration-tools.js";
+import { createRecallTool, type RecallToolHost } from "./recall-tool.js";
 import { createWorktreeTool, type WorktreeToolHost } from "./worktree-tool.js";
 import { createHelperTool, type HelperRunRecord, type HelperSession } from "./helper-tool.js";
 import type { Usage } from "@earendil-works/pi-ai";
@@ -174,7 +176,7 @@ export interface PiTurnContext {
   /** Active AmpleFile Agent request id used to attribute downstream act commands. */
   ampleFileAgentTaskId?: string;
   /** Exact host-owned Connected Folder registry at the start of this AmpleFile Agent turn. */
-  ampleFileAgentConnectedFolders?: Array<{ id: string; name: string; connectedFolderRoot: string; parentConnectedFolderId?: string }>;
+  ampleFileAgentConnectedFolders?: Array<{ id: string; name: string; connectedFolderRoot: string; parentConnectedFolderId?: string; rolePurpose?: string }>;
   /**
    * Workers the person addressed with @ in this message,
    * resolved by the host from the ids the composer sent. Either scope.
@@ -236,6 +238,8 @@ export interface PiConversationClientOptions {
   /** Where the `checklist` tool keeps its request's checklist. */
   checklist?: ChecklistToolHost;
   collaboration?: CollaborationToolHost;
+  /** The index behind the `recall` tool (docs/index-and-recall.md); absent for the AmpleFile Agent scope. */
+  recall?: RecallToolHost;
   worktrees?: WorktreeToolHost;
   helperTool?: boolean;
   /** Host-owned membership of this request's own turns, never another Chat. */
@@ -862,6 +866,12 @@ export class PiConversationClient extends EventEmitter {
       // Same provider transport as the Pi CLI: proxy settings, idle timeouts,
       // and the guarded dispatcher are installed before the first request.
       configurePiHttpTransport(runtime.settingsManager);
+      // This Connected Folder's own Role, read when the session is built like the
+      // Worker instructions are; a change rebuilds the Chat's session. Never
+      // for the AmpleFile Agent, whose folder is not a Connected Folder.
+      const ownRole = (this.options.role ?? "worker") === "worker"
+        ? await readConnectedFolderRole(options.cwd).catch(() => null)
+        : null;
       const services = await createAgentSessionServices({
         cwd: options.cwd,
         agentDir: runtime.agentDir,
@@ -878,7 +888,7 @@ export class PiConversationClient extends EventEmitter {
           // Connected Folder instructions first, then the operations guide, so the
           // person's own text keeps the position it always had.
           appendSystemPromptOverride: (base) => appendToolFeedbackGuide(appendConnectedFolderOperationsGuide(
-            appendWorkerInstructions(base, runtime.config.workerInstructions),
+            appendConnectedFolderRole(appendWorkerInstructions(base, runtime.config.workerInstructions), ownRole),
             this.options.operationsGuide,
           )),
         },
@@ -906,8 +916,11 @@ export class PiConversationClient extends EventEmitter {
           activity: activity => this.emitEvent({ type: "tool", toolName: "helper", phase: "streaming", message: `Helper: ${activity.tool}`, detail: activity.target }),
           track: run => { this.helperRuns.add(run); void run.settled.then(() => this.helperRuns.delete(run)); },
           record: (run, unreported) => { this.turnHelperRuns.push(run); if (unreported) this.turnHelperUnreported.push(unreported); },
+          ...(this.options.recall ? { recall: this.options.recall } : {}),
         })] : []),
         ...(this.options.collaboration ? createCollaborationTools(this.options.collaboration, () => this.extensionTurn.getStore()?.taskId ?? this.activeExtensionTurn?.taskId) : []),
+        // Ranked pointers into this Connected Folder's index, and with tree scope its nested ones.
+        ...(this.options.recall ? [createRecallTool(this.options.recall)] : []),
         // Every session can make pictures with a connected image model, saved in its own folder.
         createImageGenerationTool({
           root: options.cwd,
@@ -1902,7 +1915,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
       lines.push(
         "Connected Folders inside this one, each with its own Worker (host-owned; the person nested them here):",
         JSON.stringify(turn.nestedFolders, null, 2),
-        "Files under those paths belong to their Workers. Hand work there off with chat handoff --to-connected-folder <connectedFolderId> instead of editing it yourself, follow it with chat wait, and coordinate when a request spans several. Their files are already in their Connected Folder, so leave --file off for anything under those paths.",
+        "A role, when a nested folder has one, says what that folder is for (purpose), what to ask it for (askFor), what it produces, and what it accepts; route work by it. Files under those paths belong to their Workers. Hand work there off with chat handoff --to-connected-folder <connectedFolderId> instead of editing it yourself, follow it with chat wait, and coordinate when a request spans several. Their files are already in their Connected Folder, so leave --file off for anything under those paths.",
       );
     }
     if (context.addressedFolders?.length) {
@@ -1924,6 +1937,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
       "Never inspect an older Connected Folder path from conversation memory. Use the current snapshot and rerun `amplefile --json connected-folders list` before making registry claims.",
       "If a CLI result disagrees with this snapshot, stop and report that the CLI reached a different AmpleFile profile instead of searching either set of paths.",
       "parentConnectedFolderId marks a Connected Folder registered inside another: its Worker owns that part of the parent's folder.",
+      "rolePurpose, when present, is the one-line purpose that Connected Folder's Role gives it; route work to the Worker whose purpose fits, and read `connected-folders role show --connected-folder <id>` for the rest of its Role.",
     );
     if (context.addressedFolders?.length) {
       lines.push(
@@ -2199,7 +2213,8 @@ function toolEvent(raw: any): Omit<PiChatEvent, "conversationId" | "raw"> | null
   if (!toolName) return null;
   const toolCallId = String(raw.toolCallId ?? assistantEvent.toolCallId ?? call.toolCallId ?? call.id ?? `${toolName}:unknown`);
   const args = raw.args ?? raw.input ?? call.args ?? call.input;
-  const detail = summarizeToolValue(args);
+  // A recall step names what it looked for, not the folder it narrowed to.
+  const detail = toolName === "recall" && typeof args?.query === "string" ? compactText(args.query) : summarizeToolValue(args);
   const subtype = String(assistantEvent.type ?? "");
   const type = String(raw.type ?? "");
   const label = humanize(toolName);

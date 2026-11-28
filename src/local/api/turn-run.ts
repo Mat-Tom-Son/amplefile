@@ -34,7 +34,8 @@ import {
   ampleFileAgentAttachmentLinks,
   type AmpleFileAgentAttachmentRef,
 } from "../amplefile-agent-attachments.js";
-import { buildConnectedFolderTurnContext, connectedFolderTurnHistory } from "../agent/connected-folder-turn-context.js";
+import { buildConnectedFolderTurnContext, connectedFolderTurnHistory, connectedFolderTurnRole } from "../agent/connected-folder-turn-context.js";
+import { readConnectedFolderRole } from "../connected-folder-role.js";
 import { createConnectedFolderCheckpoint } from "../history.js";
 import { normalizeGeneratedConversationTitle } from "../../shared/chat-title.js";
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../state-paths.js";
@@ -93,7 +94,7 @@ export async function runAgentTurn(
       : loadConversationContextReferencesForTurn(connectedFolderRoot, contextPaths, budgetTokens);
     const attachedLinks = ampleFileAgentAttachments ? ampleFileAgentAttachmentLinks(ampleFileAgentAttachments) : [];
     const ampleFileAgentRegistry = connectedFolderId === ampleFileAgentScopeId
-      ? (await state.kernel.getConnectedFolders({ kind: "renderer" })).connectedFolders
+      ? (await state.kernel.getConnectedFolders({ kind: "renderer" }, { includeRolePurpose: true })).connectedFolders
       : null;
     // Connected Folder turns read nesting from the registry file only — never listConnectedFolders(),
     // which rewrites every Connected Folder's portable manifest — and a failed read just
@@ -106,6 +107,7 @@ export async function runAgentTurn(
           name: connectedFolder.name,
           connectedFolderRoot: connectedFolder.connectedFolderRoot,
           ...(connectedFolder.parentConnectedFolderId ? { parentConnectedFolderId: connectedFolder.parentConnectedFolderId } : {}),
+          ...(connectedFolder.rolePurpose ? { rolePurpose: connectedFolder.rolePurpose } : {}),
         }))
       : undefined;
     // Connected Folders inside Connected Folders: the person's @ mentions resolve to
@@ -146,7 +148,11 @@ export async function runAgentTurn(
     if (connectedFolderTurn) connectedFolderTurn.history = connectedFolderTurnHistory(beforeCheckpoint);
     const ownConnectedFolder = registeredConnectedFolders.find((item) => item.id === connectedFolderId);
     if (connectedFolderTurn && ownConnectedFolder) {
-      const nested = [...childFolderPaths(ownConnectedFolder, registeredConnectedFolders)].map(([path, child]) => ({ connectedFolderId: child.id, name: child.name, path }));
+      // Each nested folder's Role rides along (one small file read each; a missing or unreadable one is just no role).
+      const nested = await Promise.all([...childFolderPaths(ownConnectedFolder, registeredConnectedFolders)].map(async ([path, child]) => {
+        const role = connectedFolderTurnRole(await readConnectedFolderRole(child.connectedFolderRoot).catch(() => null));
+        return { connectedFolderId: child.id, name: child.name, path, ...(role ? { role } : {}) };
+      }));
       if (nested.length) connectedFolderTurn.nestedFolders = nested;
     }
     await state.beforeAgentPrompt?.({

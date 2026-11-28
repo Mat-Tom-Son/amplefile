@@ -49,7 +49,7 @@ export class AmpleFileCliKernelAdapter implements AmpleFileCliKernel {
     actor: AmpleFileCliActor,
     options: AmpleFileCliOptions,
   ): Promise<AmpleFileCliConnectedFolderSummary[]> {
-    const snapshot = await this.kernel.getConnectedFolders(actor);
+    const snapshot = await this.kernel.getConnectedFolders(actor, { includeRolePurpose: true });
     const selected = resolveAmpleFileCliConnectedFolderSelector(snapshot.connectedFolders, options.connectedFolder);
     const activeId = selected?.id ?? (await this.kernel.getContext(actor)).connectedFolder?.id;
     const connectedFolders = selected ? [selected] : snapshot.connectedFolders;
@@ -195,6 +195,7 @@ function summarizeConnectedFolder(connectedFolder: AmpleFileConnectedFolderSnaps
     connectedFolderRoot: connectedFolder.connectedFolderRoot,
     active,
     ...(connectedFolder.parentConnectedFolderId ? { parentConnectedFolderId: connectedFolder.parentConnectedFolderId } : {}),
+    ...(connectedFolder.rolePurpose ? { rolePurpose: connectedFolder.rolePurpose } : {}),
   };
 }
 

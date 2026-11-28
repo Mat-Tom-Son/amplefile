@@ -14,6 +14,7 @@ import type {
 import type { AmpleFileCliActRequest } from "./act-protocol.js";
 import type { AmpleFileCliActReceipt, AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-receipts.js";
 import { maximumWorkerInstructionsLength } from "../agent/model-preferences.js";
+import { connectedFolderRoleLimits } from "../../shared/connected-folder-role.js";
 // The collaboration bounds and their person-facing refusal text live with the
 // request record that enforces them, so a parse-time refusal and a store-time
 // refusal say the same words (docs/collaboration-contract.md).
@@ -79,6 +80,9 @@ export type AmpleFileCliActCommandName =
   | "connected-folders.appearance.apply"
   | "connected-folders.appearance.reset"
   | "connected-folders.appearance.undo"
+  | "connected-folders.role.show"
+  | "connected-folders.role.set"
+  | "connected-folders.role.clear"
   | "connected-folders.worker.show"
   | "connected-folders.worker.model"
   | "connected-folders.worker.instructions"
@@ -174,6 +178,10 @@ export interface AmpleFileCliActParsedCommand {
   query?: string;
   cursor?: string; limit?: number; offsetBytes?: number; lengthBytes?: number; expectedSha256?: string;
   searchScope?: "files" | "chats" | "all";
+  /** `search --ranked`: add the index's ranked hits (docs/index-and-recall.md). */
+  ranked?: boolean;
+  /** `search --everywhere --ranked`: every Connected Folder's index, grouped by Connected Folder; takes no --connected-folder. */
+  everywhere?: boolean;
   /** New entry name for files.rename. */
   entryName?: string;
   toolsScope?: "everywhere" | "connected-folder";
@@ -199,6 +207,8 @@ export interface AmpleFileCliActParsedCommand {
   question?: string;
   /** Who chat.ask is asking; `parent` on a root request is delivered to the person. */
   respondent?: "person" | "parent";
+  /** connected-folders.role.set: the fields to change; a given empty one clears it, an omitted one stays. */
+  role?: { purpose?: string; askFor?: string[]; produces?: string[]; accepts?: string[] };
   /** connected-folders.worker.instructions `--append`: add `instructions` as one more line. */
   appendInstructions?: boolean;
   /** chat.ask and agent.ask suggested answers (`--option`, repeatable), shown as choices. */
@@ -393,6 +403,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
   const pathValues: string[] = [];
   const fileValues: string[] = [];
   const optionValues: string[] = [];
+  const roleLists: Record<"--ask-for" | "--produces" | "--accepts", string[]> = { "--ask-for": [], "--produces": [], "--accepts": [] };
   const positional: string[] = [];
 
   const valueFlags = new Set([
@@ -456,8 +467,12 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     "--ref",
     "--run",
     "--request-id",
+    "--purpose",
+    "--ask-for",
+    "--produces",
+    "--accepts",
   ]);
-  const booleanFlags = new Set(["--new", "--message-from-payload", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
+  const booleanFlags = new Set(["--ranked", "--everywhere", "--new", "--message-from-payload", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -496,6 +511,10 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       }
       if (flagName === "--option") {
         optionValues.push(value);
+        continue;
+      }
+      if (flagName === "--ask-for" || flagName === "--produces" || flagName === "--accepts") {
+        roleLists[flagName].push(value);
         continue;
       }
       if (flags.has(flagName)) throw usageError(`${flagName} may be provided only once.`);
@@ -556,6 +575,12 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
   // --option is repeatable and offers one suggested answer to a question.
   if (command !== "chat ask" && command !== "agent ask" && optionValues.length) {
     throw usageError(`--option cannot be used with '${command || "(none)"}'.`);
+  }
+  // --ask-for, --produces, and --accepts are repeatable list entries of a Role; nothing else takes them.
+  if (command !== "connected-folders role set") {
+    for (const [flag, entries] of Object.entries(roleLists)) {
+      if (entries.length) throw usageError(`${flag} cannot be used with '${command || "(none)"}'.`);
+    }
   }
   // The request graph sits above Connected Folders: every request names the Connected Folder
   // it belongs to, so neither read takes one.
@@ -752,6 +777,8 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
     "connected-folders appearance undo",
     "connected-folders worker model",
     "connected-folders worker instructions",
+    "connected-folders role set",
+    "connected-folders role clear",
     "tools import-skill",
     "tools install",
     "tools update",
@@ -1171,11 +1198,27 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "search": {
-      allowOnlyFlags("--connected-folder", "--query", "--scope", "--cursor", "--limit");
+      allowOnlyFlags("--connected-folder", "--query", "--scope", "--cursor", "--limit", "--ranked", "--everywhere");
+      // --everywhere asks every Connected Folder's index at once
+      // (docs/index-and-recall.md). It is the one search that names no
+      // Connected Folder, so it refuses the flags that select inside one.
+      if (flags.get("--everywhere") === true) {
+        if (flags.has("--connected-folder")) throw usageError("--everywhere searches every Connected Folder; leave out --connected-folder, or drop --everywhere to search one.");
+        if (flags.get("--ranked") !== true) throw usageError("--everywhere needs --ranked: it asks each Connected Folder's index for its best matches.");
+        if (pathValues.length) throw usageError("--path names a place inside one Connected Folder, so it cannot be used with --everywhere.");
+        if (flags.has("--cursor")) throw usageError("--everywhere returns one ranked page; --cursor cannot be used with it.");
+      }
       const query = requireBoundedFlag("--query", "text", maxActSearchQueryLength);
       const rawScope = optionalBoundedFlag("--scope", "files|chats|all");
       if (rawScope !== undefined && rawScope !== "files" && rawScope !== "chats" && rawScope !== "all") {
         throw usageError("--scope must be files, chats, or all.");
+      }
+      if (flags.get("--everywhere") === true) {
+        return {
+          name: "search", output, query, everywhere: true, ranked: true,
+          ...(stringFlag("--limit") !== undefined ? { limit: optionalInteger("--limit", 1, 50) } : {}),
+          ...(rawScope !== undefined ? { searchScope: rawScope } : {}),
+        };
       }
       return {
         name: "search", ...pageOptions(),
@@ -1184,6 +1227,7 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
         connectedFolder: requireConnectedFolder(),
         query,
         ...(rawScope !== undefined ? { searchScope: rawScope } : {}),
+        ...(flags.get("--ranked") === true ? { ranked: true } : {}),
       };
     }
     case "connected-folders create": {
@@ -1257,6 +1301,49 @@ function parseAmpleFileCliActVerb(argv: readonly string[]): AmpleFileCliActParse
       allowOnlyFlags("--connected-folder", "--parent-task");
       return {
         name: "connected-folders.appearance.undo",
+        output,
+        connectedFolder: requireConnectedFolder(),
+        ...(parentTaskId ? { parentTaskId } : {}),
+      };
+    case "connected-folders role show":
+      allowOnlyFlags("--connected-folder");
+      return { name: "connected-folders.role.show", output, connectedFolder: requireConnectedFolder() };
+    case "connected-folders role set": {
+      allowOnlyFlags("--connected-folder", "--purpose", "--parent-task");
+      // A given empty value clears that field, so a bounded flag may be empty here.
+      const purpose = stringFlag("--purpose");
+      if (purpose !== undefined && (purpose.length > connectedFolderRoleLimits.purpose || cliControlCharacters.test(purpose))) {
+        throw usageError(`--purpose must be at most ${connectedFolderRoleLimits.purpose} characters and one line.`);
+      }
+      const role: NonNullable<AmpleFileCliActParsedCommand["role"]> = {};
+      if (purpose !== undefined) role.purpose = purpose;
+      for (const [flag, field] of [["--ask-for", "askFor"], ["--produces", "produces"], ["--accepts", "accepts"]] as const) {
+        const entries = roleLists[flag];
+        if (!entries.length) continue;
+        if (entries.length > connectedFolderRoleLimits.listEntries) {
+          throw usageError(`${flag} can be given at most ${connectedFolderRoleLimits.listEntries} times.`);
+        }
+        if (entries.some((entry) => entry.length > connectedFolderRoleLimits.entry || cliControlCharacters.test(entry))) {
+          throw usageError(`${flag} entries must each be at most ${connectedFolderRoleLimits.entry} characters and one line.`);
+        }
+        // A single empty value is how a list is cleared.
+        role[field] = entries.length === 1 && !entries[0]!.trim() ? [] : entries;
+      }
+      if (!Object.keys(role).length) {
+        throw usageError("Provide at least one of --purpose <text>, --ask-for <text>, --produces <text>, --accepts <text>. Use 'connected-folders role clear' to remove the Role.");
+      }
+      return {
+        name: "connected-folders.role.set",
+        output,
+        connectedFolder: requireConnectedFolder(),
+        role,
+        ...(parentTaskId ? { parentTaskId } : {}),
+      };
+    }
+    case "connected-folders role clear":
+      allowOnlyFlags("--connected-folder", "--parent-task");
+      return {
+        name: "connected-folders.role.clear",
         output,
         connectedFolder: requireConnectedFolder(),
         ...(parentTaskId ? { parentTaskId } : {}),
@@ -1932,6 +2019,8 @@ async function runActCommand(
       return toTerminalSafeJson(await showActReceipt(command.receiptRequestId!, options));
     case "connected-folders.worker.show":
       return toJson(await facade.workerShow({ connectedFolder: command.connectedFolder! }));
+    case "connected-folders.role.show":
+      return toJson(await facade.connectedFoldersRoleShow({ connectedFolder: command.connectedFolder! }));
     case "connected-folders.worker.model":
       return toJson(await facade.workerSetModel({
         connectedFolder: command.connectedFolder!,
@@ -2259,11 +2348,19 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "search":
+      if (command.everywhere) {
+        return toJson(await facade.searchEverywhere({
+          query: command.query!,
+          ...(command.limit ? { limit: command.limit } : {}),
+          ...(command.searchScope ? { scope: command.searchScope } : {}),
+        }));
+      }
       return toJson(await facade.search({
         connectedFolder: command.connectedFolder!,
         query: command.query!,
         ...(command.path ? { path: command.path } : {}), ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}),
         ...(command.searchScope ? { scope: command.searchScope } : {}),
+        ...(command.ranked ? { ranked: true } : {}),
       }));
     case "connected-folders.rename":
       return toJson(await facade.connectedFoldersRename({
@@ -2291,6 +2388,17 @@ async function runActCommand(
       }));
     case "connected-folders.appearance.undo":
       return toJson(await facade.connectedFoldersAppearanceUndo({
+        connectedFolder: command.connectedFolder!,
+        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
+      }));
+    case "connected-folders.role.set":
+      return toJson(await facade.connectedFoldersRoleSet({
+        connectedFolder: command.connectedFolder!,
+        ...command.role!,
+        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
+      }));
+    case "connected-folders.role.clear":
+      return toJson(await facade.connectedFoldersRoleClear({
         connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
@@ -2786,6 +2894,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     case "files.create":
       return `Created empty file ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
     case "search": {
+      if (record.everywhere === true) return everywhereSearchText(record.query, record.scope, record.ranked);
       const names = (Array.isArray(record.names) ? record.names : []) as Array<{ path?: unknown; kind?: unknown; link?: unknown }>;
       const files = (Array.isArray(record.files) ? record.files : []) as Array<{ path?: unknown; line?: unknown; preview?: unknown }>;
       const chats = (Array.isArray(record.chats) ? record.chats : []) as Array<{ conversationId?: unknown; title?: unknown; role?: unknown; preview?: unknown }>;
@@ -2795,8 +2904,9 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       // never read as a complete one.
       const boundNote = (record.truncated === true ? "\nCoverage is incomplete; consult coverage in --json for skipped entries." : "")
         + (record.nextCursor ? `\nContinue with the same selection and --cursor ${terminalText(record.nextCursor)}` : "");
-      if (!total) return `No matches for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}).${boundNote}\n`;
-      const sections: string[] = [];
+      const best = rankedSearchLines(record.ranked);
+      if (!total && !best.hits) return `${best.lines.length ? `${best.lines.join("\n")}\n` : ""}No matches for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}).${boundNote}\n`;
+      const sections: string[] = [...best.lines];
       if (names.length) {
         const shown = names.slice(0, 20);
         sections.push(`Names (${names.length}):`);
@@ -2815,7 +2925,10 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         sections.push(...shown.map((match) => `- ${terminalText(match.title)} [${terminalText(match.conversationId)}] (${terminalText(match.role)}) — ${terminalText(match.preview)}`));
         if (chats.length > shown.length) sections.push(`${chats.length - shown.length} more Chat match(es) in the --json result.`);
       }
-      return `${total} match${total === 1 ? "" : "es"} for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}):\n${sections.join("\n")}${boundNote}\n`;
+      const heading = total
+        ? `${total} match${total === 1 ? "" : "es"} for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}):`
+        : `No exact matches for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}); ranked matches follow:`;
+      return `${heading}\n${sections.join("\n")}${boundNote}\n`;
     }
     case "connected-folders.rename":
       return `Renamed Connected Folder ${connectedFolderLabel} (was "${terminalText(record.priorName)}").\n`;
@@ -2845,6 +2958,18 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         : "the default appearance";
       return `Restored ${connectedFolderLabel} to ${restored}. Running 'connected-folders appearance undo' again swaps back.\n`;
     }
+    case "connected-folders.role.show": {
+      const role = record.role as { purpose?: unknown; askFor?: unknown; produces?: unknown; accepts?: unknown } | null | undefined;
+      return role ? `${connectedFolderLabel}\n${describeRoleForTerminal(role)}\n` : `${connectedFolderLabel} has no Role. Set one with 'connected-folders role set --purpose <text>'.\n`;
+    }
+    case "connected-folders.role.set":
+      return record.changed === false
+        ? `${connectedFolderLabel} already has that Role.\n`
+        : `Saved the Role of ${connectedFolderLabel} in .amplefile/role.json. The receipt keeps the previous Role.\n`;
+    case "connected-folders.role.clear":
+      return record.changed === false
+        ? `${connectedFolderLabel} has no Role to clear.\n`
+        : `Cleared the Role of ${connectedFolderLabel}. The receipt keeps the previous Role.\n`;
     case "tools.remove": {
       const where = record.scope === "connected-folder" ? `Connected Folder scope in ${connectedFolderLabel}` : "everywhere scope";
       return `Removed package ${terminalText(record.source)} (${where}). Reinstalling it is a fresh receipted act.\n`;
@@ -3244,6 +3369,94 @@ function receiptDetails(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
 }
 
 /**
+ * `search --everywhere --ranked` in words: each Connected Folder that holds a
+ * best match, with its Role purpose and its matches, then what was not
+ * searched or not indexed yet. Unknown never reads as nothing found.
+ */
+function everywhereSearchText(query: unknown, scope: unknown, ranked: unknown): string {
+  const value = (ranked && typeof ranked === "object" ? ranked : {}) as {
+    groups?: Array<{ connectedFolder?: { id?: unknown; name?: unknown; rolePurpose?: unknown }; hits?: unknown[] }>;
+    notIndexed?: Array<{ id?: unknown; name?: unknown }>;
+    searched?: unknown; withoutHits?: unknown;
+    failed?: Array<{ name?: unknown }>;
+    leftOut?: { workingCopies?: unknown; beyondLimit?: unknown };
+    coverage?: { complete?: unknown; ranking?: unknown; lexicalOnlyReason?: unknown };
+  };
+  const groups = Array.isArray(value.groups) ? value.groups : [];
+  const lines: string[] = [];
+  const scopeLabel = `scope ${terminalText(scope ?? "all")}`;
+  const count = (amount: number, noun: string) => `${amount} ${noun}${amount === 1 ? "" : "s"}`;
+  const searched = typeof value.searched === "number" ? value.searched : 0;
+  if (groups.length) {
+    lines.push(`Best matches for "${terminalText(query)}" across ${count(searched, "Connected Folder")} (${scopeLabel}):`);
+    for (const group of groups) {
+      const folder = group.connectedFolder ?? {};
+      lines.push(`${terminalText(folder.name)} [${terminalText(folder.id)}]${typeof folder.rolePurpose === "string" && folder.rolePurpose ? ` — ${terminalText(folder.rolePurpose)}` : ""}`);
+      const hits = rankedSearchLines({ hits: group.hits ?? [], coverage: { complete: true } }).lines.slice(1);
+      lines.push(...hits.map((line) => `  ${line}`));
+    }
+  } else {
+    lines.push(`No ranked matches for "${terminalText(query)}" across ${count(searched, "Connected Folder")} (${scopeLabel}).`);
+  }
+  const notIndexed = Array.isArray(value.notIndexed) ? value.notIndexed : [];
+  if (notIndexed.length) {
+    const names = notIndexed.slice(0, 5).map((folder) => terminalText(folder.name)).join(", ");
+    lines.push(`Not indexed yet (indexing has started; not the same as empty): ${names}${notIndexed.length > 5 ? `, and ${notIndexed.length - 5} more` : ""}.`);
+  }
+  const failed = Array.isArray(value.failed) ? value.failed : [];
+  if (failed.length) lines.push(`Could not read the index of ${failed.slice(0, 5).map((folder) => terminalText(folder.name)).join(", ")} this time.`);
+  const workingCopies = typeof value.leftOut?.workingCopies === "number" ? value.leftOut.workingCopies : 0;
+  if (workingCopies) lines.push(`Left out ${count(workingCopies, "managed working copy")}.`);
+  const beyond = typeof value.leftOut?.beyondLimit === "number" ? value.leftOut.beyondLimit : 0;
+  if (beyond) lines.push(`Left out ${count(beyond, "Connected Folder")} past the bound on folders per search.`);
+  if (value.coverage && value.coverage.complete !== true && !notIndexed.length) lines.push("Some indexes are still catching up; see ranked.coverage in --json.");
+  if (groups.length && value.coverage?.ranking === "lexical") {
+    lines.push(value.coverage.lexicalOnlyReason === "embedder-unavailable"
+      ? "Ranked by words only; ranking by meaning is unavailable on this computer."
+      : "Ranked by words only for now; ranking by meaning is still being prepared.");
+  }
+  if (groups.length) lines.push("Read the original before relying on a match; hand work to the Worker that holds it.");
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * `search --ranked` in words: the index's best matches with where to look and
+ * whether each is still current, then what the index does not cover yet.
+ */
+function rankedSearchLines(ranked: unknown): { hits: number; lines: string[] } {
+  if (!ranked || typeof ranked !== "object") return { hits: 0, lines: [] };
+  const value = ranked as { hits?: unknown; coverage?: { complete?: unknown; state?: unknown; ranking?: unknown; files?: Record<string, unknown> | null } };
+  const hits = (Array.isArray(value.hits) ? value.hits : []) as Array<{ source?: unknown; path?: unknown; title?: unknown; conversationId?: unknown; location?: Record<string, unknown>; excerpt?: unknown; fresh?: unknown }>;
+  const lines: string[] = [];
+  if (hits.length) {
+    lines.push(`Best matches (${hits.length}):`);
+    for (const hit of hits.slice(0, 10)) {
+      const where = hit.source === "chat" ? `Chat ${terminalText(hit.title)} [${terminalText(hit.conversationId)}]` : terminalText(hit.path);
+      const location = hit.location ?? {};
+      const at = location.lines && typeof location.lines === "object" ? `:${terminalText((location.lines as { start?: unknown }).start)}`
+        : location.page !== undefined ? ` page ${terminalText(location.page)}`
+        : location.slide !== undefined ? ` slide ${terminalText(location.slide)}`
+        : location.sheet !== undefined ? ` sheet ${terminalText(location.sheet)}`
+        : "";
+      lines.push(`- ${where}${at}${hit.fresh === false ? " (changed since indexed)" : ""} — ${terminalText(hit.excerpt)}`);
+    }
+  }
+  const coverage = value.coverage;
+  if (coverage?.state === "not-indexed") lines.push("The index has not read this Connected Folder yet; ranked matches will follow.");
+  else if (coverage && coverage.complete !== true) {
+    const pending = typeof coverage.files?.pending === "number" ? coverage.files.pending : null;
+    lines.push(`The index is still catching up${pending ? ` (${pending} file${pending === 1 ? "" : "s"} waiting)` : ""}; see ranked.coverage in --json.`);
+  }
+  const lexicalOnly = (coverage as { lexicalOnlyReason?: unknown } | undefined)?.lexicalOnlyReason;
+  if (coverage?.ranking === "lexical" && hits.length) {
+    lines.push(lexicalOnly === "embedder-unavailable"
+      ? "Ranked by words only; ranking by meaning is unavailable on this computer."
+      : "Ranked by words only for now; ranking by meaning is still being prepared.");
+  }
+  return { hits: hits.length, lines };
+}
+
+/**
  * Per-family receipt detail from the ledger's "receipt adds" column. For
  * search this is deliberately the scope alone — receipts never record the
  * query text; appearance and presentation entries carry short content refs,
@@ -3394,7 +3607,7 @@ function actReceiptDetail(
         ? record.created ? "created restore point" : "already matches the latest restore point"
         : undefined;
     case "search":
-      return typeof record.scope === "string" ? `scope ${record.scope}` : undefined;
+      return typeof record.scope === "string" ? `scope ${record.scope}${(record as { everywhere?: unknown }).everywhere === true ? "; everywhere" : ""}` : undefined;
     case "files.move":
       return typeof record.path === "string" ? `moved to ${record.path}` : undefined;
     case "connected-folders.unregister":
@@ -3405,6 +3618,10 @@ function actReceiptDetail(
       return record.changed === false ? "already default" : undefined;
     case "connected-folders.appearance.undo":
       return `restored ${typeof record.restoredAppearanceRef === "string" ? record.restoredAppearanceRef : "none"}`;
+    case "connected-folders.role.set":
+      return record.changed === false ? "unchanged" : "updated";
+    case "connected-folders.role.clear":
+      return record.changed === false ? "already none" : "cleared";
     case "tools.remove":
       return typeof record.scope === "string" && typeof record.source === "string"
         ? `scope ${record.scope}; source ${boundedReceiptText(record.source)}`
@@ -3437,6 +3654,27 @@ function actReceiptDetail(
     default:
       return undefined;
   }
+}
+
+function roleUndoValue(previous: unknown): string {
+  if (!previous || typeof previous !== "object") return "none";
+  const { purpose, askFor, produces, accepts } = previous as Record<string, unknown>;
+  return JSON.stringify({
+    ...(typeof purpose === "string" ? { purpose } : {}),
+    ...(Array.isArray(askFor) ? { askFor } : {}),
+    ...(Array.isArray(produces) ? { produces } : {}),
+    ...(Array.isArray(accepts) ? { accepts } : {}),
+  });
+}
+
+function describeRoleForTerminal(role: { purpose?: unknown; askFor?: unknown; produces?: unknown; accepts?: unknown }): string {
+  const list = (value: unknown) => Array.isArray(value) ? value.map((entry) => terminalText(entry)).join("; ") : "";
+  return [
+    typeof role.purpose === "string" && role.purpose ? `Purpose: ${terminalText(role.purpose)}` : "",
+    list(role.askFor) ? `Ask for: ${list(role.askFor)}` : "",
+    list(role.produces) ? `Produces: ${list(role.produces)}` : "",
+    list(role.accepts) ? `Accepts: ${list(role.accepts)}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 /** Receipt details stay content-light; long identifiers are cut, never dropped. */
@@ -3539,6 +3777,11 @@ function actUndoRef(
         kind: "appearance-ref",
         value: typeof record.priorAppearanceRef === "string" ? record.priorAppearanceRef : "none",
       };
+    case "connected-folders.role.set":
+    case "connected-folders.role.clear":
+      // The previous Role itself, so a person can put it back (bounded: at
+      // most 280 + 24 x 140 characters, one line each).
+      return { kind: "role", value: roleUndoValue((record as { previousRole?: unknown }).previousRole) };
     case "connected-folders.appearance.undo":
       // Undo is its own inverse: the displaced ref is what a second undo
       // would restore.

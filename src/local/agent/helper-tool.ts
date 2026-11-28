@@ -16,6 +16,7 @@ import {
 
 import { parseAmpleFileResultEnvelope, type AmpleFileResultEnvelope } from "../requests/request-records.js";
 import { containsReservedConnectedFolderPathSegment, isReservedConnectedFolderPathSegment } from "../connected-folder-path-policy.js";
+import { parseRecallToolInput, presentRecallResult, recallToolDescription, recallToolName, recallToolParameters, type RecallToolHost } from "./recall-tool.js";
 
 export const helperToolName = "helper";
 export const helperResultToolName = "submit_result";
@@ -327,6 +328,24 @@ export function createHelperReadTools(scope: HelperPathScope, model?: unknown): 
   return [read, grep, find, ls];
 }
 
+/**
+ * The Worker's `recall`, folder scope only: the helper reads only this
+ * Connected Folder, so it never asks nested folders' indexes.
+ */
+export function createHelperRecallTool(host: RecallToolHost): HelperToolSpec {
+  const { scope: _scope, ...properties } = recallToolParameters.properties;
+  return {
+    name: recallToolName,
+    description: recallToolDescription.replace(/ scope "tree"[\s\S]*$/u, " It searches this Connected Folder only."),
+    parameters: { ...recallToolParameters, properties },
+    async execute(params, signal) {
+      const input = parseRecallToolInput({ ...params, scope: "folder" }, ["folder"]);
+      const result = await host.recall(input, signal);
+      return textResult(JSON.stringify(presentRecallResult(input, result), null, 1));
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The helper run
 // ---------------------------------------------------------------------------
@@ -384,6 +403,8 @@ export interface HelperRunOptions {
   /** The person's Worker instructions for this Connected Folder, when they wrote any. */
   instructions?: string;
   onActivity?: (activity: HelperActivity) => void;
+  /** This Connected Folder's index; adds `recall` (folder scope) to the helper's tools. */
+  recall?: RecallToolHost;
 }
 
 export interface HelperRunOutput {
@@ -400,6 +421,9 @@ export const helperSystemPrompt = [
   `Finish by calling ${helperResultToolName} exactly once with: summary (a concise, complete answer to the task with the evidence it rests on, citing Connected Folder–relative file paths), optional data (structured JSON when the task asks for lists or fields), optional files (Connected Folder–relative paths of the files the answer rests on), and outcome.`,
   "Use outcome succeeded when you answered the whole task, partial when something could not be found or is ambiguous (say exactly what is missing), and failed when you could not do the task.",
 ].join("\n");
+
+/** Added to the helper's prompt when it has `recall`. */
+export const helperRecallPrompt = "recall finds where to look in this Connected Folder by words and meaning from AmpleFile's index; it returns pointers and short excerpts. Read the original before relying on or citing anything it points at, and treat coverage gaps and fresh:false hits as reasons to look again with grep.";
 
 const resultToolSpec = {
   name: helperResultToolName,
@@ -488,11 +512,15 @@ export async function runHelper(input: HelperRunInput, options: HelperRunOptions
       return failed(`The helper could not use ${path}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  const tools = createHelperReadTools(scope, model).filter(tool => !input.tools || input.tools.includes(tool.name));
+  const tools = [...createHelperReadTools(scope, model), ...(options.recall ? [createHelperRecallTool(options.recall)] : [])]
+    .filter(tool => !input.tools || input.tools.includes(tool.name));
   const toolSpecs = [...tools.map(({ name, description, parameters }) => ({ name, description, parameters })), resultToolSpec];
-  const systemPrompt = options.instructions?.trim()
-    ? `${helperSystemPrompt}\n\nThe person's instructions for this Connected Folder's Worker (follow them where they apply to reading and reporting):\n${options.instructions.trim()}`
+  const basePrompt = tools.some((tool) => tool.name === recallToolName)
+    ? `${helperSystemPrompt}\n${helperRecallPrompt}`
     : helperSystemPrompt;
+  const systemPrompt = options.instructions?.trim()
+    ? `${basePrompt}\n\nThe person's instructions for this Connected Folder's Worker (follow them where they apply to reading and reporting):\n${options.instructions.trim()}`
+    : basePrompt;
   const messages: unknown[] = [{
     role: "user",
     content: chosen.length ? `${task}\n\nStart from these paths in the connected-folder:\n${chosen.map((path) => `- ${path}`).join("\n")}` : task,
@@ -554,10 +582,10 @@ export async function runHelper(input: HelperRunInput, options: HelperRunOptions
       if (signal.aborted) throw stopped();
       const tool = tools.find((candidate) => candidate.name === call.name);
       const params = (call.arguments && typeof call.arguments === "object" ? call.arguments : {}) as Record<string, unknown>;
-      const target = typeof params.path === "string" ? params.path : typeof params.pattern === "string" ? params.pattern : undefined;
+      const target = typeof params.path === "string" ? params.path : typeof params.pattern === "string" ? params.pattern : typeof params.query === "string" ? params.query : undefined;
       if (!tool) {
         note({ tool: call.name ?? "unknown", error: true });
-        messages.push(toolResultMessage(call, `Tool ${call.name} is not available to the helper. Use read, grep, find, ls or ${helperResultToolName}.`, true));
+        messages.push(toolResultMessage(call, `Tool ${call.name} is not available to the helper. Use ${tools.map((candidate) => candidate.name).join(", ")} or ${helperResultToolName}.`, true));
         continue;
       }
       try {
@@ -614,13 +642,15 @@ export interface HelperToolHost {
   track(run: { controller: AbortController; settled: Promise<unknown> }): void;
   /** Records a settled run under the parent turn; `unreported` is spend no tool result carried (a stopped run). */
   record(run: HelperRunRecord, unreported?: Usage): void;
+  /** This Connected Folder's index, for the helper's folder-scope `recall`. */
+  recall?: RecallToolHost;
 }
 
 export function createHelperTool(host: HelperToolHost): ToolDefinition<any> {
   return {
     name: helperToolName,
     label: "Helper",
-    description: "Run one focused, read-only task in a separate context and get back a concise result. The helper can only read, grep, find and ls inside this Connected Folder — no edits, shell, web or Extensions — and sees only the task text and paths you give it, not this conversation. Use it for heavy reading: finding which files matter, reconciling several documents, surveying a folder before an edit. It returns { summary, data?, files?, outcome }; outcome partial says what it could not find, and you decide what to do next.",
+    description: `Run one focused, read-only task in a separate context and get back a concise result. The helper can only ${host.recall ? "read, grep, find, ls and recall (this Connected Folder's index)" : "read, grep, find and ls"} inside this Connected Folder — no edits, shell, web or Extensions — and sees only the task text and paths you give it, not this conversation. Use it for heavy reading: finding which files matter, reconciling several documents, surveying a folder before an edit. It returns { summary, data?, files?, outcome }; outcome partial says what it could not find, and you decide what to do next.`,
     promptSnippet: "Hand a focused read-only task to a helper with its own context",
     promptGuidelines: [
       "helper keeps heavy reading out of your context: give it a complete, self-contained task (what to find, which details matter, what to report) because it cannot see this conversation. Check anything doubtful in its result yourself, and resolve a partial result or ask the person through the usual verbs.",
@@ -632,7 +662,7 @@ export function createHelperTool(host: HelperToolHost): ToolDefinition<any> {
         task: { type: "string", minLength: 1, description: "Self-contained task: what to find or check, and exactly what to report back." },
         model: { anyOf: [{ type: "object", properties: { provider: { type: "string" }, id: { type: "string" } }, required: ["provider", "id"], additionalProperties: false }, { type: "null" }], description: "Omit or set null to inherit the connected parent model. Otherwise choose an already-connected model; never guess a provider or send empty ids." },
         thinking: { type: ["string", "null"], description: "Optional supported reasoning level; null inherits the parent's setting." },
-        tools: { type: ["array", "null"], items: { type: "string", enum: ["read", "grep", "find", "ls"] }, description: "Narrow the helper to these read-only tools; null uses all four." },
+        tools: { type: ["array", "null"], items: { type: "string", enum: host.recall ? ["read", "grep", "find", "ls", recallToolName] : ["read", "grep", "find", "ls"] }, description: host.recall ? "Narrow the helper to these read-only tools; null uses all of them (recall searches this Connected Folder's index only)." : "Narrow the helper to these read-only tools; null uses all four." },
         paths: { type: ["array", "null"], items: { type: "string" }, description: "Optional Connected Folder–relative files or folders to start from; null starts in this Connected Folder." },
       },
       required: ["task"],
@@ -663,6 +693,7 @@ export function createHelperTool(host: HelperToolHost): ToolDefinition<any> {
         onActivity: host.activity,
         ...(turn.taskId ? { taskId: turn.taskId } : {}),
         ...(instructions ? { instructions } : {}),
+        ...(host.recall ? { recall: host.recall } : {}),
       });
       host.track({ controller, settled: run.catch(() => undefined) });
       try {

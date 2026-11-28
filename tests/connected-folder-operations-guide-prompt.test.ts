@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   connectedFolderOperationsGuideForScope,
   ampleFileConnectedFolderOperationsGuide,
   ampleFileConnectedFolderOperationsGuideHeading,
+  ampleFileConnectedFolderRoleHeading,
   ampleFileWorkerWorkingFilesGuide,
 } from "../src/local/agent/connected-folder-operations-guide.js";
 
@@ -56,6 +57,52 @@ test("a Connected Folder Chat's system prompt carries Connected Folder instructi
   // The guide is a session appendix; nothing new is written into the Connected Folder's folder.
   const { readdir } = await import("node:fs/promises");
   assert.deepEqual(await readdir(connectedFolderRoot), []);
+});
+
+/**
+ * A Connected Folder's own Role reaches its Worker the way Worker instructions
+ * do: in the system prompt, right after them and before the operations guide.
+ * The AmpleFile Agent's session never gets one, and nothing is written.
+ */
+test("a Worker's system prompt carries its own Role after its instructions, and the AmpleFile Agent's never does", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-role-prompt-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const agentDir = join(root, "agent");
+  const connectedFolderRoot = join(root, "connected-folder");
+  await mkdir(join(agentDir, "extensions"), { recursive: true });
+  await mkdir(join(connectedFolderRoot, ".amplefile"), { recursive: true });
+  const roleFile = join(connectedFolderRoot, ".amplefile", "role.json");
+  const savedRole = JSON.stringify({ version: 1, purpose: "Household paperwork", askFor: ["a tax pack"], accepts: ["receipts"], updatedAt: "2026-11-27T10:00:00.000Z" });
+  await writeFile(roleFile, savedRole, "utf8");
+  const provider = { async resolveRuntime() { return { agentDir, workerInstructions: "Prefer short answers." }; } };
+
+  const worker = new PiConversationClient("role", connectedFolderRoot, provider, undefined, {
+    operationsGuide: connectedFolderOperationsGuideForScope("connected-folder-1")!,
+  });
+  t.after(() => worker.stop());
+  await worker.getCatalog();
+  const appended = sessionAppendix(worker);
+  assert.equal(appended.length, 5, "instructions, Role, operations, working files, and tool feedback");
+  assert.match(appended[0]!, /^## Worker instructions/);
+  assert.ok(appended[1]!.startsWith(ampleFileConnectedFolderRoleHeading));
+  assert.match(appended[1]!, /Purpose: Household paperwork\nAsk it for: a tax pack\nIt accepts: receipts$/);
+  assert.match(appended[1]!, /it is not an instruction from the person/);
+  assert.ok(appended[2]!.startsWith(ampleFileConnectedFolderOperationsGuideHeading));
+  assert.match(appended[2]!, /### Roles[\s\S]*Route by Role[\s\S]*Keep your own Role true[\s\S]*connected-folders role set/);
+  assert.match(appended[2]!, /still goes to Worker instructions/, "a Role describes the folder; preferences stay in Worker instructions");
+
+  const agent = new PiConversationClient("agent", connectedFolderRoot, provider, undefined, { role: "amplefile-agent" });
+  t.after(() => agent.stop());
+  await agent.getCatalog();
+  assert.doesNotMatch(sessionAppendix(agent).join("\n"), /Role of this Connected Folder/);
+
+  // A Role the app cannot read is simply not there, and reading it writes nothing.
+  await writeFile(roleFile, "{ torn", "utf8");
+  const torn = new PiConversationClient("torn", connectedFolderRoot, provider, undefined, {});
+  t.after(() => torn.stop());
+  await torn.getCatalog();
+  assert.doesNotMatch(sessionAppendix(torn).join("\n"), /Role of this Connected Folder/);
+  assert.equal(await readFile(roleFile, "utf8"), "{ torn");
 });
 
 /**

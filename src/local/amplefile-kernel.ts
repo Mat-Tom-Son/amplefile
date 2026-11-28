@@ -7,6 +7,7 @@ import {
   type PiResourceCatalog,
 } from "./agent/skill-catalog.js";
 import { folderParentIds } from "../shared/folder-nesting.js";
+import { readConnectedFolderRolePurpose } from "./connected-folder-role.js";
 import type { PiSurfaceBlock } from "./agent/surface-manifest.js";
 import {
   isPiProjectMutationTrusted,
@@ -51,6 +52,12 @@ export interface AmpleFileConnectedFolderSnapshot {
    * the v1 snapshot, so a top-level Connected Folder's shape is unchanged.
    */
   parentConnectedFolderId?: string;
+  /**
+   * The purpose line of this Connected Folder's Role (`.amplefile/role.json`).
+   * Present only when `getConnectedFolders` is asked for role purposes and the
+   * folder has one; additive to the v1 snapshot.
+   */
+  rolePurpose?: string;
 }
 
 export interface AmpleFileContextSnapshot {
@@ -449,12 +456,22 @@ export class AmpleFileKernel {
     };
   }
 
-  async getConnectedFolders(actor: AmpleFileActor): Promise<AmpleFileConnectedFoldersSnapshot> {
+  async getConnectedFolders(
+    actor: AmpleFileActor,
+    options: { includeRolePurpose?: boolean } = {},
+  ): Promise<AmpleFileConnectedFoldersSnapshot> {
+    const connectedFolders = withParentConnectedFolderIds((await this.#listConnectedFolders()).map(toConnectedFolderSnapshot));
     return {
       kind: "amplefile.connected-folders",
       version: ampleFileKernelSnapshotVersion,
       actor: normalizeActor(actor),
-      connectedFolders: withParentConnectedFolderIds((await this.#listConnectedFolders()).map(toConnectedFolderSnapshot)),
+      // One small file read per Connected Folder, only for the surfaces that show the purpose.
+      connectedFolders: options.includeRolePurpose
+        ? await Promise.all(connectedFolders.map(async (connectedFolder) => {
+          const rolePurpose = await readConnectedFolderRolePurpose(connectedFolder.connectedFolderRoot);
+          return rolePurpose ? { ...connectedFolder, rolePurpose } : connectedFolder;
+        }))
+        : connectedFolders,
     };
   }
 

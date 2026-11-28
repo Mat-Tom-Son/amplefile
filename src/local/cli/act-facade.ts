@@ -22,6 +22,8 @@ import type {
   AmpleFileResultOutcome,
 } from "../requests/request-records.js";
 import type { ConnectedFolderChatMatch, ConnectedFolderFileMatch, ConnectedFolderNameMatch, ConnectedFolderSearchCoverage } from "../search.js";
+import type { RecallResult } from "../index/recall.js";
+import type { RecallAcrossResult } from "../index/recall-across.js";
 import type { HistoryFileComparison, HistoryFileRead, HistoryFileReadOptions, HistoryPageOptions } from "../../shared/history-review.js";
 
 export interface AmpleFileActConnectedFolderRef {
@@ -29,6 +31,9 @@ export interface AmpleFileActConnectedFolderRef {
   name: string;
   connectedFolderRoot: string;
 }
+
+/** A Connected Folder's Role as the act lane reports it (`.amplefile/role.json`). */
+export type AmpleFileActConnectedFolderRole = import("../../shared/connected-folder-role.js").ConnectedFolderRole;
 
 /**
  * One Recently deleted item, as the act lane reports it: identifiers and paths
@@ -962,7 +967,7 @@ export interface AmpleFileActFacade {
    * Search names, file text and Chats through the same service as
    * `/api/connected-folders/:id/search`. Receipts carry the scope only.
    */
-  search(input: { connectedFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number }): Promise<{
+  search(input: { connectedFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number; ranked?: boolean }): Promise<{
     connectedFolder: AmpleFileActConnectedFolderRef;
     scope: "files" | "chats" | "all";
     query: string;
@@ -972,6 +977,23 @@ export interface AmpleFileActFacade {
     truncated: boolean;
     scannedFiles: number;
     nextCursor?: string | null; coverage?: ConnectedFolderSearchCoverage;
+    /** With `ranked` on the first page: the index's ranked hits and coverage (docs/index-and-recall.md). */
+    ranked?: RecallResult;
+  }>;
+
+  /**
+   * `search --everywhere --ranked`: every registered Connected Folder's index
+   * at once, hits merged by rank and grouped by Connected Folder with each
+   * one's Role purpose; managed working copies are left out
+   * (docs/index-and-recall.md). It names no Connected Folder, so its receipt
+   * carries none; like every search receipt it records the scope, never the
+   * query.
+   */
+  searchEverywhere(input: { query: string; scope?: "files" | "chats" | "all"; limit?: number }): Promise<{
+    everywhere: true;
+    scope: "files" | "chats" | "all";
+    query: string;
+    ranked: RecallAcrossResult;
   }>;
 
   createConnectedFolder(input: { name: string; parentTaskId?: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef }>;
@@ -1043,6 +1065,38 @@ export interface AmpleFileActFacade {
     restored: true;
     restoredAppearanceRef: string | null;
     displacedAppearanceRef: string | null;
+  }>;
+
+  /**
+   * Connected Folder Role verbs (docs/product-model.md, "Role"). `show` reads the
+   * portable `.amplefile/role.json`; `set` changes only the fields it is given
+   * (a given empty field clears it); `clear` removes the Role. Every change
+   * returns the Role it replaced, so a person can put it back. A malformed or
+   * newer-version file reads as no role; a change refuses to replace the
+   * latter.
+   */
+  connectedFoldersRoleShow(input: { connectedFolder: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    role: AmpleFileActConnectedFolderRole | null;
+  }>;
+  connectedFoldersRoleSet(input: {
+    connectedFolder: string;
+    purpose?: string;
+    askFor?: string[];
+    produces?: string[];
+    accepts?: string[];
+    parentTaskId?: string;
+  }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    role: AmpleFileActConnectedFolderRole | null;
+    previousRole: AmpleFileActConnectedFolderRole | null;
+    changed: boolean;
+  }>;
+  connectedFoldersRoleClear(input: { connectedFolder: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    role: null;
+    previousRole: AmpleFileActConnectedFolderRole | null;
+    changed: boolean;
   }>;
 
   /** Remove an installed Pi package under the capability mutation fence. */

@@ -1,0 +1,127 @@
+/* A Connected Folder's Role in Info: the purpose and three short lists, editable in place. */
+
+.fm-role-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.fm-role-head .fm-sec-h {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.fm-role-view,
+.fm-role-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  font-size: calc(13px * var(--fm-scale));
+}
+
+.fm-role-purpose {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fm-role-label {
+  margin: 0;
+  padding: 0;
+  color: var(--fm-text2);
+  font-size: calc(11px * var(--fm-scale));
+  font-weight: 600;
+}
+
+.fm-role-group ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+
+.fm-role-group li {
+  overflow-wrap: anywhere;
+}
+
+.fm-role-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 4px;
+}
+
+.fm-role-empty .fm-sec-empty {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+}
+
+.fm-role-text,
+.fm-role-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--fm-field-line);
+  border-radius: 7px;
+  background: var(--fm-field);
+  color: var(--fm-text);
+  font: inherit;
+  font-size: calc(13px * var(--fm-scale));
+}
+
+.fm-role-text {
+  resize: vertical;
+}
+
+.fm-role-text:focus-visible,
+.fm-role-input:focus-visible {
+  border-color: var(--fm-accent);
+  box-shadow: 0 0 0 3px var(--fm-accent-soft);
+  outline: none;
+}
+
+.fm-role-count {
+  align-self: flex-end;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+}
+
+.fm-role-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fm-role-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: stretch;
+}
+
+.fm-role-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.fm-role-refusal {
+  margin: 0;
+  color: var(--ui-danger, #d70015);
+  font-size: calc(12px * var(--fm-scale));
+}
+
+.fm-role-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

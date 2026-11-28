@@ -439,6 +439,9 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       `       ${executable} connected-folders appearance apply --connected-folder <id-or-name> [--banner-image <path>] [--icon <name>] [--color <#rrggbb>] [--json]`,
       `       ${executable} connected-folders appearance reset --connected-folder <id-or-name> [--json]`,
       `       ${executable} connected-folders appearance undo --connected-folder <id-or-name> [--json]`,
+      `       ${executable} connected-folders role show --connected-folder <id-or-name> [--json]`,
+      `       ${executable} connected-folders role set --connected-folder <id-or-name> [--purpose <text>] [--ask-for <text>]... [--produces <text>]... [--accepts <text>]... [--json]`,
+      `       ${executable} connected-folders role clear --connected-folder <id-or-name> [--json]`,
       `       ${executable} connected-folders worker show --connected-folder <id-or-name> [--json]`,
       `       ${executable} connected-folders worker model --connected-folder <id-or-name> --provider <id> --model <id> [--json]`,
       `       ${executable} connected-folders worker instructions --connected-folder <id-or-name> (--instructions <text> | --instructions-file <path> | --append <line> | --clear) [--json]`,
@@ -450,8 +453,13 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "a managed Connected Folder to Recently Deleted and records a receipt.",
       "appearance apply imports a typed proposal file, or changes just the",
       "banner image, icon, or color you name; reset and undo step the",
-      "appearance back. worker show reports the connected model choices and",
-      "the Worker Instructions; worker model saves the default for new Chats,",
+      "appearance back. A Role says what a Connected Folder is for and lives in",
+      "its own .amplefile/role.json: role set changes only the fields you give",
+      "(an empty value clears one; --ask-for, --produces, and --accepts repeat),",
+      "role clear removes it, and the receipt keeps the previous Role. The",
+      "purpose also appears in connected-folders list. worker show reports the",
+      "connected model choices and the Worker Instructions; worker model saves",
+      "the default for new Chats,",
       "while worker instructions affect subsequent turns; --append adds one",
       "line after the current instructions and skips an exact repeat.",
       "Provider connections",
@@ -521,7 +529,8 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     return [
       header,
       "",
-      `Usage: ${executable} search --connected-folder <id-or-name> --query <text> [--scope <files|chats|all>] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] [--json]`,
+      `Usage: ${executable} search --connected-folder <id-or-name> --query <text> [--scope <files|chats|all>] [--path <file-or-folder>] [--limit <n>] [--cursor <cursor>] [--ranked] [--json]`,
+      `       ${executable} search --everywhere --ranked --query <text> [--scope <files|chats|all>] [--limit <n>] [--json]`,
       "",
       "Files scope searches names and file text. Narrow it with --path.",
       "The first page checks up to 20,000 entries for case-insensitive name matches",
@@ -537,6 +546,18 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "Search one Connected Folder's files and Chats with the same in-app search the",
       "desktop uses. The results carry content, so this rides the act lane",
       "and needs the AmpleFile app running.",
+      "--ranked also asks the Connected Folder's index, kept on this computer, for",
+      "its best matches by words and meaning (at most 50, --limit caps them):",
+      "where to look, an excerpt, and whether the file changed since it was indexed.",
+      "ranked.coverage says what is not indexed yet. Read the original before",
+      "relying on a match.",
+      "--everywhere --ranked asks every Connected Folder's index at once, with no",
+      "--connected-folder: the best matches merged by rank and grouped by Connected",
+      "Folder with each one's id, name, and Role purpose. Use it to find which",
+      "Worker knows about something, then hand the work there. Managed working",
+      "copies are left out; a Connected Folder never indexed yet is listed under",
+      "ranked.notIndexed, not counted as empty. It takes no --path or --cursor, and",
+      "its receipt names no Connected Folder.",
       "",
     ].join("\n");
   }
@@ -688,6 +709,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "                      Work with files inside a Connected Folder",
     "  connected-folders create|register|rename|unregister|delete",
     "  connected-folders appearance apply|reset|undo",
+    "  connected-folders role show|set|clear",
     "  connected-folders worker show|model|instructions",
     "                      Create, manage, restyle, or configure Connected Folders and their Workers",
     "  tools import-skill|install|enable|disable|update|remove|remove-skill",
@@ -830,6 +852,7 @@ function connectedFolderJson(value: AmpleFileCliConnectedFolderSummary): AmpleFi
     connectedFolderRoot: value.connectedFolderRoot ?? null,
     active: value.active ?? false,
     ...(value.parentConnectedFolderId ? { parentConnectedFolderId: value.parentConnectedFolderId } : {}),
+    ...(value.rolePurpose ? { rolePurpose: value.rolePurpose } : {}),
   };
 }
 
@@ -848,7 +871,7 @@ function humanContext(value: AmpleFileCliContextSnapshot): string {
 
 function humanConnectedFolders(values: AmpleFileCliConnectedFolderSummary[]): string {
   if (!values.length) return "No Connected Folders found.\n";
-  return `${values.map((item) => `- ${terminalText(item.name)} [${terminalText(item.id)}]${item.connectedFolderRoot ? ` — ${terminalText(item.connectedFolderRoot)}` : ""}${item.active ? " (active)" : ""}`).join("\n")}\n`;
+  return `${values.map((item) => `- ${terminalText(item.name)} [${terminalText(item.id)}]${item.connectedFolderRoot ? ` — ${terminalText(item.connectedFolderRoot)}` : ""}${item.active ? " (active)" : ""}${item.rolePurpose ? ` — ${terminalText(item.rolePurpose)}` : ""}`).join("\n")}\n`;
 }
 
 function humanTasks(values: AmpleFileCliTaskSummary[]): string {

@@ -56,9 +56,12 @@ import { AmpleFileKernel } from "./amplefile-kernel.js";
 import { AmpleFileCliActReceipts } from "./cli/act-receipts.js";
 import type { AmpleFileActFacade } from "./cli/act-facade.js";
 import { createLocalDevelopmentApiOptions, loadLocalEnvironmentFile } from "./server-dev-options.js";
-import { listConnectedFolders, listPendingConnectedFolderRemovals } from "./connected-folder.js";
+import { getConnectedFolder, listConnectedFolders, listPendingConnectedFolderRemovals } from "./connected-folder.js";
+import { ConnectedFolderIndexService } from "./index/indexer.js";
+import { globalCapabilityMutationKey } from "./api/reservations.js";
 import { createAmpleFileActFacade } from "./api/act-lane.js";
 import { handleAiModelRoutes, handleModelContextRoutes } from "./api/ai-model-routes.js";
+import { handleConnectedFolderRoleRoutes } from "./api/role-routes.js";
 import { handleAmpleFileAgentRoutes, resolveAmpleFileAgentLineageParent } from "./api/amplefile-agent-routes.js";
 import { createAutomationHopPorts } from "./api/automation-hops.js";
 import {
@@ -335,6 +338,24 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   for (const connectedFolderId of new Set([...recoveredRemovals.connectedFolderIds, ...pendingConnectedFolderIds])) {
     await state.automations.handleConnectedFolderRemoved(connectedFolderId).catch(() => undefined);
   }
+  // The index behind ranked search (docs/index-and-recall.md). It yields to
+  // every Connected Folder reservation and reserves nothing itself.
+  state.connectedFolderIndex = new ConnectedFolderIndexService({
+    ...options.connectedFolderIndex,
+    isReserved: (connectedFolderId) => state.capabilityMutations.has(connectedFolderId)
+      || state.capabilityMutations.has(globalCapabilityMutationKey),
+    resolve: async (connectedFolderId) => {
+      const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
+      return connectedFolder ? { id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot } : null;
+    },
+  });
+  // A settled turn may have changed files and added Chat messages.
+  state.turnCheckpointListeners.add((event) => {
+    if (event.reason !== "post_turn") return;
+    void getConnectedFolder(event.connectedFolderId).then((connectedFolder) => {
+      state.connectedFolderIndex?.schedule({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot }, "turn");
+    }, () => undefined);
+  });
   kernel.configureOverview({
     sources: createServerOverviewSources(state),
     readSeen: () => overviewSeen.seenCursors(),
@@ -444,6 +465,8 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     close: async () => {
       state.acceptingTurns = false;
       forgetOpenLocalApi(state);
+      // The indexer stops at its next step and its embedding helper quits.
+      await state.connectedFolderIndex?.close().catch(() => undefined);
       // Withdraw the cadence before any await; already-admitted filesystem
       // cleanup remains owned until the close promise settles below.
       clearInterval(retentionTimer);
@@ -504,6 +527,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (await handleConnectedFolderRegistryRoutes(request)) return;
   if (await handleConnectedFolderAutomationRoutes(request)) return;
   if (await handleConnectedFolderAppearanceRoutes(request)) return;
+  if (await handleConnectedFolderRoleRoutes(request)) return;
   if (await handleSearchRoutes(request)) return;
   if (await handleThumbnailRoutes(request)) return;
   if (await handlePlaceRoutes(request)) return;

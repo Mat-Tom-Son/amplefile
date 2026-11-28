@@ -27,6 +27,7 @@ organizing metaphor.
 | **Chats** | Conversations grounded in one Connected Folder. | A Chat does not automatically receive every file in the Connected Folder. |
 | **History** | Restore points and recoverable changes for a Connected Folder. | It is distinct from Chat history. |
 | **Worker** | The Pi-powered helper in a Connected Folder. | Provider connections are configured in Settings and stay machine-local; model choices are saved separately for each Connected Folder and for the AmpleFile Agent, apart from Connected Folder content. |
+| **Role** | What a Connected Folder is for: a one-line purpose and, optionally, what to ask it for, what it produces, and what it accepts. A person or the Worker writes it, and the AmpleFile Agent and a parent's Worker read it to route work. | It lives in the folder's own `.amplefile/role.json`, so it is portable, and it is the one thing a Connected Folder says about itself for others to read. It describes the folder; a person's lasting preferences for how to work there stay in Worker instructions, and a Role grants no access to anything. |
 | **Skills & Extensions** | One dialog, opened from the Action menu, to discover and manage what the Workers and the AmpleFile Agent can do. | It groups Skills and Extensions and is pinned to the Connected Folder it was opened from. |
 | **Skill** | A reusable way of working that helps the agent approach a task. | A Skill may contain executable scripts and is not merely a document. |
 | **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
@@ -588,6 +589,13 @@ other surface.
   entries for names, including links, and stops at 500 name matches. It reads
   a separate bounded page of file text. The window shows the matches it found.
   The CLI's `coverage` reports what the search left out.
+  In a Connected Folder, Search also shows **Best Matches** above those
+  results: the index's ranked hits, each with the file's name and folder (or
+  the Chat's title), where in it ("Page 3", "Lines 12–18", a heading or
+  sheet), and an excerpt; opening one does what opening that file or Chat
+  does elsewhere, a hit that changed since it was indexed is marked, and one
+  quiet line says when the index is still catching up
+  ([the index and ranked search](index-and-recall.md#the-window)).
   In a Standard Folder or any other folder the host's folder search reads
   names and file text below the folder shown. That list has a Where column.
   Hidden items are searched only while
@@ -617,10 +625,15 @@ other surface.
   window is there with or without a Connected Folder.
 - **Right panel:** **Info** shows the selection (a picture or PDF shows its
   larger thumbnail, an SVG shows itself; files show Where, Modified, and
-  Size; folders add their measured size, see **Folder sizes**). Info shows the Trash
+  Size; folders add their measured size, see **Folder sizes**; a file of a
+  Connected Folder adds up to five **Related** files from the index when it
+  has any). Info shows the Trash
   item chosen in the Trash, or, at a Connected Folder's top
-  level, its Automations with their on/off switches, followed by the
-  ready-made ones it has not turned on ([Automations](automations.md)).
+  level, its **Role** first ([Roles](#roles)), a quiet index row ("1,204 of
+  1,260 files indexed", **Indexing…**, or "Not indexed yet", with the reasons
+  for files left out under **Details**), then its Automations with their
+  on/off switches, followed by the ready-made ones it has not turned on
+  ([Automations](automations.md)).
   **History** lists the Connected Folder's changes, then its Chats, newest
   first, each row carrying its own day and time; each section shows its five
   newest until **Show More**. A Chat row opens that Chat in the panel. A
@@ -1372,6 +1385,49 @@ disconnecting its nested Connected Folders first, even when their Workers are
 idle, and a pending managed deletion refuses new nested registrations before
 any folder moves. History, search, and Automations treat nested Connected
 Folders as separately owned.
+
+A parent's Worker is told each nested Connected Folder's id, name, path, and
+Role (when it has one), and routes work by that Role with a handoff; it learns
+nothing else about them. The AmpleFile Agent's registry snapshot and
+`connected-folders list` carry each Connected Folder's Role purpose the same
+way.
+
+### Roles
+
+A **Role** is the file `.amplefile/role.json`, beside but separate from the
+identity manifest: `{ "version": 1, "purpose", "askFor", "produces",
+"accepts", "updatedAt" }`. The purpose is one line of at most 280 characters;
+each of the three lists holds at most 8 entries of at most 140 characters,
+one line each. Every field but `version` is optional, and an empty Role is the
+same as none. A malformed, oversized, or newer-version file reads as no Role,
+a read never rewrites it, and a change refuses to replace a newer-version
+file. A write is atomic. The file is portable data, hidden from the file list
+and left out of History capture like the rest of `.amplefile/`.
+
+In the window, a Connected Folder's Role is the first section of Info at its
+top level: the purpose as a sentence, then **Ask It For**, **Produces**, and
+**Accepts**, each only when it has entries. **Edit** turns it into fields in
+place (the purpose in a short text area of up to 280 characters; each list as
+up to 8 one-line entries of up to 140 characters), with **Save** and
+**Cancel**; Escape cancels. A folder with no Role shows one quiet line and
+**Add Role**. A save is never reported before the host returns: when it
+refuses (for example while the folder is being deleted, restored, or ejected),
+the host's reason appears in the form and the draft stays. Info re-reads the
+Role when a Worker or a verb changes it, except while a draft is open. The
+`@` menu in the Chat composer and the AmpleFile Agent's popover shows each
+Worker's Role purpose, truncated to one line, under its name; the
+registry-only `GET /api/connected-folders/outline` the menu reads carries
+`rolePurpose` for each folder that has one, and nothing else about the Role.
+
+A Worker, the AmpleFile Agent, or any shell-capable agent reads and edits a
+Role with `connected-folders role show|set|clear`, a receipted act whose
+receipt keeps the previous Role; the local API reads and saves it for the
+window (`GET`, `PUT`, and `DELETE /api/connected-folders/:id/role`). A Worker is told its own Role in its system prompt,
+right after its Worker instructions and in the same manner, and keeps it true:
+when the folder's job changes it updates the Role, while a person's lasting
+preferences go to Worker instructions. A change takes effect for a Chat's next
+turn. Setting up a Connected Folder with **Set Up for Me** also writes its
+Role.
 
 History refuses a restore that would overwrite or delete content its new
 safety checkpoint cannot capture. Protected metadata and nested Connected

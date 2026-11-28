@@ -12,6 +12,8 @@ import { subscribeControlEvents } from "../../lib/control-events";
 import { notifyFolderAutomationsChanged } from "../../hooks/useFolderAutomations";
 import { restorePointTitle } from "../panes/connectedFolderPanes";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
+import type { ConnectedFolderRole } from "../../../../src/shared/connected-folder-role";
+import type { ConnectedFolderIndexStatus } from "../../../../src/local/index/indexer";
 import type { FolderAutomationView } from "../../../../src/shared/automation-presentation";
 import { automationCardRows, type AutomationCardRow } from "./file-manager-automations";
 import type { ConversationSummary, FileVersionEntry, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
@@ -19,6 +21,8 @@ import { fileKindLabel, fileManagerIcon, formatFileManagerDate, historyTimeLabel
 import { isComputerPlace, placeApiBase, type FileManagerPlace } from "./file-manager-places";
 import { linkKindLabel } from "./file-manager-layout";
 import { TintedFolder } from "./file-manager-folder";
+import { IndexStatusRow, RelatedFiles } from "./ConnectedFolderIndex";
+import { ConnectedFolderRoleCard } from "./ConnectedFolderRole";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 import { canThumbnail, thumbnailSize, useThumbnail } from "./file-manager-thumbnails";
 import { folderSizeText, useFolderSize } from "./file-manager-folder-size";
@@ -42,7 +46,7 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
  * the selection is and History lists its Chats and changes. A Standard Folder's
  * top, and any folder shown in the computer place, offers to connect it.
  */
-export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError, trashSelection = null, aiConnected = true, onSetUpAi }: {
+export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onShowFile, onRestored, onError, trashSelection = null, aiConnected = true, onSetUpAi }: {
   place: FileManagerPlace;
   connectedFolder: ConnectedFolderSummary | null;
   placeName: string;
@@ -78,6 +82,8 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   chatStatuses: Readonly<Record<string, "running" | "attention">>;
   onPutToWork: () => void;
   onOpenChat: (conversationId: string, title: string) => void;
+  /** Shows a file of the Connected Folder in the list, selected (Related). */
+  onShowFile?: (path: string) => void;
   onRestored: () => void;
   onError: (message: string | null) => void;
   /** While the Trash is shown: the Trash items selected there (Info describes them), else null. */
@@ -105,13 +111,19 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   } else if (searchItem) {
     info = <ItemInfo apiBase={searchItem.apiBase} entry={searchItem.entry} where={searchItem.where} fixtureMode={fixtureMode} />;
   } else if (single) {
-    info = <ItemInfo apiBase={apiBase} place={place} entry={single} where={where(single.path)} fixtureMode={fixtureMode} />;
+    info = <>
+      <ItemInfo apiBase={apiBase} place={place} entry={single} where={where(single.path)} fixtureMode={fixtureMode} />
+      {/* The index relates files of a Connected Folder to each other; a link is not a file of its own. */}
+      {connectedFolder && place.kind === "connected-folder" && single.kind === "file" && !single.link && onShowFile
+        ? <RelatedFiles connectedFolderId={connectedFolder.id} path={single.path} fixtureMode={fixtureMode} fixtureRelated={fixture?.recall?.related[connectedFolder.id]} onShow={onShowFile} />
+        : null}
+    </>;
   } else if (selection.length > 1) {
     info = <SelectionInfo selection={selection} sizeOf={(entry) => entry.kind === "folder" ? "--" : typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : ""} />;
   } else if (folderPath && !computerFolder) {
     info = <ItemInfo apiBase={apiBase} place={place} entry={{ name: folderName, path: folderPath, kind: "folder" }} where={where(folderPath)} fixtureMode={fixtureMode} itemCount={itemCount} />;
   } else if (connectedFolder) {
-    info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
+    info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} fixtureRole={fixture?.roles?.[connectedFolder.id] ?? null} fixtureIndex={fixture?.recall?.index[connectedFolder.id] ?? null} onError={onError} />;
   } else {
     // A Standard Folder's top, or the disk itself; Connect This Folder is at the panel's foot, where a Chat would be.
     info = <FolderHeader name={folderName} color={null} itemCount={itemCount} />;
@@ -176,10 +188,11 @@ function FolderHeader({ name, color, symbol = null, itemCount }: { name: string;
 }
 
 /**
- * A Connected Folder's top level: its Automations, each with its on/off switch,
- * then the ready-made ones it hasn't turned on, which Turn on creates.
+ * A Connected Folder's top level: its Role, a quiet index status row, then its Automations, each with its on/off switch,
+ * then the ready-made ones it hasn't turned on, which Turn on creates. A new section
+ * is one more <section className="fm-sec"> in the fragment.
  */
-function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount, automations, fixtureMode, onError }: {
+function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount, automations, fixtureMode, fixtureRole, fixtureIndex, onError }: {
   connectedFolderId: string;
   name: string;
   color: string | null;
@@ -187,6 +200,8 @@ function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount
   itemCount: number;
   automations: FolderAutomationView[];
   fixtureMode: boolean;
+  fixtureRole: ConnectedFolderRole | null;
+  fixtureIndex: ConnectedFolderIndexStatus | null;
   onError: (message: string | null) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -212,6 +227,8 @@ function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount
   }
   return <>
     <FolderHeader name={name} color={color} symbol={symbol} itemCount={itemCount} />
+    <ConnectedFolderRoleCard connectedFolderId={connectedFolderId} fixtureMode={fixtureMode} fixtureRole={fixtureRole} />
+    <IndexStatusRow connectedFolderId={connectedFolderId} fixtureMode={fixtureMode} fixtureStatus={fixtureIndex} />
     <section className="fm-sec">
       <h2 className="fm-sec-h">Automations</h2>
       <div className="fm-card">

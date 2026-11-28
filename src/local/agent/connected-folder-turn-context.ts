@@ -19,6 +19,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
 import { ampleFileRequestLimits } from "../../shared/amplefile-limits.js";
+import type { ConnectedFolderRole } from "../../shared/connected-folder-role.js";
 
 /** The request record's own bound; an assignment longer than this is cut and says so. */
 export const connectedFolderTurnAssignmentMaxBytes = ampleFileRequestLimits.maxRequestContentBytes;
@@ -56,10 +57,33 @@ export interface PiConnectedFolderTurnContext {
   history?: PiConnectedFolderTurnHistory;
   /**
    * Connected Folders registered directly inside this one: their id,
-   * name, and path here. The person nested them, so their existence is this
-   * Connected Folder's own layout, not the registry; nothing else about them is named.
+   * name, and path here, plus the Role each says it has. The person nested
+   * them, so their existence is this Connected Folder's own layout, not the
+   * registry; a Role is the one other thing a folder says about itself for
+   * others to read, and nothing else about them is named.
    */
-  nestedFolders?: Array<{ connectedFolderId: string; name: string; path: string }>;
+  nestedFolders?: PiConnectedFolderTurnNestedFolder[];
+}
+
+/** A nested Connected Folder's Role as a turn sees it: the saved fields, without the file's version or time. */
+export type PiConnectedFolderTurnRole = Pick<ConnectedFolderRole, "purpose" | "askFor" | "produces" | "accepts">;
+
+export interface PiConnectedFolderTurnNestedFolder {
+  connectedFolderId: string;
+  name: string;
+  path: string;
+  /** Absent when the folder has no Role. */
+  role?: PiConnectedFolderTurnRole;
+}
+
+export function connectedFolderTurnRole(role: ConnectedFolderRole | null): PiConnectedFolderTurnRole | undefined {
+  if (!role) return undefined;
+  return {
+    ...(role.purpose ? { purpose: role.purpose } : {}),
+    ...(role.askFor?.length ? { askFor: [...role.askFor] } : {}),
+    ...(role.produces?.length ? { produces: [...role.produces] } : {}),
+    ...(role.accepts?.length ? { accepts: [...role.accepts] } : {}),
+  };
 }
 
 export type PiConnectedFolderTurnHistory = {

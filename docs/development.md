@@ -132,6 +132,7 @@ for capture stages, coverage and bounds.
 | `src/local/server-dev.ts` | The browser development host's entry (`npm run local:api`, started by `local:dev`) |
 | `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
+| `src/local/index/` | Each Connected Folder's index and ranked search: content policy, store, extraction, embedder, indexer, and query ([index and ranked search](index-and-recall.md)) |
 | `src/local/automations/`, `src/local/requests/`, `src/local/jobs/` | Automations (including their folder target resolver), durable request records, and background jobs |
 | `src/local/history*.ts`, `src/local/recently-deleted-store.ts`, `src/local/prepared-acts.ts` | History capture and review, Recently Deleted, and prepared acts ([act ledger](act-ledger.md)) |
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile Agent's overview, attachments, and instructions |

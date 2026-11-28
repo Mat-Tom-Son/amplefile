@@ -73,6 +73,8 @@ import {
   type StandardFolderSummary,
 } from "./file-manager-places";
 import { useFolderListing } from "./useFolderListing";
+import { useMentionFolders, useRolePurposes } from "./file-manager-mentions";
+import { BestMatches, rankedNoteText, type BestMatch } from "./ConnectedFolderIndex";
 import { useFileManagerSearch, type FileManagerSearchResult, type FileManagerSearchScope } from "./useFileManagerSearch";
 import { useStandardFolders } from "./useFileManagerPlaces";
 import { useFileManagerActivity } from "./useFileManagerActivity";
@@ -1338,6 +1340,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
+  // The Workers an @ in a Chat can address, each with its Role purpose.
+  const fixturePurposes = useMemo(() => fixture?.roles ? Object.fromEntries(Object.entries(fixture.roles).flatMap(([id, role]) => role.purpose ? [[id, role.purpose]] : [])) : null, [fixture]);
+  const mentionFoldersFor = useMentionFolders(connectedFolders, useRolePurposes(fixturePurposes));
+
   /** The Worker that looks when search asks: the Connected Folder shown, else, searching every Connected Folder, the one this window opened in. A plain folder has no Worker to ask. */
   const askConnectedFolder = connectedFolder ?? (searchScope === "all" ? activeConnectedFolder : null);
 
@@ -1384,6 +1390,23 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     } catch (caught) {
       onError(desktopErrorText(errorText(caught)));
     }
+  }
+
+  /** A Best Match opens as the same file does from the name and text results, or as the Chat does from History. */
+  function openBestMatch({ connectedFolderId, hit }: BestMatch) {
+    if (hit.source === "file") {
+      void openSearchResult({ key: `${connectedFolderId}\0${hit.path}`, connectedFolderId, path: hit.path, name: hit.path.split("/").pop() ?? hit.path, kind: "file", match: { kind: "name" } });
+      return;
+    }
+    const target = connectedFolders.find((item) => item.id === connectedFolderId);
+    if (!target) return;
+    // A Chat in another Connected Folder (searching all of them) brings that folder forward first.
+    if (target.id !== connectedFolder?.id) {
+      setQuery("");
+      navigate({ place: { kind: "connected-folder", id: target.id }, path: "" }, "push", target);
+    }
+    setPanelOpen(true);
+    setPanelChat({ key: Date.now(), connectedFolderId: target.id, conversationId: hit.conversationId, activeId: hit.conversationId, title: hit.title || "Chat", sendRequest: null, open: true });
   }
 
   function handleSearchKey(event: KeyboardEvent<HTMLDivElement>) {
@@ -1487,8 +1510,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // Nothing left to show (the selection was cleared, a search or Recents took the list): the Preview is put away.
   useEffect(() => { if (previewOpen && !previewShown) setPreviewOpen(false); }, [previewOpen, previewShown]);
   const closePreview = () => { setPreviewOpen(false); contentRef.current?.focus({ preventScroll: true }); };
-  const connectedFolderSearch = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode && !plainSearch, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents } : null });
+  const connectedFolderSearch = useFileManagerSearch({ query, scope: searchScope, here: connectedFolder ? { connectedFolder, path: location.path } : null, connectedFolders, enabled: searchMode && !plainSearch, fixture: fixture ? { trees: fixture.trees, fileContents: fixture.fileContents, ...(fixture.recall ? { recall: fixture.recall } : {}) } : null });
   const plainFolderSearch = usePlainFolderSearch({ query, place, path: location.path, includeHidden: showHidden, enabled: searchMode && plainSearch, fixtureTree: fixture && place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : null });
+  const bestMatches = !plainSearch ? connectedFolderSearch.best : null;
   const search = plainSearch
     ? { results: plainFolderSearch.results, status: plainFolderSearch.status === "done" || plainFolderSearch.status === "error" ? "done" as const : "searching" as const }
     : connectedFolderSearch;
@@ -1725,6 +1749,12 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             })}
           </div>
         </> : searchMode ? <>
+          {bestMatches ? <BestMatches
+            matches={bestMatches.matches}
+            note={rankedNoteText(bestMatches.coverages)}
+            folderName={searchScope === "all" ? (id) => connectedFolders.find((item) => item.id === id)?.name ?? "" : undefined}
+            onOpen={openBestMatch}
+          /> : null}
           <div className="fm-list-head" role="row">
             <span role="columnheader" className="fm-col fm-col-name">Name</span>
             <span role="columnheader" className="fm-col fm-col-match">Match</span>
@@ -1926,6 +1956,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
               onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, folder.id)}
               fixtureMode={fixtureMode}
+              mentionFolders={mentionFoldersFor(folder)}
               fixtureConversations={chat.conversationId ? fixture?.conversations[folder.id] : undefined}
               fixtureTreeEntries={fixture?.trees[folder.id]}
               onOpenConnectedFolderFile={showChatFile}
@@ -1982,6 +2013,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       chatStatuses={activity.chatStatuses}
       historyRefreshKey={listing.changeCount}
       onOpenChat={openChat}
+      onShowFile={showChatFile}
       onRestored={() => void listing.refresh()}
       onError={onError}
     /> : null}

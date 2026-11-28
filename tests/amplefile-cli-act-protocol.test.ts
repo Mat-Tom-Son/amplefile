@@ -248,6 +248,11 @@ test("ledger Chat, History, file, search, and Connected Folder commands parse wi
     parseAmpleFileCliActArgv(["search", "--connected-folder", "connected-folder-1", "--query", "tax receipts"]),
     { name: "search", output: "human", connectedFolder: "connected-folder-1", query: "tax receipts" },
   );
+  // --everywhere is the one search that names no Connected Folder (docs/index-and-recall.md).
+  assert.deepEqual(
+    parseAmpleFileCliActArgv(["search", "--everywhere", "--ranked", "--query", "tax receipts", "--scope", "files", "--limit", "5", "--json"]),
+    { name: "search", output: "json", query: "tax receipts", everywhere: true, ranked: true, limit: 5, searchScope: "files" },
+  );
 
   assert.deepEqual(
     parseAmpleFileCliActArgv(["connected-folders", "rename", "--connected-folder", "connected-folder-1", "--name", "Home files"]),
@@ -273,6 +278,51 @@ test("ledger Chat, History, file, search, and Connected Folder commands parse wi
     parseAmpleFileCliActArgv(["connected-folders", "appearance", "undo", "--connected-folder", "connected-folder-1"]),
     { name: "connected-folders.appearance.undo", output: "human", connectedFolder: "connected-folder-1" },
   );
+  assert.deepEqual(
+    parseAmpleFileCliActArgv(["connected-folders", "role", "show", "--connected-folder", "connected-folder-1", "--json"]),
+    { name: "connected-folders.role.show", output: "json", connectedFolder: "connected-folder-1" },
+  );
+  assert.deepEqual(
+    parseAmpleFileCliActArgv([
+      "connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--purpose", "Keeps the books",
+      "--ask-for", "invoices", "--ask-for", "VAT", "--produces", "a yearly pack", "--accepts", "receipts", "--parent-task", "task-9",
+    ]),
+    {
+      name: "connected-folders.role.set",
+      output: "human",
+      connectedFolder: "connected-folder-1",
+      role: { purpose: "Keeps the books", askFor: ["invoices", "VAT"], produces: ["a yearly pack"], accepts: ["receipts"] },
+      parentTaskId: "task-9",
+    },
+  );
+  assert.deepEqual(
+    parseAmpleFileCliActArgv(["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--ask-for", ""]),
+    { name: "connected-folders.role.set", output: "human", connectedFolder: "connected-folder-1", role: { askFor: [] } },
+    "a single empty list value clears that list",
+  );
+  assert.deepEqual(
+    parseAmpleFileCliActArgv(["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--purpose", ""]),
+    { name: "connected-folders.role.set", output: "human", connectedFolder: "connected-folder-1", role: { purpose: "" } },
+    "an empty purpose clears it",
+  );
+  assert.deepEqual(
+    parseAmpleFileCliActArgv(["connected-folders", "role", "clear", "--connected-folder", "connected-folder-1", "--parent-task", "task-9"]),
+    { name: "connected-folders.role.clear", output: "human", connectedFolder: "connected-folder-1", parentTaskId: "task-9" },
+  );
+  for (const argv of [
+    ["connected-folders", "role", "set", "--connected-folder", "connected-folder-1"],
+    ["connected-folders", "role", "set", "--purpose", "No folder named"],
+    ["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--purpose", "x".repeat(281)],
+    ["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--produces", "y".repeat(141)],
+    ["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--accepts", "line one\nline two"],
+    ["connected-folders", "role", "set", "--connected-folder", "connected-folder-1", ...Array.from({ length: 9 }, (_, index) => ["--ask-for", `q${index}`]).flat()],
+    ["connected-folders", "role", "show", "--connected-folder", "connected-folder-1", "--purpose", "nope"],
+    ["connected-folders", "role", "show", "--connected-folder", "connected-folder-1", "--parent-task", "task-9"],
+    ["connected-folders", "role", "clear", "--connected-folder", "connected-folder-1", "--accepts", "nope"],
+    ["connected-folders", "rename", "--connected-folder", "connected-folder-1", "--name", "x", "--ask-for", "nope"],
+  ]) {
+    assert.throws(() => parseAmpleFileCliActArgv(argv), (error) => error instanceof AmpleFileCliError && error.code === "usage", argv.join(" ").slice(0, 120));
+  }
   assert.deepEqual(
     parseAmpleFileCliActArgv(["connected-folders", "worker", "show", "--connected-folder", "connected-folder-1"]),
     { name: "connected-folders.worker.show", output: "human", connectedFolder: "connected-folder-1" },
@@ -370,6 +420,31 @@ test("ledger command flag validation refuses malformed and misplaced shapes", ()
   assert.throws(
     () => parseAmpleFileCliActArgv(["search", "--connected-folder", "s", "--query", "q".repeat(64 * 1024 + 1)]),
     /--query must be at most 65536 characters/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--everywhere", "--query", "q"]),
+    /--everywhere needs --ranked/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--everywhere", "--ranked", "--connected-folder", "s", "--query", "q"]),
+    /--everywhere searches every Connected Folder; leave out --connected-folder/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--everywhere", "--ranked", "--query", "q", "--path", "notes"]),
+    /--path names a place inside one Connected Folder/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--everywhere", "--ranked", "--query", "q", "--cursor", "abc"]),
+    /--cursor cannot be used with it/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--everywhere", "--ranked", "--query", "q", "--limit", "51"]),
+    /--limit/,
+  );
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["search", "--ranked", "--query", "q"]),
+    /explicit --connected-folder/,
+    "without --everywhere a search still names its Connected Folder",
   );
   assert.throws(
     () => parseAmpleFileCliActArgv(["files", "move", "--connected-folder", "s", "--from", "a", "--from", "b", "--to", "dir"]),
@@ -1092,6 +1167,10 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
       calls.push({ method: "search", input });
       return searchResult;
     },
+    searchEverywhere: async (input: unknown) => {
+      calls.push({ method: "searchEverywhere", input });
+      return searchResult;
+    },
   } as unknown as AmpleFileActFacade;
   const records: Array<Record<string, unknown>> = [];
   const execute = (argv: string[]) => executeAmpleFileCliActRequest(
@@ -1208,6 +1287,45 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
   assert.match(emptySearch.stdout, /No matches for "nothing here" in Fold Connected Folder \[connected-folder-1\] \(scope all\)\./);
   assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", query: "nothing here" });
 
+  // Everywhere: hits grouped by Connected Folder with each Role purpose; a
+  // folder never indexed is named as such, never counted as empty; the
+  // receipt names no Connected Folder and records the scope, not the query.
+  const hit = (path: string, excerpt: string) => ({ source: "file", path, location: { lines: { start: 3, end: 9 } }, excerpt, score: 0.03, reasons: ["lexical"], sha256: "a".repeat(64), indexedAt: null, fresh: true });
+  searchResult = {
+    everywhere: true,
+    scope: "all",
+    query: "henderson renewal",
+    ranked: {
+      query: "henderson renewal",
+      groups: [
+        { connectedFolder: { id: "connected-folder-2", name: "Clients", connectedFolderRoot: "/tmp/clients", rolePurpose: "Client contracts and renewals" }, hits: [hit("henderson/contract.md", "The Henderson renewal is unsigned")], coverage: { complete: true } },
+        { connectedFolder: { id: "connected-folder-1", name: "Fold Connected Folder", connectedFolderRoot: "/tmp/fold" }, hits: [hit("notes/calls.md", "Called Henderson about renewal")], coverage: { complete: true } },
+      ],
+      notIndexed: [{ id: "connected-folder-3", name: "Archive", connectedFolderRoot: "/tmp/archive" }],
+      searched: 4, withoutHits: 1, failed: [],
+      leftOut: { workingCopies: 1, beyondLimit: 0 },
+      coverage: { complete: false, folders: { complete: 3, partial: 0, notIndexed: 1, failed: 0 }, files: { indexed: 12 }, ranking: "hybrid", staleHits: 0, running: true },
+    },
+  };
+  const everywhere = await execute(["search", "--everywhere", "--ranked", "--query", "henderson renewal"]);
+  assert.equal(everywhere.exitCode, 0, everywhere.stderr);
+  assert.match(everywhere.stdout, /^Best matches for "henderson renewal" across 4 Connected Folders \(scope all\):\nClients \[connected-folder-2\] — Client contracts and renewals\n  - henderson\/contract\.md:3 — The Henderson renewal is unsigned\nFold Connected Folder \[connected-folder-1\]\n  - notes\/calls\.md:3 — /);
+  assert.match(everywhere.stdout, /Not indexed yet \(indexing has started; not the same as empty\): Archive\./);
+  assert.match(everywhere.stdout, /Left out 1 managed working copy\./);
+  assert.match(everywhere.stdout, /hand work to the Worker that holds it/);
+  assert.deepEqual(calls.at(-1), { method: "searchEverywhere", input: { query: "henderson renewal" } });
+  assert.equal(lastOk().connectedFolderId, undefined, "an everywhere search names no Connected Folder in its receipt");
+  assert.equal(lastOk().detail, "scope all; everywhere");
+  assert.doesNotMatch(JSON.stringify(records), /henderson/i, "receipts never record the query text");
+  const everywhereJson = await execute(["search", "--everywhere", "--ranked", "--query", "henderson renewal", "--scope", "files", "--json"]);
+  const parsedEverywhere = JSON.parse(everywhereJson.stdout) as { ok: boolean; command: string; data: { everywhere: boolean; ranked: { groups: unknown[] } } };
+  assert.equal(parsedEverywhere.ok, true);
+  assert.equal(parsedEverywhere.command, "search");
+  assert.equal(parsedEverywhere.data.ranked.groups.length, 2);
+  assert.deepEqual(calls.at(-1)?.input, { query: "henderson renewal", scope: "files" });
+  searchResult = { everywhere: true, scope: "all", query: "nothing", ranked: { query: "nothing", groups: [], notIndexed: [], searched: 2, withoutHits: 2, failed: [], leftOut: { workingCopies: 0, beyondLimit: 0 }, coverage: { complete: true, folders: { complete: 2, partial: 0, notIndexed: 0, failed: 0 }, files: {}, ranking: "hybrid", staleHits: 0, running: false } } };
+  assert.match((await execute(["search", "--everywhere", "--ranked", "--query", "nothing"])).stdout, /^No ranked matches for "nothing" across 2 Connected Folders \(scope all\)\.\n$/);
+
   // Permanent deletion left the vocabulary (docs/act-ledger.md).
   assert.throws(
     () => parseAmpleFileCliActArgv(["files", "destroy"]),
@@ -1276,6 +1394,24 @@ test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp
         restoredAppearanceRef: "sha256:1111111111111111",
         displacedAppearanceRef: null,
       };
+    },
+    connectedFoldersRoleShow: async (input: unknown) => {
+      calls.push({ method: "connectedFoldersRoleShow", input });
+      return { connectedFolder: connectedFolderRef, role: { version: 1, purpose: "Household paperwork", askFor: ["a tax pack"], updatedAt: "2026-11-27T10:00:00.000Z" } };
+    },
+    connectedFoldersRoleSet: async (input: unknown) => {
+      calls.push({ method: "connectedFoldersRoleSet", input });
+      return {
+        connectedFolder: connectedFolderRef,
+        role: { version: 1, purpose: "Household paperwork", updatedAt: "2026-11-27T10:00:00.000Z" },
+        previousRole: { version: 1, purpose: "Old purpose", askFor: ["an old thing"], updatedAt: "2026-11-01T10:00:00.000Z" },
+        changed: true,
+      };
+    },
+    connectedFoldersRoleClear: async (input: unknown) => {
+      calls.push({ method: "connectedFoldersRoleClear", input });
+      const empty = (input as { connectedFolder: string }).connectedFolder === "connected-folder-none";
+      return { connectedFolder: connectedFolderRef, role: null, previousRole: empty ? null : { version: 1, purpose: "Household paperwork", updatedAt: "2026-11-27T10:00:00.000Z" }, changed: !empty };
     },
     toolsRemove: async (input: unknown) => {
       calls.push({ method: "toolsRemove", input });
@@ -1360,6 +1496,40 @@ test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp
   assert.match(undone.stdout, /Restored Fold Connected Folder \[connected-folder-1\] to sha256:1111111111111111\. Running 'connected-folders appearance undo' again swaps back\./);
   assert.equal(lastOk().detail, "restored sha256:1111111111111111");
   assert.deepEqual(lastOk().undoRef, { kind: "appearance-ref", value: "none" });
+
+  const roleShown = await execute(["connected-folders", "role", "show", "--connected-folder", "connected-folder-1"]);
+  assert.match(roleShown.stdout, /Purpose: Household paperwork/);
+  assert.match(roleShown.stdout, /Ask for: a tax pack/);
+  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1" });
+
+  const roleSet = await execute([
+    "connected-folders", "role", "set", "--connected-folder", "connected-folder-1", "--purpose", "Household paperwork",
+    "--ask-for", "a tax pack", "--ask-for", "a renewal date", "--produces", "monthly totals", "--accepts", "", "--parent-task", "task-9",
+  ]);
+  assert.match(roleSet.stdout, /Saved the Role of Fold Connected Folder \[connected-folder-1\] in \.amplefile\/role\.json\. The receipt keeps the previous Role\./);
+  assert.deepEqual(calls.at(-1)?.input, {
+    connectedFolder: "connected-folder-1",
+    purpose: "Household paperwork",
+    askFor: ["a tax pack", "a renewal date"],
+    produces: ["monthly totals"],
+    accepts: [],
+    parentTaskId: "task-9",
+  });
+  assert.equal(lastOk().detail, "updated");
+  assert.equal(lastOk().parentTaskId, "task-9");
+  assert.deepEqual(lastOk().undoRef, {
+    kind: "role",
+    value: JSON.stringify({ purpose: "Old purpose", askFor: ["an old thing"] }),
+  }, "the receipt records the previous Role so a person can put it back");
+
+  const roleCleared = await execute(["connected-folders", "role", "clear", "--connected-folder", "connected-folder-1"]);
+  assert.match(roleCleared.stdout, /Cleared the Role of Fold Connected Folder/);
+  assert.equal(lastOk().detail, "cleared");
+  assert.deepEqual(lastOk().undoRef, { kind: "role", value: JSON.stringify({ purpose: "Household paperwork" }) });
+  const roleAlreadyNone = await execute(["connected-folders", "role", "clear", "--connected-folder", "connected-folder-none"]);
+  assert.match(roleAlreadyNone.stdout, /has no Role to clear/);
+  assert.equal(lastOk().detail, "already none");
+  assert.deepEqual(lastOk().undoRef, { kind: "role", value: "none" });
 
   const removedEverywhere = await execute(["tools", "remove", "--scope", "everywhere", "--source", "@example/pkg"]);
   assert.match(removedEverywhere.stdout, /Removed package @example\/pkg \(everywhere scope\)\. Reinstalling it is a fresh receipted act/);

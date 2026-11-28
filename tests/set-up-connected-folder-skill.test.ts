@@ -44,6 +44,19 @@ test("Set up for me promises only the undo History reports", async () => {
   assert.match(skill, /each move and rename has its own restore point/);
 });
 
+test("Set up for me also writes the Role, with a command the CLI's own parser accepts", async () => {
+  const skill = await readFile(skillPath, "utf8");
+  assert.match(skill, /## 4\. Say what it is for/);
+  const examples = skill.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("amplefile connected-folders role set "));
+  assert.equal(examples.length, 1);
+  const parsed = parseAmpleFileCliActArgv(shellWords(examples[0]!.replace("<this connected-folder's id>", "connected-folder-1")).slice(1));
+  assert.equal(parsed.name, "connected-folders.role.set");
+  assert.equal(parsed.connectedFolder, "connected-folder-1");
+  assert.deepEqual(Object.keys(parsed.role ?? {}).sort(), ["accepts", "askFor", "produces", "purpose"]);
+  // A look-only request leaves the folder's description alone.
+  assert.match(skill, /not write Worker instructions or a Role/);
+});
+
 function shellWords(line: string): string[] {
   return [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2]!);
 }

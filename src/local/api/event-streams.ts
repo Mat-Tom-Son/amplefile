@@ -215,7 +215,11 @@ export async function openConnectedFolderFileStream(
     }
     return ignoreRead.state;
   };
+  // The index reuses this watcher (docs/index-and-recall.md): a change asks
+  // for a debounced sync, which applies the index's own content policy.
+  const indexedFolder = { id: connectedFolderId, connectedFolderRoot };
   const onChange = (eventType: string, fileName: string | Buffer | null) => {
+    state.connectedFolderIndex?.schedule(indexedFolder, "changed");
     const rawName = Buffer.isBuffer(fileName) ? fileName.toString("utf8") : fileName ?? "";
     if (!rawName) {
       sendEvent({ type: "file_event", eventType, path: null });
@@ -242,6 +246,8 @@ export async function openConnectedFolderFileStream(
     watcher = watch(watchRoot, onChange);
   }
   sendEvent({ type: "ready", recursive });
+  // A Connected Folder shown in a window is brought up to date in the background.
+  state.connectedFolderIndex?.schedule(indexedFolder, "shown");
   const heartbeat = setInterval(() => {
     res.heartbeat();
   }, 15_000);

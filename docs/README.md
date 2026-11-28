@@ -36,6 +36,7 @@ in the same change.
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |
 | The AmpleFile Agent, the CLI, and receipts | [The AmpleFile Agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Feedback during Worker work](tool-feedback.md) |
 | Automations | [Automations](automations.md), [The overview](amplefile-agent-overview.md) |
+| The index and ranked search | [The index and ranked search](index-and-recall.md) |
 | Native agent capabilities | [Skills & Extensions](skills-and-extensions.md), [Pi resources](pi-resources.md), [Extensions and computer work](extension-foundation.md), [Declarative Extension surfaces](extension-surfaces.md), [Built-in browser](built-in-browser.md), [Document verification](document-verification.md), [Image generation](image-generation.md) |
 | Desktop interaction and appearance | [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md) |
 | Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md) |

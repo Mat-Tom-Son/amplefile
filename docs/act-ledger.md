@@ -144,6 +144,9 @@ desktop's.
 | Apply appearance | Customize Connected Folder | direct verb | `connected-folders appearance apply --connected-folder <id> (--proposal <path> \| [--banner-image <path>] [--icon <name>] [--color <#rrggbb>])` | prior customization ref | `connected-folders appearance undo --connected-folder <id>` | a proposal must parse as the typed `connected-folder-appearance` proposal |
 | Reset appearance | Customize Connected Folder | direct verb | `connected-folders appearance reset --connected-folder <id>` | prior customization ref | `connected-folders appearance undo` | — |
 | Undo appearance | — | direct verb | `connected-folders appearance undo --connected-folder <id>` | restored and displaced customization refs | apply the displaced ref again; undo is its own inverse | refused with a typed error when the receipt chain records no prior customization ref for that Connected Folder, including when its appearance was last changed in the window |
+| Inspect a Role | — | direct verb (content-bearing act read) | `connected-folders role show --connected-folder <id>` | — | n/a | reads `.amplefile/role.json`; a malformed or newer-version file reads as no Role |
+| Set a Role | — (the local API saves it for the window) | direct verb | `connected-folders role set --connected-folder <id> [--purpose <text>] [--ask-for <text>]... [--produces <text>]... [--accepts <text>]...` | the previous Role (`role` undo ref) and a changed marker, never more | `connected-folders role set` with the previous Role from the receipt, or `role clear` | changes only the fields it is given (an empty value clears one); purpose at most 280 characters, each list at most 8 entries of 140, one line each; refuses to replace a newer-version file; applies to a Chat's next turn |
+| Clear a Role | — | direct verb | `connected-folders role clear --connected-folder <id>` | the previous Role (`role` undo ref) | `connected-folders role set` with the previous Role | removes `.amplefile/role.json`; a newer-version file is refused, not removed |
 | Inspect Worker preferences | Settings → AI Models | direct verb (content-bearing act read) | `connected-folders worker show --connected-folder <id>` | — | n/a | returns only connected model choices plus the current model and instruction text; provider credentials never enter the result |
 | Set the default model for new Chats | Settings → AI Models | direct verb | `connected-folders worker model --connected-folder <id> --provider <id> --model <id>` | provider and model ids | choose the prior model again | the model must exist and already have configured auth; fenced against active agent or compaction work; existing Chat sessions keep their session model |
 | Set or clear Worker instructions | Settings → AI Models | direct verb | `connected-folders worker instructions --connected-folder <id> (--instructions <text> \| --append <text> \| --clear)` | updated character count or cleared marker, never text | set the prior text again or clear | bounded validated text; applies to subsequent turns after scoped client invalidation |
@@ -152,6 +155,13 @@ Disconnecting and deleting are separate verbs. Disconnecting is recoverable
 and narrows authority, so it is a direct verb valid for both storage kinds.
 Deleting a managed Connected Folder's folder is a prepared verb that moves it
 into Recently Deleted.
+
+**A Role is a direct verb.** It is a bounded, portable description of what a
+folder is for, read by other Workers and the AmpleFile Agent to route work and
+never an instruction with authority, so changing it is receipted and
+reversible rather than gated; the receipt keeps the previous Role so a person
+can put it back. It is the one undo reference that holds text: the Role's own
+bounded fields, written to be read by others, never file contents.
 
 **Appearance is a direct verb.** It is cosmetic, machine-local, carries no
 authority, and already has an inert typed proposal format. The risk is
@@ -245,7 +255,8 @@ confirmation.
 | Delete an item | Right-click → Delete, ⌘⌫ | direct verb | `files delete --connected-folder <id> --path <p>` | safety checkpoint id; the Recently Deleted entry id when the checkpoint could not cover every matched file | the safety checkpoint, or `recently-deleted restore --entry <id>` when the receipt names one | never refuses for coverage reasons; same path policy |
 | New folder | Right-click → New Folder Here… | direct verb | `files mkdir --connected-folder <id> --path <folder>` | safety checkpoint id, created path | restore the safety checkpoint, which removes the folder, or `files delete` | an existing name is refused; names longer than 240 characters are refused; same path policy |
 | New empty file | — | direct verb | `files create --connected-folder <id> --path <p>` | safety checkpoint id, created path | restore the safety checkpoint, which removes the file, or `files delete` | an existing name is refused; names longer than 240 characters are refused; same path policy |
-| Content search | Toolbar **Search** | direct verb (content-bearing act read) | `search --connected-folder <id> --query <q> [--scope files\|chats\|all]` | scope only, **not** the query text | n/a | honours ignore rules, skips binary content, and reports when a bound stopped the search rather than implying completeness; the same service as `/api/connected-folders/:id/search` |
+| Content search | Toolbar **Search** | direct verb (content-bearing act read) | `search --connected-folder <id> --query <q> [--scope files\|chats\|all] [--ranked]` | scope only, **not** the query text | n/a | honours ignore rules, skips binary content, and reports when a bound stopped the search rather than implying completeness; the same service as `/api/connected-folders/:id/search`; `--ranked` adds the Connected Folder's index's best matches and their coverage ([the index](index-and-recall.md)) |
+| Everywhere search | — | direct verb (content-bearing act read) | `search --everywhere --ranked --query <q> [--scope files\|chats\|all]` | scope and `everywhere`, **not** the query text; no Connected Folder | n/a | every Connected Folder's index at once, hits grouped by Connected Folder with its Role purpose; managed working copies left out; never-indexed folders listed as such; takes no `--connected-folder`, `--path`, or `--cursor` ([everywhere search](index-and-recall.md#everywhere-search)) |
 
 Move, rename, New Folder, and New File each have one function in
 `src/local/api/file-changes.ts` that the window's routes and these verbs both
@@ -517,9 +528,10 @@ optional fields beyond the baseline:
   vocabulary `cli`, `popover`, `main-window`.
 - `undoRef`: a typed reference to the prior state an undo needs: prior title
   or name, prior lifecycle state, prior appearance customization ref, safety
-  checkpoint id, or Recently Deleted entry id (`recently-deleted-entry`).
-  Identifiers and digests only; receipts never hold file contents, message
-  text, queries, or secrets.
+  checkpoint id, or Recently Deleted entry id (`recently-deleted-entry`), or,
+  for `connected-folders role set` and `role clear`, the previous Role as one
+  bounded JSON line (`role`). Otherwise identifiers and digests only; receipts
+  never hold file contents, message text, queries, or secrets.
 
 The journal is append-only and journal-first, rotation never drops an entry
 younger than the broker freshness window, and duplicate detection fails

@@ -14,6 +14,8 @@ in labels and in sentences, like **Worker**.
 | Automation | `automation`, `Automation` | `automation` |
 | Recently Deleted | `recentlyDeleted`, `RecentlyDeleted` | `recently-deleted` |
 | overview | `overview`, `Overview` | `overview` |
+| Role | `role`, `Role` | `role` (file `.amplefile/role.json`, CLI `connected-folders role`) |
+| Recall | `recall`, `Recall` | `recall` |
 | Everywhere | `everywhere` | `everywhere` |
 | Skills & Extensions | `capability` (the internal umbrella) | `capabilities`, `tools` (CLI families) |
 

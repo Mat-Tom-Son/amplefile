@@ -4,7 +4,24 @@ import { mkdir, open, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { promisify } from "node:util";
 
+import { folderRootContains } from "../shared/folder-nesting.js";
+import { ampleFileStateRoot } from "./state-paths.js";
+
 const exec = promisify(execFile);
+
+/** Where managed working copies live: beside the state root, never inside a Connected Folder. */
+export function managedWorkingCopiesRoot(): string {
+  return `${ampleFileStateRoot()}-working-copies`;
+}
+
+/**
+ * True for a Connected Folder that is a managed Git working copy. Each copy is
+ * registered as an ordinary Connected Folder, but its files are another
+ * revision of its source's, so recall across folders leaves it out.
+ */
+export function isManagedWorkingCopyRoot(connectedFolderRoot: string, copiesRoot = managedWorkingCopiesRoot()): boolean {
+  return folderRootContains(resolve(copiesRoot), resolve(connectedFolderRoot));
+}
 export interface ManagedWorktree {
   id: string;
   sourceConnectedFolderId: string;

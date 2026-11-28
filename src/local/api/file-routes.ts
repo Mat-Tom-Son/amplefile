@@ -16,6 +16,7 @@ import { isGeneratedImageId } from "../agent/generated-image-store.js";
 import { createConnectedFolderMutationCheckpoint } from "../history.js";
 import { searchConnectedFolder } from "../search.js";
 import { searchStandardFolder } from "../folder-search.js";
+import type { ConnectedFolderIndexService } from "../index/indexer.js";
 import { isStandardFolderId } from "../standard-folders.js";
 import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "../connected-folder-ignore.js";
 import {
@@ -45,6 +46,7 @@ import {
 } from "./file-changes.js";
 import {
   badRequest,
+  httpError,
   match,
   notFound,
   optionalBoundedInteger,
@@ -57,27 +59,68 @@ import { runDesktopSettingsAct } from "./prepared-act-adapters.js";
 import { checkpointAdditiveWritesOrUndo, runWithHistorySafety } from "./reservations.js";
 import type { LocalApiRequest, LocalApiState } from "./state.js";
 
-/** Search inside one Connected Folder. */
-export async function handleSearchRoutes({ req, res, url, method }: LocalApiRequest): Promise<boolean> {
+/** Search inside one Connected Folder, and its index's status. */
+export async function handleSearchRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
+  // The index behind ranked search (docs/index-and-recall.md): counts by
+  // status, the embedder, the last sync, and whether one is running.
+  const indexMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/index$/);
+  if (method === "GET" && indexMatch) {
+    const connectedFolder = await getConnectedFolder(indexMatch[1]);
+    const index = requireConnectedFolderIndex(state);
+    sendJson(res, { index: index.status({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot }) });
+    return true;
+  }
   const searchMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/search$/);
   if (method === "GET" && searchMatch) {
     const connectedFolder = await getConnectedFolder(searchMatch[1]);
     const scope = url.searchParams.get("scope") ?? "all";
     if (scope !== "all" && scope !== "files" && scope !== "chats") throw badRequest("Search scope is unsupported.");
+    // Ranked mode is additive: `ranked=1` adds a `ranked` field to the first
+    // page and every existing field keeps its meaning. `similarTo` (a file
+    // path) asks for that file's neighbours and returns only `ranked`.
+    const rankedParameter = url.searchParams.get("ranked");
+    if (rankedParameter !== null && rankedParameter !== "0" && rankedParameter !== "1") throw badRequest("ranked must be 0 or 1.");
+    const similarTo = url.searchParams.get("similarTo") || undefined;
+    const ranked = rankedParameter === "1" || similarTo !== undefined;
+    // `rankedScope` lets the ranked part cover Chats while the live search stays on files; it defaults to `scope`.
+    const rankedScope = url.searchParams.get("rankedScope") ?? scope;
+    if (rankedScope !== "all" && rankedScope !== "files" && rankedScope !== "chats") throw badRequest("Ranked search scope is unsupported.");
+    const rankedLimit = searchBudget(url.searchParams, "rankedLimit");
+    if (rankedLimit !== undefined && rankedLimit > 50) throw badRequest("rankedLimit must be between 1 and 50.");
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.once("aborted", abort);
     res.once("close", abort);
     try {
+      const cursor = url.searchParams.get("cursor") ?? undefined;
+      const rankedSearch = ranked && !cursor
+        ? requireConnectedFolderIndex(state).recall({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot }, url.searchParams.get("q") ?? "", {
+          kinds: rankedScope === "all" ? ["files", "chats"] : [rankedScope],
+          // The window searches as the person types; it shows what the index has now and says when it is catching up.
+          waitMs: 400,
+          ...(url.searchParams.get("path") ? { path: url.searchParams.get("path")! } : {}),
+          ...(similarTo ? { similarTo } : {}),
+          ...(rankedLimit !== undefined ? { limit: rankedLimit } : {}),
+          signal: controller.signal,
+        })
+        : null;
+      if (similarTo) {
+        const rankedResult = await rankedSearch!;
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, { similarTo: rankedResult.similarTo, ranked: rankedResult });
+        return true;
+      }
+      // A ranked search that fails never takes the live search down with it.
+      rankedSearch?.catch(() => undefined);
       const result = await searchConnectedFolder(connectedFolder.connectedFolderRoot, url.searchParams.get("q") ?? "", {
         includeFiles: scope !== "chats",
         includeChats: scope !== "files",
         signal: controller.signal,
         path: url.searchParams.get("path") ?? undefined,
-        cursor: url.searchParams.get("cursor") ?? undefined,
+        cursor,
         maxMatches: optionalBoundedInteger(url.searchParams.get("limit"), "limit"),
       });
-      if (!controller.signal.aborted && !res.destroyed) sendJson(res, result);
+      const rankedResult = rankedSearch ? await rankedSearch.catch(() => null) : null;
+      if (!controller.signal.aborted && !res.destroyed) sendJson(res, rankedResult ? { ...result, ranked: rankedResult } : result);
     } catch (error) {
       if (!controller.signal.aborted) throw error;
     } finally {
@@ -118,6 +161,11 @@ export async function handleSearchRoutes({ req, res, url, method }: LocalApiRequ
     return true;
   }
   return false;
+}
+
+function requireConnectedFolderIndex(state: LocalApiState): ConnectedFolderIndexService {
+  if (!state.connectedFolderIndex) throw httpError(503, "Ranked search is not available.");
+  return state.connectedFolderIndex;
 }
 
 function searchBudget(params: URLSearchParams, name: string): number | undefined {

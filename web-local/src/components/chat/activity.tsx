@@ -379,6 +379,7 @@ const toolVerbs: Record<string, { running: string; done: string; one: string; ma
   bash: { running: "Running", done: "Ran", one: "Ran a command", many: (count) => `Ran ${count} commands` },
   grep: { running: "Searching", done: "Searched", one: "Searched files", many: () => "Searched files" },
   search: { running: "Searching", done: "Searched", one: "Searched", many: () => "Searched" },
+  recall: { running: "Recalling", done: "Recalled", one: "Recalled", many: () => "Recalled" },
   find: { running: "Finding", done: "Found", one: "Found files", many: () => "Found files" },
   ls: { running: "Listing", done: "Listed", one: "Listed files", many: () => "Listed files" },
   browser_open: { running: "Opening", done: "Opened", one: "Opened a web page", many: (count) => `Opened ${count} web pages` },
@@ -401,6 +402,7 @@ function toolIcon(key: string): FluentIcon {
     case "bash": return WindowConsole20Regular;
     case "grep":
     case "search":
+    case "recall":
     case "find": return Search16Regular;
     case "ls": return Folder16Regular;
     default: return key.startsWith("browser") ? Globe16Regular : Wrench16Regular;

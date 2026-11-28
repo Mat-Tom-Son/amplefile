@@ -1,7 +1,9 @@
 import type { AgentExtensionSurface, AgentStatus, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../types";
 import { automationTriggerSummary, type FolderAutomationView } from "../../../src/shared/automation-presentation";
 import { buildFixtureFileContents, buildFixtureRestorePoints, type FixtureRestorePoint } from "./connected-folder-files";
+import type { ConnectedFolderRole } from "../../../src/shared/connected-folder-role";
 import { createFixtureBrowserBridge } from "./browser-fixture";
+import { buildConnectedFolderRecallFixture, type ConnectedFolderRecallFixture } from "./connected-folder-recall";
 
 export interface ConnectedFolderUiFixture {
   connectedFolders: ConnectedFolderSummary[];
@@ -15,6 +17,10 @@ export interface ConnectedFolderUiFixture {
   /** Text a file tab shows, by Connected Folder and path. */
   fileContents: Record<string, Record<string, string>>;
   surfaces: Record<string, AgentExtensionSurface[]>;
+  /** Each Connected Folder's sample Role, by id; a folder without one shows the empty state. */
+  roles?: Record<string, ConnectedFolderRole>;
+  /** The sample index: ranked hits for Search, each folder's index status, and Related files. */
+  recall?: ConnectedFolderRecallFixture;
   agent: AgentStatus;
   /** The Browser pane's sample pages; the preview has no desktop host. */
   browser: NonNullable<NonNullable<Window["ampleFileDesktop"]>["browser"]>;
@@ -37,6 +43,18 @@ export function buildConnectedFolderFixture(): ConnectedFolderUiFixture {
       [trip.id]: { color: "#6550b9", color2: "#c2298a", iconName: "airplane", bannerName: "aurora" },
       [bathroom.id]: { color: "#0f8a8a", color2: "#5c7c2e", iconName: "wrench", bannerName: "horizon" },
     },
+    roles: {
+      [home.id]: {
+        version: 1,
+        purpose: "Plans and tracks the home projects: budgets, contractor quotes, and weekend checklists.",
+        askFor: ["Where a project stands and what is next", "Which quote is the best fit for a budget"],
+        produces: ["Budget summaries", "Weekend checklists"],
+        accepts: ["Quotes and invoices", "Photos and measurements"],
+        updatedAt: now,
+      },
+      [bathroom.id]: { version: 1, purpose: "Everything for the bathroom remodel: tile options, quotes, and the contractor schedule.", updatedAt: now },
+    },
+    recall: buildConnectedFolderRecallFixture({ home: home.id, trip: trip.id, bathroom: bathroom.id }, now),
     agent: { ready: true, configured: true, provider: "openrouter", model: "anthropic/claude-sonnet-4", piVersion: "1.1.0", projectTrusted: true, error: null },
     browser: createFixtureBrowserBridge(`${home.id}/fixture-chat-1`),
     trees: {

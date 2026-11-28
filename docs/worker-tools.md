@@ -163,6 +163,19 @@ folder. There is no automatic merge, dependency setup, file deletion or purge.
 The creating Connected Folder owns these management operations. A child edits and
 reports from its own copy; it cannot list or archive its parent's copies.
 
+## Recall
+
+The `recall` tool finds where to look in this Connected Folder's files and
+Chats, by words and by meaning, from the index AmpleFile keeps on this
+computer: `{ query, path?, kinds?, limit? (at most 20), scope?: "folder" | "tree" }`.
+It returns bounded pointers (path or Chat, location, why it matched, age,
+`fresh`, a short excerpt) and one coverage line; read the original before
+relying on any of it. `scope: "tree"` also searches the files of the
+Connected Folders nested inside this one, grouped by owning folder with its
+id, name, path, and Role purpose; changing their files still goes through
+`chat_handoff`. [The index and ranked search](index-and-recall.md#recall-for-workers)
+has the details.
+
 ## Read-only helpers
 
 The `helper` tool runs a focused task in a fresh context inside the current
@@ -170,8 +183,9 @@ Worker turn. It sees the assignment, selected paths and Worker instructions,
 and returns the standard summary/data/files/outcome envelope. It creates no
 Chat, request, or session file. Paths resolve inside this Connected Folder and
 refuse `.amplefile`, `.pi`, and links out. Traversal skips Git
-and dependency directories. Tools are read, grep, find and ls, optionally
-narrowed further with `tools`. It has no shell, edits, browser, MCP or nested
+and dependency directories. Tools are read, grep, find and ls, plus `recall`
+over this Connected Folder's index (folder scope only) when the index is
+running, optionally narrowed further with `tools`. It has no shell, edits, browser, MCP or nested
 helper. Read-only helpers may run in parallel through native Pi scheduling.
 
 An optional `model: { provider, id }` selects an already-connected model;

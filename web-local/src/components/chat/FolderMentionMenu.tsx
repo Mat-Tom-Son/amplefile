@@ -7,6 +7,8 @@ import { ActivityDot } from "../chrome/ActivityDot";
 export interface MentionFolderOption {
   id: string;
   name: string;
+  /** The Worker's Role purpose, a quiet second line under its name; absent without a Role. */
+  rolePurpose?: string;
   icon?: ReactNode;
   style?: CSSProperties;
   status?: ChatActivityStatus | null;
@@ -39,7 +41,10 @@ export function FolderMentionMenu({ id, folders, activeIndex, className = "compo
           onClick={() => onChoose(folder)}
         >
           <span className="composer-mention-icon" aria-hidden="true">{folder.icon}</span>
-          <span className="composer-mention-name">{folder.name}</span>
+          <span className="composer-mention-text">
+            <span className="composer-mention-name">{folder.name}</span>
+            {folder.rolePurpose ? <span className="composer-mention-purpose" title={folder.rolePurpose}>{folder.rolePurpose}</span> : null}
+          </span>
           {folder.status ? <ActivityDot status={folder.status} /> : null}
         </button>
       ))}

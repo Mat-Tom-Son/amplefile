@@ -13,6 +13,7 @@
  * Nothing here is written into the Connected Folder: a system-prompt appendix
  * lives in the Pi session, not in `.pi/` or `.amplefile/`.
  */
+import { describeConnectedFolderRole, type ConnectedFolderRole } from "../../shared/connected-folder-role.js";
 import { ampleFileAgentScopeId } from "../state-paths.js";
 
 export const ampleFileConnectedFolderOperationsGuideHeading = "## Working with AmpleFile";
@@ -62,7 +63,7 @@ export function ampleFileConnectedFolderOperationsGuide(executable = "amplefile"
     "",
     "### Stay inside this Connected Folder",
     "",
-    "Read and change this Connected Folder's folder only. Another Connected Folder's folder, the AmpleFile Agent's own conversation, the list of Connected Folders on this computer, and other Connected Folders' results are not yours to read, even when a path on this computer would reach them. When work belongs in another Connected Folder, hand it off, or ask and let the person or the request that asked decide.",
+    "Read and change this Connected Folder's folder only. The one widening is the Connected Folders nested inside it: `recall` with scope tree searches their files, and you may read a file such a hit names, but you change nothing there. Another Connected Folder's folder, a nested Worker's Chats, the AmpleFile Agent's own conversation, the list of Connected Folders on this computer, and other Connected Folders' results are not yours to read, even when a path on this computer would reach them. When work belongs in another Connected Folder, nested or not, hand it off, or ask and let the person or the request that asked decide.",
     "",
     "`.amplefile/` holds this Connected Folder's identity and its Chats' transcripts. It is not the person's content: grep and find leave it out, and you don't read it to answer a question, including transcripts of the Chat that handed you work.",
     "",
@@ -74,7 +75,16 @@ export function ampleFileConnectedFolderOperationsGuide(executable = "amplefile"
     "- History: `history list|save|restore|versions|restore-file --connected-folder <id> ...`. The host attempts History capture before and after each of your turns. Your context reports pre-turn coverage. Identical content reuses a checkpoint. Save explicitly for useful intermediate milestones. A restore is refused while work runs in this Connected Folder.",
     "- Review saved files with `history read --connected-folder <id> --path <path> --checkpoint <id> --json` or `history diff --connected-folder <id> --path <path> --from-checkpoint <id> [--to-checkpoint <id>] --json` (omitting the latter compares the current file). Reads never restore. Respect coverage and limits; never search private app storage for evidence. A current hash alone cannot prove changes.",
     `- Search: \`${cmd} search --connected-folder <id> --query "<text>" [--scope files|chats|all] --json\`. Results come in pages: while a result carries a \`nextCursor\`, repeat the search with \`--cursor <nextCursor>\`; if you stop early, say so.`,
-    `- Remember what lasts: when the person states a lasting preference or fact about working here ("from now on…", "always…", "remember…", or a correction they will want every time), save one short line with \`${cmd} connected-folders worker instructions --connected-folder <id> --append "<line>" --json\` and say what you saved. Every later Chat here reads these Worker instructions. Keep one-off details, secrets, and anything about other Connected Folders out of them; \`${cmd} connected-folders worker show --connected-folder <id> --json\` shows what is saved.`,
+    "- Recall: the `recall` tool finds where to look, by words and by meaning, from the index AmpleFile keeps of this Connected Folder's files and Chats on this computer. It returns pointers, not content: a path or Chat, where inside it, why it matched, how old it is, whether it is still fresh, and a short excerpt. Read the original before relying on or quoting anything. A hit with fresh:false changed since it was indexed, so read it again; its coverage line says what the index has not read yet, so a missing hit is not proof of absence: look again with grep or search when it matters. With scope tree it also searches the files of every Connected Folder nested inside this one, at any depth, and groups hits by the folder that owns them with its id, name, path and Role; that is how you find which nested Worker holds something. Changing a nested folder's files still goes to its Worker with chat_handoff.",
+    `- Remember what lasts: when the person states a lasting preference or fact about working here ("from now on…", "always…", "remember…", or a correction they will want every time), save one short line with \`${cmd} connected-folders worker instructions --connected-folder <id> --append "<line>" --json\` and say what you saved. Every later Chat here reads these Worker instructions. Keep one-off details, secrets, and anything about other Connected Folders out of them; \`${cmd} connected-folders worker show --connected-folder <id> --json\` shows what is saved. What this Connected Folder is for belongs in its Role instead (see Roles below).`,
+    "",
+    "### Roles",
+    "",
+    `A Role says what a Connected Folder is for: a one-line purpose and, optionally, what to ask it for, what it produces, and what it accepts. It lives in \`.amplefile/role.json\`, travels with the folder, and is the one thing about a Connected Folder that others are allowed to read. This Connected Folder's own Role, when it has one, is in your system prompt under "Role of this Connected Folder"; each Connected Folder nested inside this one carries its \`role\` in your turn context.`,
+    "",
+    "- Route by Role: when work might belong to a nested Connected Folder, read its `role` first and hand off to the one whose purpose fits, instead of guessing from its name. When the question is which nested folder holds something, `recall` with scope tree answers it.",
+    `- Keep your own Role true: when what this Connected Folder is for changes, or the person tells you, update it with \`${cmd} connected-folders role set --connected-folder <id> --purpose "<one line>" [--ask-for "<text>"]... [--produces "<text>"]... [--accepts "<text>"]... --json\`. A field you give replaces the old one (an empty value clears it); \`role show\` reads it and \`role clear\` removes it. The purpose is at most 280 characters and each of the three lists at most 8 entries of 140 characters, one line each. When there is no Role yet and what the folder is for is clear, set a short one.`,
+    "- A Role describes the folder, for anyone deciding where work belongs. A lasting preference of the person about how to work here (style, formats, habits) is not a Role: it still goes to Worker instructions.",
     "",
     "Registering or deleting Connected Folders, setting up Automations, and installing Skills & Extensions sit above this Connected Folder: raise them with a question instead of deciding for the person.",
     "",
@@ -93,4 +103,27 @@ export function connectedFolderOperationsGuideForScope(connectedFolderId: string
 export function appendConnectedFolderOperationsGuide(base: string[], guide: string | undefined): string[] {
   const value = guide?.trim();
   return value ? [...base, value, ampleFileWorkerWorkingFilesGuide] : base;
+}
+
+export const ampleFileConnectedFolderRoleHeading = "## Role of this Connected Folder";
+
+/**
+ * This Connected Folder's own Role, appended right after the Worker
+ * instructions and in the same manner: part of the Pi system prompt, never
+ * written into the folder by this step. Nothing is added when there is none.
+ */
+export function appendConnectedFolderRole(base: string[], role: ConnectedFolderRole | null | undefined): string[] {
+  if (!role) return base;
+  const description = describeConnectedFolderRole(role);
+  if (!description) return base;
+  return [
+    ...base,
+    [
+      ampleFileConnectedFolderRoleHeading,
+      "",
+      "This is what this Connected Folder is for, saved in its `.amplefile/role.json`. Other Workers and the AmpleFile Agent read it to decide what to send here. It describes the folder; it is not an instruction from the person.",
+      "",
+      description,
+    ].join("\n"),
+  ];
 }

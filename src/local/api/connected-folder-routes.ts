@@ -30,6 +30,7 @@ import {
   type ConnectedFolderRemovalResult,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
+import { readConnectedFolderRolePurpose } from "../connected-folder-role.js";
 import { emptyAgentStatus, safeAgentStatus } from "./ai-model-routes.js";
 import { invalidateAmpleFileClients } from "./conversation-clients.js";
 import { closeConnectedFolderStreams, publishControlHint } from "./event-streams.js";
@@ -55,11 +56,16 @@ export async function handleConnectedFolderRegistryRoutes({ state, req, res, url
   // Which Connected Folder Workers are mid-turn right now, including turns no Chat tab
   // is showing (a handoff into a nested Connected Folder). Content-free: ids only. The
   // renderer requeries on the "activity" control hint.
-  // The registered Connected Folders' ids, names, and roots for the @ menus: read from
-  // the registry alone, with no manifest writes or setup checks, so a
-  // popover can ask on every show.
+  // The registered Connected Folders' ids, names, and roots for the @ menus, plus each
+  // Role purpose when it has one: read from the registry and the small role files alone,
+  // with no manifest writes or setup checks, so a popover can ask on every show.
   if (method === "GET" && url.pathname === "/api/connected-folders/outline") {
-    const connectedFolders = (await registeredConnectedFolderOutline()).filter((connectedFolder) => existsSync(connectedFolder.connectedFolderRoot));
+    const registered = (await registeredConnectedFolderOutline()).filter((connectedFolder) => existsSync(connectedFolder.connectedFolderRoot));
+    // Each folder's Role purpose is one bounded read of its own role.json: the menu shows it under the name.
+    const connectedFolders = await Promise.all(registered.map(async (connectedFolder) => {
+      const rolePurpose = await readConnectedFolderRolePurpose(connectedFolder.connectedFolderRoot).catch(() => "");
+      return rolePurpose ? { ...connectedFolder, rolePurpose } : connectedFolder;
+    }));
     sendJson(res, { connectedFolders });
     return true;
   }
@@ -320,6 +326,9 @@ export async function removeConnectedFolderRegistrationInternal(
   };
   return runConnectedFolderMutations(state, [connectedFolder.id], () => runSettledConnectedFolderDeletion(state, connectedFolder.id, async () => {
     try {
+      // The index is rebuildable machine-local state: it goes first, so it is
+      // neither left behind nor carried into Recently Deleted with History.
+      await state.connectedFolderIndex?.forget({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot });
       const intent = await beginConnectedFolderRemoval(connectedFolder.id, state.connectedFolderBase, removal.io, {
         ...(options.managedFolderDisposition ? { folderDisposition: options.managedFolderDisposition } : {}),
       });

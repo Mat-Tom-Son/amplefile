@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api";
 import type { TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { RecallCoverage, RecallResult } from "../../../../src/local/index/recall";
 import type { FileManagerPlace } from "./file-manager-places";
+import type { BestMatch } from "./ConnectedFolderIndex";
 
 export type FileManagerSearchScope = "here" | "all";
 
@@ -23,10 +25,17 @@ export interface FileManagerSearchResult {
 }
 
 const debounceMs = 250;
+/** Best Matches shown at most, across every Connected Folder searched. */
+const bestMatchLimit = 8;
 interface SearchPage {
   names: TreeEntry[];
   files: Array<{ path: string; line: number; preview: string }>;
+  /** The index's ranked hits, when the Connected Folder could answer. */
+  ranked?: RecallResult;
 }
+
+/** Ranked hits for the search, merged by score across folders, with the coverage of each folder that answered. */
+export interface BestMatches { matches: BestMatch[]; coverages: RecallCoverage[] }
 
 /**
  * Search names and contents, as the design does: in the folder shown, or in
@@ -40,26 +49,29 @@ export function useFileManagerSearch(input: {
   connectedFolders: readonly ConnectedFolderSummary[];
   enabled: boolean;
   /** The browser preview's sample trees and file text, searched in place of the host. */
-  fixture?: { trees: Record<string, TreeEntry[]>; fileContents: Record<string, Record<string, string>> } | null;
+  fixture?: { trees: Record<string, TreeEntry[]>; fileContents: Record<string, Record<string, string>>; recall?: { rankedFor: (id: string, needle: string) => RecallResult } } | null;
 }) {
   const { query, scope, here, connectedFolders, enabled, fixture } = input;
   const [results, setResults] = useState<FileManagerSearchResult[]>([]);
+  const [best, setBest] = useState<BestMatches | null>(null);
   const [status, setStatus] = useState<"idle" | "searching" | "done">("idle");
   const needle = query.trim();
   const targets = scope === "here" && here ? [here] : connectedFolders.map((connectedFolder) => ({ connectedFolder, path: "" }));
   const targetKey = targets.map((target) => `${target.connectedFolder.id}\0${target.path}`).join("|");
 
   useEffect(() => {
-    if (!enabled || !needle) { setResults([]); setStatus("idle"); return; }
+    if (!enabled || !needle) { setResults([]); setBest(null); setStatus("idle"); return; }
     const controller = new AbortController();
     setStatus("searching");
     const timer = window.setTimeout(() => {
       void Promise.all(targets.map(async ({ connectedFolder, path }) => {
         const base = `/api/connected-folders/${encodeURIComponent(connectedFolder.id)}`;
-        const query = new URLSearchParams({ q: needle, scope: "files" });
+        // The ranked search rides on the same request. The live search stays on files; the ranked part also covers
+        // Chats at a folder's top (Chats are not under a path, so inside a subfolder it asks for files alone).
+        const query = new URLSearchParams({ q: needle, scope: "files", ranked: "1", rankedScope: path ? "files" : "all", rankedLimit: String(bestMatchLimit) });
         if (path) query.set("path", path);
         const page = fixture
-          ? searchFixture(fixture, connectedFolder.id, path, needle)
+          ? { ...searchFixture(fixture, connectedFolder.id, path, needle), ...(fixture.recall ? { ranked: fixture.recall.rankedFor(connectedFolder.id, needle) } : {}) }
           : await api<SearchPage>(`${base}/search?${query}`, { signal: controller.signal }).catch(() => null);
         if (controller.signal.aborted) return null;
         const names = (page?.names ?? []).map((entry) => resultFor(connectedFolder.id, entry, { kind: "name" }));
@@ -72,18 +84,25 @@ export function useFileManagerSearch(input: {
           const entry = { name: match.path.split("/").pop() ?? match.path, path: match.path, kind: "file" as const };
           texts.push(resultFor(connectedFolder.id, entry, { kind: "content", ...snippet(match.preview, needle) }));
         }
-        return { names, texts };
+        return { names, texts, ranked: page?.ranked ? { connectedFolderId: connectedFolder.id, ranked: page.ranked } : null };
       })).then((perConnectedFolder) => {
         if (controller.signal.aborted) return;
         // Every name match first, then every text match, as the design lists them.
         setResults([...perConnectedFolder.flatMap((item) => item?.names ?? []), ...perConnectedFolder.flatMap((item) => item?.texts ?? [])]);
+        const answered = perConnectedFolder.flatMap((item) => item?.ranked ? [item.ranked] : []);
+        setBest(answered.length ? {
+          // Scores are rank-based and comparable across folders asked the same way.
+          matches: answered.flatMap(({ connectedFolderId, ranked }) => ranked.hits.map((hit) => ({ connectedFolderId, hit })))
+            .sort((left, right) => right.hit.score - left.hit.score).slice(0, bestMatchLimit),
+          coverages: answered.map(({ ranked }) => ranked.coverage),
+        } : null);
         setStatus("done");
       });
     }, debounceMs);
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [enabled, needle, targetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { results, status };
+  return { results, status, best };
 }
 
 function resultFor(connectedFolderId: string, entry: TreeEntry, match: FileManagerSearchResult["match"]): FileManagerSearchResult {

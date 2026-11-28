@@ -1,6 +1,6 @@
 ---
 name: set-up-connected-folder
-description: Set up this Connected Folder for the person in one pass — work out what it is for, organize it if that helps, write instructions for future Workers, and give it a fitting banner, icon, and color. Also gives a Connected Folder just a fitting look without touching its files. Use when the person asks to set up, organize, tidy, or get started with this Connected Folder, or to give it a look, or clicks Set Up for Me.
+description: Set up this Connected Folder for the person in one pass — work out what it is for, organize it if that helps, write its Role and instructions for future Workers, and give it a fitting banner, icon, and color. Also gives a Connected Folder just a fitting look without touching its files. Use when the person asks to set up, organize, tidy, or get started with this Connected Folder, or to give it a look, or clicks Set Up for Me.
 ---
 
 # Set up this Connected Folder
@@ -88,7 +88,26 @@ Write the text to a temporary file outside the Connected Folder (for example in
 for, what each top-level folder holds, the naming conventions, and where new
 things should go. Plain words, no headings beyond a title.
 
-## 4. Give it a look
+## 4. Say what it is for
+
+Write this Connected Folder's Role: what it is for, in a form other Workers and
+the AmpleFile Agent can read to decide whether work belongs here. It lives in
+the folder's own `.amplefile/role.json` and travels with it.
+
+```bash
+amplefile connected-folders role set --connected-folder <this connected-folder's id> --purpose "<one line>" --ask-for "<what to ask it>" --produces "<what it makes>" --accepts "<what belongs in it>" --json
+```
+
+The purpose is one line of at most 280 characters, for example "Household
+paperwork: receipts, insurance, and tax records." `--ask-for`, `--produces`, and
+`--accepts` are optional, repeat up to eight times, and take one short line of at
+most 140 characters each; give only the ones that are true. The Role describes
+the folder for others; how to work here (naming, where things go) belongs in the
+Worker instructions above. If the folder already has a Role
+(`amplefile connected-folders role show --connected-folder <id> --json`), keep
+what is still true and change only what the folder's contents show is out of date.
+
+## 5. Give it a look
 
 - Pick the icon from AmpleFile's catalog that names the subject most directly.
   Some of the names: nature `leaf`, `tree`, `grass`, `sun`, `mountains`,
@@ -115,13 +134,13 @@ things should go. Plain words, no headings beyond a title.
   amplefile connected-folders appearance apply --connected-folder <id> --banner-image "<absolute path>" --icon <name> --color <#rrggbb> --json
   ```
 
-## 5. Point at what could come next
+## 6. Point at what could come next
 
 If the contents suggest a recurring job, name one or two Automations the
 person could ask you for, one line each: for example "a monthly receipts
 summary" or "sort new screenshots as they land". Do not build them now.
 
-## 6. Report
+## 7. Report
 
 Finish with a short, scannable reply:
 
@@ -130,7 +149,7 @@ Finish with a short, scannable reply:
 - a few notable renames, and the total number of moves and renames;
 - what you left alone and why;
 - the banner, icon, and color you set;
-- a two-line summary of the Worker instructions;
+- the Role you set, in one line, and a two-line summary of the Worker instructions;
 - how to undo: when your turn context shows History captured a restore point
   before this turn, say "History has a restore point from just before setup.
   Restore it from the History tab to put everything back," and name anything it
@@ -140,9 +159,9 @@ Finish with a short, scannable reply:
 ## Only the look
 
 When the person asks only for a look (for example "just give this folder a look"), do steps 1
-and 4 and nothing else: read the folder to understand it, then set the banner,
+and 5 and nothing else: read the folder to understand it, then set the banner,
 icon, and color. Never move, rename, create, or delete a file or folder, and do
-not write Worker instructions. Report in three or four lines: what the folder
+not write Worker instructions or a Role. Report in three or four lines: what the folder
 is, and the banner, icon, and color you set. Undo is
 `amplefile connected-folders appearance undo --connected-folder <id>`, or reset it in
 Customize Connected Folder. If the folder is empty, go by its name and do not ask.
@@ -152,5 +171,5 @@ Customize Connected Folder. If the folder is empty, go by its name and do not as
 If there is nothing to look at, ask one question: what the folder will be for.
 Once you know, create a simple starting structure (three to six folders made
 with `amplefile files mkdir`, plus a short `Start here.md` saying what goes
-where), write the Worker instructions,
+where), write the Role and the Worker instructions,
 and give it a look, then report the same way.

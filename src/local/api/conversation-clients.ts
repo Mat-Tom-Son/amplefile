@@ -13,12 +13,13 @@ import { appendMessage, type ChatMessage } from "../agent/chat-store.js";
 import { AmpleFileRequestLimitError, AmpleFileRequestLineageError } from "../requests/request-records.js";
 import { connectedFolderOperationsGuideForScope } from "../agent/connected-folder-operations-guide.js";
 import { ampleFileAgentScopeId, ampleFileStateRoot } from "../state-paths.js";
-import { ManagedWorktrees } from "../managed-worktrees.js";
+import { ManagedWorktrees, managedWorkingCopiesRoot } from "../managed-worktrees.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "../amplefile-cli-adapter.js";
 import { getConnectedFolder, listConnectedFolders } from "../connected-folder.js";
 import { createAmpleFileActFacade } from "./act-lane.js";
 import { assertAmpleFileAgentInstructionsReady } from "./amplefile-agent-routes.js";
 import { createBackgroundJobToolHost } from "./background-jobs.js";
+import { createRecallToolHost } from "./recall.js";
 import { broadcast, publishControlHint } from "./event-streams.js";
 import { assertCallerHandedWorkTo, assertOwnTask } from "./request-records.js";
 import { clientKey, type LocalApiState, rememberConnectedFolderRoot, streamKey } from "./state.js";
@@ -27,7 +28,7 @@ import { assistantFailurePublicDetail, isModelSetupError } from "./turn-run.js";
 const managedWorktreeServices = new WeakMap<LocalApiState, ManagedWorktrees>();
 export function createWorktreeToolHost(state: LocalApiState, connectedFolderId: string): import("../agent/worktree-tool.js").WorktreeToolHost {
   let service = managedWorktreeServices.get(state);
-  if (!service) { service = new ManagedWorktrees(join(ampleFileStateRoot(), "worktrees"), `${ampleFileStateRoot()}-working-copies`); managedWorktreeServices.set(state, service); }
+  if (!service) { service = new ManagedWorktrees(join(ampleFileStateRoot(), "worktrees"), managedWorkingCopiesRoot()); managedWorktreeServices.set(state, service); }
   const facade = createAmpleFileActFacade(state);
   return { async invoke(taskId, input) {
     assertOwnTask(state, connectedFolderId, taskId);
@@ -128,6 +129,8 @@ export async function getClient(
     ...(state.browser ? { browser: state.browser, browserOwner: `${connectedFolderId}/${conversationId}` } : {}),
     ...(connectedFolderId === ampleFileAgentScopeId ? {} : { collaboration: createCollaborationToolHost(state, connectedFolderId, conversationId) }),
     helperTool: connectedFolderId !== ampleFileAgentScopeId,
+    // The AmpleFile Agent finds which Worker knows something with `search --everywhere --ranked`.
+    ...(connectedFolderId === ampleFileAgentScopeId || !state.connectedFolderIndex ? {} : { recall: createRecallToolHost(state, connectedFolderId) }),
     recoveryScope: taskId => {
       const request = state.requests.byTaskId(taskId);
       if (!request || request.owner.conversationId !== conversationId

@@ -10383,6 +10383,21 @@ textarea:focus-visible,
   border-radius: 6px;
 }
 
+.app-shell .composer-mention-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-shell .composer-mention-purpose {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: var(--amplefile-type-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-shell .composer-mention-name {
   min-width: 0;
   overflow: hidden;

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { AmpleFileCliKernelAdapter } from "../src/local/amplefile-cli-adapter.js";
-import type { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
+import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import {
   ampleFileAutomationContractVersion,
   normalizeAmpleFileAutomationProposal,
@@ -125,6 +127,7 @@ test("CLI help covers every landed act family and is honest about what it runs",
     "connected-folders": [
       "list", "create", "register", "rename", "unregister", "delete",
       "appearance apply", "appearance reset", "appearance undo",
+      "role show", "role set", "role clear",
       "worker show", "worker model", "worker instructions",
     ],
     tools: ["import-skill", "install", "update", "remove"],
@@ -579,4 +582,45 @@ test("context's selectedPath and activeSurface are always null, and help says so
   assert.equal(context.selectedPath, null);
   assert.equal(context.activeSurface, null);
   assert.match(ampleFileCliHelp("AmpleFile", "context"), /selectedPath and activeSurface are always null/);
+});
+
+test("connected-folders list --json carries a Role purpose additively and only where a Role has one", async (t) => {
+  const base = await mkdtemp(join(tmpdir(), "amplefile-list-role-"));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const withRole = join(base, "with-role");
+  const withoutRole = join(base, "without-role");
+  await mkdir(join(withRole, ".amplefile"), { recursive: true });
+  await mkdir(withoutRole, { recursive: true });
+  await writeFile(join(withRole, ".amplefile", "role.json"), JSON.stringify({ version: 1, purpose: "Household paperwork", askFor: ["a tax pack"] }), "utf8");
+  const summary = (id: string, name: string, connectedFolderRoot: string) => ({
+    id, name, connectedFolderRoot, location: { kind: "local" as const, storage: "linked" as const }, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const connectedFolders = [summary("space-aaaaaaaaaaaaaaaa", "Paperwork", withRole), summary("space-bbbbbbbbbbbbbbbb", "Scratch", withoutRole)];
+  const kernel = new AmpleFileKernel({
+    async listConnectedFolders() { return connectedFolders; },
+    async getConnectedFolder(id: string) { return connectedFolders.find((item) => item.id === id)!; },
+  });
+  const executed = await executeAmpleFileCliRequest(
+    createAmpleFileCliRequest({ id: randomUUID(), argv: ["connected-folders", "list", "--json"], cwd: base }),
+    new AmpleFileCliKernelAdapter(kernel),
+    { version: "1.2.3" },
+  );
+  const listed = JSON.parse(executed.stdout).data.connectedFolders as Array<Record<string, unknown>>;
+  assert.equal(listed[0]!.rolePurpose, "Household paperwork");
+  assert.equal("rolePurpose" in listed[1]!, false);
+  assert.deepEqual(Object.keys(listed[1]!).sort(), ["active", "connectedFolderRoot", "id", "name"], "existing fields keep their meaning");
+  assert.equal(JSON.stringify(listed).includes("a tax pack"), false, "the read lane carries only the one-line purpose");
+  const human = await executeAmpleFileCliRequest(
+    createAmpleFileCliRequest({ id: randomUUID(), argv: ["connected-folders", "list"], cwd: base }),
+    new AmpleFileCliKernelAdapter(kernel),
+    { version: "1.2.3" },
+  );
+  assert.match(human.stdout, /Paperwork \[space-aaaaaaaaaaaaaaaa\].* — Household paperwork/);
+  // Selecting a Connected Folder for another command never reads its Role.
+  const tasks = await executeAmpleFileCliRequest(
+    createAmpleFileCliRequest({ id: randomUUID(), argv: ["tasks", "list", "--connected-folder", "Paperwork", "--json"], cwd: base }),
+    new AmpleFileCliKernelAdapter(kernel),
+    { version: "1.2.3" },
+  );
+  assert.equal(tasks.exitCode, 0);
 });

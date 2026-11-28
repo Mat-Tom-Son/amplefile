@@ -79,6 +79,8 @@ export interface AmpleFileCliConnectedFolderSummary {
   active?: boolean;
   /** The registered Connected Folder whose folder contains this one; absent for a top-level Connected Folder. */
   parentConnectedFolderId?: string;
+  /** The purpose line of the Connected Folder's Role (`.amplefile/role.json`); absent when it has none. Only `connected-folders list` carries it. */
+  rolePurpose?: string;
 }
 
 export interface AmpleFileCliContextSnapshot {
