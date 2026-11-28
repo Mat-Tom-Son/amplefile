@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import test from "node:test";
 import ts from "typescript";
+import { dumpCssFixture, findCssBrowser } from "./support/css-browser.js";
 
 test("shared motion cancels running effects and removes exits when either Reduce Motion switch changes", { timeout: 60_000 }, async (t) => {
-  let browser: string | undefined;
-  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[]) {
-    try { await access(candidate); browser = candidate; break; } catch {}
-  }
+  const browser = await findCssBrowser();
   if (!browser) { t.skip("Chromium is required for motion verification."); return; }
   const scratch = await mkdtemp(join(tmpdir(), "amplefile-shared-motion-"));
   try {
@@ -52,8 +47,8 @@ test("shared motion cancels running effects and removes exits when either Reduce
       })().catch(error => document.getElementById('result').textContent=JSON.stringify({error:String(error), stack:error.stack}));
       </script></body></html>`;
     const path = join(scratch, "fixture.html"); await writeFile(path, html);
-    const { stdout } = await promisify(execFile)(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=1000", "--disable-features=HangWatcher", `--user-data-dir=${join(scratch, "profile")}`, "--dump-dom", pathToFileURL(path).href], { timeout: 40_000, maxBuffer: 5_000_000 });
-    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(stdout)?.[1];
+    const page = await dumpCssFixture(browser, path, { profile: join(scratch, "profile"), timeoutMs: 40_000 });
+    const serialized = /<pre id="result">([^<]*)<\/pre>/.exec(page)?.[1];
     assert.ok(serialized && serialized !== "pending", "motion fixture must complete");
     const results = JSON.parse(serialized.replaceAll("&quot;", '"').replaceAll("&amp;", "&"));
     assert.equal(results.error, undefined, results.stack);
@@ -65,5 +60,5 @@ test("shared motion cancels running effects and removes exits when either Reduce
       assert.equal(result.ghosts, 0, `${result.preference}: leaving copies must be removed immediately`);
       assert.equal(result.newEffects, 0, `${result.preference}: no new scripted effects while reduced`);
     }
-  } finally { await rm(scratch, { recursive: true, force: true }); }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }); }
 });
