@@ -142,7 +142,7 @@ other surface.
   bar, the toolbar's title, and the item count work as anywhere else.
   Nothing is registered and nothing is kept about it: the panel offers
   **Connect This Folder** for the folder shown (never for the
-  disk itself), at the panel's foot. The path policy is the same as everywhere: no path through
+  disk itself), in a card under Info. The path policy is the same as everywhere: no path through
   a symbolic link (a link can be the item an action acts on, never a folder
   a path goes through), and `.amplefile/` and `.pi/` stay hidden. The
   window never goes into `/System/Volumes/Data`, where macOS gives every
@@ -639,8 +639,8 @@ other surface.
   **Set Up AI** when no AI is connected. It is AmpleFile's ordinary Chat, so
   Stop, questions, and the Worker's steps work the same way, and a Chat left
   running keeps going while Info is shown. There are no automatic AI file
-  summaries. Outside a Connected Folder there is no Worker to message: the
-  panel's foot says so and offers **Connect This Folder** for the folder
+  summaries. Outside a Connected Folder there is no Worker to message and no
+  message box: a card under Info says so and offers **Connect This Folder** for the folder
   shown (never the disk itself, or the Trash) and, with no AI connected,
   **Set Up AI…**.
 - **Suggested messages:** push buttons above the message box, on Info only,
@@ -759,8 +759,8 @@ first run or not.
 With no Connected Folder the window is still a whole file manager: the
 sidebar's Recents, Trash, Standard Folders, and Drives, every other folder,
 Search, Info, Thumbnails, and folder sizes work as anywhere else; the
-Connected Folders heading keeps its **+**, and the panel's foot offers
-**Connect This Folder** and **Set Up AI…** where the message box would be.
+Connected Folders heading keeps its **+**, and a card under Info offers
+**Connect This Folder** and **Set Up AI…**.
 Skills & Extensions, which belongs to a Connected Folder, says to connect
 one first. Disconnecting the last Connected Folder leaves the window open,
 at the home folder.

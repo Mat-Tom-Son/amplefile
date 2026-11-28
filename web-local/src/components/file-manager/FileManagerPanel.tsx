@@ -113,19 +113,22 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   } else if (connectedFolder) {
     info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
   } else {
-    // A Standard Folder's top, or the disk itself; Connect This Folder is at the panel's foot, where a Chat would be.
+    // A Standard Folder's top, or the disk itself; Connect This Folder is in the card under it.
     info = <FolderHeader name={folderName} color={null} itemCount={itemCount} />;
   }
-  // Outside a Connected Folder there is no Worker to message: the foot offers to connect the folder shown (never the
-  // disk itself) and, with no AI connected, to set one up.
+  // Outside a Connected Folder there is no Worker to message: under Info, a card offers to connect the folder shown
+  // (never the disk itself) and, with no AI connected, to set one up.
   const connectable = !trashSelection && !(computerFolder && !folderPath);
-  const plainFoot = !connectedFolder && !composer && (connectable || !aiConnected) ? <div className="fm-plain-foot">
-    <p className="fm-plain-foot-t">{connectable ? `No Worker here yet. Connect This Folder adds a Worker and History to “${folderName}”. Nothing moves.` : "Set up AI to give a folder a Worker."}</p>
-    <div className="fm-plain-foot-actions">
-      {connectable ? <button type="button" className="fm-btn is-primary" onClick={onPutToWork}>Connect This Folder</button> : null}
-      {!aiConnected && onSetUpAi ? <button type="button" className="fm-btn" onClick={onSetUpAi}>Set Up AI…</button> : null}
+  const connectCard = !connectedFolder && !composer && (connectable || !aiConnected) ? <section className="fm-sec">
+    <div className="fm-cta">
+      {connectable ? <div className="fm-cta-t">No Worker here yet</div> : null}
+      <p className="fm-cta-s">{connectable ? "Adds a Worker and History. Nothing moves." : "Set up AI to give a folder a Worker."}</p>
+      <div className="fm-cta-actions">
+        {connectable ? <button type="button" className="fm-btn is-primary" title={`Connect “${folderName}”`} onClick={onPutToWork}>Connect This Folder</button> : null}
+        {!aiConnected && onSetUpAi ? <button type="button" className="fm-btn" onClick={onSetUpAi}>Set Up AI…</button> : null}
+      </div>
     </div>
-  </div> : null;
+  </section> : null;
 
   const chatShown = Boolean(chat?.open);
   // Motion: Info and History slide in from the side of the tab
@@ -156,12 +159,12 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
     {chatShown ? null : <div className={`fm-panel-scroll${tabsShown ? "" : " is-untabbed"}`} role={tabsShown ? "tabpanel" : undefined}>
       <div key={tab} className="fm-pane" data-from={paneFromRef.current}>
         {tab === "info" || !connectedFolder
-          ? <>{receipt}{info}</>
+          ? <>{receipt}{info}{connectCard}</>
           : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" && !single.link ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
       </div>
     </div>}
     {chat ? <div className="fm-chat" hidden={!chatShown}>{chat.content}</div> : null}
-    {chatShown ? null : composer ? composer({ showSuggestions: tab === "info" }) : plainFoot}
+    {chatShown || !composer ? null : composer({ showSuggestions: tab === "info" })}
   </aside>;
 }
 
