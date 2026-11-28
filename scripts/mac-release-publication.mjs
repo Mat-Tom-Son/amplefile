@@ -532,6 +532,20 @@ export function releaseNotes({ feed, target, productName, version, arch, teamId 
       "Version 0.2.6 matches the Linux preview with the same changes.",
     );
   }
+  if (version === "0.2.7") {
+    lines.push(
+      "",
+      "## What’s new",
+      "",
+      "- **Search finds everything.** A search keeps going until it reaches the end, adding matches as they arrive, with Stop and Keep Searching. In a Connected Folder it now finds names past the first 20,000 items, and thousands of results scroll quickly.",
+      "- **A new window works in its own folder.** A window opened at a folder shows that folder, and its message box sends to that folder’s Worker, from its first moment. Before, a message sent right away could reach another Connected Folder’s Worker.",
+      "- **Connect This Folder in Info.** Outside a Connected Folder, Info shows a card under the folder with Connect This Folder, and Set Up AI when none is connected, instead of a line at the foot of the panel.",
+      "- **Notices that say what happened.** A move across disks names what moved and what was only copied, with the original still in its folder. A stopped reply, or one a provider refused for billing, mentions a saved reply only when there is one.",
+      "- **Set Up for Me once.** The card is offered once for each Connected Folder, and not again after the folder is moved, relinked, or reconnected.",
+      "- **Delegated work.** A question from handed-out work that the AmpleFile Agent has already shown you isn’t repeated in a later turn, and a result it has already read isn’t delivered to it again. Reads name their turn with `--parent-task`, which `amplefile chat wait` passes on.",
+      "- **Service Connections.** Check says whether a connection is signed in, needs no sign-in, or needs you to sign in, and its details keep saying so when you reopen them.",
+    );
+  }
   if (feed.stage === "bridge" && sameRepository(target, feed.separate)) {
     lines.push(
       "",
