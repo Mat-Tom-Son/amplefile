@@ -96,23 +96,104 @@ test("each window keeps its own menu state, and the application menu shows the f
   assert.equal(windows.updateMenuState(null, { connectedFolderOpen: true }), null);
 });
 
-test("a location handed to a window waits for that window's renderer alone, and is taken once", () => {
+test("a location handed to a window waits for that window's renderer alone, and is taken once", async () => {
   const windows = new FileManagerWindows<FakeWindow, { path: string }>();
   const one = new FakeWindow(1);
   const two = new FakeWindow(2);
   windows.add(one);
   windows.add(two);
   assert.equal(windows.handOpenLocation(two, { token: "t-2", location: { path: "Projects" } }), true);
-  assert.equal(windows.takeOpenLocation(one), null, "another window never takes it");
+  assert.equal(await windows.takeOpenLocation(one), null, "another window never takes it");
   windows.acknowledgeOpenLocation(one, "t-2");
-  assert.deepEqual(windows.takeOpenLocation(two), { token: "t-2", location: { path: "Projects" } });
-  assert.equal(windows.takeOpenLocation(two), null, "taken once");
+  assert.deepEqual(await windows.takeOpenLocation(two), { token: "t-2", location: { path: "Projects" } });
+  assert.equal(await windows.takeOpenLocation(two), null, "taken once");
   windows.handOpenLocation(one, { token: "t-1", location: { path: "Docs" } });
   windows.acknowledgeOpenLocation(one, "other");
   assert.notEqual(windows.entry(one)?.pendingOpenLocation, null, "only its own token clears it");
   windows.acknowledgeOpenLocation(one, "t-1");
   assert.equal(windows.entry(one)?.pendingOpenLocation, null);
   assert.equal(windows.handOpenLocation({ id: 42 }, { token: "x", location: { path: "" } }), false);
+});
+
+/** Whether a promise has settled yet, without waiting for it. */
+async function settled(promise: Promise<unknown>): Promise<boolean> {
+  let done = false;
+  void promise.then(() => { done = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  return done;
+}
+
+test("a window owed a place answers its renderer's take only with that place, even when the renderer asks first", async () => {
+  const windows = new FileManagerWindows<FakeWindow, { path: string }>();
+  const two = new FakeWindow(2);
+  windows.add(two);
+  // The host is still resolving the folder it will hand this window when the renderer asks.
+  assert.equal(windows.awaitOpenLocation(two), true);
+  const take = windows.takeOpenLocation(two);
+  assert.equal(await settled(take), false, "the take waits: an empty answer would show some other Connected Folder");
+  windows.handOpenLocation(two, { token: "t-2", location: { path: "Garden" } });
+  assert.deepEqual(await take, { token: "t-2", location: { path: "Garden" } });
+  assert.equal(windows.entry(two)?.pendingOpenLocation, null, "taken once, by the take that waited");
+  assert.equal(await windows.takeOpenLocation(two), null);
+  assert.equal(windows.entry(two)?.awaitingOpenLocation, false);
+});
+
+test("a window owed a place that gets none hears there is nothing to take, and so does one that closes", async () => {
+  const windows = new FileManagerWindows<FakeWindow, { path: string }>();
+  const one = new FakeWindow(1);
+  const two = new FakeWindow(2);
+  windows.add(one);
+  windows.add(two);
+  windows.awaitOpenLocation(one);
+  windows.awaitOpenLocation(two);
+  const first = windows.takeOpenLocation(one);
+  const second = windows.takeOpenLocation(two);
+  windows.handOpenLocation(two, { token: "t-2", location: { path: "Garden" } });
+  // The folders given to AmpleFile are all resolved: the windows handed none show their own place.
+  windows.settleOpenLocation();
+  assert.equal(await first, null);
+  assert.deepEqual(await second, { token: "t-2", location: { path: "Garden" } });
+  windows.awaitOpenLocation(one);
+  const closing = windows.takeOpenLocation(one);
+  one.destroyed = true;
+  windows.remove(one);
+  assert.equal(await closing, null);
+  // A place handed before the renderer asks is kept for it, owed or not.
+  const three = new FakeWindow(3);
+  windows.add(three);
+  windows.handOpenLocation(three, { token: "t-3", location: { path: "Docs" } });
+  windows.awaitOpenLocation(three);
+  windows.settleOpenLocation(three);
+  assert.deepEqual(await windows.takeOpenLocation(three), { token: "t-3", location: { path: "Docs" } });
+});
+
+test("a window opened at a place has it before its renderer loads, on every way a window opens at a folder", () => {
+  // The place is kept for the renderer as the window is registered, before its page loads.
+  const create = section(main, "async function createFileManagerWindow(");
+  const registered = create.indexOf("const entry = fileManagerWindows.add(window, slot);");
+  const queued = create.indexOf("if (options.openAt) queueOpenLocation(window, options.openAt);");
+  const owed = create.indexOf("else if (options.awaitingOpenLocation) awaitOpenLocation(window);");
+  const loaded = create.indexOf("await loadMainRenderer(window);");
+  assert.ok(registered >= 0 && queued > registered && owed > queued && loaded > owed, "registered, then handed its place (or owed one), then loaded");
+  // New Window and Open in New Window: the place goes in with the window, never after it has loaded.
+  const open = section(main, "async function openNewWindow(");
+  assert.match(open, /createFileManagerWindow\(\{ cascadeFrom: source\?\.window \?\? null, fresh: true, openAt: location \}\)/);
+  assert.doesNotMatch(open, /handOpenLocation\(/);
+  // A request's further folders open each in a new window made at its place.
+  const drain = section(main, "async function drainPendingOpenPaths(");
+  assert.match(drain, /createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true, openAt: location \}\)/);
+  // Windows that come back while a folder given to AmpleFile is resolved wait to hear which opens it, and those
+  // handed none are told so once every folder is resolved.
+  assert.match(drain, /showFileManagerWindow\(await ensureWindow\(\{ awaitingOpenLocation: true \}\)\)/);
+  assert.match(drain, /\.finally\(\(\) => \{\s*openPathDrainPromise = null;[\s\S]*?fileManagerWindows\.settleOpenLocation\(\);/);
+  const ensure = section(main, "function ensureWindow(");
+  assert.match(ensure, /const awaitingOpenLocation = options\.awaitingOpenLocation \?\? pendingOpenPaths\.length > 0;/);
+  assert.match(ensure, /createFileManagerWindow\(\{ \.\.\.\(placement \? \{ placement \} : \{\}\), awaitingOpenLocation \}\)/);
+  // A window is never kept waiting for good.
+  const owe = section(main, "function awaitOpenLocation(");
+  assert.match(owe, /setTimeout\(\(\) => fileManagerWindows\.settleOpenLocation\(window\), openLocationWaitMs\)/);
+  // The renderer releases the window only once the host has answered its take.
+  assert.match(preload, /take-open-location"\)\.then\(deliver\)\.catch\(\(\) => undefined\)\.finally\(\(\) => \{ if \(!disposed\) onTaken\?\.\(\); \}\)/);
 });
 
 test("a window whose tab in front is not in a Connected Folder shows none, and a Worker's page goes to one that shows it", () => {
@@ -357,17 +438,18 @@ test("the active Connected Folder is each window's own, and only its title and O
 test("handed-over folders open in the most recent window, a request's further folders in new windows", () => {
   const drain = section(main, "async function drainPendingOpenPaths(");
   assert.match(drain, /const opensNewWindow = target\.newWindow && fileManagerWindows\.size > 0;/);
-  assert.match(drain, /opensNewWindow \? await createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true \}\) : await ensureWindow\(\)/);
-  assert.match(drain, /handOpenLocation\(window, location\);/);
+  assert.match(drain, /if \(opensNewWindow\) \{\s*showFileManagerWindow\(await createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true, openAt: location \}\)\);/);
+  assert.match(drain, /const window = await ensureWindow\(\);\s*showFileManagerWindow\(window\);\s*handOpenLocation\(window, location\);/);
   // Finder hands over one request as one open-file event per item; they open together (finder-open-paths.ts).
   assert.match(main, /pendingOpenPaths\.push\(\.\.\.finderOpenPaths\(paths, /);
   const hand = section(main, "function handOpenLocation(");
-  assert.match(hand, /fileManagerWindows\.handOpenLocation\(window, request\)/);
+  assert.match(hand, /const request = queueOpenLocation\(window, location\);/);
   assert.match(hand, /sendToRenderer\(window\.webContents, "amplefile:file-manager:open-location", request\)/);
+  assert.match(section(main, "function queueOpenLocation("), /fileManagerWindows\.handOpenLocation\(window, request\)/);
   // New Window opens at the folder the window it came from shows, else the home folder.
   const open = section(main, "async function openNewWindow(");
   assert.match(open, /options\.location\s*\?\? \(shown \? \{ place: shown\.place, path: shown\.path, select: null \} : null\)\s*\?\? await folderLocationForOpenPath\(homedir\(\)\)/);
-  assert.match(open, /createFileManagerWindow\(\{ cascadeFrom: source\?\.window \?\? null, fresh: true \}\)/);
+  assert.match(open, /createFileManagerWindow\(\{ cascadeFrom: source\?\.window \?\? null, fresh: true, openAt: location \}\)/);
 });
 
 test("Open in New Window and New Window are preload methods the host checks", () => {
@@ -392,7 +474,7 @@ test("closing one of several windows closes only it; the last keeps the app and 
   // Reopening brings back the windows that were open, every saved one, opened together.
   const ensure = section(main, "function ensureWindow(");
   assert.match(ensure, /separateRestoredPlacements\(currentWindowPlacements\(\)/);
-  assert.match(ensure, /Promise\.all\(\(saved\.length \? saved : \[undefined\]\)\.map\(\(placement\) => createFileManagerWindow\(placement \? \{ placement \} : \{\}\)\)\)/);
+  assert.match(ensure, /Promise\.all\(\(saved\.length \? saved : \[undefined\]\)\.map\(\(placement\) => createFileManagerWindow\(\{ \.\.\.\(placement \? \{ placement \} : \{\}\), awaitingOpenLocation \}\)\)\)/);
   assert.match(main, /app\.on\("activate", \(\) => \{ showFrontWindow\(\); \}\);/);
   // Quit and update-restart keep their single coordinator.
   assert.match(main, /app\.on\("before-quit", \(event\) => \{\s*quitting = true;\s*if \(!quitCoordinator\.shouldPreventNativeQuit\(\)\) return;/);
