@@ -1,5 +1,6 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
-import { finderOpenPaths, type FileManagerOpenPath } from "./finder-open-paths.js";
+import { finderOpenPaths } from "./finder-open-paths.js";
+import { OpenPathDrain } from "./open-path-drain.js";
 import { FileManagerWindows, parseWindowLocation, shownConnectedFolder, type FileManagerWindowEntry } from "./file-manager-windows.js";
 import {
   cascadeBounds,
@@ -262,10 +263,21 @@ let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
 let cliRequestGeneration = 0;
-// Strings open as given in the most recent window; an entry can show a folder selected in its parent (`reveal`)
-// or open in a window of its own (`newWindow`, the further folders of one request).
-const pendingOpenPaths: Array<string | FileManagerOpenPath> = [];
-let openPathDrainPromise: Promise<void> | null = null;
+// Folders the system asked AmpleFile to open (open-path-drain.ts). Strings open as given in the most recent window;
+// an entry can show a folder selected in its parent (`reveal`) or open in a window of its own (`newWindow`, the
+// further folders of one request).
+const openPaths = new OpenPathDrain<BrowserWindow, FolderLocation>({
+  windows: fileManagerWindows,
+  lookUp: (target) => folderLocationForOpenPath(target.path, target.reveal),
+  frontWindow: () => ensureWindow({ awaitingOpenLocation: true }),
+  newWindow: (location) => createFileManagerWindow({ cascadeFrom: frontWindow(), fresh: true, openAt: location }),
+  show: (window) => showFileManagerWindow(window),
+  hand: (window, location) => handOpenLocation(window, location),
+  notFound: (path) => console.warn(`${productName} could not open a folder that is not on this computer: ${path}`),
+  overdue: (path) => reportOpenPathOverdue(path),
+  lookupLimitMs: 30_000,
+  waitCheckMs: 2_000,
+});
 const quitCoordinator = new GracefulQuitCoordinator({
   prepare: prepareForApplicationQuit,
   quit: () => app.quit(),
@@ -338,7 +350,7 @@ if (ownsInstance && process.platform === "darwin") {
     setImmediate(() => {
       const paths = finderRequest ?? [];
       finderRequest = null;
-      pendingOpenPaths.push(...finderOpenPaths(paths, (item) => lstatSync(item, { throwIfNoEntry: false })?.isDirectory() === true));
+      openPaths.queue(...finderOpenPaths(paths, (item) => lstatSync(item, { throwIfNoEntry: false })?.isDirectory() === true));
       if (app.isReady()) {
         void startInteractiveApp()
           .then(drainPendingOpenPaths)
@@ -716,7 +728,7 @@ async function createFileManagerWindow(options: FileManagerWindowOptions = {}): 
   const entry = fileManagerWindows.add(window, slot);
   // Where the window opens is settled before its renderer can ask: never a fallback Connected Folder first.
   if (options.openAt) queueOpenLocation(window, options.openAt);
-  else if (options.awaitingOpenLocation) awaitOpenLocation(window);
+  else if (options.awaitingOpenLocation) openPaths.owe(window);
   const railTooltipOverlay = new RailTooltipOverlay(window);
   railTooltipOverlays.set(window.id, railTooltipOverlay);
 
@@ -2141,40 +2153,15 @@ function applyNativeActiveConnectedFolderToWindow(entry: FileManagerWindowEntry<
 // at once) each open in a new window, as Finder does.
 async function drainPendingOpenPaths(): Promise<void> {
   if (process.platform !== "darwin") return;
-  if (openPathDrainPromise) {
-    await openPathDrainPromise;
-    if (pendingOpenPaths.length) await drainPendingOpenPaths();
-    return;
-  }
+  await openPaths.drain();
+}
 
-  openPathDrainPromise = (async () => {
-    while (pendingOpenPaths.length) {
-      const entry = pendingOpenPaths.shift();
-      const target = typeof entry === "string" ? { path: entry, reveal: false, newWindow: false } : entry;
-      if (!target?.path) continue;
-      const opensNewWindow = target.newWindow && fileManagerWindows.size > 0;
-      if (!opensNewWindow) showFileManagerWindow(await ensureWindow({ awaitingOpenLocation: true }));
-      const location = await folderLocationForOpenPath(target.path, target.reveal);
-      if (!location) {
-        console.warn(`${productName} could not open a folder that is not on this computer: ${target.path}`);
-        continue;
-      }
-      if (opensNewWindow) {
-        showFileManagerWindow(await createFileManagerWindow({ cascadeFrom: frontWindow(), fresh: true, openAt: location }));
-        continue;
-      }
-      const window = await ensureWindow();
-      showFileManagerWindow(window);
-      handOpenLocation(window, location);
-    }
-  })().finally(() => {
-    openPathDrainPromise = null;
-    // Windows that came back while these folders were resolved and were handed none show their own place now.
-    fileManagerWindows.settleOpenLocation();
-  });
-
-  await openPathDrainPromise;
-  if (pendingOpenPaths.length) await drainPendingOpenPaths();
+/** A folder given to AmpleFile took too long to find: it does not open, and the person is told so plainly. */
+function reportOpenPathOverdue(path: string): void {
+  console.warn(`${productName} gave up opening ${path}: finding it took too long.`);
+  const window = frontWindow();
+  const options = { type: "warning" as const, message: `${productName} couldn’t open “${basename(path) || path}”.`, detail: "Finding it took too long. Try opening it again.", buttons: ["OK"] };
+  void (window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options)).catch(() => undefined);
 }
 
 /** Hands a window a place to show; its renderer takes it now, or once it has loaded. */
@@ -2189,15 +2176,6 @@ function queueOpenLocation(window: BrowserWindow, location: FolderLocation): Ope
   if (location.place.kind === "connected-folder") void setWindowConnectedFolder(window, location.place.id).catch(() => undefined);
   const request = { token: randomUUID(), location };
   return fileManagerWindows.handOpenLocation(window, request) ? request : null;
-}
-
-/** How long a window waits to be handed a folder still being resolved before it shows its own place. */
-const openLocationWaitMs = 10_000;
-
-/** The window's renderer waits to hear whether a folder given to AmpleFile opens in it (drainPendingOpenPaths settles it). */
-function awaitOpenLocation(window: BrowserWindow): void {
-  if (!fileManagerWindows.awaitOpenLocation(window)) return;
-  setTimeout(() => fileManagerWindows.settleOpenLocation(window), openLocationWaitMs).unref?.();
 }
 
 /**
@@ -2386,7 +2364,7 @@ function ensureWindow(options: { awaitingOpenLocation?: boolean } = {}): Promise
     const saved = separateRestoredPlacements(currentWindowPlacements(), (bounds) => screen.getDisplayMatching(bounds).workArea, minimumWindowState);
     // Opened together, in slot order; each loads its renderer on its own. A folder given to AmpleFile opens in one
     // of them: until it is resolved, they wait to hear which.
-    const awaitingOpenLocation = options.awaitingOpenLocation ?? pendingOpenPaths.length > 0;
+    const awaitingOpenLocation = options.awaitingOpenLocation ?? openPaths.busy;
     const opened = await Promise.all((saved.length ? saved : [undefined]).map((placement) => createFileManagerWindow({ ...(placement ? { placement } : {}), awaitingOpenLocation })));
     return frontWindow() ?? opened[opened.length - 1]!;
   })().finally(() => { restoreWindowsPromise = null; });

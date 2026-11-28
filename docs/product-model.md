@@ -733,7 +733,10 @@ from the start. **New Connected Folder** is ⌥⌘N.
   again and again to show a folder never piles windows up. When one request
   names several folders (several opened from Finder at once), the first opens
   in the front window and each further one in a new window, as Finder does,
-  up to eight; files in one folder share that folder's window.
+  up to eight; files in one folder share that folder's window. A window
+  that comes back while such a folder is still being found waits for it,
+  never showing another Connected Folder first; a folder that takes longer
+  than 30 seconds to find does not open, and AmpleFile says so.
 - **Browser pages** belong to the window that opened them; a page a Worker
   opens appears in the window whose tab in front shows that Worker's Connected
   Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).

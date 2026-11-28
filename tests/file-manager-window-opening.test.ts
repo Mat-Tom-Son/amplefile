@@ -85,14 +85,13 @@ async function send(dom: Awaited<ReturnType<typeof createFileManagerHarness>>["d
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>("button.fm-send")!.click());
 }
 
-test("a new window handed a Connected Folder after its first read waits for it, draws only it, and sends to its Worker", async (t) => {
-  const harness = await createFileManagerHarness(t, answers((path) => path === "/api/bootstrap"
-    ? { connectedFolders: [lab, garden], agent: { ready: true, configured: true, provider: "test", model: "synthetic" } }
-    : undefined));
-  // A fresh window: nothing kept for it, so it would otherwise fall back to the first Connected Folder, Lab.
-  keepStorage(t);
-  const take = Promise.withResolvers<void>();
-  let handed: ((location: { place: typeof gardenPlace; path: string; select: string | null }) => void) | null = null;
+type HandedLocation = { place: typeof gardenPlace; path: string; select: string | null };
+const bootstrapAnswer: ApiAnswer = (path) => path === "/api/bootstrap"
+  ? { connectedFolders: [lab, garden], agent: { ready: true, configured: true, provider: "test", model: "synthetic" } }
+  : undefined;
+
+/** The desktop bridge App reads as a window starts; `onOpenLocation` stands in for the host's answer to the window's take. */
+function stubWindowBridge(t: test.TestContext, onOpenLocation: (callback: (location: HandedLocation) => void, onTaken?: () => void) => () => void) {
   const activeSent: Array<string | null> = [];
   const scope = window as unknown as { ampleFileDesktop?: unknown };
   scope.ampleFileDesktop = {
@@ -106,18 +105,30 @@ test("a new window handed a Connected Folder after its first read waits for it, 
     updates: { getStatus: async () => null, onStatusChanged: () => () => {} },
     connectedFolder: {
       setActiveConnectedFolder: async (id: string | null) => { activeSent.push(id); },
-      // The host's answer to the window's take arrives only after the window has read its Connected Folders.
-      onOpenLocation(callback: NonNullable<typeof handed>, onTaken?: () => void) {
-        handed = callback;
-        void take.promise.then(() => {
-          callback({ place: gardenPlace, path: "", select: null });
-          onTaken?.();
-        });
-        return () => {};
-      },
+      onOpenLocation,
     },
   };
   t.after(() => { delete scope.ampleFileDesktop; });
+  return activeSent;
+}
+
+const conversationPosts = (requests: Array<{ path: string; method: string }>) => requests.filter((request) => request.method === "POST" && request.path.endsWith("/conversations")).map((request) => request.path);
+
+test("a new window handed a Connected Folder after its first read waits for it, draws only it, and sends to its Worker", async (t) => {
+  const harness = await createFileManagerHarness(t, answers(bootstrapAnswer));
+  // A fresh window: nothing kept for it, so it would otherwise fall back to the first Connected Folder, Lab.
+  keepStorage(t);
+  const take = Promise.withResolvers<void>();
+  let handed: ((location: HandedLocation) => void) | null = null;
+  // The host's answer to the window's take arrives only after the window has read its Connected Folders.
+  const activeSent = stubWindowBridge(t, (callback, onTaken) => {
+    handed = callback;
+    void take.promise.then(() => {
+      callback({ place: gardenPlace, path: "", select: null });
+      onTaken?.();
+    });
+    return () => {};
+  });
   const { App } = await import("../web-local/src/App.js");
   const watch = watchShownNames(harness.dom.container);
   await harness.dom.render(createElement(App));
@@ -136,6 +147,67 @@ test("a new window handed a Connected Folder after its first read waits for it, 
   assert.deepEqual([...watch.seen].filter((value) => value.includes("Lab")), [], "Lab was never drawn as the folder shown");
   assert.deepEqual(harness.requests.filter((request) => request.method === "POST" && request.path.endsWith("/conversations")).map((request) => request.path), ["/api/connected-folders/garden/conversations"]);
   assert.equal(activeSent.includes("lab"), false, "the window never named Lab as its Connected Folder");
+});
+
+test("a window brought back while a handed folder is slow to find never offers another Worker's message box, however long finding takes", async (t) => {
+  const harness = await createFileManagerHarness(t, answers(bootstrapAnswer));
+  keepStorage(t);
+  // The host's real window registry and folder queue (desktop/src/open-path-drain.ts), with real time: the folder
+  // takes far longer to find than the window's wait checks.
+  const { FileManagerWindows } = await import("../desktop/src/file-manager-windows.js");
+  const { OpenPathDrain } = await import("../desktop/src/open-path-drain.js");
+  const windows = new FileManagerWindows<{ id: number; isDestroyed(): boolean }, HandedLocation>();
+  const hostWindow = { id: 2, isDestroyed: () => false };
+  const found = Promise.withResolvers<HandedLocation | null>();
+  const drain: InstanceType<typeof OpenPathDrain<{ id: number; isDestroyed(): boolean }, HandedLocation>> = new OpenPathDrain({
+    windows,
+    lookUp: () => found.promise,
+    // The windows that were open come back owed a place while the folder is queued, as ensureWindow brings them back.
+    frontWindow: async () => {
+      if (!windows.has(hostWindow)) { windows.add(hostWindow); drain.owe(hostWindow); }
+      return hostWindow;
+    },
+    newWindow: async () => hostWindow,
+    show() {},
+    hand: (target, location) => { windows.handOpenLocation(target, { token: "garden", location }); },
+    notFound() {},
+    overdue() {},
+    lookupLimitMs: 10_000,
+    waitCheckMs: 15,
+  });
+  drain.queue("/Users/ana/Garden");
+  // AmpleFile starts with the folder queued: its window comes back owed a place before its renderer loads.
+  windows.add(hostWindow);
+  drain.owe(hostWindow);
+  const activeSent = stubWindowBridge(t, (callback, onTaken) => {
+    void windows.takeOpenLocation(hostWindow).then((request) => {
+      if (request) callback(request.location);
+      onTaken?.();
+    });
+    return () => {};
+  });
+  const { App } = await import("../web-local/src/App.js");
+  const watch = watchShownNames(harness.dom.container);
+  await harness.dom.render(createElement(App));
+  const running = drain.drain();
+  await harness.dom.waitFor(() => harness.requests.some((request) => request.path === "/api/bootstrap"));
+  // Many wait checks pass while the folder is still being found. A send attempted now has nowhere to go.
+  await harness.dom.act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  const field = harness.dom.container.querySelector('[aria-label="Message the Worker"]');
+  if (field) await send(harness.dom, "Sent while the folder was still being found");
+  await harness.dom.settle();
+  assert.deepEqual(conversationPosts(harness.requests), [], "nothing was sent to any Worker");
+  assert.equal(field === null, true, "no message box while the window waits for its folder");
+
+  await harness.dom.act(async () => { found.resolve({ place: gardenPlace, path: "", select: null }); await running; });
+  await harness.dom.waitFor(() => shown(harness.dom.container).placeholder !== null);
+  assert.deepEqual(shown(harness.dom.container), { title: "Garden", info: "Garden", placeholder: "Work in Garden" });
+  await send(harness.dom, "Plan the walkthrough");
+  await harness.dom.waitFor(() => conversationPosts(harness.requests).length > 0);
+  watch.stop();
+  assert.deepEqual([...watch.seen].filter((value) => value.includes("Lab")), [], "Lab was never drawn as the folder shown");
+  assert.deepEqual(conversationPosts(harness.requests), ["/api/connected-folders/garden/conversations"]);
+  assert.equal(activeSent.includes("lab"), false);
 });
 
 /** The window as App mounts it once it has taken its place: `connectedFolder` is the one it would otherwise fall back to. */

@@ -19,6 +19,7 @@ import {
 const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
 const browserHost = await readFile(new URL("../desktop/src/built-in-browser.ts", import.meta.url), "utf8");
 const preload = await readFile(new URL("../desktop/src/preload.cts", import.meta.url), "utf8");
+const openPathDrain = await readFile(new URL("../desktop/src/open-path-drain.ts", import.meta.url), "utf8");
 const clipboardHook = await readFile(new URL("../web-local/src/components/file-manager/useFileClipboard.ts", import.meta.url), "utf8");
 
 class FakeWindow {
@@ -172,26 +173,30 @@ test("a window opened at a place has it before its renderer loads, on every way 
   const create = section(main, "async function createFileManagerWindow(");
   const registered = create.indexOf("const entry = fileManagerWindows.add(window, slot);");
   const queued = create.indexOf("if (options.openAt) queueOpenLocation(window, options.openAt);");
-  const owed = create.indexOf("else if (options.awaitingOpenLocation) awaitOpenLocation(window);");
+  const owed = create.indexOf("else if (options.awaitingOpenLocation) openPaths.owe(window);");
   const loaded = create.indexOf("await loadMainRenderer(window);");
   assert.ok(registered >= 0 && queued > registered && owed > queued && loaded > owed, "registered, then handed its place (or owed one), then loaded");
   // New Window and Open in New Window: the place goes in with the window, never after it has loaded.
   const open = section(main, "async function openNewWindow(");
   assert.match(open, /createFileManagerWindow\(\{ cascadeFrom: source\?\.window \?\? null, fresh: true, openAt: location \}\)/);
   assert.doesNotMatch(open, /handOpenLocation\(/);
-  // A request's further folders open each in a new window made at its place.
-  const drain = section(main, "async function drainPendingOpenPaths(");
-  assert.match(drain, /createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true, openAt: location \}\)/);
-  // Windows that come back while a folder given to AmpleFile is resolved wait to hear which opens it, and those
-  // handed none are told so once every folder is resolved.
-  assert.match(drain, /showFileManagerWindow\(await ensureWindow\(\{ awaitingOpenLocation: true \}\)\)/);
-  assert.match(drain, /\.finally\(\(\) => \{\s*openPathDrainPromise = null;[\s\S]*?fileManagerWindows\.settleOpenLocation\(\);/);
+  // Folders given to AmpleFile (open-path-drain.ts): a request's further folders open each in a new window made at
+  // its place, and the windows that come back while one is found are owed a place.
+  const queue = section(main, "const openPaths = new OpenPathDrain<BrowserWindow, FolderLocation>({", "\n});\n");
+  assert.match(queue, /frontWindow: \(\) => ensureWindow\(\{ awaitingOpenLocation: true \}\)/);
+  assert.match(queue, /newWindow: \(location\) => createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true, openAt: location \}\)/);
+  assert.match(queue, /hand: \(window, location\) => handOpenLocation\(window, location\)/);
+  assert.match(queue, /overdue: \(path\) => reportOpenPathOverdue\(path\)/);
+  assert.match(section(main, "async function drainPendingOpenPaths("), /await openPaths\.drain\(\);/);
   const ensure = section(main, "function ensureWindow(");
-  assert.match(ensure, /const awaitingOpenLocation = options\.awaitingOpenLocation \?\? pendingOpenPaths\.length > 0;/);
+  assert.match(ensure, /const awaitingOpenLocation = options\.awaitingOpenLocation \?\? openPaths\.busy;/);
   assert.match(ensure, /createFileManagerWindow\(\{ \.\.\.\(placement \? \{ placement \} : \{\}\), awaitingOpenLocation \}\)/);
-  // A window is never kept waiting for good.
-  const owe = section(main, "function awaitOpenLocation(");
-  assert.match(owe, /setTimeout\(\(\) => fileManagerWindows\.settleOpenLocation\(window\), openLocationWaitMs\)/);
+  // A window owed a place is released only by the queue, once nothing can answer it: never by a timer of the host's.
+  assert.doesNotMatch(main, /settleOpenLocation/);
+  // A folder given up is never opened, and the person is told so.
+  const overdue = section(main, "function reportOpenPathOverdue(");
+  assert.match(overdue, /dialog\.showMessageBox\(window, options\)/);
+  assert.match(overdue, /couldn’t open “\$\{basename\(path\) \|\| path\}”\./);
   // The renderer releases the window only once the host has answered its take.
   assert.match(preload, /take-open-location"\)\.then\(deliver\)\.catch\(\(\) => undefined\)\.finally\(\(\) => \{ if \(!disposed\) onTaken\?\.\(\); \}\)/);
 });
@@ -436,12 +441,11 @@ test("the active Connected Folder is each window's own, and only its title and O
 });
 
 test("handed-over folders open in the most recent window, a request's further folders in new windows", () => {
-  const drain = section(main, "async function drainPendingOpenPaths(");
-  assert.match(drain, /const opensNewWindow = target\.newWindow && fileManagerWindows\.size > 0;/);
-  assert.match(drain, /if \(opensNewWindow\) \{\s*showFileManagerWindow\(await createFileManagerWindow\(\{ cascadeFrom: frontWindow\(\), fresh: true, openAt: location \}\)\);/);
-  assert.match(drain, /const window = await ensureWindow\(\);\s*showFileManagerWindow\(window\);\s*handOpenLocation\(window, location\);/);
+  assert.match(openPathDrain, /const opensNewWindow = target\.newWindow && this\.#host\.windows\.size > 0;/);
+  assert.match(openPathDrain, /if \(opensNewWindow\) \{\s*this\.#host\.show\(await this\.#host\.newWindow\(location\)\);/);
+  assert.match(openPathDrain, /const window = await this\.#host\.frontWindow\(\);\s*this\.#host\.show\(window\);\s*this\.#host\.hand\(window, location\);/);
   // Finder hands over one request as one open-file event per item; they open together (finder-open-paths.ts).
-  assert.match(main, /pendingOpenPaths\.push\(\.\.\.finderOpenPaths\(paths, /);
+  assert.match(main, /openPaths\.queue\(\.\.\.finderOpenPaths\(paths, /);
   const hand = section(main, "function handOpenLocation(");
   assert.match(hand, /const request = queueOpenLocation\(window, location\);/);
   assert.match(hand, /sendToRenderer\(window\.webContents, "amplefile:file-manager:open-location", request\)/);
