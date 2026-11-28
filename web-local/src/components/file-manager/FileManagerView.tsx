@@ -202,7 +202,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const startLocation = (): FileManagerLocation => activeConnectedFolder ? { place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" } : { place: homePlace, path: "" };
   // The window's folder tabs (file-manager-tabs.ts): each has its own place, Back and Forward, selection, scroll
   // position, search, and Trash or Recents view. Everything below that reads "the folder shown" reads the tab in front.
-  const folderTabs = useFolderTabs(startLocation);
+  // A window handed a place as it opens (New Window, Open in New Window, a folder given to AmpleFile) starts there:
+  // App holds the window until it has taken the place, so its first frame, and the Worker its message box sends
+  // to, are the ones it was asked for, never the Connected Folder it would otherwise fall back to.
+  const folderTabs = useFolderTabs(startLocation, openLocationRequest?.location ?? null);
   const activeTab = folderTabs.activeTab;
   const tabId = activeTab.id;
   const history = activeTab.history;
@@ -510,9 +513,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (!activeConnectedFolder || (place.kind === "connected-folder" && place.id === activeConnectedFolder.id)) return;
     navigate({ place: { kind: "connected-folder", id: activeConnectedFolder.id }, path: "" });
   }, [activeConnectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Tabs kept from before came back: the window's Connected Folder is the one the tab in front shows.
+  // The window opened in the tab in front, kept from before or at a place it was handed: the window's Connected
+  // Folder is the one that tab shows.
   useEffect(() => {
-    if (folderTabs.restored) followTabConnectedFolder(location.place);
+    followTabConnectedFolder(location.place);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** A tab came to the front in a Connected Folder: it becomes the window's Connected Folder, as going there would make it. */

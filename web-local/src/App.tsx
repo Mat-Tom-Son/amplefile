@@ -94,6 +94,10 @@ export function App() {
   const [modelConfigurationRevision, modelConfigurationChanged] = useModelConfigurationRevision(!fixtureRequested);
   // A folder or file the system asked AmpleFile to open, held until the window shows it.
   const [openLocationRequest, setOpenLocationRequest] = useState<FileManagerOpenRequest | null>(null);
+  // A window handed a place as it opens (New Window, Open in New Window, a folder given to AmpleFile) shows it from its
+  // first frame: the file manager waits until the window has taken what it was handed. Never another Connected Folder
+  // first, whose Worker a message sent in that moment would reach.
+  const [openLocationTaken, setOpenLocationTaken] = useState(() => !window.ampleFileDesktop?.connectedFolder?.onOpenLocation);
   // First run's welcome is for a fresh profile; once left (Browse Files) or once a folder is connected, the window is the file manager.
   const [welcomeDone, setWelcomeDoneState] = useState<boolean>(() => !fixtureRequested && readStoredJsonValue(welcomeDoneStorageKey, (value) => value === true, false));
   const setWelcomeDone = useCallback(() => { setWelcomeDoneState(true); if (!fixtureRequested) writeStoredJsonValue(welcomeDoneStorageKey, true); }, []);
@@ -167,15 +171,16 @@ export function App() {
   }, [refreshBootstrap]);
 
   const activeConnectedFolder = useMemo(() => boot?.connectedFolders.find((item) => item.id === activeConnectedFolderId) ?? boot?.connectedFolders[0] ?? null, [activeConnectedFolderId, boot]);
+  // The window keeps and names its Connected Folder only once it shows one: never a fallback while it waits for its place.
   useEffect(() => {
-    if (!fixtureRequested && boot) {
+    if (!fixtureRequested && boot && openLocationTaken) {
       if (activeConnectedFolder) localStorage.setItem(activeConnectedFolderStorageKey, activeConnectedFolder.id);
       else localStorage.removeItem(activeConnectedFolderStorageKey);
     }
     if (activeConnectedFolder) setActiveConnectedFolderId(activeConnectedFolder.id);
-  }, [activeConnectedFolder?.id, Boolean(boot)]);
+  }, [activeConnectedFolder?.id, Boolean(boot), openLocationTaken]);
   useEffect(() => {
-    if (fixtureRequested) return;
+    if (fixtureRequested || !openLocationTaken) return;
     let cancelled = false;
     void window.ampleFileDesktop?.connectedFolder.setActiveConnectedFolder?.(activeConnectedFolder?.id ?? null).catch(async (caught) => {
       if (cancelled) return;
@@ -183,17 +188,25 @@ export function App() {
       if (!cancelled && (!activeConnectedFolder || !current || current.connectedFolders.some((item) => item.id === activeConnectedFolder.id))) setError(errorText(caught));
     });
     return () => { cancelled = true; };
-  }, [activeConnectedFolder?.id, activeConnectedFolder?.name, activeConnectedFolder?.connectedFolderRoot]);
+  }, [activeConnectedFolder?.id, activeConnectedFolder?.name, activeConnectedFolder?.connectedFolderRoot, openLocationTaken]);
+  // Taken as the window starts, alongside its first read of the Connected Folders.
   useEffect(() => {
     const desktopConnectedFolder = window.ampleFileDesktop?.connectedFolder;
-    if (!desktopConnectedFolder?.onOpenLocation || !boot) return;
+    if (!desktopConnectedFolder?.onOpenLocation) return;
+    let taken = false;
     return desktopConnectedFolder.onOpenLocation(({ place, path, select }) => {
       setLocationHanded(true);
       setOpenLocationRequest({ id: Date.now(), location: { place, path }, select });
-      // The window goes to a Connected Folder it knows; one registered since it last looked is read first.
-      if (place.kind === "connected-folder" && !boot.connectedFolders.some((connectedFolder) => connectedFolder.id === place.id)) void refreshBootstrap();
-    });
-  }, [boot?.connectedFolders, refreshBootstrap]);
+      // Handed as the window starts: the Connected Folder it opens in is the window's from the start.
+      if (!taken && place.kind === "connected-folder") setActiveConnectedFolderId(place.id);
+    }, () => { taken = true; setOpenLocationTaken(true); });
+  }, []);
+  // The window goes to a Connected Folder it knows; one registered since it last looked is read first.
+  useEffect(() => {
+    const place = openLocationRequest?.location.place;
+    if (!boot || place?.kind !== "connected-folder" || boot.connectedFolders.some((connectedFolder) => connectedFolder.id === place.id)) return;
+    void refreshBootstrap();
+  }, [openLocationRequest?.id, Boolean(boot)]); // eslint-disable-line react-hooks/exhaustive-deps
   const openLocationReady = openLocationRequest && (openLocationRequest.location.place.kind !== "connected-folder"
     || Boolean(boot?.connectedFolders.some((connectedFolder) => connectedFolder.id === openLocationRequest.location.place.id))) ? openLocationRequest : null;
   useEffect(() => {
@@ -317,7 +330,7 @@ export function App() {
     showToast({ text: error, tone: "error" });
     setError(null);
   }, [error, errorsAsNotices]);
-  if (!boot || (fixtureRequested && !fixture)) return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""}`} data-theme={theme}>{showDesktopTitleBar ? <DesktopTitleBar /> : null}<AmpleFileLoadingState message={error ?? "Loading your Connected Folders and Workers."} action={error ? <button className="ui-control" type="button" onClick={() => { setError(null); void refreshBootstrap(); }}>Try Again</button> : undefined} /></div>;
+  if (!boot || (fixtureRequested && !fixture) || !openLocationTaken) return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""}`} data-theme={theme}>{showDesktopTitleBar ? <DesktopTitleBar /> : null}<AmpleFileLoadingState message={error ?? "Loading your Connected Folders and Workers."} action={error ? <button className="ui-control" type="button" onClick={() => { setError(null); void refreshBootstrap(); }}>Try Again</button> : undefined} /></div>;
 
   return <div className={`app-shell${showDesktopTitleBar ? " desktop-chrome-shell" : ""} layout-file-manager`} data-theme={theme}>
     {showDesktopTitleBar ? <DesktopTitleBar /> : null}

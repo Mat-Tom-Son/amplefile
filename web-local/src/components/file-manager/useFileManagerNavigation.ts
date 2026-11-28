@@ -105,8 +105,11 @@ export function useFileManagerNavigation(context: FileManagerNavigationContext) 
   /** Goes to a location the host resolved, selecting an item there once its folder is shown. */
   function showLocation(next: FileManagerLocation, selectPath: string | null) {
     const switchTo = next.place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === next.place.id) : undefined;
-    if (selectPath && sameLocation(next, location)) select([selectPath]);
-    else if (selectPath) pendingSelectRef.current = { key: `${placeKey(next.place)}\0${next.path}`, path: selectPath };
+    const key = `${placeKey(next.place)}\0${next.path}`;
+    // The item is selected once its folder's items are here: now, when they already are (a window that opened at the
+    // folder is still reading it).
+    if (selectPath && sameLocation(next, location) && listing.key === key && listing.status !== "loading") select([selectPath]);
+    else if (selectPath) pendingSelectRef.current = { key, path: selectPath };
     navigate(next, "push", switchTo);
     window.requestAnimationFrame(() => contentRef.current?.focus({ preventScroll: true }));
   }

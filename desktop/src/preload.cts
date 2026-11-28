@@ -95,8 +95,11 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-header-menu", request),
     } : {}),
     setActiveConnectedFolder: (connectedFolderId: string | null) => ipcRenderer.invoke("amplefile:connected-folder:set-active-connected-folder", connectedFolderId),
-    /** A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select. */
-    onOpenLocation: (callback: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null }) => void) => {
+    /**
+     * A folder or file the system asked AmpleFile to open, as the host resolved it: a place, a folder in it, and an item to select.
+     * `onTaken` runs once the place already handed to this window, if any, has been delivered, so a new window can show it from its first frame.
+     */
+    onOpenLocation: (callback: (location: { place: { kind: "connected-folder" | "standard"; id: string }; path: string; select: string | null }) => void, onTaken?: () => void) => {
       let disposed = false;
       const deliveredTokens = new Set<string>();
       const deliver = (value: unknown) => {
@@ -115,7 +118,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       };
       const listener = (_event: unknown, value: unknown) => deliver(value);
       ipcRenderer.on("amplefile:file-manager:open-location", listener);
-      void ipcRenderer.invoke("amplefile:file-manager:take-open-location").then(deliver).catch(() => undefined);
+      void ipcRenderer.invoke("amplefile:file-manager:take-open-location").then(deliver).catch(() => undefined).finally(() => { if (!disposed) onTaken?.(); });
       return () => {
         disposed = true;
         ipcRenderer.removeListener("amplefile:file-manager:open-location", listener);

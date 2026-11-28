@@ -702,7 +702,10 @@ Window** (⌘N) opens another window at the folder the front
 window shows, or at the home folder, a step down and to the right of it, so
 two windows never sit exactly on top of each other. **Open in New Window**,
 beside **Open in New Tab** in a folder's menu and the sidebar's menus, opens
-that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
+that folder in a window of its own. A window opened at a folder, or handed
+one as it starts, shows that folder from its first frame, never another
+Connected Folder first, so its message box reaches that folder's Worker
+from the start. **New Connected Folder** is ⌥⌘N.
 
 - **Each window is its own:** its folder tabs (each with its folder,
   selection, and Chat), panel, Browser pane tabs, and size and place on the
@@ -730,7 +733,10 @@ that folder in a window of its own. **New Connected Folder** is ⌥⌘N.
   again and again to show a folder never piles windows up. When one request
   names several folders (several opened from Finder at once), the first opens
   in the front window and each further one in a new window, as Finder does,
-  up to eight; files in one folder share that folder's window.
+  up to eight; files in one folder share that folder's window. A window
+  that comes back while such a folder is still being found waits for it,
+  never showing another Connected Folder first; a folder that takes longer
+  than 30 seconds to find does not open, and AmpleFile says so.
 - **Browser pages** belong to the window that opened them; a page a Worker
   opens appears in the window whose tab in front shows that Worker's Connected
   Folder, else the front window ([Pages and windows](built-in-browser.md#pages-and-windows)).
