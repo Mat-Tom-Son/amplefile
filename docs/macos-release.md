@@ -314,6 +314,32 @@ Apple submission.
   that the feed offers it; an installed update from `0.2.5` to `0.2.6` is
   not recorded here. `npm audit --audit-level=high` reported the same two
   `image-size` findings as 0.2.5.
+- **0.2.7** was published to `Mat-Tom-Son/amplefile` on November 28, 2026,
+  from the annotated source tag `v0.2.7` (commit `f414d88`, PR 67). It
+  carries:
+  - search that keeps going to the end, with Stop and Keep Searching, and
+    Connected Folder search that finds names past the first 20,000 items;
+    notices that say what a cross-disk move or a stopped reply really did;
+    Set Up for Me offered once per Connected Folder; delegated questions and
+    results delivered once, with `--parent-task` on reads; and Service
+    Connection sign-in status (PR 64);
+  - a new window that shows, and sends to, its own folder from its first
+    frame (PR 65);
+  - Connect This Folder in a card under Info outside a Connected Folder
+    (PR 66);
+  - one runner for the real-CSS tests that reads the result whatever
+    Chrome's exit code (PR 63).
+
+  PR 63 had independent reviews on the PR; PRs 64 and 65 were reviewed in
+  their authoring session. The release check (2,364 passed, 3 skipped),
+  the signed build, app and DMG notarization, and strict verification all
+  passed on their first run. Before tagging, the signed candidate reported
+  0.2.7, its `app-update.yml` named `Mat-Tom-Son/amplefile`, and its
+  packaged `amplefile` command listed `--parent-task` on `chat wait`.
+  `npm run desktop:verify:feed:mac -- --version 0.2.7` reported that the
+  feed offers it; an installed update from `0.2.6` to `0.2.7` is not
+  recorded here. `npm audit --audit-level=high` reported the same two
+  `image-size` findings as 0.2.5.
 
 ## Release procedure
 
